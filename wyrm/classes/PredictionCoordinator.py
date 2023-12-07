@@ -29,10 +29,10 @@ import torch
 import numpy as np
 from time import time
 from copy import deepcopy
-from Tracker import Tracker
+from wyrm.classes.Tracker import Tracker
 
 
-class PredictionEngine:
+class PredictionCoordinator:
     """
     :: ATTRIBUTES ::
     ++ PUBLIC ++

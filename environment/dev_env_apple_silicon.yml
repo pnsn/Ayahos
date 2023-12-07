@@ -1,0 +1,31 @@
+name: dev_wyrm
+channels:
+  - anaconda
+  - pytorch
+  - conda-forge
+  - apple
+dependencies:
+# Python environment (version stated needed for libcomcat and ???)
+  - python=3.9
+# Dependency managers
+  - pip
+  - git
+# Run PIP installs
+  - pip:
+    # Required
+    - setuptools
+    - seisbench
+    - pyocto
+    # Optional
+    - pyrocko
+    - usgs-libcomcat
+# PURELY OPTIONAL
+# IDE (for DEV only)
+  - ipython
+  - jupyterlab
+# Visualization utilities
+  - matplotlib
+  - plotly
+# Support for waveform visualization via pyrocko
+  - pyqt
+  - pyqtwebengine

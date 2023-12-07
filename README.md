@@ -28,3 +28,5 @@ Full installation of this software requires the following steps:
 `SeisBench`: https://github.com/seisbench/seisbench  
 `PyOcto`: https://github.com/yetinam/pyocto  
  
+## License Note
+This repository uses an identical GNU Affero General Public License (APGL-3.0) to match the license from PyEarthworm.

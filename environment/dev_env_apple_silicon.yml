@@ -19,6 +19,8 @@ dependencies:
     # Optional
     - pyrocko
     - usgs-libcomcat
+# Mostly optional
+  - tqdm
 # PURELY OPTIONAL
 # IDE (for DEV only)
   - ipython

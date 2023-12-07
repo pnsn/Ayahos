@@ -1,14 +1,13 @@
 """
-:module: PredictionEngine.py
+:module: Coordinator.py
 :auth: Nathan T. Stevens
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network
-:license: MIT (2023)
-:purpose: This module contains the PredictionEngine class used to house
+:license: AGPL-3.0
+:purpose: This module contains the Coordinator class used to house
           Tracker objects, handle data connections to and from EarthWorm
           buffers, parse/generate waveform/pick messages, and orchestrate
           batched (pulsed) ML predictions based on rules set by the user.
-
           
     TODO:
           Currently this module does not have a developed connection to
@@ -17,11 +16,7 @@
           PyEarthworm (Hernandez, 2018) under the GNU Affero General 
           Public License terms attached to their repository:
           https://github.com/Boritech-Solutions/PyEarthworm/tree/master
-    NOTE:
-          I after initial testing of code compatability, I (N. Stevens) will
-          need to  confirm the compatability of the current MIT license
-          attached to our code repository and the GNU AGPL license prior to
-          publishing 'deployment ready' code on the `main` branch.
+
 """
 import os
 import sys
@@ -32,7 +27,7 @@ from copy import deepcopy
 from wyrm.classes.Tracker import Tracker
 
 
-class PredictionCoordinator:
+class Coordinator:
     """
     :: ATTRIBUTES ::
     ++ PUBLIC ++

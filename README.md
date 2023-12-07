@@ -1,8 +1,11 @@
 # wyrm
 ### An integration of Python and Earthworm for incorporating pythonic seismology tools into near-real-time monitoring workflows.
 
+# About:  
+This code base provides connective utilities between the Python/Earthworm API `PyEarthworm` (or `PyEW`) and the machine learning seismology API `SeisBench`.
+
 # Goals:
-Inital focus is providing a set of flexible classes for receiving, parsing, and generating PyEarthworm messages and pre-/post-processing data for waveform-based machine learning algorithms in the `SeisBench` / `PyTorch` machine learning API.  
+Inital focus is providing a set of flexible classes for receiving, parsing, and generating `PyEW`-formatted messages and pre-/post-processing data for waveform-based machine learning algorithms in the `SeisBench` / `PyTorch` machine learning API.  
 
 Additional goal: Integrating the `PyOcto` association algorithm into Earthworm  
 

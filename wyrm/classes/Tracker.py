@@ -31,6 +31,8 @@ import core.postprocessing as post
 #         # Bring in everything obspy.core.stream.Stream has to offer!
 #         super().__init__()
 #         self.
+
+
 def _get_example_waveforms():
     file = os.path.join(
         "..", "data", "test_dataset_1", "UW", "GNW", "UW.GNW..BH?.2017.131.00.mseed"
@@ -72,6 +74,75 @@ def example_config():
         },
     }
     return config
+
+
+"""
+(Major?) overhaul on Tracker needed for I/O with PyEarthworm
+Tracker needs (and conveniently should) know the InstID for each SNCL
+relevant to a particular seismometer at a particular site.
+
+E.g., GNW.UW may have InstID's
+    GNW.UW.ENZ.. = 1003
+    GNW.UW.ENN.. = 1004
+    GNW.UW.ENE.. = 1005
+    
+    And we want to pull data from the main ring (RingID = 1000, typically)
+    so we can immediately use an ordered list of these InstIDs to do the 
+    book-keeping and channel sorting for us at jump.
+
+    Then, for a given configuration, we can also tell the tracker which ring
+    it should be submitting results to (e.g., RingID = 1005, receiving pick messages)
+
+
+    The updated Tracker is likely going to be someting a 
+    super.__init__(EWModule)
+    or have multiple calls of EWModule.add_ring
+    able to host a flexible number of connections to
+    the WAVE ring at the time of initializing a particular `tracker` object
+    e.g.,
+    tracker = Tracker(wavering_ID = 1000, instID={'Z': 1003, 'N': 1004, 'E': 1005}, ...)
+
+    class Tracker:
+            def __init__:
+                self.wavering_ID = wavering_ID
+                self.module_ID = module_ID
+                self.inst_IDs = inst_ID
+                self._used_inst_IDs = []
+                self._inst_conn_IDs = {}
+                self.in_mods = {}
+                self.out_mods = {}
+                self.ew_config = {'Tpulse': 30., 'debug': False}
+                ...
+                and the rest of the python-ey stuff
+                ...
+            
+                
+            def connect_tracker_to_ew(self, verbose=True):
+                # Ensure connection is only called once
+                if len(self.in_mods) < len(self._used_inst_IDs):
+                    for _i ,_k in enumerate(self.inst_IDs):
+                        if self.inst_IDs[_k] not in self._used_instIDs:
+                            wave_ring_module = PyEW.EWModule(self.wavering_ID, self.module_ID, self.inst_IDs[_k], self.ew_config['Tpulse'], self.ew_config['debug'])
+                            self.in_mods.update{_k:wave_ring_module}
+                            self._used_instIDs.append(self.inst_IDs[_k])
+                            self._inst_conn_IDs.update{_k: _i}
+                        else:
+                            if verbose:
+                                print(f'inst ID {inst_IDs[_k]} appears to be in use already, skipping re-connect attempt')
+
+            def start_streaming(self, pipeline, dtype=None):
+                # WHILE RUNNING 
+                st = Stream()
+                # LOAD STREAM
+                for _k in self.inst_IDs.keys():
+                    _wave = self.inst_IDs[_k].get_wave(self._inst_conn_IDs[_k]))                
+                    _tr = wyrm.util.PyEW_translate.pyew_tracebuff2_to_trace(_wave, dtype=dtype)
+                    st += _tr
+                # DO PIPELINE
+
+                # SOMETHING SOMETHING WAIT FOR Tpulse SEC AND RUN AGAIN....????
+
+"""
 
 
 class Tracker:

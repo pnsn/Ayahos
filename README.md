@@ -30,7 +30,7 @@ Full installation of this software requires the following steps:
 
 ## Key Project Dependencies
 `PyEarthworm`: https://github.com/Boritech-Solutions/PyEarthworm  
-`PyEarthworm_Workshop`: https://github.com/Fran89/PyEarthworm_Workshop
+`PyEarthworm_Workshop`: https://github.com/Fran89/PyEarthworm_Workshop  
 `SeisBench`: https://github.com/seisbench/seisbench  
 `PyOcto`: https://github.com/yetinam/pyocto  
  

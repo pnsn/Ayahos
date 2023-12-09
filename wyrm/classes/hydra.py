@@ -15,8 +15,9 @@
 :purpose:
     This module contains the definition of the _Hydra class and child
     classes used to coordinate multi-channel connections to EarthWorm 
-    rings via PyEarthworm and provide pre-/post-processing utilities 
-    for passing data arrays to/from PyTorch models.
+    rings via PyEarthworm, provide pre-/post-processing utilities 
+    for passing data arrays to/from PyTorch models, and streaming 
+    operation of PyTorch predictions on pulsed data.
     
     The following classes are provided:
 
@@ -33,8 +34,12 @@
         - This class and offers options
           for manipulating 
     
+    _TorchHydra
+        - Child class of _Hydra - TODO: Probably should just fold this into _Hydra
+          and cut out the multi-generational class definitions...
+
     StreamHydra
-        - Child class of _Hydra that provides functionalities for sending ML predicitons
+        - (Grand)Child class of _Hydra that provides functionalities for sending ML predicitons
     
     PickHydra
         - Child class of _Hydra that adds  

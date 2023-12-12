@@ -39,7 +39,7 @@ This repository uses an identical GNU Affero General Public License (AGPL-3.0) t
 
 
 ## Why "wyrm"?  
-Evocative elements of key tools for this code base - `Earthworm`, `Python`, and `Torch` - parallel descriptions of wyrms and dragons across various parts and periods of European folklore: a wingless, subterranean, fire-breathing serpent.  
+Evocative elements of key tools for this code base - `Earthworm`, `Python`, and `Torch` - parallel descriptions of wyrms and dragons across various parts and periods of European folklore: a subterranean, fire-breathing serpent.  
 
 <a title="Richard Dybeck, Public domain, via Wikimedia Commons" href="https://commons.wikimedia.org/wiki/File:U_887,_Skillsta.jpg"><img width="256" alt="U 887, Skillsta" src="https://upload.wikimedia.org/wikipedia/commons/thumb/d/d1/U_887%2C_Skillsta.jpg/256px-U_887%2C_Skillsta.jpg"></a>
 

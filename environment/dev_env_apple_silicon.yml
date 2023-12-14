@@ -16,6 +16,7 @@ dependencies:
   - pip:
     # Required
     - setuptools
+    - pytest
     - seisbench
     - pyocto
     # Optional

@@ -1,5 +1,5 @@
 """
-:module: wyrm.classes.wyrms
+:module: wyrm.core.unit_wyrms
 :auth: Nathan T. Stevens
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network
@@ -7,15 +7,7 @@
 :purpose:
     This module contains class definitions stemming from the Wyrm BaseClass
     that serve as segments of a Python-side processing line for "pulsed"
-    data flow that conforms to both the "heartbeat" paradigm of Earthworm
-    and the "striding window" paradigm for continuous ML model prediction
-    data flows.
-
-    As such, Wyrm, and each child class have a polymorphic form of the
-    class-method `pulse(self, x)` that executes a standard (series) of
-    class-methods for that child class. This provides an utility of chaining
-    together compatable *Wyrm objects to successively process data during a
-    triggered "pulse"
+    data flow 
 
 :attribution:
     This module builds on the PyEarthworm (C) 2018 F. Hernandez interface
@@ -23,215 +15,207 @@
     under an AGPL-3.0 license.
 
 """
-import torch
-import numpy as np
+import PyEW
+from collections import deque
+from wyrm.core.base_wyrms import Wyrm, RingWyrm
 import pandas as pd
 import seisbench.models as sbm
 from obspy import UTCDateTime, Stream, Trace
 from obspy.realtime import RtTrace
-from wyrm.classes.pyew_msg import *
-####################
-### BASE CLASSES ###
-####################
+from wyrm.core.pyew_msg import *
 
-class Wyrm:
+##################
+### RING WYRMS ###
+##################
+
+class Wave2PyWyrm(RingWyrm):
     """
-    Base class for all *Wyrm classes in this module that are defined
-    by having the y = *wyrm.pulse(x) class method.
-
-    The Wyrm base class produces an empty
+    Child class of RingWyrm, adding a pulse(x) method
+    to complete the Wyrm base definition. Also adds a maximum
+    iteration attribute to limit the number of wave messages
+    that can be pulled in a single Wave2PyWyrm.pulse(x) call.
     """
-    def __init__(self):
-        return None
+    def __init__(self, module, conn_index, max_iter=int(1e5)):
+        """
+        Initialize a Wave2PyWyrm object
+        :: INPUTS ::
+        :param module: [PyEW.EWModule] pre-initialized module
+        :param conn_index: [int] index of pre-established module
+                        connection to an EW WAVE RING
+        :param max_iter: [int] (default 10000) maximum number of
+                        messages to receive for a single pulse(x)
+                        command
+        """
+        super().__init__(module, conn_index)
 
-    def __repr__(self):
-        msg = "~~wyrm~~\nBaseClass\n...I got no legs...\n"
-        return msg
-
-    def pulse(self, x):
-        return None
-
-
-class MLWyrm(Wyrm):
-    """
-    BaseChildClass for generalized handling of PyTorch prediction work
-    and minimal handling of 
-    """
-    def __init__(self, model, device):
-        self.model = model
-        self.device = device
-        self.model_to_device = False
-
-    def __repr__(self):
-        rstr = f'Device: {self.device}\n'
-        rstr += f'M2D?: {self.model_to_device}\n'
-        rstr += f'Model Component Order: {self.model.component_order}\n'
-        rstr += f'Model Prediction Classes: {self.model.classes}\n'
-        rstr += f'Model '
-        rstr += f'Model Citation\n{self.model.citation}'
-        return rstr
-
-    def _send_model_to_device(self):
-        self.model.to(self.device)
-        self.model_to_device = True
-
-    def _send_data_to_device(self, x):
-        # If the data presented are not already in a torch.Tensor format
-        # but appear that they can be, convert.
-        if not isinstance(x, torch.Tensor) and isinstance(x, np.ndarray):
-            x = torch.Tensor(x)
-            x.to(self.device)
-            return x
-        # If the data are already a torch.Tensor, pass input to output
-        elif isinstance(x, torch.Tensor):
-            x.to(self.device)
-            return x
-        # For all other cases, raise TypeError
-        else:
+        # Compatability check for max_iter
+        try:
+            self._max_iter = int(max_iter)
+        except TypeError:
+            print('max_iter must be int-like!')
             raise TypeError
 
-    def _run_prediction(self, x):
-        y = self.model(x)
-        return y
-    
-    def pulse(self, x):
+    def __repr__(self):
         """
-        Run a prediction on input data tensor.
+        Representation
+        """
+        rstr = super().__repr__()
+        rstr += f'Max Iter: {self._max_iter}\n'
+        return rstr
 
+    def pulse(self, x=None):
+        """
+        Iterate for some large number (max_iter) pulling
+        wave messages from the specified WAVE RING connection,
+        appending to a list if the messages are unique, and stopping
+        the iteration at the first instance of an empty dictionary
+            i.e., wave = {}. 
+        Not to be confused with a dataless wave message 
+            i.e. wave['data'] =  np.array([]))
+        
         :: INPUT ::
-        :param x: [torch.Tensor] or [numpy.ndarray] 
-                pre-processed data with appropriate dimensionality for specified model.
-                e.g., 
-                for PhaseNet: x.shape = (nwind, chans, time)
-                                        (nwind, 3, 3000)
-                for EQTransformer: x.shape = (time, chans, nwind)
-                                             (6000, 3, nwind)
+        :param x: [NoneType] or [int] Connection index
+                [NoneType] is default, uses self.conn_index for the connection index
+                [int] superceds self.conn_index.
+        
         :: OUTPUT ::
-        :return y: [torch.Tensor] predicted values for specified model
-            e.g.
-            PhaseNet: y = (nwind, [P(tP(t)), P(tS(t)), P(Noise(t))], t)
-            EQTransformer: y = (t, [P(Detection(t)), P(tP(t)), P(tS(t))], nwind)
-        
+        :return y: [list] list of 
         """
-        # Sanity check that model submitted to device
-        if not self.model_to_device:
-            self._send_model_to_device()
-        # Send data to device if needed
-        if x.device != self.device:
-            self._send_data_to_device(x)
-        # Run prediction
-        y = self._run_prediction(x)
-        # Return raw output of prediction
-        return y
+        # Provide option for passing an alternative index
+        if x is not None and isinstance(x, int):
+            idx = x
+        else:
+            idx = self.conn_index
 
-###############################################
-### EARTHWORM <--> PYTHON INTERFACE CLASSES ###
-###############################################
-
-class WaveRingWyrm(Wyrm):
-    """
-    This class provides a general interface wrapping around EWModule
-    connections to the WAVE RING of an Earthworm instance.
-
-    Pulse takes an unused input (x) and returns an unordered list of
-    PyEW_WaveMsg objects
-    """
-    def __init__(self, WAVE_RING_ID, MODULE_ID, INST_ID, HB_PERIOD, last_CR_index, debug=False):
-        # Establish connection to wave ring
-        self.conn = PyEW.EWModule(WAVE_RING_ID, MODULE_ID, INST_ID, HB_PERIOD, debug)
-        self.conn.add_ring(WAVE_RING_ID)
-        self.index = last_CR_index + 1
-        self.prior_message_buffer = []
-        self.max_message_iterations = int(1e6)
-
-    def __repr__(self):
-        rstr = f'WaveRingWyrm Connection: {self.conn}'
-        rstr += f'Connection Index: {self.index}'
-        return rstr
-
-    def pulse(self, x):
-        new_messages = []
-        for _ in range(self.max_message_iterations):
-            wave = self.conn.get_wave(self.index)
-            # Check that wave is not empty
+        # Initialize a new holder
+        waves = deque([])
+        # Run for loop
+        for _ in range(self._max_iter):
+            # Get wave message
+            wave = self.module.get_wave(idx)
+            # Check that wave is not a no-new-messages message
             if wave != {}:
-                # If not empty, do sanity checks that it's a wave message and convert to PyEW_WaveMsg object
-                # Check that wave is not in new_messages
-                if wave not in new_messages:
-                    # If wave did not slip through from previous messages
-                    if wave not in self.prior_message_buffer:
-                        # Append to new messages
-                        new_messages.append(wave)
-            # if the WAVE ring runs out of new messages, truncate for loop
-            elif wave == {}:
+                # Convert into a PyEW_WaveMsg object
+                wave = PyEW_WaveMsg(wave)
+                # Check if unique to this call
+                if wave not in waves:
+                    # Ensure the message didn't come up last time
+                    if wave not in self.msg_queue:
+                        waves.append(wave)
+            # Break at the first instance of a no-new-messages message
+            else:
                 break
-        self.prior_message_buffer = new_messages
-        y = new_messages
+        # Alias waves to y to meet standard syntax of y = *wyrm.pulse(x)
+        y = waves
+        # Update msg_queue buffer
+        self.past_msg_queue = waves
         return y
-        
 
 
-
-
-        waves = self.conn.get_waves(self.index)
-        if isinstance(waves, dict):
-            waves = [waves]
-        elif isinstance(waves, list) and len(waves) == 0:
-            y = []
-        else:
-            raise TypeError
-        if isinstance(waves,list):    
-            y = [PyEW_WaveMsg(_wave) for _waves in waves]
-            return y        
-    
-
-class PickRingWyrm(Wyrm):
+class Py2WaveWyrm(RingWyrm):
     """
-    This class provides a general interface wrapping around EWModule
-    connections to the PICK RING of an Earthworm instance.
-
-    Pulse takes an unused input (x) and returns an unordered list of
-    PyEW_PickMsg objects
+    Child class of RingWyrm, adding a pulse(x) method
+    to complete the Wyrm base definition. Also adds a maximum
+    message buffer (_max_msg_buff) attribute to limit the number 
+    of previously sent messages buffered in this object for the purpose
+    of preventing repeat message transmission.
     """
-    def __init__(self, PICK_RING_ID, MODULE_ID, INST_ID, HB_PERIOD, last_CR_index, debug=False):
-        # Establish connection to PICK ring
-        self.conn = EWModule(PICK_RING_ID, MODULE_ID, INST_ID, HB_PERIOD, debug)
-        self.conn.add_ring(PICK_RING_ID)
-        self.index = last_CR_index + 1
-        
+
+    def __init__(self, module, conn_index, max_msg_buff=1000):
+        """
+        Initialize a Py2WaveWyrm object
+        :: INPUTS ::
+        :param module: [PyEW.EWModule] Connected module
+        :param conn_index: [int] Connection index for target WAVE RING
+        :param max_msg_buff: [int-like] Maximum number of messages
+                        that are buffered in object memory before purging
+        """
+        super().__init__(module, conn_index)
+        self._max_msg_buff = max_msg_buff
+
     def __repr__(self):
-        rstr = f'PickRingWyrm Connection: {self.conn}'
-        rstr += f'Connection Index: {self.index}'
+        rstr = super().__repr__()
+        rstr += f'Max Buffer: {self._max_msg_buff}\n'
         return rstr
 
     def pulse(self, x):
-        waves = self.conn.get_msg(self.index)
-        if isinstance(waves, dict):
-            waves = [waves]
-        elif isinstance(waves, list) and len(waves) == 0:
-            y = []
-        else:
-            raise TypeError
-        if isinstance(waves,list):    
-            y = [PyEW_WaveMsg(_wave) for _waves in waves]
-            return y   
+        """
+        Submit data from PyEW_WaveMsg objects contained in `x`
+        to the specified WAVE RING as tracebuff2 messages
+        :: INPUTS ::
+        :param x: [list] of PyEW_WaveMsg objects
+
+        :: OUTPUT ::
+        :param y: [int] count of successfully sent messages
+
+        """
+        send_count = 0
+        # If working with a single message, ensure it's a list
+        if isinstance(x, PyEW_WaveMsg):
+            x = [x]
+        # Iterate across list of input message(s)
+        for _msg in x:
+            # Ensure the message is not a duplicate of a recent one
+            if isinstance(_msg, PyEW_WaveMsg) and _msg not in self.past_msg_queue:
+                # SEND MESSAGE TO RING
+                try:
+                    self.module.put_wave(_msg.to_tracebuff2(), self.conn_index)
+                    send_count += 1
+                # TODO: Clean this dev choice up...
+                except:
+                    continue
+                # Append message to to dequeue on left
+                self.past_msg_queue.appendleft(_msg)
+                # If we've surpassed the buffer allotment, pop oldest msg at right
+                if len(self.past_msg_queue)+ 1 < self._max_msg_buff:
+                    self.past_msg_queue.pop()
+        # output number of sent messages
+        y = int(send_count)
+        return y
+
+class Pick2PyWyrm(RingWyrm):
+
+class Py2PickWyrm(RingWyrm):
 
 
-############################
-### ORGANIZATION CLASSES ###
-############################
-class EarWyrm(Wyrm):
+##################
+### DISK WYRMS ###
+##################
+
+class 
+
+##################
+###   
+    
+class TreeWyrm(Wyrm):
+
+
+class StationWyrm(Wyrm):
+
+
+class ObsBuffWyrm(Wyrm):
+
+
+class WindowWyrm(Wyrm):
+
+
+
+
+
+class MessageEarWyrm(Wyrm):
+
+class SNCLEarWyrm(Wyrm):
     """
     This Wyrm listens for a specific Station/Network/Channel/Location
     (SNCL) combination in offered of PyEarthworm `wave` objects. 
     Matching messages are aggregated and converted into an ObsPy Trace
     by the EarWyrm.pulse(x) method 
     """
-    def __init__(self, station, network, channel, location):
-        self.station = station
-        self.network = network
-        self.channel = channel
-        self.location = location
+    def __init__(self, SNCL_tuple, ):
+        self.station = SNCL_tuple[0]
+        self.network = SNCL_tuple[1]
+        self.channel = SNCL_tuple[2]
+        self.location = SNCL_tuple[3]
         self._sncl_dict = dict(
             zip(['station', 'network', 'channel', 'location'],
                 [station, network, channel, location]))

@@ -72,6 +72,8 @@ class PyEW_WaveMsg(PyEW_Msg):
         self.network = network
         self.channel = channel
         self.location = location
+        if startt is None:
+            
         self.startt = startt
         self.samprate = samprate
         self.datatype = datatype
@@ -79,7 +81,10 @@ class PyEW_WaveMsg(PyEW_Msg):
         self.data = data.astype(self.dataclass)
         self.nsamp = len(self.data)
         self.datatype = datatype
-        self.endt = self.startt + self.nsamp/self.samprate
+        if all(x is not None for x in [startt, samprate]):
+            self.endt = self.startt + self.nsamp/self.samprate
+        else:
+            self.endt = None
         self.SNCL_dict = dict(
             zip(['station', 'network', 'channel', 'location'],
                 [station, network, channel, location]))

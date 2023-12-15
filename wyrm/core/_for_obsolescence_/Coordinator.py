@@ -24,7 +24,7 @@ import torch
 import numpy as np
 from time import time
 from copy import deepcopy
-from wyrm.classes.Tracker import Tracker
+from wyrm.core.Tracker import Tracker
 
 
 class Coordinator:

@@ -20,8 +20,8 @@ from obspy import Stream, Trace, read, UTCDateTime
 # from pyrocko import obspy_compat
 
 sys.path.append("..")
-import core.preprocessing as prep
-import core.postprocessing as post
+import ml_methods.preprocessing as prep
+import ml_methods.postprocessing as post
 
 
 # class PredStreamTracker(Stream):

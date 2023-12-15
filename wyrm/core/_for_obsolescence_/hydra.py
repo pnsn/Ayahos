@@ -78,7 +78,7 @@ from threading import Thread
 ROOT = os.path.join('..','..')
 sys.path.append(ROOT)
 import wyrm.util.PyEW_translate as pet
-from wyrm.classes.rttrace_crypt import RTTraceTorch
+from wyrm.core.rttrace_crypt import RTTraceTorch
 
 logger = logging.getLogger(__name__)
 

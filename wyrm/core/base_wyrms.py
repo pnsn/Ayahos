@@ -7,18 +7,6 @@
 :purpose:
     This module contains baseclass definitions for Wyrm class objects
 
-    This module contains class definitions stemming from the Wyrm BaseClass
-    that serve as segments of a Python-side processing line for "pulsed"
-    data flow that conforms to both the "heartbeat" paradigm of Earthworm
-    and the "striding window" paradigm for continuous ML model prediction
-    data flows.
-
-    As such, Wyrm, and each child class have a polymorphic form of the
-    class-method `pulse(self, x)` that executes a standard (series) of
-    class-methods for that child class. This provides an utility of chaining
-    together compatable *Wyrm objects to successively process data during a
-    triggered "pulse"
-
 :attribution:
     This module builds on the PyEarthworm (C) 2018 F. Hernandez interface
     between an Earthworm Message Transport system and Python distributed
@@ -36,20 +24,25 @@ class Wyrm:
     Fundamental base class for all *Wyrm classes in this module that are defined
     by having the y = *wyrm.pulse(x) class method.
 
-    The Wyrm base class produces an empty object with no attributes and place-
-    holders for the 3 fundamental class-methods:
+    The Wyrm base class produces an object with no attributes and placeholders 
+    for the 3 fundamental class-methods common to all Wyrm class objects:
+    
     + __init__
     + __repr__
     + pulse
-
     """
-
     def __init__(self):
+        """
+        Initialize a Wyrm object
+        """
         return None
 
     def __repr__(self):
-        msg = "~~wyrm~~\nBaseClass\n...I got no legs...\n"
-        return msg
+        """
+        Provide a representation string of a Wyrm
+        """
+        rstr = "~~wyrm~~\nBaseClass\n...I got no legs...\n"
+        return rstr
 
     def pulse(self, x=None):
         """

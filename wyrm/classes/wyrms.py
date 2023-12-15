@@ -138,9 +138,11 @@ class WaveRingWyrm(Wyrm):
     """
     def __init__(self, WAVE_RING_ID, MODULE_ID, INST_ID, HB_PERIOD, last_CR_index, debug=False):
         # Establish connection to wave ring
-        self.conn = EWModule(WAVE_RING_ID, MODULE_ID, INST_ID, HB_PERIOD, debug)
+        self.conn = PyEW.EWModule(WAVE_RING_ID, MODULE_ID, INST_ID, HB_PERIOD, debug)
         self.conn.add_ring(WAVE_RING_ID)
         self.index = last_CR_index + 1
+        self.prior_message_buffer = []
+        self.max_message_iterations = int(1e6)
 
     def __repr__(self):
         rstr = f'WaveRingWyrm Connection: {self.conn}'
@@ -148,6 +150,29 @@ class WaveRingWyrm(Wyrm):
         return rstr
 
     def pulse(self, x):
+        new_messages = []
+        for _ in range(self.max_message_iterations):
+            wave = self.conn.get_wave(self.index)
+            # Check that wave is not empty
+            if wave != {}:
+                # If not empty, do sanity checks that it's a wave message and convert to PyEW_WaveMsg object
+                # Check that wave is not in new_messages
+                if wave not in new_messages:
+                    # If wave did not slip through from previous messages
+                    if wave not in self.prior_message_buffer:
+                        # Append to new messages
+                        new_messages.append(wave)
+            # if the WAVE ring runs out of new messages, truncate for loop
+            elif wave == {}:
+                break
+        self.prior_message_buffer = new_messages
+        y = new_messages
+        return y
+        
+
+
+
+
         waves = self.conn.get_waves(self.index)
         if isinstance(waves, dict):
             waves = [waves]

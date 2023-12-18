@@ -22,7 +22,7 @@ import pandas as pd
 import seisbench.models as sbm
 from obspy import UTCDateTime, Stream, Trace
 from obspy.realtime import RtTrace
-from wyrm.core.pyew_msg import *
+from wyrm.core.pyew_msg import WaveMsg
 
 ##################
 ### RING WYRMS ###
@@ -35,33 +35,250 @@ class Wave2PyWyrm(RingWyrm):
     iteration attribute to limit the number of wave messages
     that can be pulled in a single Wave2PyWyrm.pulse(x) call.
     """
-    def __init__(self, module, conn_index, max_iter=int(1e5)):
+    def __init__(
+            self,
+            module,
+            conn_index,
+            stations='*',
+            networks='*',
+            channels='*',
+            locations='*',
+            max_iter=int(1e5),
+            max_staleness=300):
         """
         Initialize a Wave2PyWyrm object
         :: INPUTS ::
         :param module: [PyEW.EWModule] pre-initialized module
         :param conn_index: [int] index of pre-established module
                         connection to an EW WAVE RING
+        :param stations: [str] or [list] station code string(s)
+        :param networks: [str] or [list] network code string(s)
+        :param channels: [str] or [list] channel code string(s)
+        :param locations: [str] or [list] location code string(s)
         :param max_iter: [int] (default 10000) maximum number of
                         messages to receive for a single pulse(x)
                         command
-        """
-        super().__init__(module, conn_index)
+        :param max_staleness: [int] (default 300) maximum number of
+                        pulses an given SNCL keyed entry in queue_dict
+                        can go without receiving new data.
 
+        :: ATTRIBUTES ::
+        -- Inherited from RingWyrm --
+        :attrib module: [PyEW.EWModule] connected EWModule
+        :attrib conn_index: [int] connection index
+
+        -- New Attributes --
+        :attrib queue_dict: [dict] SNCL keyed dict with tuple values:
+                        
+                        {'S.N.C.L': (deque, staleness_index)}
+                        e.g. 
+                        {'GNW.UW.BHN.--': (deque([WaveMsg]),0)}
+
+                        with the dequeue adding newest entries on 
+                        the left end of the deque. Subsequent
+                        interactions with this attribute should
+                        pop() entries to pull the oldest members
+
+                        staleness_index starts at 0 and increases
+                        for each pulse where a given SNCL code
+                        does not appear. This serves as a mechanism
+                        for clearing out outdated data that may arise
+                        from a station outage and help prevent ingesting
+                        large data gaps in subsequent
+
+        """
+        # Use RingWyrm baseclass initialization
+        super().__init__(module, conn_index)
+        # self.module
+        # self.
+        # Run compatability checks & formatting on stations
+        if isinstance(stations, (str, int)):
+            self.stations = str(stations)
+        elif isinstance(stations, (list, deque)):
+            if all(isinstance(_sta, (str, int)) for _sta in stations):
+                self.stations = [str(_sta) for _sta in stations]
+        else:
+            raise TypeError
+        
+        # Run compatability checks & formatting on networks
+        if isinstance(networks, (str, int)):
+            self.networks = str(networks)
+        elif isinstance(networks, (list, deque)):
+            if all(isinstance(_net, (str, int)) for _net in networks):
+                self.networks = [str(_net) for _net in networks]
+        else:
+            raise TypeError
+        
+        # Run compatability checks & formatting on channels
+        if isinstance(channels, (str, int)):
+            self.channels = str(channels)
+        elif isinstance(channels, (list, deque)):
+            if all(isinstance(_cha, (str, int)) for _cha in channels):
+                self.channels = [str(_cha) for _cha in channels]
+        else:
+            raise TypeError
+        
+        # Run compatability checks & formatting on locations
+        if isinstance(locations, (str, int)):
+            self.locations = str(locations)
+        elif isinstance(locations, (list, deque)):
+            if all(isinstance(_loc, (str, int)) for _loc in locations):
+                self.locations = [str(_loc) for _loc in locations]
+        else:
+            raise TypeError
+        
         # Compatability check for max_iter
         try:
             self._max_iter = int(max_iter)
         except TypeError:
             print('max_iter must be int-like!')
             raise TypeError
+        
+        # Compatability check for max_staleness
+        try:
+            self._max_staleness = int(max_staleness)
+        except TypeError:
+            print('max_staleness must be positive and int-like')
+            raise TypeError
+        
 
     def __repr__(self):
         """
-        Representation
+        Command line representation of class object
         """
         rstr = super().__repr__()
         rstr += f'Max Iter: {self._max_iter}\n'
+        rstr += f'Max Stale: {self._max_staleness}\n'
+        rstr += f'STA Filt: {self.stations}\n'
+        rstr += f'NET Filt: {self.networks}\n'
+        rstr += f'CHA Filt: {self.channels}\n'
+        rstr += f'LOC Filt: {self.locations}\n'
+        rstr += 
         return rstr
+    
+    def _get_wave_from_ring(self):
+        """
+        Fetch the next available message from the WAVE ring
+        connection and check if it is on the approved list
+        defined by SNCL information
+
+        :: OUTPUT ::
+        :return msg: [wyrm.core.pyew_msg.WaveMsg] 
+                            - if a wave message is received and passes filtering
+                     [False] 
+                            - if an empty wave message is received
+                     [True]
+                            - if a wave message is received and fails filtering
+
+        """
+        wave = self.module.get_wave(self.conn_index)
+        # If wave message is empty, return False
+        if wave == {}:
+            msg = False
+        # If the wave has information, check if it's on the list
+        else:
+            sta_bool, net_bool, cha_bool, loc_bool = False, False, False, False
+            # Do sniff-test that 
+            if all(_k in wave.keys() for _k in ['station','network','channel','locaiton'])
+                # Station Check
+                if isinstance(self.stations, list):
+                    if wave['station'] in self.stations:
+                        sta_bool = True
+                elif isinstance(self.stations, str):
+                    fnsta = fnmatch.filter([wave['station']], self.stations)
+                    if len(fnsta) == 1:
+                        sta_bool = True
+
+                # Network Check
+                if isinstance(self.networks, list):
+                    if wave['network'] in self.networks:
+                        net_bool = True
+                elif isinstance(self.networks, str):
+                    fnnet = fnmatch.filter([wave['network']], self.networks)
+                    if len(fnnet) == 1:
+                        net_bool = True
+
+                # Channel Check
+                if isinstance(self.channels, list):
+                    if wave['channel'] in self.channels:
+                        cha_bool = True
+                elif isinstance(self.channels, str):
+                    fncha = fnmatch.filter([wave['channel']], self.channels)
+                    if len(fncha) == 1:
+                        cha_bool = True
+
+                # Location Check
+                if isinstance(self.locations, list):
+                    if wave['location'] in self.locations:
+                        loc_bool = True
+                elif isinstance(self.locations, str):
+                    fnloc = fnmatch.filter([wave['location']], self.locations)
+                    if len(fnloc) == 1:
+                        loc_bool = True
+            else:
+                print('Received something that does not look like a wave message')
+                raise TypeError
+            
+            # If all fields match filtering criteria
+            if all([sta_bool, net_bool, cha_bool, loc_bool]):
+                # Convert message from type dict to type WaveMsg
+                msg = WaveMsg(wave)
+            # If filtering criteria fails, but there was a valid message
+            else:
+                msg = True            
+            return msg
+
+    def _add_msg_to_queue_dict(self, wavemsg):
+        """
+        Add a WaveMsg to the queue_dict, creating a new {code: WaveMsg}
+        entry if the WaveMsg SNCL code is not in the queue_dict keys,
+        and left-appending the WaveMsg to an active deque keyed to
+        code if it already exists. 
+        """
+
+        # If the SNCL code of the WaveMsg is new, create a new dict entry
+        if wavemsg.code not in self.queue_dict.keys():
+            new_member = {wavemsg.code: (deque([wavemsg]), 0)}
+            self.queue_dict.update(new_member)
+            # And return True state
+            return wavemsg.code
+        # If the SNCL code of the WaveMsg is already known
+        elif wavemsg.code in self.queue_dict.keys():
+            # Left append the message to the existing queue
+            new_message = deque([wavemsg])
+            self.queue_dict[wavemsg.code][0].appendleft(new_message)
+            # reset "staleness index"
+            self.queue_dict[wavemsg.code][1] = 0
+            return wavemsg.code
+        # If something unexpected happens, raise KeyError
+        else:
+            print('Something went wrong with matching keys')
+            raise KeyError
+
+    def _update_staleness(self,updated_codes=[]):
+        """
+        Increase the "staleness index" of each SNCL keyed
+        entry in self.queue_dict by 1 that is not present
+        in the provided updated_codes list
+        """
+        # For each _k(ey) in queue_dict
+        for _k in self.queue_dict.keys():
+            # If the key is not in the updated_codes list
+            if _k not in updated_codes:
+                # If max staleness is met
+                if self.queue_dict[_k][1] >= self._max_staleness:
+                    # Determine if there are any data in the queue
+                    nele = len(self.queue_dict[_k][0])
+                    # If there are data, pop the last entry in the queue
+                    if nele > 0:
+                        self.queue_dict[_k][0].pop();
+                    # If there are no data in the queue, pop the entire SNCL keyed entry
+                    else:
+                        self.queue_dict.pop(_k);
+                # Otherwise increase that entry's staleness index by 1
+                else:
+                    self.queue_dict[_k][1] += 1
+        
 
     def pulse(self, x=None):
         """
@@ -86,29 +303,33 @@ class Wave2PyWyrm(RingWyrm):
             idx = x
         else:
             idx = self.conn_index
-
-        # Initialize a new holder
-        waves = deque([])
-        # Run for loop
+        # Create holder for codes of updated SNCL queues
+        updated_codes = []
         for _ in range(self._max_iter):
-            # Get wave message
-            wave = self.module.get_wave(idx)
-            # Check that wave is not a no-new-messages message
-            if wave != {}:
-                # Convert into a PyEW_WaveMsg object
-                wave = PyEW_WaveMsg(wave)
-                # Check if unique to this call
-                if wave not in waves:
-                    # Ensure the message didn't come up last time
-                    if wave not in self.msg_queue:
-                        waves.append(wave)
-            # Break at the first instance of a no-new-messages message
+            wave = self._get_wave_from_ring()
+            # If the wave message is indeed a WaveMsg
+            if isinstance(wave, WaveMsg):
+                # Append valid message to queue_dict
+                refreshed_code = self._add_msg_to_queue_dict(wave)
+                # If code was not already in 
+                if refreshed_code  not in updated_codes:
+                    updated_codes.append(refreshed_code)
+            
+            # If the wave message is carrying a continue/break Bool code
+            elif isinstance(wave, bool):
+                if wave:
+                    pass
+                # If wave is False, this signals an empty message. 
+                elif not wave:
+                    break
             else:
-                break
-        # Alias waves to y to meet standard syntax of y = *wyrm.pulse(x)
-        y = waves
-        # Update msg_queue buffer
-        self.past_msg_queue = waves
+                raise RuntimeError
+        
+        # Increase staleness index and clear out overly stale data
+        self._update_staleness(updated_codes)
+
+        # Pass self.queue_dict as output
+        y = self.queue_dict
         return y
 
 
@@ -175,253 +396,28 @@ class Py2WaveWyrm(RingWyrm):
 
 class Pick2PyWyrm(RingWyrm):
 
+
 class Py2PickWyrm(RingWyrm):
+
+
 
 
 ##################
 ### DISK WYRMS ###
 ##################
 
-class 
+class DiskWyrm(Wyrm):
+    def __init__(self, mseed_file_list):
+        self.to_read = deque(mseed_file_list)
+        self.current = deque([])
+        self.processed = deque([])
 
-##################
-###   
+    def _read_mseed_from_disk(self, file):
+        st = read(file)
+        return st
     
-class TreeWyrm(Wyrm):
+    def
 
-
-class StationWyrm(Wyrm):
-
-
-class ObsBuffWyrm(Wyrm):
-
-
-class WindowWyrm(Wyrm):
-
-
-
-
-
-class MessageEarWyrm(Wyrm):
-
-class SNCLEarWyrm(Wyrm):
-    """
-    This Wyrm listens for a specific Station/Network/Channel/Location
-    (SNCL) combination in offered of PyEarthworm `wave` objects. 
-    Matching messages are aggregated and converted into an ObsPy Trace
-    by the EarWyrm.pulse(x) method 
-    """
-    def __init__(self, SNCL_tuple, ):
-        self.station = SNCL_tuple[0]
-        self.network = SNCL_tuple[1]
-        self.channel = SNCL_tuple[2]
-        self.location = SNCL_tuple[3]
-        self._sncl_dict = dict(
-            zip(['station', 'network', 'channel', 'location'],
-                [station, network, channel, location]))
-
-    def __repr__(self):
-        fstr = '~~EarWyrm~~\nListening For: '
-        fstr += f'{".".join(list(self._sncl_dict.values()))}'
-        return fstr
-
-    def pulse(self, x):
-        """
-        This pulse(x) takes an array-like set of PyEarthworm
-        `wave` messages and returns a list that has matching
-        SNCL values for this particular EarWyrm
-
-        :: INPUT :: 
-        :param x: [list] List of PyEarthworm `wave` objects
-
-        :: OUTPUT ::
-        :param y: [list] List of PyEarthworm `wave` objects
-                  with matching SNCL labels
-        """
-        # Create a holder stream for trace elements
-        waves = []
-        # Iterate across presented messages
-        for _x in x:
-            # Use the `all` iteration operator to match 
-            match = all(_x[_k] == _v for _k, _v in self._sncl_dict)
-            # If SNCL is a perfect match, proceed
-            if match:
-                waves.append(_x)
-        y = waves
-        return y
-
-
-class BookWyrm(Wyrm):
-    """
-    This class acts as in indexer and sorter for data arrays
-    keyed by SNCL entries
-    """
-
-    def __init__(self, msg_class=PyEW_WaveMsg):
-        self.msg_type = msg_class
-        self.SNCL_dataframe = pd.DataFrame(columns=['Station','Network','Location','Channel'])
-
-    def reset_SNCL_dataframe(self):
-        self.SNCL_dataframe = pd.DataFrame(columns=['Station','Network','Location','Channel'])
-
-    def append_to_SNCL_dataframe(self, x):
-        for _i, _x in enumerate(x):
-            if isinstance(_x, self.msg_type):
-                self.SNCL_dataframe = pd.concat([self.SNCL_dataframe, pd.DataFrame(_x.SNCL_dict), index=[_i]],axis=1,ignore_index=False)
-
-    def pulse(self, x):
-        """
-        :param x: [list] unsorted list of PyEW_Msg objects
-
-        :return 
-        """
-
-
-class TubeWyrm(Wyrm):
-    """
-    Contain a linear sequence of Wyrm objects that must have 
-    compatable hand-offs in data/data-type for inputs and 
-    outputs of their .pulse() class methods. A TubeWyrm provides 
-    a pulse(x) method that accepts an arbitrary input (x) that 
-    must comply with self.wyrm_can[0].pulse(x) and will return
-    the output of the sequence of wyrm.pulse(x)'s
-
-    :: ATTRIBUTES ::
-    :attrib index: [int-like] Index number for this WyrmCan
-    :attrib wyrm_list: [list] List of Wyrm* objects that have
-                compatable sequential input/output data from
-                their versions of the .pulse() class method
-    :attrib cfg: [dict] Dictionary to hold configuration information
-                NOTE: Presently not used
-
-    :: CLASS METHODS ::
-    :method __init__:
-    :method pulse:
-    """
-    def __init__(self, index, wyrm_list, cfg=None):
-        """
-        Initialize a TubeWyrm object with the following
-        input parameters
-        :: INPUTS ::
-        :param index: [int-like] Index number for this WyrmCan TODO: OBSOLITE
-        :param wyrm_list: [list] List of Wyrm* objects that have
-                    compatable sequential input/output data from
-                    their versions of the .pulse() class method
-        :param cfg: [dict] Dictionary to hold configuration information
-                    NOTE: Presently not used
-
-        :: OUTPUT ::
-        None
-        """
-        # Type handling for index
-        if isinstance(index, (int, np.int32, np.int64)):
-            self.index = index
-        elif isinstance(index, (float, np.float32, np.float64)):
-            self.index = int(index)
-        else:
-            raise TypeError
-        
-        # Type checking for all members of Wyrm
-        if isinstance(wyrm_list, list):
-            # Check that all items in wyrm_list are a child of Wyrm
-            match = all(isinstance(_wyrm, Wyrm) for _wyrm in wyrm_list)
-            if match:
-                self.wyrm_list = wyrm_list
-            # Raise TypeError otherwise
-            else:
-                raise TypeError
-        # Handle the case where the WyrmCan is given a single Wyrm object
-        elif isinstance(wyrm_list, Wyrm):
-            self.wyrm_list = [wyrm_list]
-        # Otherwise, raise TypeError
-        else:
-            raise TypeError
-
-        self.cfg = cfg
-        return None
-
-    def __repr__(self):
-        fmsg = 'TubeWyrm with\n'
-        fmsg += f'Index: {self.index}\n'
-        fmsg += 'WyrmList:\n'
-        for _wyrm in self.wyrm_list:
-            fmsg += f'  {type(_wyrm)}\n'
-        fmsg += f'cfg: {self.cfg}'
-        return fmsg
-
-    def pulse(self, x):
-        """
-        Run .pulse() for each member of self.wyrm_list in sequence,
-        passing the output of the i_th *wyrm.pulse(x) = y to the input
-        to the input for the i+1_th *wyrm.pulse(x = y).
-
-        :: INPUT ::
-        :param x: Input for *wyrm.pulse(x) for the first member of
-                  self.wyrm_list
-        :: OUTPUT ::
-        :return y: [dict] output of the last *wyrm.pulse(x) in 
-                  self.wyrm_list with an associated key self.index
-                  from this WyrmCan object
-        """
-        for _wyrm in self.wyrm_list:
-            x = _wyrm.pulse(x)
-        y = {self.index: x}
-        return y
-
-
-
-###############################
-### DATA PROCESSING CLASSES ###
-###############################
-
-class BuffWyrm(Wyrm):
-    """
-    This Wyrm hosts ordered ObsPy RealTime Trace (RtTrace) objects that are
-    populated from incoming PyEarthworm `wave` objects, serves as a waveform 
-    data buffer between pulses and provides access to RtTrace processing steps 
-    via the `eval` on buffered data if they meet certain time bounds
-    """
-    
-    def __init__(self, rtstream=None, rttrace_processing=['.'])
-        if rtstream is None
-            self.rtstream = Stream()
-
-        elif isinstance(rtstrea, Stream):
-            match = all(isinstance(_tr, RtTrace) for _tr in rtstream)
-            if match:
-                self.rtstream = rtstream
-        else:
-            raise TypeError
-
-    def pulse(self, x):
-        # Handle x = empty list
-        if x == []:
-            match = True
-        # Handle instance of a slngle PyEW_Wave object as input for x
-        if isinstance(x, PyEW_Wave):
-            x = [x]
-            match = True
-        # Check entries in list of probable PyEW_Wave objects
-        elif isinstance(x, (list, np.array)):
-            match = all(isinstance(_x, PyEW_Wave) for _x in x)
-        # Raise error in all other cases
-        else:
-            match = False
-            raise TypeError
-
-        if match:
-            for _x in x:
-                # Convert PyEW_Wave into Obspy Trace
-                _tr = pew2otr(_x)
-                # Append new trace to real-time trace buffer
-
-        # Clean outdated data out of the buffer
-        
-        time_match = all(_tr.stats.endtime >= self.next_window_end for _tr in self.)
-            
-
-
-class WindowWyrm(Wyrm):
 
 ##########################################
 ### ML PROCESSING (GRAND)CHILD CLASSES ###

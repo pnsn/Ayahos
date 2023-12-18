@@ -59,12 +59,13 @@ class RingWyrm(Wyrm):
     between an Earthworm Ring and the Python side of a PyEW.EWModule.
     Ths adds the following attributes
 
-    This class provides a double-ended queue attribute for previously
-    received/sent messages as a check against duplicate transmission
-    and a _flush_buffer() class method for resetting the deque.
 
     This base class retains the vestigial pulse(x) class method of
     Wyrm.
+
+    :: ATTRIBUTES :: 
+    :attrib module: [PyEW.EWModule]
+
 
     """
 
@@ -80,13 +81,12 @@ class RingWyrm(Wyrm):
         except TypeError:
             print(f"conn_info is not compatable")
             raise TypeError
-        self.past_msg_queue = deque([])
 
     def __repr__(self):
         rstr = "----- EW Connection -----\n"
         rstr += f"Module: {self.module}\n"
         rstr += f"Conn ID: {self.conn_index}\n"
-        rstr += f"# Buffered: {len(self.past_msg_queue)}"
+        rstr += f"# Buffered: {len(self.queue_dict)}"
         return rstr
 
     def _change_conn_index(self, new_index):
@@ -95,12 +95,6 @@ class RingWyrm(Wyrm):
         except ValueError:
             raise ValueError
 
-    def _flush_buffer(self):
-        """
-        Private Method
-        Clear message buffer
-        """
-        self.past_msg_queue = deque([])
 
 
 class TubeWyrm(Wyrm):

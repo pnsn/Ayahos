@@ -19,38 +19,7 @@ from collections import deque
 from PyEW import EWModule
 
 
-class Wyrm:
-    """
-    Fundamental base class for all *Wyrm classes in this module that are defined
-    by having the y = *wyrm.pulse(x) class method.
 
-    The Wyrm base class produces an object with no attributes and placeholders 
-    for the 3 fundamental class-methods common to all Wyrm class objects:
-    
-    + __init__
-    + __repr__
-    + pulse
-    """
-    def __init__(self):
-        """
-        Initialize a Wyrm object
-        """
-        return None
-
-    def __repr__(self):
-        """
-        Provide a representation string of a Wyrm
-        """
-        rstr = "~~wyrm~~\nBaseClass\n...I got no legs...\n"
-        return rstr
-
-    def pulse(self, x=None):
-        """
-        ~~~ POLYMORPHIC METHOD ~~~
-        Run a pulse with input argument and return that argument
-        """
-        y = x
-        return y
 
 
 class RingWyrm(Wyrm):
@@ -96,7 +65,6 @@ class RingWyrm(Wyrm):
             raise ValueError
 
 
-
 class TubeWyrm(Wyrm):
     """
     Base Class facilitating chained execution of pulse(x) class methods
@@ -139,7 +107,18 @@ class TubeWyrm(Wyrm):
             print('Provided wyrm_list was not a list or a Wyrm')
             raise TypeError
 
-        
+    def __repr__(self):
+        rstr = '--- Tube ---\n'
+        for _i, _wyrm in enumerate(self.wyrm_queue):
+            if _i == 0:
+                rstr += '(head) '
+            else:
+                rstr += '       '
+            rstr += f'{type(_wyrm)}'
+            if _i == len(self.wyrm_queue) - 1:
+                rstr += ' (tail)'
+            rstr += '\n'
+
     def _append(self, object, end='right'):
         """
         Convenience method for left/right append
@@ -206,6 +185,47 @@ class TubeWyrm(Wyrm):
         y = x
         return y
 
+
+class CanWyrm(TubeWyrm):
+    """
+    Base class for running an iterable list of Wyrms that takes a single
+    input datasource and gathers the outputs of 
+    """
+    # Inherits __init__ from TubeWyrm
+    def __init__(self, wyrm_queue=deque([]), output_method=deque):
+        super().__init__(wyrm_queue=wyrm_queue)
+        self.output_format = output_method
+
+    def __repr__(self):
+        rstr = '~~~ CanWyrm ~~~'
+        rstr += super().__repr__()
+        return rstr
+
+    def pulse(self, x):
+        """
+        Iterate across wyrms in wyrm_queue that all feed
+        from the same input variable x and gather each
+        iteration's output y in a deque assembled with an
+        appendleft() at the end of each iteration
+
+        :: INPUT ::
+        :param x: [variable] Single variable that every
+                    Wyrm (or the head-wyrm in a tubewyrm)
+                    in the wyrm_queue can accept as a 
+                    pulse(x) input.
+        
+        :: OUTPUT ::
+        :return y: [deque] or [self.output_method]
+                    Serially assembled outputs of each Wyrm
+                    (or the tail-wyrm in a tubewyrm)
+        """
+        y = self.output_format()
+        for _wyrm in self.wyrm_queue:
+            _y = _wyrm.pulse(x)
+            _y = self.output_format(_y)
+            y.appendleft(_y)
+        return y
+        
 
 class TorchWyrm(Wyrm):
     """

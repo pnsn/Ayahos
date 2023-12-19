@@ -110,27 +110,49 @@ class HeartWyrm(TubeWyrm):
         rstr += "-------- END --------\n"
         return rstr
 
-    def initialize_module(self):
-        # Initialize PyEarthworm Module
-        if not self.module:
-            try:
-                self.module = PyEW.EWModule(
-                    self._default_ring_id,
-                    self._module_id,
-                    self._installation_id,
-                    self._HBP,
-                    debug=self._debug,
-                )
-            except RuntimeError:
-                print("HeartWyrm: There is already a EWModule running!")
-        elif isinstance(self.module, PyEW.EWModule):
-            print("HeartWyrm: Module already initialized")
+    def initialize_module(self, user_check=True):
+        if user_check:
+            cstr = 'About to initialize the following PyEW.EWModule\n'
+            cstr += f'Default ring ID: {self._default_ring_id:d}\n'
+            cstr += f'Moudle ID: {self._module_id:d}\n'
+            cstr += f'Inst. ID: {self._installation_id:d}\n'
+            cstr += f'Heartbeat: {self._HBP:.1f} sec\n'
+            cstr += f'Debug?: {self._debug}\n'
+            cstr += '\n Do you want to continue? [(y)/n]'
+            ans = input(cstr)
+            if ans.lower().startswith('y') or ans == '':
+                user_continue = True
+            elif ans.lower().startswith('n'):
+                user_continue = False
+            else:
+                print('Invalid input -> exiting')
+                exit()
         else:
-            print(
-                f"HeartWyrm.module is type {type(self.module)}\
-                   -- incompatable!!!"
-            )
-            raise RuntimeError
+            user_continue = True
+        if user_continue:
+            # Initialize PyEarthworm Module
+            if not self.module:
+                try:
+                    self.module = PyEW.EWModule(
+                        self._default_ring_id,
+                        self._module_id,
+                        self._installation_id,
+                        self._HBP,
+                        debug=self._debug,
+                    )
+                except RuntimeError:
+                    print("HeartWyrm: There is already a EWModule running!")
+            elif isinstance(self.module, PyEW.EWModule):
+                print("HeartWyrm: Module already initialized")
+            else:
+                print(
+                    f"HeartWyrm.module is type {type(self.module)}\
+                    -- incompatable!!!"
+                )
+                raise RuntimeError
+        else:
+            print('Canceling module initialization -> exiting')
+            exit()
 
     def add_connection(self, RING_ID, RING_Name):
         """
@@ -184,13 +206,13 @@ class HeartWyrm(TubeWyrm):
                 # If this is the first connection logged, populate conn_info
                 if len(self.conn_info) == 0:
                     self.conn_info = pd.DataFrame(
-                        {"Name": RING_Name, "RING_ID": RING_ID}, index=[0]
+                        {"RING_Name": RING_Name, "RING_ID": RING_ID}, index=[0]
                     )
 
                 # If this is not the first connection, append to conn_info
                 elif len(self.conn_info) > 0:
                     new_conn_info = pd.DataFrame(
-                        {"Name": RING_Name, "RING_ID": RING_ID},
+                        {"RING_Name": RING_Name, "RING_ID": RING_ID},
                         index=[self.conn_info.index[-1] + 1],
                     )
                     self.conn_info = pd.concat(
@@ -214,29 +236,29 @@ class HeartWyrm(TubeWyrm):
     ### PULSE POLYMORPHIC METHOD ###
     ################################
 
-    def pulse(self, conn_in, conn_out):
-        """
-        ~~~ Polymorphic Method ~~~
-        Specifiy input and output ring connection indices
+    # def pulse(self, conn_in, conn_out):
+    #     """
+    #     ~~~ Polymorphic Method ~~~
+    #     Specifiy input and output ring connection indices
         
-        NOTE: This is only designed for one input ring and one
-              output ring at the moment. A broader abstraction
-              would be to pass some defining object for specific
-              elements of self.wyrm_list should get access to
-              the self.module....
+    #     NOTE: This is only designed for one input ring and one
+    #           output ring at the moment. A broader abstraction
+    #           would be to pass some defining object for specific
+    #           elements of self.wyrm_list should get access to
+    #           the self.module....
 
-                    Pulse should have a "module" input for all instances
-                    ... go back to base class....
+    #                 Pulse should have a "module" input for all instances
+    #                 ... go back to base class....
                     
 
-        :: INPUTS ::
-        :param conn_in: [int] index of connection in self.conn_info to
-                        use for data input from Earthworm
-        :param conn_out [int] index of connection in self.conn_info to
-                        use for data output from Earthworm
+    #     :: INPUTS ::
+    #     :param conn_in: [int] index of connection in self.conn_info to
+    #                     use for data input from Earthworm
+    #     :param conn_out [int] index of connection in self.conn_info to
+    #                     use for data output from Earthworm
         
-        """
-
+    #     """
+        
     ######################################
     ### MODULE OPERATION CLASS METHODS ###
     ######################################
@@ -253,7 +275,7 @@ class HeartWyrm(TubeWyrm):
         """
         self.runs = False
 
-    def run(self, conn_in, conn_out):
+    def run(self):
         """
         Module Execution Command
         """
@@ -262,7 +284,7 @@ class HeartWyrm(TubeWyrm):
                 break
             time.sleep(self.pulse_rate)
             # Run Pulse Command inherited from TubeWyrm
-            self.pulse(conn_in = conn_in, conn_out = conn_out)
+            self.pulse()#conn_in = conn_in, conn_out = conn_out)
         # Polite shut-down of module
         self.module.goodbye()
         print("Exiting HeartWyrm Instance")

@@ -9,6 +9,26 @@
     that serve as segments of a Python-side processing line for "pulsed"
     data flow 
 
+Wyrm (ð)
+|
+=-->BuffWyrm - x: access to the flat dictionary of 
+|                 SNCL keyed deques of WaveMsg objects
+|                 housed in a Wave2PyWyrm object
+|              y: access to self.buffer.rttrace objects
+|               Provides WaveMsg data subsampling and buffering, 
+|               and data gap handling
+|              Symbolic Representation: BUFF
+|
+=-->WindowWyrm - x: access to rttrace objects housed in a BuffWyrm object
+|                y: access to self.out_buffer deque of MLWMsg objects
+|               Provides methods and attributes to produce preprocessed,
+|               striding windows for input to ML models.
+|               Provides highly flexible class-method supported pipeline
+|               construction through the use of chained `eval()` statements
+|               on obspy.Trace and numpy.NdArray objects.
+
+
+
 :attribution:
     This module builds on the PyEarthworm (C) 2018 F. Hernandez interface
     between an Earthworm Message Transport system and Python distributed
@@ -22,7 +42,7 @@ import pandas as pd
 import seisbench.models as sbm
 from obspy import UTCDateTime, Stream, Trace
 from obspy.realtime import RtTrace
-from wyrm.core.pyew_msg import WaveMsg
+from wyrm.core.message import WaveMsg
 import fnmatch
 
 
@@ -44,7 +64,6 @@ class BuffWyrm(Wyrm):
         self.sncl_search_code = f'{self.station}.{self.network}.{self.channels}.{self.locations}'
         self.buffer = {}
 
-    
     def __resp__(self):
         rstr = f'Search String: {self.sncl_search_code}\n'
         rstr += f'Max Buff: {self.max_buff_sec:.3f} sec\n' 
@@ -53,7 +72,6 @@ class BuffWyrm(Wyrm):
             rstr += f'{self.buffer[_k]}\n'
         return rstr
          
-
     def _wavemsg2buffer(self, wavemsg):
         """
         Convert an input WaveMsg into an obspy trace and add
@@ -156,51 +174,6 @@ class BuffWyrm(Wyrm):
         y = self.buffer
         return y
 
-
-class ObsWyrm(BuffWyrm):
-    """
-    This Wyrm applies obspy.Trace class methods to copies of
-    rttrace objects contained in a preceding BuffWyrm through
-    iterative application of _tr = eval(f'_tr.{_eval_entry}')
-    calls.
-
-    E.g. 
-
-    eval_list = ["filter('bandpass',freqmin=1, freqmax=45)",
-                 "detrend('linear')",
-                 "resample(100)"]
-
-    resulting in a copy of a rttrace (_tr = rttrace.copy())
-    with the following processing:
-    
-        _tr = rttrace.copy().\
-              filter('bandpass', freqmin=1, freqmax=45).\
-              detrend('linear').\
-              resample(100)
-
-    which is then written out to a WaveMsg
-    """
-    def __init__(self, obspy_eval_list):
-        self.buffer = {}
-        self.eval_list = obspy_eval_list
-
-    def __repr__(self):
-        rstr = '--- eval mockup ---\n'
-        for _e in self.eval_list:
-            rstr += 'tr = eval(_tr.{_e})\n'
-    
-    def pulse(self, x):
-        """
-        Execute the processing chain for this 
-        """
-        y = {}
-        for _k in x.keys()
-            # Create copy of realtime trace from BuffWyrm
-            _tr = x[_k].copy()
-            for _e in self.eval_list:
-                _tr = eval(f'_tr.{_e}')
-            _wavemsg = WaveMsg(_tr)
-            y.update({_k,_tr})
 
 
 
@@ -374,29 +347,7 @@ class SNCLEarWyrm(Wyrm):
         return y
 
 
-class BookWyrm(Wyrm):
-    """
-    This class acts as in indexer and sorter for data arrays
-    keyed by SNCL entries
-    """
-
-    def __init__(self, msg_class=PyEW_WaveMsg):
-        self.msg_type = msg_class
-        self.SNCL_dataframe = pd.DataFrame(columns=['Station','Network','Location','Channel'])
-
-    def reset_SNCL_dataframe(self):
-        self.SNCL_dataframe = pd.DataFrame(columns=['Station','Network','Location','Channel'])
-
-    def append_to_SNCL_dataframe(self, x):
-        for _i, _x in enumerate(x):
-            if isinstance(_x, self.msg_type):
-                self.SNCL_dataframe = pd.concat([self.SNCL_dataframe, pd.DataFrame(_x.SNCL_dict), index=[_i]],axis=1,ignore_index=False)
-
-    def pulse(self, x):
-        """
-        :param x: [list] unsorted list of PyEW_Msg objects
-
-        :return 
+ 
         """
 
 
@@ -449,30 +400,7 @@ class BuffWyrm(Wyrm):
 
 class WindowWyrm(Wyrm):
 
-##########################################
-### ML PROCESSING (GRAND)CHILD CLASSES ###
-##########################################
 
-class StreamMLWyrm(MLWyrm):
-    """
-    ML Prediction module for models where the input (data) and output (pred) arrays
-    consist of windowed time-series with associated metadata
-    """
-    def __init__(self, model, device, ml_input_shape, window_axis, sample_axis, channel_axis):
-        super().__init__(model, device)
-        self.ml_input_shape = ml_input_shape
-        self.window_axis = window_axis
-        self.sample_axis = sample_axis
-        self.channel_axis = channel_axis
-    
-    def __repr__(self):
-        rstr = f'Input Dimensions: {self.ml_input_shape}\n'
-        rstr += f'Window Axis: {self.window_axis}\nSample Axis: {self.sample_axis}\nChannel Axis: {self.channel_axis}\n'
-        rstr += super().__repr__()
-
-        return rstr
-    
-    def _preprocess_data(self, x, )
 
 
 #class ELEPWyrm(MLWyrm):
@@ -480,4 +408,49 @@ class StreamMLWyrm(MLWyrm):
 
 #class OctoWyrm(Wyrm):
 # Placeholder for later development of a Wyrm that wraps PyOcto (Münchmeyer et al., in review)
+
+# class ObsWyrm(BuffWyrm):
+#     """
+#     This Wyrm applies obspy.Trace class methods to copies of
+#     rttrace objects contained in a preceding BuffWyrm through
+#     iterative application of _tr = eval(f'_tr.{_eval_entry}')
+#     calls.
+
+#     E.g. 
+
+#     eval_list = ["filter('bandpass',freqmin=1, freqmax=45)",
+#                  "detrend('linear')",
+#                  "resample(100)"]
+
+#     resulting in a copy of a rttrace (_tr = rttrace.copy())
+#     with the following processing:
+    
+#         _tr = rttrace.copy().\
+#               filter('bandpass', freqmin=1, freqmax=45).\
+#               detrend('linear').\
+#               resample(100)
+
+#     which is then written out to a WaveMsg
+#     """
+#     def __init__(self, obspy_eval_list):
+#         self.buffer = {}
+#         self.eval_list = obspy_eval_list
+
+#     def __repr__(self):
+#         rstr = '--- eval mockup ---\n'
+#         for _e in self.eval_list:
+#             rstr += 'tr = eval(_tr.{_e})\n'
+    
+#     def pulse(self, x):
+#         """
+#         Execute the processing chain for this 
+#         """
+#         y = {}
+#         for _k in x.keys()
+#             # Create copy of realtime trace from BuffWyrm
+#             _tr = x[_k].copy()
+#             for _e in self.eval_list:
+#                 _tr = eval(f'_tr.{_e}')
+#             _wavemsg = WaveMsg(_tr)
+#             y.update({_k,_tr})
 

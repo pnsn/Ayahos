@@ -1,5 +1,5 @@
 """
-:module: wyrm/modules/memphis_ml_preprocessing_example.py
+:module: wyrm/modules/memphis_tnk_piggyback/ml_preprocessing_example.py
 :auth: Nathan T. Stevens
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network

@@ -53,6 +53,7 @@ from collections import deque
 from wyrm.core.wyrm import Wyrm
 from wyrm.core.message import WaveMsg
 from obspy import Stream, read
+import fnmatch
 
 ##########################
 ### RINGWYRM BASECLASS ###
@@ -79,40 +80,101 @@ class RingWyrm(Wyrm):
     :: ATTRIBUTES :: 
     :attrib module: [PyEW.EWModule]
     :attrib conn_index: [int]
-    :attrib max_iter: [int]
     """
 
-    def __init__(self, module, conn_index, max_iter=1e6):
+    def __init__(self, module, conn_info, msg_type='TYPE_TRACEBUFF2', ew_global_msg_code=0, flow_direction='to python'):
         # Run compatability checks on module
         if isinstance(module, PyEW.EWModule):
             self.module = module
         else:
-            print("module must be a PyEW.EWModule object!")
-        # Compatability check for conn_index
-        try:
-            self.conn_index = int(conn_index)
-        except TypeError:
-            print(f"conn_info is not compatable")
-            raise TypeError
+            raise TypeError("module must be a PyEW.EWModule object!")
+
+        # Compatability check for conn_info
+        # Handle Series Input
+        if isinstance(conn_info, pd.Series):
+            if all(x in ['RING_ID','RING_Name'] for x in conn_info.index):
+                self.conn_info = pd.DataFrame(conn_info).T
+            else:
+                raise KeyError('new_conn_info does not contain the required keys')
+        # Handle DataFrame input
+        elif isinstance(conn_info, pd.DataFrame):
+            if len(conn_info) == 1:
+                if all(x in ['RING_ID','RING_Name'] for x in conn_info.columns):
+                    self.conn_info = conn_info
+                else:
+                    raise KeyError('new_conn_info does not contain the required keys')
+            else:
+                raise ValueError('conn_info must resemble a 1-row DataFrame')
+        # Kick TypeError for any other input
+        else:
+            raise TypeError('conn_info must be a Series or 1-row DataFrame (see RingWyrm doc)')
+        # Final bit of formatting for __repr__ purposes
+        if self.conn_info.index.name is not 'index':
+            self.conn_info.index.name = 'index'
+
+        # Initialize dictionary for holding deques
+        self.buffer_dict = {}
+        
+        # Compatability check for flow_direction
+        if flow_direction.lower() in ['from ring','to python','to py','from earthworm','from ew','from c','c2p','ring2py', 'ring2python']:
+            self._from_ring = True
+        elif flow_direction.lower() in ['from python','to ring','from py','to earthworm','to c','to ew', 'p2c','py2ring','python2ring']:
+            self._from_ring = False
+        else:
+            raise ValueError('flow direction type {flow_direction} is not supported. See RingWyrm doc')
+        
+        # Compatability check for message type
+        if isinstance(msg_type, str):
+            if msg_type.lower() == 'tracebuff2':
+                if self._from_ring:
+                    self._msg_method = self.module.
+            
+            elif msg_type.lower() == ['wave']
+
+            elif msg_type.lower() in ['msg','message','string','text']:
+                self._msg_type = 'msg'
+            
+            elf
+            
 
     def __repr__(self):
-        rstr = "----- EW Connection -----\n"
-        rstr += f"Module: {self.module}\n"
-        rstr += f"Conn ID: {self.conn_index}\n"
-        rstr += f"# Buffered: {len(self.queue_dict)}"
+        rstr = f"Module: {self.module}\n"
+        rstr += f"Conn Info: {self.conn_info}\n"
+        rstr += f"No. Buffers: {len(self.buffer_dict)}"
         return rstr
 
-    def _change_conn_index(self, new_index):
-        try:
-            self.conn_index = int(new_index)
-        except ValueError:
-            raise ValueError
+    def change_conn_info(self, new_conn_info):
+        if isinstance(new_conn_info, pd.DataFrame):
+            if len(new_conn_info) == 1:
+                if all(x in ['RING_Name','RING_ID'] for x in new_conn_info.columns):
+                    self.conn_info = new_conn_info
+                else:
+                    raise KeyError('new_conn_info does not contain the required keys')
+            else:
+                raise ValueError('new_conn_info must be a 1-row pandas.DataFrame or pandas.Series')
+        elif isinstance(new_conn_info, pd.Series):
+            if all(x in ['RING_Name','RING_ID'] for x in new_conn_info.index):
+                self.conn_info = pd.DataFrame(new_conn_info).T
+            else:
+                raise KeyError('new_conn_info does not contain the required keys')
 
+    def pulse(self, x):
+        """
+        Pulse produces access to self.queue_dict via
+        y = self.queue_dict
+
+        :: INPUT ::
+        :param x: Unused
+
+        :: OUTPUT ::
+        :return y: variable accessing this RingWyrm's self.queue_dict attribute
+        """
+        y = self.queue_dict
+        return y
             
 #########################
 ### RINGWYRM CHILDREN ###
 #########################
-        
 
 class Wave2PyWyrm(RingWyrm):
     """
@@ -175,52 +237,40 @@ class Wave2PyWyrm(RingWyrm):
         """
         # Use RingWyrm baseclass initialization
         super().__init__(module, conn_index)
-        # self.module
-        # self.
-        # Run compatability checks & formatting on stations
-        if isinstance(stations, (str, int)):
-            self.stations = str(stations)
-        elif isinstance(stations, (list, deque)):
-            if all(isinstance(_sta, (str, int)) for _sta in stations):
-                self.stations = [str(_sta) for _sta in stations]
-        else:
-            raise TypeError
-        
-        # Run compatability checks & formatting on networks
-        if isinstance(networks, (str, int)):
-            self.networks = str(networks)
-        elif isinstance(networks, (list, deque)):
-            if all(isinstance(_net, (str, int)) for _net in networks):
-                self.networks = [str(_net) for _net in networks]
-        else:
-            raise TypeError
-        
-        # Run compatability checks & formatting on channels
-        if isinstance(channels, (str, int)):
-            self.channels = str(channels)
-        elif isinstance(channels, (list, deque)):
-            if all(isinstance(_cha, (str, int)) for _cha in channels):
-                self.channels = [str(_cha) for _cha in channels]
-        else:
-            raise TypeError
-        
-        # Run compatability checks & formatting on locations
-        if isinstance(locations, (str, int)):
-            self.locations = str(locations)
-        elif isinstance(locations, (list, deque)):
-            if all(isinstance(_loc, (str, int)) for _loc in locations):
-                self.locations = [str(_loc) for _loc in locations]
-        else:
-            raise TypeError
-        
-        # Compatability check for max_iter
+        self.stations = None
+        self.networks = None
+        self.channels = None
+        self.locations = None
+
+        # Conduct compatability checks on SNCL filtering inputs
+        iter_tuples = [('stations', self.stations, stations),
+                       ('networks', self.networks, networks),
+                       ('channels', self.channels, channels),
+                       ('locations', self.locations, locations)]
+        for _name, _selfx, _inx in iter_tuples:
+            if isinstance(_inx, (str, int)):
+                _selfx = str(_inx)
+            elif isinstance(_inx, (list, deque)):
+                if all(isinstance(_sta, (str, int)) for _sta in _inx):
+                    _selfx = [str(_sta) for _sta in _inx]
+                else:
+                    _selfx = [str(_sta) for _sta in _inx if isinstance(_sta, (str, int))]
+                    if len(_selfx) == 1:
+                        _selfx = _selfx[0]
+                    elif len(_selfx) == 0:
+                        _selfx = None
+                    UserWarning(f'{len(_selfx)} of {len(_inx)} passed validity checks')
+            else:
+                raise TypeError(f'Invalid input type for {_name}. Accepted types: str, int, list, deque')
+       
+        # Compatability check for _max_iter
         try:
             self._max_iter = int(max_iter)
         except TypeError:
             print('max_iter must be int-like!')
             raise TypeError
         
-        # Compatability check for max_staleness
+        # Compatability check for _max_staleness
         try:
             self._max_staleness = int(max_staleness)
         except TypeError:
@@ -234,12 +284,11 @@ class Wave2PyWyrm(RingWyrm):
         """
         rstr = super().__repr__()
         rstr += f'Max Iter: {self._max_iter}\n'
-        rstr += f'Max Stale: {self._max_staleness}\n'
+        rstr += f'Max Staleness: {self._max_staleness}\n'
         rstr += f'STA Filt: {self.stations}\n'
         rstr += f'NET Filt: {self.networks}\n'
         rstr += f'CHA Filt: {self.channels}\n'
         rstr += f'LOC Filt: {self.locations}\n'
-        rstr += 
         return rstr
     
     def _get_wave_from_ring(self):
@@ -255,7 +304,6 @@ class Wave2PyWyrm(RingWyrm):
                             - if an empty wave message is received
                      [True]
                             - if a wave message is received and fails filtering
-
         """
         wave = self.module.get_wave(self.conn_index)
         # If wave message is empty, return False
@@ -314,56 +362,65 @@ class Wave2PyWyrm(RingWyrm):
                 msg = True            
             return msg
 
-    def _add_msg_to_queue_dict(self, wavemsg):
+    def _add_msg_to_buffer_dict(self, wavemsg):
         """
-        Add a WaveMsg to the queue_dict, creating a new {code: WaveMsg}
-        entry if the WaveMsg SNCL code is not in the queue_dict keys,
+        Add a WaveMsg to the buffer_dict, creating a new entry
+        {'S.N.C.L': (deque([wavemsg]), staleness_index)}
+        if the WaveMsg SNCL code is not in the buffer_dict keys,
         and left-appending the WaveMsg to an active deque keyed to
-        code if it already exists. 
-        """
+        code if it already exists and resets staleness_index = 0
 
+        :: INPUT ::
+        :param wavemsg: [wyrm.core.message.WaveMsg] WaveMsg formatted
+                        tracebuff2 message contents
+    
+        :: UPDATE ::
+        :attrib buffer_dict: -- See above.
+                        
+        :: OUTPUT ::
+        :None:
+        """
         # If the SNCL code of the WaveMsg is new, create a new dict entry
-        if wavemsg.code not in self.queue_dict.keys():
+        if wavemsg.code not in self.buffer_dict.keys():
             new_member = {wavemsg.code: (deque([wavemsg]), 0)}
-            self.queue_dict.update(new_member)
+            self.buffer_dict.update(new_member)
             # And return True state
             return wavemsg.code
         # If the SNCL code of the WaveMsg is already known
-        elif wavemsg.code in self.queue_dict.keys():
+        elif wavemsg.code in self.buffer_dict.keys():
             # Left append the message to the existing queue
             new_message = deque([wavemsg])
-            self.queue_dict[wavemsg.code][0].appendleft(new_message)
+            self.buffer_dict[wavemsg.code][0].appendleft(new_message)
             # reset "staleness index"
-            self.queue_dict[wavemsg.code][1] = 0
+            self.buffer_dict[wavemsg.code][1] = 0
             return wavemsg.code
         # If something unexpected happens, raise KeyError
         else:
-            print('Something went wrong with matching keys')
-            raise KeyError
+            raise KeyError('Something went wrong with matching keys')
 
     def _update_staleness(self,updated_codes=[]):
         """
         Increase the "staleness index" of each SNCL keyed
-        entry in self.queue_dict by 1 that is not present
+        entry in self.buffer_dict by 1 that is not present
         in the provided updated_codes list
         """
-        # For each _k(ey) in queue_dict
-        for _k in self.queue_dict.keys():
+        # For each _k(ey) in buffer_dict
+        for _k in self.buffer_dict.keys():
             # If the key is not in the updated_codes list
             if _k not in updated_codes:
                 # If max staleness is met
-                if self.queue_dict[_k][1] >= self._max_staleness:
+                if self.buffer_dict[_k][1] >= self._max_staleness:
                     # Determine if there are any data in the queue
-                    nele = len(self.queue_dict[_k][0])
+                    nele = len(self.buffer_dict[_k][0])
                     # If there are data, pop the last entry in the queue
                     if nele > 0:
-                        self.queue_dict[_k][0].pop();
+                        self.buffer_dict[_k][0].pop();
                     # If there are no data in the queue, pop the entire SNCL keyed entry
                     else:
-                        self.queue_dict.pop(_k);
+                        self.buffer_dict.pop(_k);
                 # Otherwise increase that entry's staleness index by 1
                 else:
-                    self.queue_dict[_k][1] += 1
+                    self.buffer_dict[_k][1] += 1
         
 
     def pulse(self, x=None):
@@ -384,38 +441,39 @@ class Wave2PyWyrm(RingWyrm):
         :: OUTPUT ::
         :return y: [list] list of 
         """
-        # Provide option for passing an alternative index
-        if x is not None and isinstance(x, int):
-            idx = x
-        else:
-            idx = self.conn_index
-        # Create holder for codes of updated SNCL queues
+        # Create holder for codes of updated SNCL buffers
         updated_codes = []
+        # Start large maximum iteration count for-loop
         for _ in range(self._max_iter):
-            wave = self._get_wave_from_ring()
+            # Get a single wave message from the ring
+            wavemsg = self._get_wave_from_ring()
             # If the wave message is indeed a WaveMsg
-            if isinstance(wave, WaveMsg):
-                # Append valid message to queue_dict
-                refreshed_code = self._add_msg_to_queue_dict(wave)
-                # If code was not already in 
-                if refreshed_code  not in updated_codes:
-                    updated_codes.append(refreshed_code)
+            if isinstance(wavemsg, WaveMsg):
+                # Attempt to add message to buffer_dict if it matches SNCL filters
+                updated_code = self._add_msg_to_buffer_dict(wavemsg)
+                # If code was not already in the updated SNCL codes
+                if updated_code  not in updated_codes:
+                    # Add new code to updated_codes
+                    updated_codes.append(updated_code)
             
             # If the wave message is carrying a continue/break Bool code
-            elif isinstance(wave, bool):
-                if wave:
+            elif isinstance(wavemsg, bool):
+                # If wavemsg is True, this signals a valid message that did not
+                # meet SNCL filtering specifications
+                if wavemsg:
                     pass
                 # If wave is False, this signals an empty message. 
-                elif not wave:
+                elif not wavemsg:
                     break
+            
             else:
-                raise RuntimeError
+                raise RuntimeError('Something unexpected happened when parsing a wave message from Earthworm...')
         
         # Increase staleness index and clear out overly stale data
         self._update_staleness(updated_codes)
 
-        # Pass self.queue_dict as output
-        y = self.queue_dict
+        # Pass self.buffer_dict as output
+        y = super().pulse(x)
         return y
 
 
@@ -444,6 +502,7 @@ class Py2WaveWyrm(RingWyrm):
         rstr = super().__repr__()
         rstr += f'Max Buffer: {self._max_msg_buff}\n'
         return rstr
+
 
     def pulse(self, x):
         """

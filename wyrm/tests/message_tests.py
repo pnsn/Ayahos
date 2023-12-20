@@ -6,116 +6,181 @@
 :license: AGPL-3.0
 
 :attribution:
-    This testing suite is based on the structure of the 
+    This testing suite is based on the structure of the
     obspy.realtime.rttrace test suite.
 """
 
 import pytest
-from wyrm.core.message import PEWMsg
+from wyrm.core.message import _BaseMsg, _SNCLMsg, WaveMsg, EW_GLOBAL_DICT
+import numpy as np
 
 
-class Test_PEWMsg:
+class Test__BaseMsg:
     """
-    Test suite for wyrm.classes.pyew_msg.PEWMsg
+    Test suite for wyrm.core.message._BaseMsg
     """
+
     def test_init(self):
-        """
-        Thest the __init__ method of the PyEW base class
+        # Test default settings
+        assert _BaseMsg() == _BaseMsg(mtype="TYPE_TRACEBUF2", mcode=19)
 
-        :: TODO ::
-        Include max character limits on __init__ and in tests
-        """
-        # Test None argument initialization
-        msg = PEWMsg()
-        assert msg.code == '...--'
-        assert msg.station == ''
-        assert msg.network == ''
-        assert msg.channel == ''
-        assert msg.location == '--'
+        # Test compatability check for message-type (mtype)
+        with pytest.raises(TypeError):
+            for x in [1, -1.0, True, None]:
+                _BaseMsg(mtype=x)
+        with pytest.raises(SyntaxError):
+            _BaseMsg(mtype="TRACEBUF2")
 
-        # Test station approved input types
-        for _x in ['abc', 1000]:
-            # Initialize
-            msg = PEWMsg(station=_x)
-            # Check attribute Types
-            assert isinstance(msg.station, str)
-            assert isinstance(msg.code, str)
-            # Check for expected attribute contents
-            assert msg.station == str(_x)  
-            assert msg.code == f'{str(_x)}...--'      
-        # Test station unapproved input type error reporting
-        for _x in [100., False, int]:
-            with pytest.raises(TypeError):
-                PEWMsg(station=_x)
-        
-        # Test network approved input types
-        for _x in ['abc', 1000]:
-            # Generate message
-            msg = PEWMsg(network=_x)
-            # Check attribute Types
-            assert isinstance(msg.network, str)
-            assert isinstance(msg.code, str)
-            # Check for expected attribute contents
-            assert msg.network == str(_x)
-            assert msg.code == f'.{str(_x)}..--'   
-        # Test network unapproved input type error reporting
-        for _x in [100., False, int]:
-            with pytest.raises(TypeError):
-                PEWMsg(station=_x)
-        
-        # Test channel approved input types
-        for _x in ['abc', 100]:
-            msg = PEWMsg(channel=_x)
-            assert isinstance(msg.channel, str)
-            assert isinstance(msg.code, str)
-            assert msg.channel == str(_x)
-            assert msg.code == f'..{str(_x)}.--'
-        # Test channel unapproved types
-        for _x in [100., False, int]:
-            with pytest.raises(TypeError):
-                PEWMsg(channel=_x)
-        
-        # Test location approved types
-        for _x in ['abc', 100]:
-            # Initialize message object
-            msg = PEWMsg(location=_x)
-            # Check expected attribute types
-            assert isinstance(msg.code, str)
-            assert isinstance(msg.location, str)
-            # Check expected attribute contents
-            assert msg.code == f'...{str(_x)}'
-            assert msg.location == str(_x)
-        # Test location behaviors for arbitrary whitespace input
-        for _x in ['', ' ', '        ']:
-            msg = PEWMsg(location=_x)
-            assert isinstance(msg.location, str)
-            assert isinstance(msg.code, str)
-            assert msg.location == '--'
-            assert msg.code == '...--'
-        # Test location unapproved types
-        for _x in [100., False, int]:
-            with pytest.raises(TypeError):
-                PEWMsg(channel=_x)
-        
-    def test_dtype_conversions(self):
-        msg = PEWMsg()
-        # Assert approved argument inputs
-        for _x, _y in [('i2', np.int16),('i4', np.int32), ('i8', np.int64), ('s4', np.float32)]:
-            assert msg.ew2np_dtype(_x) == _y
-            assert msg.np2ew_dtype(_y) == _x
-        # Check KeyError assertions on ew2np_dtype
-        with pytest.raises(ValueError):
-            for _x in ['d','f', 1, True]:
-                msg.ew2np_dtype(_x)
-        # Check TypeError assertions on ew2np_dtype
+        # Test compatability check for message-code (mcode)
+        # TypeError tests
+        with pytest.raises(TypeError):
+            for x in ["a", -1.0, True, None]:
+                _BaseMsg(mcode=x)
+        # value out of range SyntaxError
+        with pytest.raises(SyntaxError):
+            for x in [-1, 256, 1000, np.inf, -np.inf, np.nan]:
+                _BaseMsg(mcode=x)
+        # Values not in earthworm_global.d
+        for _i in range(256):
+            # Raise SyntaxError for values 0-99
+            if _i not in EW_GLOBAL_DICT.values():
+                if _i < 100:
+                    with pytest.raises(SyntaxError):
+                        _BaseMsg(mcode=_i)
+                # Raise Warning for values 100-255
+                elif _i >= 100:
+                    with pytest.raises(Warning):
+                        _BaseMsg(mcode=_i)
 
-            
+        # Test matches for all type:code pairs from earthworm_global.d
+        for _i, _k in enumerate(EW_GLOBAL_DICT.keys()):
+            for _j, _v in enumerate(EW_GLOBAL_DICT.values()):
+                # If coming from the same indices,
+                # assert match yields valid _BaseMsg
+                if _i == _j:
+                    assert isinstance(_BaseMsg(mtype=_k, mcode=_v), _BaseMsg)
+                    # Do SyntaxError test on lowercase mtype inputs
+                    with pytest.raises(SyntaxError):
+                        _BaseMsg(mtype=_k.lower(), mcode=_v)
+                # Otherwise ensure that _BaseMsg returns SyntaxError
+                else:
+                    with pytest.raises(SyntaxError):
+                        _BaseMsg(mtype=_k, mcode=_v)
+
+    def test_repr(self):
+        msg = _BaseMsg()
+        assert msg.__repr__() == "MTYPE: TYPE_TRACEBUF2\nMCODE: 19\n"
+
+
+class Test__SNCLMsg:
+    """
+    Test suite for wyrm.core.message._SNCLMsg
+    """
+
+    def test_init(self):
+        msg = _SNCLMsg()
+        # Test None-args version
+        assert msg == _SNCLMsg(
+            station=None,
+            network=None,
+            channel=None,
+            location=None,
+            mtype="TYPE_TRACEBUF2",
+            mcode=19,
+        )
+        assert msg.station == ""
+        assert msg.location == "--"
+        assert msg.network == ""
+        assert msg.channel == ""
+        assert msg.sncl == "...--"
+
+        # Test Station behavior
+        test_sta_codes = [
+            "",
+            "G",
+            "GN",
+            "GNW",
+            "GNW2",
+            "GNW20",
+            1,
+            12,
+            123,
+            1234,
+            12345,
+        ]
+        for _x in test_sta_codes:
+            if len(_x) > 4:
+                _y = _x[:4]
+            else:
+                _y = _x
+            assert _SNCLMsg(station=_x).station == _y
+            assert _SNCLMsg(station=_x).sncl == f"{_y}...--"
+
+        # Test Network behavior
+        for _x in ["", "U", "UW", "UWM", 1, 12, 123]:
+            if len(_x) > 2:
+                _y = _x[:2]
+            else:
+                _y = _x
+            assert _SNCLMsg(network=_x).network == _y
+            assert _SNCLMsg(network=_x).sncl == f".{_y}..--"
+
+        # Test Channel behavior
+        for _x in ["", "B", "BH", "BHN", "BHN0", 1, 12, 123, 1234]:
+            if len(_x) > 3:
+                _y = _x[:3]
+            else:
+                _y = _x
+            assert _SNCLMsg(channel=_x).channel == _y
+            assert _SNCLMsg(channel=_x).sncl == f"..{_y}.--"
+
+        # Test Location behavior
+        _y = "01"
+        for _x in ["1", 1, "01", "001", 1001, 1101.1]:
+            assert _SNCLMsg(location=_x).location == _y
+            assert _SNCLMsg(location=_x).sncl == f"...{_y}"
+
+        for _x in ["", " ", "  ", "   "]:
+            assert _SNCLMsg(station=_x).location == "--"
+            assert _SNCLMsg(station=_x).sncl == "...--"
+
+    def test_repr():
+        rstr1 = _SNCLMsg().__repr__()
+        rstr2 = _SNCLMsg(
+            station="GNW", network="UW", channel="BHN", location=""
+        ).__repr__()
+        assert rstr1 == "MTYPE: TYPE_TRACEBUF2\nMCODE: 19\n...--"
+        assert rstr2 == "MTYPE: TYPE_TRACEBUF2\nMCODE: 19\nGNW.UW.BHN.--"
+
 
 class Test_WaveMsg:
-    """
-    Test suite for wyrm.classes.pyew_msg.WaveMsg
-    """
-    def test_init(self)
-        msg = PyEW_WaveMsg()
-        assert len(msg) == 0:
-            
+    def test_init():
+        # Test None input
+        msg0 = WaveMsg()
+        msg1 = WaveMsg(input=None)
+        assert msg1 == msg0
+        # Test wave input
+        wave0 = {
+            "station": 'GNW',
+            "network": 'UW',
+            "channel": 'BHN',
+            "location": '--',
+            "nsamp": 100,
+            "samprate": 100,
+            "startt": 0.0,
+            "endt": 1.0,
+            "datatype": 's4',
+            "data": np.random.rand(100).astype(np.float32),
+        }
+        msg2 = WaveMsg(wave0)
+        assert msg2.station == wave0['station']
+        assert msg2.network == wave0['network']
+        assert msg2.channel == wave0['channel']
+        assert msg2.location == wave0['location']
+        assert msg2.startt == wave0['startt']
+        assert msg2.endt == wave0['endt']
+        assert msg2.nsamp == wave0['nsamp']
+        assert msg2.samprate == wave0['samprate']
+        assert msg2.datatype == wave0['datatype']
+        assert msg2.data == wave0['data']
+        

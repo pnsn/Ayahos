@@ -72,6 +72,16 @@ class Test__BaseMsg:
         assert msg.__repr__() == "MTYPE: TYPE_TRACEBUF2\nMCODE: 19\n"
 
 
+
+
+
+
+
+
+
+
+
+
 class Test__SNCLMsg:
     """
     Test suite for wyrm.core.message._SNCLMsg
@@ -170,7 +180,7 @@ class Test_WaveMsg:
             "startt": 0.0,
             "endt": 1.0,
             "datatype": 's4',
-            "data": np.random.rand(100).astype(np.float32),
+            "data": np.random.rand(100).astype(np.float32)
         }
         msg2 = WaveMsg(wave0)
         assert msg2.station == wave0['station']

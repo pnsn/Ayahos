@@ -109,454 +109,575 @@
 
 """
 import numpy as np
-from obspy import Stream, Trace, UTCDateTime
+from obspy import Trace
 from obspy.realtime import RtTrace
-import torch
+import PyEW
 
 # CREATE GLOBAL VARIABLES FOR MESSAGE TYPES FOR NOW..
 # TODO: HAVE SOME FUNCTIONALITY TO CROSS-REFERENCE WITH earthworm_global.d AND
 #       INSTALLATION SPECIFIC MESSAGE CODE (earthworm_local.d?) BEFORE STARTUP
-EW_GLOBAL_MESSAGE_CODES = [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11,\
-                           12, 13, 14, 15, 17, 18, 19, 20, 21, 22,\
-                           23, 24, 25, 26, 27, 28, 29, 30, 31, 32,\
-                           33, 34, 35, 36, 94, 95, 96, 97, 98]
+EW_GLOBAL_MESSAGE_CODES = [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    94,
+    95,
+    96,
+    97,
+    98,
+]
 
-EW_GLOBAL_MESSAGE_TYPES = ['TYPE_WILDCARD','TYPE_ADBUF','TYPE_ERROR','TYPE_HEARTBEAT',\
-                           'TYPE_TRACE2_COMP_UA','TYPE_NANOBUF','TYPE_ACK','TYPE_PICK_SCNL',\
-                           'TYPE_CODA_SCNL','TYPE_PICK2K','TYPE_CODA2K','TYPE_PICK2','TYPE_CODA2','TYPE_HYP2000ARC',\
-                           'TYPE_H71SUM2K','TYPE_HINBARC','TYPE_H71SUM','TYPE_TRACEBUF2',\
-                           'TYPE_TRACEBUF','TYPE_LPTRIG','TYPE_CUBIC','TYPE_CARLSTATRIG',\
-                           'TYPE_TRIGLIST','TYPE_TRIGLIST2K','TYPE_TRACE_COMP_UA','TYPE_STRONGMOTION',\
-                           'TYPE_MAGNITUDE','TYPE_STRONGMOTIONII','TYPE_LOC_GLOBAL','TYPE_LPTRIG_SCNL',\
-                           'TYPE_CARLSTATRIG_SCNL','TYPE_TRIGLIST_SCNL',
-                           'TYPE_TD_AMP','TYPE_MSEED','TYPE_NOMAGNITUDE','TYPE_NAMED_EVENT',\
-                           'TYPE_HYPOTWC','TYPE_PICK_GLOBAL','TYPE_PICKTWC','TYPE_ALARM']
+EW_GLOBAL_MESSAGE_TYPES = [
+    "TYPE_WILDCARD",
+    "TYPE_ADBUF",
+    "TYPE_ERROR",
+    "TYPE_HEARTBEAT",
+    "TYPE_TRACE2_COMP_UA",
+    "TYPE_NANOBUF",
+    "TYPE_ACK",
+    "TYPE_PICK_SCNL",
+    "TYPE_CODA_SCNL",
+    "TYPE_PICK2K",
+    "TYPE_CODA2K",
+    "TYPE_PICK2",
+    "TYPE_CODA2",
+    "TYPE_HYP2000ARC",
+    "TYPE_H71SUM2K",
+    "TYPE_HINBARC",
+    "TYPE_H71SUM",
+    "TYPE_TRACEBUF2",
+    "TYPE_TRACEBUF",
+    "TYPE_LPTRIG",
+    "TYPE_CUBIC",
+    "TYPE_CARLSTATRIG",
+    "TYPE_TRIGLIST",
+    "TYPE_TRIGLIST2K",
+    "TYPE_TRACE_COMP_UA",
+    "TYPE_STRONGMOTION",
+    "TYPE_MAGNITUDE",
+    "TYPE_STRONGMOTIONII",
+    "TYPE_LOC_GLOBAL",
+    "TYPE_LPTRIG_SCNL",
+    "TYPE_CARLSTATRIG_SCNL",
+    "TYPE_TRIGLIST_SCNL",
+    "TYPE_TD_AMP",
+    "TYPE_MSEED",
+    "TYPE_NOMAGNITUDE",
+    "TYPE_NAMED_EVENT",
+    "TYPE_HYPOTWC",
+    "TYPE_PICK_GLOBAL",
+    "TYPE_PICKTWC",
+    "TYPE_ALARM",
+]
+# Form two-way look-up dictionaries
+EW_GLOBAL_TC = dict(zip(EW_GLOBAL_MESSAGE_TYPES, EW_GLOBAL_MESSAGE_CODES))
+EW_GLOBAL_CT = dict(zip(EW_GLOBAL_MESSAGE_CODES, EW_GLOBAL_MESSAGE_TYPES))
 
-EW_GLOBAL_DICT = dict(zip(EW_GLOBAL_MESSAGE_TYPES, EW_GLOBAL_MESSAGE_CODES))
 
-# NOTE: I've seen both 's4' and 'f4' show up in PyEarthworm documentation. Include both for redundance
+# NOTE: I've seen both 's4' and 'f4' show up in PyEarthworm documentation.
+#       Include both for redundance
 NPDTYPES = [np.int16, np.int32, np.float32, np.float32]
-EWDTYPES = ['i2','i4','s4','f4']
+EWDTYPES = ["i2", "i4", "s4", "f4"]
+# Form two-way look-up dictionaries
 NP2EWDTYPES = dict(zip(NPDTYPES, EWDTYPES))
 EW2NPDTYPES = dict(zip(EWDTYPES, NPDTYPES))
 
 
-class _BaseMsg:
+class _BaseMsg(object):
     """
-    Message fundamental BaseClass to provide richer descriptions and handling of PyEW message
-    objects in the Python-side
+    Message fundamental BaseClass that provides message type labels for
+    Earthworm message formats on the python side of Wyrm / PyEarthworm
+    :: ATTRIBUTES ::
+    :attrib mtype: [str] TYPE_* Earthworm Message Designation
+                    must be all UPPER
+    :attrib mcode: [int] in [0, 255] Message code.
+                  if mcode in [0,99], must conform to earthworm_global.d
+                  conventions - excerpt included in this module's help
+                  documentation.
     """
-    def __init__(self, mtype='TYPE_TRACEBUF2', mcode=19):
-        # Compatability check message-type definition
-        if isinstance(mtype, str):
-            if mtype.upper() == mtype:
-                self._mtype = mtype
-            else:
-                raise SyntaxError('"mtype" must be all uppercase to match Earthworm syntax')
-        else:
-            raise TypeError('"mtype" must be a string')
-        if isinstance(mcode, (int, float)):
-            if 0 <= int(mcode) <= 255:
-                self._mcode = int(mcode)
-            else:
-                raise SyntaxError('"mcode" value outside [0-255] is illegal')
-        else:
-            raise TypeError('"code" must be an int-like number')
-        # Validate type:code combination
-        # Cross reference with earthworm_global.d
-        if 0 <= self._mcode < 100:
-            # First check if the code is a valid value
-            if self._mcode not in EW_GLOBAL_MESSAGE_CODES:
-                raise SyntaxError('"mcode" value is not defined in earthworm_global.d')
-            if self._mtype not in EW_GLOBAL_MESSAGE_TYPES:
-                raise SyntaxError('"mtype" value is not defined in earthworm_global.d')
-            # Then see if it matches with the TYPE_* name
-            if self._mcode in EW_GLOBAL_MESSAGE_CODES and self._mtype in EW_GLOBAL_MESSAGE_TYPES:
-                if EW_GLOBAL_DICT[self._mtype] == self._mcode:
+
+    def __init__(self, mtype="TYPE_TRACEBUF2", mcode=19):
+        self.mtype = mtype
+        self.mcode = mcode
+        self._validate_basemsg()
+        super().__init__()
+
+    def _validate_basemsg(self):
+        # Validate mcode type and value
+        if not isinstance(self.mcode, (int, type(None))):
+            raise TypeError("mcode must be int or None type")
+        # If int - run cross-checks against earthworm_global.d
+        elif isinstance(self.mcode, int):
+            # But not in range
+            if not 0 <= self.mcode <= 255:
+                raise ValueError("mcode must be an int in [0,255]")
+            # Otherwise, if in earthworm_global.d range
+            elif 0 <= self.mcode <= 99:
+                # Error if self.mcode in [0,99] and invalid
+                if self.mcode not in EW_GLOBAL_MESSAGE_CODES:
+                    raise ValueError(
+                        "mcode falls into earthworm_global.d\
+                                      reserved range [0,99] but is not a\
+                                      valid value"
+                    )
+                # Pass if self.mcode in [0,99] and valid
+                else:
                     pass
-                else:
-                    raise SyntaxError('earthworm_global.d Type:Code mismatch!')
-
-        ## TODO: Eventually include a way to read installation-specific message formats for validation
-        else:
-            Warning(f'"mcode" value {self._mcode} falls into the Installation-specific range of message codes. Proceed at your own risk')
-        
-
-        
-        
-    def __repr__(self):
-        rstr = f'MTYPE: {self._mtype}\n'
-        rstr += f'MCODE: {self._mcode}\n'
-        return rstr
-
-
-class _SNCLMsg(_BaseMsg):
-    """
-    SNCL keyed message
-    :: ATTRIBUTES ::
-    :attrib _mtype: [str] EW message TYPE (_BaseMsg super())
-    :attrib _mcode: [int] EW message code (_BaseMsg super())
-    :attrib station: [4-string] station code
-    :attrib network: [2-string] network code
-    :attrib channel: [3-string] channel code
-    :attrib location: [2-string] location code. No code = '--'
-    :attrib sncl: [string] station.network.channel.location code
-    """
-    def __init__(self, station=None, network=None, channel=None, location=None, mtype='TYPE_TRACEBUF2', mcode=19):
-        super().__init__(mtype=mtype, mcode=mcode)
-        if station is None:
-            self.station = ''
-        elif isinstance(station, (str, int)):
-            self.station = str(station)
-        else:
-            raise TypeError
-        if network is None:
-            self.network = ''
-        elif isinstance(network, (int, str)):
-            self.network = str(network)
-        else:
-            raise TypeError
-        if channel is None:
-            self.channel = ''
-        elif isinstance(channel, (int, str)):
-            self.channel = str(channel)
-        else:
-            raise TypeError
-        if location is None:
-            self.location = '--'
-        elif isinstance(location, (int, float)):
-            if len(str(int(location))) > 2:
-                print(f'location code is too long {location}, truncating to the trailing 2 integers')
-                self.location = str(int(location))[-2:]
+            # Pass if self.mcode in [100, 255]
             else:
-                self.location = f'{int(location):02d}'
-        elif isinstance(location, str):
-            if len(location) == 2:
-                self.location = location
-            if len(location) == 1 and location != ' ':
-                self.location = '0'+location
-        
-        if len(self.station) > 4:
-            self.station = self.station[:4]
-        if len(self.network) > 2:
-            self.network = self.network[:2]
-        if len(self.channel) > 3:
-            self.channel = self.channel[:3]
-        if len(self.location) > 2:
-            self.location = self.location[:2]
-        if self.location in ['',' ','  ']:
-            self.location='--'
-
-        self.sncl = f'{self.station}.{self.network}.{self.channel}.{self.location}'
-    
-    def __repr__(self):
-        rstr = super().__repr__()
-        rstr += self.sncl
-        return rstr
-
-
-class WaveMsg(_SNCLMsg):
-    """
-    Message Class Built on top of the TYPE_TRACEBUF2 Earthworm message type
-    and the PyEarthworm EWModule.get_wave() / .put_wave() syntax to streamline
-    handling of 1-C waveform data and metadata between Python and Earthworm
-    memory rings.
-
-    This class provides attributes for ingesting traces with gaps (i.e.,
-    trace.data as MaskedArray's) and options for altering the fill_value
-    prior to generating a `wave` dictionary for use with .get_/.put_wave() 
-
-    :: ATTRIBUTES ::
-    :attrib _mtype: [str] TYPE_TRACEBUF2 (super from _Base_Msg)
-    :attrib _mcode: [int] 19 (super from _Base_Msg) 
-    :attrib station: [4-string] station code
-    :attrib network: [2-string] network code
-    :attrib channel: [3-string] band/instrument/component SEED code (channel code)
-    :attrib location: [2-string] location code (no-code = '--')
-    :attrib nsamp: [int] number of samples
-    :attrib samprate: [numpy.float32] sampling rate in Hz (samples per second)
-    :attrib startt: [np.float32] epoch start time (seconds since 1970-01-01:00:00:00)
-    :attrib endt: [np.float32] epoch end time (seconds since 1970-01-01:00:00:00)
-    :attrib datatype: [str] Earthworm / C data-type name
-    :attrib data: [(n, ) numpy.ndarray] data
-    :attrib mask_array: [None] or [(n, ) numpy.ndarray of bool] Bool mask for self.data
-    :attrib fill_value: [self.datatype] value to fill entries in self.data[self.mask_array]
-                    when exporting Trace or `wave` message representations of this message
-    :attrib torchtensorflag: [bool] Are the data in this msg actually a flattened representation
-                    of a 2-dimensional tensor?
-
-    """
-
-    def __init__(self, input=None):
-        # Initialize baseclass defs with hard-set for tracebuf2   
-        super().__init__(mtype='TYPE_TRACEBUF2', mcode=19)      
-        self.nsamp = np.int32(0)
-        self.samprate = np.float32(1.)
-        self.startt = np.float32(0.)
-        self.endt = np.float32(0.)
-        self.datatype = 's4'
-        self.data = np.array([], dtype=EW2NPDTYPES[self.datatype])
-        self.mask_array = np.array([], dtype=bool)
-        self.fill_value = 0
-        # TODO: Move this to separate class
-        # self.torchtensorflag = False
-
-        # If input is None-type, return an empty WaveMsg object with the above defaults
-        if input is None:
+                pass
+        # If None
+        else:
             pass
-        # Otherwise, run compatability checks for trace-like inputs
-        elif isinstance(input, (Trace, RtTrace)):
-            self._trace2msg(input)
-        elif isinstance(input, Stream):
-            if len(input) == 1:
-                if isinstance(input[0], (Trace, RtTrace)):
-                    self._trace2msg(input[0])
-                else:
-                    raise TypeError(f'First entry of Stream "input" is not type Trace or RtTrace!')
+
+        # Validation on mtype type and syntax sniff-tests
+        if not isinstance(self.mtype, (str, type(None))):
+            raise TypeError("mtype must be str or None type")
+        # If str
+        elif isinstance(self.mtype, str):
+            # Sniff-test on all-caps syntax
+            if self.mtype.upper() != self.mtype:
+                raise SyntaxError("mtype must be all-caps")
+            # If sniff test passed, continue
             else:
-                raise TypeError(f'"input" of type obspy.Stream must only contain 1 trace. This contains {len(input)} elements')
-        
-        # Handle PyEW `wave` dictionary objects
-        elif isinstance(input, dict):
-            if self._validate_wave(input):
-                self._wave2msg(input)
-        else:
-            raise TypeError('"input" type is invalid. Accepted classes: None-type, obspy Trace (Trace, RtTrace), PyEW wave (dict)')
-
-    def __repr__(self):
-        rstr = super().__repr__()
-        rstr += f' | {self.startt:.3f} - {self.endt:.3f} | '
-        rstr += f'{self.samprate} Hz | {self.nsamp} samples | {self.datatype}\n'
-        return rstr
-
-    def _trace2msg(self, trace):
-        """
-        PRIVATE METHOD
-
-        Supporting method for ingesting obspy Trace-like objects
-        that may contain gaps
-
-        :: INPUT ::
-        :param trace: [obspy.Trace] or [obspy.realtime.RtTrace]
-
-        :: UPDATE ::
-        :attrib msg_data_mask: Update if input contains a MaskedArray with 
-                    the mask boolean vector from trace.data.mask
-        :attrib fill_value: Update if input contains a Masked array with the
-                    default fill value from trace.data.fill_value
-        :attrib msg: 
-        """
-        if not isinstance(trace, (Trace, RtTrace)):
-            raise TypeError('"trace" input is an invalid class. Accepted classes: obspy.Trace, obspy.realtime.RtTrace')
-        else:
-            # Apply max string length truncations and loc special formatting
-            sta = trace.stats.station
-            if len(sta) > 4:
-                sta = sta[:4]
-            net = trace.stats.network
-            if len(net) > 2:
-                net = net[:2]
-            cha = trace.stats.channel
-            if len(cha) > 3:
-                cha = cha[:3]
-            loc = trace.stats.location
-            if len(loc) > 2:
-                loc = loc[:2]
-            if loc in ['',' ','  ']:
-                loc = '--'
-            # Bring in SNCL info into WaveMsg
-            self.station = sta
-            self.network = net
-            self.channel = cha
-            self.location = loc
-            self.sncl = f'{sta}.{net}.{cha}.{loc}'
-            # Get sampling/timing information
-            self.nsamp = int(trace.stats.npts)
-            self.samprate = trace.stats.sampling_rate
-            self.startt = trace.stats.starttime.timestamp
-            self.endt = trace.stats.endtime.timestamp
-
-            # Handle potential input data formatting scenarios
-            _data = trace.data
-            # Check that _data is a numpy.ndarray
-            if isinstance(_data, np.ndarray):
-                # Sanity check that trace.data is a vector
-                if len(_data.shape) != 1:
-                    raise TypeError('trace contained a multi-dimensional array - not allowed!')
-                else:
-                    # Check if the array is masked
-                    if np.ma.is_masked(_data):
-                        self.data = trace.data.data
-                        self.msg_data_mask = trace.data.mask
-                        self.fill_value = trace.data.fill_value
-                    # If unmasked, write to 
-                    else:
-                        self.data = _data
+                pass
+            # Sniff-test on leading "TYPE_"
+            if self.mtype[:5] != "TYPE_":
+                raise SyntaxError('mtype must start with "TYPE_"')
+            # If sniff test passed, continue
             else:
-                raise TypeError('trace.data was not a numpy.ndarray - not allowed!')
-                
-    def _wave2msg(self, wave, stricttype=False):
-        if self._validate_wave(wave, stricttype=stricttype):
-            self.station = wave['station']
-            self.network = wave['network']
-            self.channel = wave['channel']
-            self.location = wave['location']
-            self.sncl = f'{self.station}.{self.network}.{self.channel}.{self.location}'
-            self.nsamp = wave['nsamp']
-            self.samprate = wave['samprate']
-            self.startt = wave['startt']
-            self.endt = wave['endt']
-            self.data = wave['data']
+                pass
+        # If None
         else:
-            raise SyntaxError('Invalid formatting for input "wave"')
+            pass
 
-    def _validate_wave(self, wave, stricttype=False):
-        """
-        Validate input `wave` reasonably looks like the PyEW representation of a tracebuf2 message in Python
-        """
-        keys = ['station','network','channel','location','nsamp','samprate','startt','endt','datatype','data']
-        # NOTE: The 'int' requirement on 'samprate' is going to cause issues with analog sensors...
-        # types = [str, str, str, str, int, float, int, int, ]
-        types = [str, str, str, str, int, int, int, int, str, np.ndarray]
-        key_types = dict(zip(keys,types))
+        # Cross validation checks
+        # If both are None
+        if self.mtype is None and self.mcode is None:
+            raise TypeError("Must assign mtype and/or mcode as non-None-type")
 
-        # Confirm `wave` is a dictionary
-        if isinstance(wave, dict):
-            # Check that all keys are present
-            if all(x.lower() in keys for x in wave.keys()):
-                if stricttype:
-                    # Check that all keyed values have appropriate type
-                    if all(isinstance(wave[_k], key_types[_k]) for _k in keys):
-                        return True
-                    else:
-                        return False
+        # If mtype is None, but mcode passed individual checks above
+        elif self.mtype is None and self.mcode is not None:
+            # If self.mcode falls into earthworm_global.d message code range
+            if 0 <= self.mcode <= 99:
+                self.mtype = EW_GLOBAL_CT[self.mcode]
+                return True
+            # IF self.mcode falls into the installation range, kick error
+            # because both mtype and mcode need to be defined for these
+            else:
+                raise SyntaxError(
+                    "mcode in [100, 255] - installation\
+                          message codes - must specify mtype"
+                )
+
+        # If mtype passed individual checks above but mcode is None
+        elif self.mtype is not None and self.mcode is None:
+            # if mtype is in global message types, use this to assign mcode!
+            if self.mtype in EW_GLOBAL_MESSAGE_TYPES:
+                self.mcode = EW_GLOBAL_TC[self.mtype]
+                return True
+            # otherwise raise a more-generalized (longer winded) SyntaxError
+            else:
+                raise SyntaxError(
+                    "mtype looks like an EW message type,\
+                    but isn't in earthworm_global.d -\
+                    assuming this is an institutional message\
+                    which needs mtype in [100, 255] - None not allowed"
+                )
+
+        # If mtype and mcode passed checks and neither is None
+        else:
+            # If mcode in earthworm_global.d range
+            if 0 <= self.mcode <= 99:
+                # If mismatch
+                if EW_GLOBAL_CT[self.mcode] != self.mtype:
+                    raise ValueError(
+                        "mcode is in earthworm_global.d\
+                        reserved range [0,99] but mtype does not match"
+                    )
+                # Otherwise pass
                 else:
                     return True
+            # If mcode in installation range
             else:
-                # raise KeyError('Required keys missing from input "wave"')
-                return False
-        else:
-            # raise TypeError('"wave" must be type dict')
-            return False
-        
-
-    def output_wave(self):
-        """
-        Generate a PyEW `wave` message representation of a tracebuf2 message
-        """
-        out_wave = {'station': self.station,
-                    'network': self.network,
-                    'channel': self.channel,
-                    'location': self.location,
-                    'nsamp': self.nsamp,
-                    'samprate': self.samprate,
-                    'startt': self.startt,
-                    'endt': self.endt,
-                    'datatype': self.datatype,
-                    'data': self.data}
-        # Handle case if there's a masked array instance
-        if len(self.mask_array) != 0:
-            if self.mask_array.shape == self.data.shape:
-                out_wave['data'][self.mask_array] = self.fill_value
-        
-        return out_wave
-
-    def output_trace(self):
-        """
-        Generate an obspy.Trace object
-        """
-        tr = Trace()
-        tr.stats.station = self.station
-        tr.stats.network = self.network
-        tr.stats.channel = self.channel
-        tr.stats.location = self.location
-        tr.stats.starttime = UTCDateTime(self.startt)
-        tr.stats.sampling_rate = self.samprate
-        if len(self.mask_array) != 0:
-            if self.mask_array.shape == self.data.shape:
-                tr.data = np.ma.MaskedArray(data=self.data,
-                                            mask=self.mask_array,
-                                            fill_value=self.fill_value,
-                                            dtype=EW2NPDTYPES[self.datatype])
-        else:
-            tr.data = self.data
-        
-        return tr
-
-
-
-class TensorMsg(_BaseMsg):
-    """
-    
-    """
-
-    def __init__(self, tensor, sncl, startt, samprate, order='ZNE'):
-        super().__init__(mtype='TYPE_TRACEBUF2', mcode=19)
-        self.tensor = torch.Tensor()
-        self.sncl = '...--'
-        self.station = ''
-        self.network = ''
-        self.channels = ''
-        self.location = '--'
-        self.samprate = 100.
-        self._order = order
-        if isinstance(tensor, np.ndarray):
-            self.tensor = torch.Tensor(tensor)
-        elif isinstance(tensor, torch.Tensor):
-            self.tensor = tensor
-        else:
-            raise TypeError('Input "tensor" must be type numpy.ndarray or torch.Tensor')
-        
-        if len(self._order) in self.tensor.shape():
-            for _i in range(len(self.tensor.shape)):
-                if self.tensor.shape == _i:
-                    self.channel_axis = _i
-                else:
-                    self.data_axis = _i
-        else:
-            raise ValueError('input "tensor" does not have compatable dimensions with proposed "order"')
-
-        # Compat. checks on 'sncl'
-        if isinstance(sncl, str):
-            if len(sncl.split('.')) == 4:
-                self.sncl = sncl
-                parts = sncl.split('.')
-                if len(parts[0]) <= 4:
-                    self.station = parts[0]
-                else:
-                    self.station = parts[0][:4]
-                if len(parts[1]) <= 2:
-                    self.network = parts[1]
-                else:
-                    self.network = parts[1][:2]
-                if len(parts[2]) == len(order):
-                    self.channel = parts[2]
-                    if self.channel != self.order:
-                        if all(x in self.order for x in self.channel):
-                            # Advise sort
-                            Warning('channel and order elements match, but require a sort')
-                        else:
-                            raise ValueError('channel and order have mismatched element(s)')
-                else:
-                    raise ValueError('input "sncl" channel element does not have the right number of characters')
-                if len(parts[3]) <= 2:
-                    self.location = parts[3]
-                else:
-                    self.location = parts[3][:2]
-                if self.location in ['',' ','  ']:
-                    self.location = '--'
-            else:
-                raise IndexError('Insufficient .delimited entries in input "sncl" - requires 4')
-        else:
-            raise TypeError('Input "sncl" must be type str')
-        
-        if isinstance(startt, (float, np.float32)):
-            self.startt = startt
-        else:
-            raise TypeError('Input "startt" must be type float or numpy.float32')
-
-
+                print(
+                    f"Assuming {self.mtype} : {self.mcode} matches\
+                          installation message defs"
+                )
+                return True
 
     def __repr__(self):
-        rstr = super().__repr__()
-        rstr += 
+        rstr = f"MTYPE: {self.mtype}\n"
+        rstr += f"MCODE: {self.mcode}\n"
+        return rstr
+
+
+class TraceMsg(Trace, _BaseMsg):
+    """
+    Multiple inheritance class merging obspy.Trace and _SNCLMsg classes
+    to facilitate obspy.Trace class method use in this module and provide
+    attributes to carry information on Earthworm message formatting
+    (i.e., self.mtype and self.mcode) and provide extended class-methods
+    for translating between PyEW `wave` and native obspy.Trace objects
+
+    :: ATTRIBUTES ::
+     v^ From Trace ^v
+    :attrib stats: [obspy.core.trace.Stats] Metadata holder object
+    :attrib data: [numpy.ndarray or numpy.ma.MaskedArray]
+                    data holder object
+     ... and others ... -- see obspy.core.trace.Trace
+
+     ~~ From _BaseMsg ~~
+    :attrib mtype: [str] Earthworm message type name
+    :attrib mcode: [int] Earthworm message type code
+
+      ++ New Attributes ++
+    :attrib dtype: [str] Earthworm data format string
+    :attrib sncl: [str] Station.Network.Channel.Location code string
+    :attrib _waveflds: [list of str] keys for `wave` dict definition
+
+
+    """
+
+    def __init__(self, input=None, dtype="f4", mtype="TYPE_TRACEBUF2", mcode=19):
+        """
+        Create a TraceMsg object from a given input and EW-specific message
+        metadata and data formatting
+
+        :: INPUTS ::
+        :param input: [obspy.Trace], [obspy.realtime.RtTrace],
+                      [dict - `wave`] or [None]
+                        inputs of Trace, RtTrace, and `wave` all populate
+                        the Trace-inherited-attributes, whereas None
+                        results in the default for an empty Trace() values
+                        for these attributes
+        :param dtype: [str] valid Earthworm datatype name
+        :param mtype: [str] valid Earthworm Message TYPE_* or [None]
+                        see doc for wyrm.core.message._BaseMsg
+        :param mcode: [int] valid Earthworm Message code
+                        corresponding to mtype or [None]
+                        see doc for wyrm.core.message._BaseMsg
+        """
+        self._waveflds = [
+            "station",
+            "network",
+            "channel",
+            "location",
+            "nsamp",
+            "samprate",
+            "startt",
+            "endt",
+            "datatype",
+            "data",
+        ]
+        # Compatability check on dtype
+        if dtype not in EWDTYPES:
+            raise ValueError(f"dtype must be in {EWDTYPES}")
+        else:
+            self.dtype = dtype
+        # Compatability check on input
+        if input is None:
+            Trace.__init__(
+                self, data=np.array([]).astype(EW2NPDTYPES[self.dtype]), header={}
+            )
+        elif isinstance(input, (Trace, RtTrace)):
+            data = input.data.astype(EW2NPDTYPES[self.dtype])
+            header = input.stats
+            Trace.__init__(self, data=data, header=header)
+        elif isinstance(input, dict):
+            if all(x in self._waveflds for x in input.keys()):
+                data = input["data"].astype(EW2NPDTYPES[self.dtype])
+                # Grab SNCL updates
+                header = {_k: input[_k] for _k in self._waveflds[:4]}
+                header.update({"sampling_rate": input["samprate"]})
+                header.update({"starttime": input["startt"]})
+
+                Trace.__init__(self, data=data, header=header)
+            else:
+                raise SyntaxError(
+                    "input dict does not match formatting\
+                                   of a `wave` message"
+                )
+        else:
+            raise TypeError(
+                '"input" must be type None, obspy.Trace or dict\
+                             (in PyEarthworm `wave` format)'
+            )
+        # Populate sncl based on self.stats
+        sncl = f"{self.stats.station}."
+        sncl += f"{self.stats.network}."
+        sncl += f"{self.stats.channel}."
+        sncl += f"{self.stats.location}"
+        self.sncl = sncl
+        # Initialize mtype and mcode attributes with validation
+        _BaseMsg.__init__(self, mtype=mtype, mcode=mcode)
+
+    def __repr__(self):
+        """
+        Expanded representation of obspy.Trace's __str__
+        to include message and dtype information
+        """
+        rstr = super().__str__()
+        rstr += f" | MTYPE: {self.mtype}"
+        rstr += f" | MCODE: {self.mcode}"
+        rstr += f" | DTYPE: {self.dtype}"
+        return rstr
+
+    def update_basemsg(self, mtype=None, mcode=19):
+        """
+        Update mtype and/or mcode if validation checks are passed
+        :: INPUTS ::
+        :param mtype: [str] or [None] message type name
+        :param mcode: [int] or [None] message code
+        """
+        # If either argument presented mismatches with current metadata
+        if mtype != self.mtype or mcode != self.mcode:
+            # Attempt to make a test _BaseMsg from proposed arguments
+            try:
+                test_msg = _BaseMsg(mtype=mtype, mcode=mcode)
+                # If the above dosen't kick errors during validation
+                # update mtype and mcode with test_msg values
+                self.mtype = test_msg.mtype
+                self.mcode = test_msg.mcode
+
+            except TypeError:
+                raise TypeError
+            except SyntaxError:
+                raise SyntaxError
+            except ValueError:
+                raise ValueError
+            except:
+                print("Something else went wrong...")
+        # If both match, do nothing and conclude
+        else:
+            pass
+
+    def from_trace(self, trace):
+        """
+        Populate/overwrite contents of this TraceMsg
+        object using an existing obspy.core.trace.Trace object
+
+        :: INPUTS ::
+        :param trace: [obspy.core.trace.Trace] trace object
+
+        :: OUTPUT ::
+        :return self: [wyrm.core.message.TraceMsg] TraceMsg object
+        """
+        if isinstance(trace, Trace):
+            self.stats = trace.stats
+            self.data = trace.data
+            sncl = f"{self.stats.station}."
+            sncl += f"{self.stats.network}."
+            sncl += f"{self.stats.channel}."
+            sncl += f"{self.stats.location}"
+            self.sncl = sncl
+        else:
+            raise TypeError(
+                'input "trace" must be\
+                             type obspy.core.trace.Trace'
+            )
+
+    def to_trace(self):
+        """
+        Return a pure obspy.core.trace.Trace object
+        (i.e., one without the extra TraceMsg bits)
+        :: OUTPUT ::
+        :return trace: [obspy.core.trace.Trace]
+        """
+        trace = Trace(data=self.data, header=self.stats)
+        return trace
+
+    def from_wave(self, wave):
+        """
+        Populate/overwrite contents of this TraceMsg
+        object using an `wave` dictionary as defined in PyEW
+
+        :: INPUTS ::
+        :param wave: [dict] PyEW `wave` message object
+
+        :: OUTPUT ::
+        :return self: [wyrm.core.message.TraceMsg] TraceMsg object
+        """
+        if isinstance(input, dict):
+            if all(x in self._waveflds for x in input.keys()):
+                # Update dtype
+                self.dtype = wave["datatype"]
+                # Update data, fixing dtype
+                data = input["data"].astype(EW2NPDTYPES[self.dtype])
+                self.data = data
+                # Grab run header updates
+                header = {_k: input[_k] for _k in self._waveflds[:4]}
+                header.update({"sampling_rate": input["samprate"]})
+                header.update({"starttime": input["startt"]})
+                for _k in header.keys():
+                    self.stats[_k] = header[_k]
+                # Update SNCL representation
+                sncl = f"{self.stats.station}."
+                sncl += f"{self.stats.network}."
+                sncl += f"{self.stats.channel}."
+                sncl += f"{self.stats.location}"
+                self.sncl = sncl
+            else:
+                raise SyntaxError(
+                    "input dict does not match formatting of a\
+                                   PyEarthworm `wave` message"
+                )
+        else:
+            raise TypeError(
+                '"wave" must be type dict\
+                             (in PyEarthworm `wave` format)'
+            )
+
+    def to_wave(self, fill_value=None):
+        """
+        Generate a PyEW `wave` message representation of a tracebuf2 message
+        from the contents of this TraceMsg object
+        :: INPUT ::
+        :param fill_value: [None], [int], [float],
+                    or self.datatype's numpy equivalent
+                    Optional: value to overwrite MaskedArray fill_value in the
+                            event that self.data is a numpy.ma.MaskedArray
+        """
+        out_wave = {
+            "station": self.stats.station,
+            "network": self.stats.network,
+            "channel": self.stats.channel,
+            "location": self.stats.location,
+            "nsamp": self.stats.npts,
+            "samprate": self.stats.sampling_rate,
+            "startt": self.stats.starttime.timestamp,
+            "endt": self.stats.endtime.timestamp,
+            "datatype": self.datatype,
+            "data": self.data.astype(EW2NPDTYPES[self.datatype]),
+        }
+        # If data are masked, apply the fill_value
+        if np.ma.is_masked(out_wave["data"]):
+            # If no overwrite on fill_value, apply fill_value as-is
+            if fill_value is None:
+                out_wave["data"] = out_wave["data"].filled()
+            # If valid overwirte fill_value provide, use that
+            elif isinstance(fill_value, (int, float, EW2NPDTYPES[self.datatype])):
+                out_wave["data"] = out_wave["data"].fill(fill_value)
+            else:
+                raise TypeError(
+                    f"fill_value must be type int, float, or\
+                                 {EW2NPDTYPES[self.datatype]}"
+                )
+        else:
+            pass
+        return out_wave
+
+    def to_ew(self, module, conn_index, fill_value=None):
+        """
+        Convenience method for generating a `wave` message
+        from this TraceMsg and submitting it to a pre-established
+        EWModule connection as a TRACEBUF2
+
+        :: INPUTS ::
+        :param module: [PyEW.EWModule] established EWModule object
+        :param conn_index: [int] index of a pre-established connection
+                        between Earthworm and Python hosted by `module`
+        :param fill_value: [None], [int], [float],
+                    or self.datatype's numpy equivalent
+                    Optional: value to overwrite MaskedArray fill_value in the
+                            event that self.data is a numpy.ma.MaskedArray
+        """
+        # Run compatability checks
+        if not isinstance(module, PyEW.EWModule):
+            raise TypeError("module must be type PyEW.EWModule")
+        else:
+            pass
+        if not isinstance(conn_index, int):
+            raise TypeError("conn_index must be type int")
+        else:
+            pass
+        if self.mtype != "TYPE_TRACEBUF2" or self.mtype != 19:
+            raise ValueError(
+                'mtype must be "TYPE_TRACEBUF2"\
+                              and mcode must be 19'
+            )
+        else:
+            pass
+        # Generate `wave`
+        _wave = self.to_wave(fill_value=fill_value)
+        # Submit `wave` to Earthworm
+        module.put_wave(conn_index, _wave)
+
+    def from_ew(self, module, conn_index):
+        """
+        Convenience method for pulling a single `wave` message
+        from an Earthworm ring using an established PyEW.EWModule
+        connection and populating/overwirint this TraceMsg with the
+        pulled message's contents
+
+        :: INPUTS ::
+        :param module: [PyEW.EWModule] established EWModule object
+        :param conn_index: [int] index of a pre-established connection
+                        between Earthworm and Python hosted by `module`
+
+        :: OUTPUT ::
+        :return empty_wave: [bool] was the `wave` recovered an empty wave?
+        """
+        if not isinstance(module, PyEW.EWModule):
+            raise TypeError("module must be type PyEW.EWModule")
+        else:
+            pass
+        if not isinstance(conn_index, int):
+            raise TypeError("conn_index must be type int")
+        else:
+            pass
+        # Get wave from Earthworm
+        _wave = module.get_wave(conn_index)
+        # If not an empty_wave
+        if _wave != {}:
+            # Try to populate/overwrite this TraceMsg with new data
+            try:
+                self.from_wave(_wave)
+                empty_wave = False
+            # If SyntaxError is raised from self.from_wave(_wave), diagnose
+            except SyntaxError:
+                msg = "Missing key(s) from claimed wave:"
+                for _k in _wave.keys():
+                    if _k not in self._waveflds:
+                        msg += f"\n{_k}"
+                raise SyntaxError(msg)
+            # If TypeError is raised from self.from_wave(_wave), echo TypeError
+            except TypeError:
+                raise TypeError
+        # If empty_wave, change nothing
+        else:
+            empty_wave = True
+        # return empty_wave assessment if no Errors are raised
+        return empty_wave

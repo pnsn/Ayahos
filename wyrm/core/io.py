@@ -209,56 +209,238 @@ class RingWyrm(Wyrm):
             else:
                 raise KeyError('new_conn_info does not contain the required keys')
 
-    def pulse(self, x):
+    def _flush_clean_queue(self):
+        """
+        Assess the age and size of each queue in self.queue_dict
+        and conduct clean/flush operations based on rules described
+        
+        CLEAN - if queue length exceeds max queue length
+                pop off oldest (right-most) elements in queue
+                until queue length equals max queue length
+        
+        FLUSH - if queue age exceeds max queue age, clear out
+                all contents of the queue and reset age = 0
+        """
+        for _k in self.queue_dict.keys():
+            _qad = self.queue_dict[_k]
+            # Run FLUSH check
+            # If too old, run FLUSH
+            if _qad['age'] > self._max_queue_age:
+                # Reset deque to an empty deque
+                _qad['q'] = deque([])
+                # Reset age to 0
+                _qad['age'] = 0
+            # If too young to FLUSH
+            else:
+                # Check if queue is too long
+                if len(_qad['q']) > self._max_queue_size:
+                    # Run while loop that terminates when the queue is max_queue size
+                    while len(_qad['q']) > self._max_queue_size:
+                        junk = _qad['q'].pop()
+                    # NOTE: Age modification in CLEAN is ambiguous
+                # If queue is shorter than max, do nothing
+                else:
+                    pass
+        # END OF _flush_clean_queue
+                
+    def _to_ring_pulse(self, x=None):
+        # If working with wave-like messaging, use class-methods
+        # written into TraceMsg
+        if self.mtype == 'TYPE_TRACEBUF2' and self.mcode == 19:
+            # Iterate across all _sncl
+            deltas = {}
+            for _k in self.queue_dict.keys():
+                # Isolate SCNL-keyed deque
+                _qad = self.queue_dict[_k]
+                _qlen = len(_qad['q'])
+                if self._max_pulse_size >= _qlen > 0:
+                    _i = _qlen
+                elif _qlen > self._max_pulse_size:
+                    _i = self._max_pulse_size
+                else:
+                    _i = 0
+                if _i > 0:
+                    # iterate across _q items
+                    for _ in range(_i):
+                        # Pop off _msg
+                        _msg = _qad['q'].pop()
+                        # If instance of TraceMsg
+                        if isinstance(_msg, TraceMsg):
+                            # Send to EW
+                            _msg.to_ew(self._conn_index)
+                        # Otherwise, append value back to the head of the queue
+                        else:
+                            _qad['q'].appendleft(_msg)
+                    # If all messages are recycled, increase age
+                    if _qlen == len(_qad['q']):
+                        _qad['age']+=1
+            else:
+                NotImplementedError('Other mtype:mcode combination handling not yet developed')
+        # END of _to_ring_pulse(x)
+
+    def _from_ring_pulse(self, x=None):
+        # If working with wave-like messaging, use class-methods
+        # written into TraceMsg
+        if self.mtype == 'TYPE_TRACEBUF2' and self.mcode == 19:
+            # Itrate for _max_pulse_size (but allow break)
+            for _ in range(self._max_pulse_size):
+                _wave = self.module.get_wave()
+                # If an empty message is returned, end iteration
+                if _wave == {}:
+                    break
+                # Otherwise
+                else:
+                    # Convert into TraceMsg
+                    _msg = TraceMsg(_wave)
+                    # If SNCL exists in queue keys
+                    if _msg.sncl in self.queue_dict.keys():
+                        # Appendleft
+                        self.queue_dict[_msg.sncl]['q'].appendleft(_msg)
+                        # and reset age
+                        self.queue_dict[_msg.sncl]['age'] = 0
+                    # If new SNCL, generate a new queue
+                    else:
+                        new_queue = {'q': deque([_msg]), 'age': 0}
+                        self.queue_dict.update(new_queue)
+        # If mtype:mcode arent for TYPE_TRACEBUF2, kick "IN DEVELOPMENT" error
+        else:
+            NotImplementedError("Other mtype:mcode combination handling not yet developed")
+        # END of _from_ring_pulse()
+
+    def pulse(self, x=None):
         """
         Pulse produces access to self.queue_dict via
         y = self.queue_dict
 
         :: INPUT ::
-        :param x: Unused
+        :param x: [None] - placeholder to match fundamental definition
+                    of the pulse(x) class method
 
         :: OUTPUT ::
         :return y: variable accessing this RingWyrm's self.queue_dict attribute
         """
         # If flowing to a ring (PY->EW)
         if self._to_ring:
-            # If working with wave-like messaging, use class-methods
-            # written into TraceMsg
-            if self.mtype == 'TYPE_TRACEBUF2' and self.mcode == 19:
-                # Iterate across all _sncl
-                deltas = {}
-                for _sncl in self.queue_dict:
-                    _qad = self.queue_dict[_sncl]
-                    _qlen = len(_qad['q'])
-                    if _qlen > 0:
-                        for _ in range(_qlen):
-                            # Pop off _msg
-                            _msg = _qad['q'].pop()
-                            # If instance of TraceMsg
-                            if isinstance(_msg, TraceMsg):
-                                # Send to EW
-                                _msg.to_ew(self._conn_index)
-                            # append value back to end of queue
-                            else:
-                                _qad['q'].appendleft(_msg)
-                    delta = _qlen - len(_qad['q'])
-                    deltas.update({_sncl:delta)})
-                                
+            # Submit data to ring
+            self._to_ring_pulse(x=x)
+            # Then do queue cleaning
+            self._flush_clean_queue()
 
-                        
-            else:
-                NotImplementedError('Other mtype:mcode combination handling not yet developed')
         # If flowing from a ring (EW->PY)
-        elif self._to_ring:
-
-
-
+        elif not self._to_ring:
+            # Assess flush/clean for queues first
+            self._flush_clean_queue()
+            # Then bring in new data/increase age of un-updated queues
+            self._from_ring_pulse(x=x)
         else:
             raise RuntimeError('Dataflow direction from self._to_ring not valid')
-
+        # Make queue_dict accessible to subsequent (chained) Wyrms
         y = self.queue_dict
         return y
             
+
+
+class Disk2PyWyrm(Wyrm):
+    """
+    This Wyrm provides a pulsed behavior that reads waveform files from disk and 
+    presents a queue_dict attribute with identical formatting as RingWyrm, providing
+    a 
+    
+    """
+    def __init__(self, dir, file_queue=deque([]), file_format='MSEED', max_pulse_size=50, max_queue_size=50, max_age=50):
+        # Initialize queue_dict
+        self.queue_dict = {}
+
+        # Compatability check on dir
+        if not isinstance(dir, str):
+            raise TypeError('dir must be type str')
+        elif not os.path.exists(dir):
+            raise FileExistsError('Directory "dir" does not exist')
+        else:
+            self.dir = dir
+
+        # Compatability checks on file_queue
+        if isinstance(file_queue, (list, deque)):
+            if all(isinstance(file, str) for file in file_queue):
+                self.file_queue = deque(file_queue)
+            else:
+                raise TypeError('All elements of file_queue must be type str')
+        elif isinstance(file_queue, str):
+            self.file_queue = deque([file_queue])
+        else:
+            raise TypeError('file_queue must be type str or a list or deque of strings')
+
+        # Compatability Check on file_format
+        if isinstance(file_format, str):
+            self.file_format = file_format
+        else:
+            raise TypeError
+        # Compatability check on max_ integer values
+        try:
+            max_pulse_size/1
+            self.max_pulse_size = int(max_pulse_size)
+        except TypeError:
+            raise TypeError
+        try:
+            max_queue_size/1
+            self.max_queue_size = int(max_queue_size)
+        except TypeError:
+            raise TypeError
+        try:
+            max_age/1
+            self.max_age = int(max_age)
+        except TypeError:
+            raise TypeError
+        
+    def __repr__(self):
+        rstr = f"Source Dir: {self.dir}\n"
+        rstr += f"No. Queued Files: {len(self.file_queue)}\n"
+        rstr += f"Unique SNCL in Data Queue: {len(self.queue_dict)}"
+        return rstr
+
+    
+    def pulse(self, x=None):
+        """
+        Load up to max_pulse_size files from disk
+        """
+        for _ in range(self.max_pulse_size):
+            # If file queue is empty
+            if len(self.file_queue) == 0:
+                break
+            else:
+                # Pop file name from file_queue
+                _file = self.file_queue.pop()
+                # Compose file path
+                _path_file = os.path.join(self.dir, _file)
+                # Try to load file
+                try:
+                    _st = read(_path_file)
+                # Propagate TypeError from obspy.read if it raises TypeError
+                except TypeError:
+                    raise TypeError(f'something went wrong loading {_path_file}')
+                # NOTE: For development only - must clean up hanging except
+                except:
+                    print('SOMETHING ELSE WENT WRONG WITH obspy.read')
+                    breakpoint()
+                
+                # If _st read successfully, iterate across traces in _st
+                for _tr in _st:
+                    # Convert into TraceMsg, attempting to inherit dtype from the trace
+                    try:
+                        _trMsg = TraceMsg(_tr, dtype=_tr.data.dtype)
+                    # Failing that, interpret as float32
+                    except TypeError:
+                        _trMsg = TraceMsg(_tr, dtype = 'f4')
+
+                    if _trMsg.sncl not in self.queue_dict.keys():
+                        
+        # Present access to self.queue_dict as output
+        y = self.queue_dict
+        return y
+
+class Py2DiskWyrm(Wyrm):
+
+        
 #########################
 ### RINGWYRM CHILDREN ###
 #########################

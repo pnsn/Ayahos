@@ -111,6 +111,7 @@
 import numpy as np
 from obspy import Trace
 from obspy.realtime import RtTrace
+from collections import deque
 import PyEW
 
 # CREATE GLOBAL VARIABLES FOR MESSAGE TYPES FOR NOW..
@@ -383,7 +384,8 @@ class TraceMsg(Trace, _BaseMsg):
                         the Trace-inherited-attributes, whereas None
                         results in the default for an empty Trace() values
                         for these attributes
-        :param dtype: [str] valid Earthworm datatype name
+        :param dtype: [str] valid Earthworm datatype name OR
+                      [type] valid numpy number format that conforms with Earthworm datatypes
         :param mtype: [str] valid Earthworm Message TYPE_* or [None]
                         see doc for wyrm.core.message._BaseMsg
         :param mcode: [int] valid Earthworm Message code
@@ -403,10 +405,17 @@ class TraceMsg(Trace, _BaseMsg):
             "data",
         ]
         # Compatability check on dtype
-        if dtype not in EWDTYPES:
-            raise ValueError(f"dtype must be in {EWDTYPES}")
-        else:
-            self.dtype = dtype
+        if isinstance(dtype, str):
+            if dtype not in EWDTYPES:
+                raise ValueError(f'"str" type dtype must be in {EWDTYPES}')
+            else:
+                self.dtype = dtype
+        elif isinstance(dtype, type):
+            if dtype not in NPDTYPES:
+                raise ValueError(f'"type" type dtype must be in {NPDTYPES}')
+            else:
+                self.dtype = NP2EWDTYPES[dtype]
+
         # Compatability check on input
         if input is None:
             Trace.__init__(
@@ -681,3 +690,274 @@ class TraceMsg(Trace, _BaseMsg):
             empty_wave = True
         # return empty_wave assessment if no Errors are raised
         return empty_wave
+
+
+def StreamMsg(Stream, _BaseMsg):
+
+    def __init__(self, input=None, dtype='f4', mtype='TYPE_TRACEBUF2', mcode=19):
+        # Initialize _BaseMsg elements (includes validation)
+        _BaseMsg.__init__(self, mtype=mtype, mcode=mcode)
+        self._waveflds = [
+            "station",
+            "network",
+            "channel",
+            "location",
+            "nsamp",
+            "samprate",
+            "startt",
+            "endt",
+            "datatype",
+            "data",
+                ]
+        
+        # Compatability check on dtype
+        if dtype not in EWDTYPES:
+            raise ValueError(f"dtype must be in {EWDTYPES}")
+        else:
+            self.dtype = dtype
+        
+        # Compatability check on input
+        # None input -> empty Stream
+        if input is None:
+            Stream.__init__(self, traces=None)
+        # If input is list-like
+        elif isinstance(input, (list, deque, Stream)):
+            # If everything is already a TraceMsg, submit to Stream initialization
+            if all(isinstance(x, TraceMsg) for x in input):
+                Stream.__init__(self, traces=input)
+            # If not everyting is a TraceMsg, but everything has a parent class Trace (or is Trace)
+            # Convert everything in input into a TraceMsg and overwrite mtype / mcode / dtype
+            elif all(isinstance(x, Trace) for x in input):
+                traces = [TraceMsg(tr,
+                                   dtype=self.dtype,
+                                   mtype=self.mtype,
+                                   mcode=self.mcode)
+                          for tr in input]
+                Stream.__init__(self, traces=traces)
+            # Otherwise raise error
+            else:
+                raise TypeError('input list-like object must strictly contain\
+                                 Trace objects')
+        # If input is a TraceMsg, directly pass to Stream
+        elif isinstance(input, TraceMsg):
+            Stream.__init__(self, traces=input)
+        # If input is a Trace, but not a TraceMsg,
+        # convert and then pass to Stream
+        elif isinstance(input, Trace):
+            Stream.__init__(self, traces=TraceMsg(input,
+                                                  dtype=self.dtype,
+                                                  mtype=self.mtype,
+                                                  mcode=self.mcode))
+        # Otherwise, kick TypeError
+        else:
+            raise TypeError('input must be a Trace object or list-like object\
+                             containing Trace objects')
+
+    def __str__(self):
+        # Add BaseMsg and data type info to header of Stream's __str__()
+        rstr = f'| MTYPE: {self.mtype} '
+        rstr += f'| MCODE: {self.mcode} '
+        rstr += f'| DTYPE: {self.dtype} |\n'
+        rstr += super().__str__()
+        return rstr
+    
+    def _update_to_tracemsg(self):
+        """
+        Iterate across traces in StreamMsg and convert
+        non-TraceMsg traces into TraceMsg, using StreamMsg
+        mtype, mcode, and dtype
+
+        ::
+        """
+        for _tr in self.traces:
+            if not isinstance(_tr, TraceMsg):
+                if isinstance(_tr, Trace):
+                    _tr = TraceMsg(_tr,
+                                   mtype=self.mtype,
+                                   mcode=self.mcode,
+                                   dtype=self.dtype)
+    
+    def from_read(self, **kwargs):
+        """
+        Load a waveform file from disk using obspy.read
+        and convert the read-in obspy.core.stream.Stream
+        and it's component obspy.core.trace.Trace objects
+        into a StreamMsg of TraceMsg objects.
+
+        Read-in traces are appended to this StreamMsg object
+
+        :: INPUTS ::
+        :params **kwargs: see documentation of obspy.read
+        """
+        st = read(**kwargs)
+        for _tr in st:
+            self.traces.append(TraceMsg(_tr,
+                                        mtype=self.mtype,
+                                        mcode=self.mcode,
+                                        dtype=self.dtype))
+            
+
+
+class DEQ_Dict(object):
+    """
+    Double Ended Queue Dictionary
+    Message buffer data structure for wyrm.core.io.*Wyrm classes
+
+    A SNCL-keyed dictionary containing dictionaries with:
+    'q': deque([]) for messages
+    'age': int for number of pulses the queue has experienced where
+            the number of elements in DEQ_Dict['sncl']['q'] is unchanged
+    
+    """
+
+
+    def __init__(self, queues=None):
+        self.queues = {}
+        # If queues is None, return empty
+        if queues is None:
+            pass
+        elif isinstance(queues, dict):
+            # If the dictionary is composed of list-like objects or some type of wyrm message
+            if all(isinstance(queues[_k], (_BaseMsg, deque,list)) for _k in queues.keys()):
+                # Iterate across each key and populate a new queue, assuming _k is a SNCL code (LOGO)
+                for _k in queues.keys():
+                    self.queues.update({_k: {'q':deque(queues[_k]), 'age':0}})
+            # Otherwise, kick TypeError
+            else:
+                raise TypeError('Values of "queues" of type dict must be type "list", "deque", or some "_BaseMsg"')
+        else:
+            raise TypeError('Input "queues" must be a dict or None')
+    
+    def __repr__(self, extended=False):
+        rstr = f'DEQ_Dict containing {len(self.queues)} queues\n'
+        for _i, _k in enumerate(self.queues.keys()):
+            if _i < 4:
+                rstr += f'{_k} | {len(self.queues[_k]["q"])} elements | age: {self.queues[_k]["age"]}\n'
+            if not extended and len(self.queues) > 9:
+                rstr += '   ...   \n'
+                if _i > len(self.queues) - 5:
+                    rstr += f'{_k} | {len(self.queues[_k]["q"])} elements | age: {self.queues[_k]["age"]}\n'
+                if _i == len(self.queues) - 1:
+                    rstr += 'For a complete print, call "DEQ_Dict.__repr__(extended=True)"'
+            elif _i >= 4:
+                rstr += f'{_k} | {len(self.queues[_k]["q"])} elements | age: {self.queues[_k]["age"]}\n'
+        return rstr
+
+    def _append_pop(self, method='append', side='right', sncl='...--', msg=None, age=None):
+        # Compatability check for sncl
+        if not isinstance(sncl, str):
+            raise TypeError('sncl must be type str')
+        elif len(sncl.split('.')) != 4:
+            raise SyntaxError('sncl should have 4 "." delimited elements')
+        else:
+            pass
+        # Compatability check for msg
+        if not isinstance(msg, (type(None), _BaseMsg)):
+            raise TypeError('msg must be None or type _BaseMsg')
+        else:
+            pass
+        # Compatability check for age
+        if not isinstance(age, (int, type(None))):
+            raise TypeError('age must be type int or None')
+        else:
+            pass
+
+        # If new sncl
+        if sncl not in self.queues.keys():
+            if method.lower() == 'append':
+                if isinstance(age, type(None)):
+                    age = 0
+                if side.lower() == 'right':
+                    self.queues.append({sncl:{'q':msg, 'age':age}})
+                elif side.lower() == 'left':
+                    self.queues.appendleft({sncl:{'q':msg, 'age':age}})
+                else:
+                    raise SyntaxError('side must be "left" or "right"')
+            # Attempting to pop a non-existant queue returns an empty queue with sncl key
+            if method.lower() == 'pop':
+                return {sncl: {'q':deque([]), 'age':0}}
+        # If existing sncl
+        else:
+            qage = self.queues[sncl]['age']
+            # appending to an existing queue
+            if method.lower() == 'append':
+                if age is None or qage == age:
+                    if side.lower() == 'right':
+                        self.queues[sncl]['q'].append(msg)
+                    elif side.lower() == 'left':
+                        self.queues[sncl]['q'].appendleft(msg)
+                    else:
+                        raise SyntaxError('side must be "left" or "right"')
+                else:
+                    raise ValueError('age must match current age of sncl-matched queue')
+                
+            # Popping off an existing queue
+            elif method.lower() == 'pop':
+                if len(self.queues[sncl]['q']) > 0:
+                    if side.lower() == 'right':
+                        _pq = self.queues[sncl]['q'].pop()
+                        return {sncl: {'q':deque(_pq), 'age': qage}}
+                    elif side.lower() == 'left':
+                        _pq = self.queues[sncl]['q'].popleft()
+                        return {sncl: {'q':deque(_pq), 'age': qage}}
+                    else:
+                        raise SyntaxError('side must be "left" or "right"')
+                # Return sncl keyed queue element
+                elif len(self.queues[sncl]['q']) == 0:
+                    return {sncl: self.queues.pop(sncl)}
+
+    def append_msg(self, msg, age=None):
+        if isinstance(msg, TraceMsg):
+            self._append_pop(method='append',
+                             side='right',
+                             sncl=msg.sncl,
+                             msg=msg,
+                             age=age)
+        elif isinstance(msg, StreamMsg):
+            for _trMsg in msg:
+                self._append_pop(method='append',
+                                 side='right',
+                                 sncl=_trMsg.sncl,
+                                 msg=_trMsg,
+                                 age=age)
+        else:
+            raise TypeError('msg must be type TraceMsg or StreamMsg')
+    
+    def append_msg_left(self, msg, age=None):
+        if isinstance(msg, TraceMsg):
+            self._append_pop(method='append',
+                             side='left',
+                             sncl=msg.sncl,
+                             msg=msg,
+                             age=age)
+        elif isinstance(msg, StreamMsg):
+            for _trMsg in msg:
+                self._append_pop(method='append',
+                                 side='left',
+                                 sncl=_trMsg.sncl,
+                                 msg=_trMsg,
+                                 age=age)
+        else:
+            raise TypeError('msg must be type TraceMsg or StreamMsg')
+
+    def pop_msg(self, sncl, bundled=False):
+
+        x = self._append_pop(method="pop",
+                             side='right',
+                             sncl=sncl,
+                             msg=None,
+                             age=None)
+        if not bundled:
+            x = x[sncl]['q']
+        return x
+
+    def pop_msg_left(self, sncl, bundled=False):
+
+        x = self._append_pop(method="pop",
+                             side='left',
+                             sncl=sncl,
+                             msg=None,
+                             age=None)
+        if not bundled:
+            x = x[sncl]['q']
+        return x

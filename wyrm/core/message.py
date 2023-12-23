@@ -109,10 +109,10 @@
 
 """
 import numpy as np
-from obspy import Trace
+from obspy import Trace, Stream
 from obspy.realtime import RtTrace
 from collections import deque
-import PyEW
+# import PyEW
 
 # CREATE GLOBAL VARIABLES FOR MESSAGE TYPES FOR NOW..
 # TODO: HAVE SOME FUNCTIONALITY TO CROSS-REFERENCE WITH earthworm_global.d AND
@@ -209,12 +209,15 @@ EW_GLOBAL_CT = dict(zip(EW_GLOBAL_MESSAGE_CODES, EW_GLOBAL_MESSAGE_TYPES))
 
 # NOTE: I've seen both 's4' and 'f4' show up in PyEarthworm documentation.
 #       Include both for redundance
-NPDTYPES = [np.int16, np.int32, np.float32, np.float32]
+# NPDTYPES = [np.int16, np.int32, np.float32, np.float32]
+NPDTYPES = [np.dtype('int16'), np.dtype('int32'), np.dtype('float32'), np.dtype('float32')]
+NPDTYPESSTR = ['int16','int32','float32','float32']
 EWDTYPES = ["i2", "i4", "s4", "f4"]
 # Form two-way look-up dictionaries
 NP2EWDTYPES = dict(zip(NPDTYPES, EWDTYPES))
 EW2NPDTYPES = dict(zip(EWDTYPES, NPDTYPES))
 
+NPSTR2EWDTYPES = dict(zip(NPDTYPESSTR, EWDTYPES))
 
 class _BaseMsg(object):
     """
@@ -405,29 +408,30 @@ class TraceMsg(Trace, _BaseMsg):
             "data",
         ]
         # Compatability check on dtype
-        if isinstance(dtype, str):
-            if dtype not in EWDTYPES:
-                raise ValueError(f'"str" type dtype must be in {EWDTYPES}')
+        if dtype in EWDTYPES:
+            self.dtype = dtype
+            if str(dtype) in EWDTYPES:
+                self.ewdtype = dtype
             else:
-                self.dtype = dtype
-        elif isinstance(dtype, type):
-            if dtype not in NPDTYPES:
-                raise ValueError(f'"type" type dtype must be in {NPDTYPES}')
-            else:
-                self.dtype = NP2EWDTYPES[dtype]
-
+                self.ewdtype = NPSTR2EWDTYPES[str(dtype)]
+        else:
+            raise TypeError(f'dtype must be in {EWDTYPES}')
+        
         # Compatability check on input
         if input is None:
             Trace.__init__(
-                self, data=np.array([]).astype(EW2NPDTYPES[self.dtype]), header={}
+                self, data=np.array([]).astype(self.dtype), header={}
             )
         elif isinstance(input, (Trace, RtTrace)):
-            data = input.data.astype(EW2NPDTYPES[self.dtype])
+            try:
+                data = input.data.astype(self.dtype)
+            except KeyError:
+                breakpoint()
             header = input.stats
             Trace.__init__(self, data=data, header=header)
         elif isinstance(input, dict):
             if all(x in self._waveflds for x in input.keys()):
-                data = input["data"].astype(EW2NPDTYPES[self.dtype])
+                data = input["data"].astype(self.dtype)
                 # Grab SNCL updates
                 header = {_k: input[_k] for _k in self._waveflds[:4]}
                 header.update({"sampling_rate": input["samprate"]})
@@ -461,7 +465,7 @@ class TraceMsg(Trace, _BaseMsg):
         rstr = super().__str__()
         rstr += f" | MTYPE: {self.mtype}"
         rstr += f" | MCODE: {self.mcode}"
-        rstr += f" | DTYPE: {self.dtype}"
+        rstr += f" | DTYPE: {self.dtype} ({self.ewdtype})"
         return rstr
 
     def update_basemsg(self, mtype=None, mcode=19):
@@ -493,7 +497,7 @@ class TraceMsg(Trace, _BaseMsg):
         else:
             pass
 
-    def from_trace(self, trace):
+    def from_trace(self, trace, dtype=None):
         """
         Populate/overwrite contents of this TraceMsg
         object using an existing obspy.core.trace.Trace object
@@ -505,8 +509,15 @@ class TraceMsg(Trace, _BaseMsg):
         :return self: [wyrm.core.message.TraceMsg] TraceMsg object
         """
         if isinstance(trace, Trace):
+            if dtype is not None and dtype in EWDTYPES:
+                self.data = trace.data.astype(dtype)
+                self.dtype = dtype
+            elif dtype is None and trace.data.dtype in EWDTYPES:
+                self.data = trace.data
+                self.dtype = trace.data.dtype
+            else:
+                raise TypeError('Trace datatype must be in {EWDTYPES}')
             self.stats = trace.stats
-            self.data = trace.data
             sncl = f"{self.stats.station}."
             sncl += f"{self.stats.network}."
             sncl += f"{self.stats.channel}."
@@ -544,7 +555,7 @@ class TraceMsg(Trace, _BaseMsg):
                 # Update dtype
                 self.dtype = wave["datatype"]
                 # Update data, fixing dtype
-                data = input["data"].astype(EW2NPDTYPES[self.dtype])
+                data = input["data"].astype(self.dtype)
                 self.data = data
                 # Grab run header updates
                 header = {_k: input[_k] for _k in self._waveflds[:4]}
@@ -588,8 +599,8 @@ class TraceMsg(Trace, _BaseMsg):
             "samprate": self.stats.sampling_rate,
             "startt": self.stats.starttime.timestamp,
             "endt": self.stats.endtime.timestamp,
-            "datatype": self.datatype,
-            "data": self.data.astype(EW2NPDTYPES[self.datatype]),
+            "datatype": self.ewdatatype,
+            "data": self.data.astype(self.datatype),
         }
         # If data are masked, apply the fill_value
         if np.ma.is_masked(out_wave["data"]):
@@ -692,7 +703,7 @@ class TraceMsg(Trace, _BaseMsg):
         return empty_wave
 
 
-def StreamMsg(Stream, _BaseMsg):
+class StreamMsg(Stream, _BaseMsg):
 
     def __init__(self, input=None, dtype='f4', mtype='TYPE_TRACEBUF2', mcode=19):
         # Initialize _BaseMsg elements (includes validation)
@@ -807,10 +818,7 @@ class DEQ_Dict(object):
     'q': deque([]) for messages
     'age': int for number of pulses the queue has experienced where
             the number of elements in DEQ_Dict['sncl']['q'] is unchanged
-    
     """
-
-
     def __init__(self, queues=None):
         self.queues = {}
         # If queues is None, return empty
@@ -827,14 +835,15 @@ class DEQ_Dict(object):
                 raise TypeError('Values of "queues" of type dict must be type "list", "deque", or some "_BaseMsg"')
         else:
             raise TypeError('Input "queues" must be a dict or None')
-    
+
     def __repr__(self, extended=False):
         rstr = f'DEQ_Dict containing {len(self.queues)} queues\n'
         for _i, _k in enumerate(self.queues.keys()):
             if _i < 4:
                 rstr += f'{_k} | {len(self.queues[_k]["q"])} elements | age: {self.queues[_k]["age"]}\n'
             if not extended and len(self.queues) > 9:
-                rstr += '   ...   \n'
+                if _i == 4:
+                    rstr += '   ...   \n'
                 if _i > len(self.queues) - 5:
                     rstr += f'{_k} | {len(self.queues[_k]["q"])} elements | age: {self.queues[_k]["age"]}\n'
                 if _i == len(self.queues) - 1:
@@ -867,10 +876,8 @@ class DEQ_Dict(object):
             if method.lower() == 'append':
                 if isinstance(age, type(None)):
                     age = 0
-                if side.lower() == 'right':
-                    self.queues.append({sncl:{'q':msg, 'age':age}})
-                elif side.lower() == 'left':
-                    self.queues.appendleft({sncl:{'q':msg, 'age':age}})
+                if side.lower() in ['right', 'left']:
+                    self.queues.update({sncl: {'q': deque([msg]), 'age': age}})
                 else:
                     raise SyntaxError('side must be "left" or "right"')
             # Attempting to pop a non-existant queue returns an empty queue with sncl key

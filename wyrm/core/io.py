@@ -54,7 +54,7 @@ import pandas as pd
 from glob import glob
 from collections import deque
 from wyrm.core.wyrm import Wyrm
-from wyrm.core.message import _BaseMsg, TraceMsg, StreamMsg, DEQ_Dict
+from wyrm.core.message import _BaseMsg, TraceMsg, HDEQ_Dict
 from obspy import Stream, read
 import fnmatch
 import PyEW
@@ -63,7 +63,7 @@ import PyEW
 ##########################
 ### RINGWYRM BASECLASS ###
 ##########################
-class RingWyrm(Wyrm, DEQ_Dict):
+class RingWyrm(Wyrm):
     """
     Base class provides attributes to house a single PyEW.EWModule
     connection to an Earthworm RING.
@@ -138,8 +138,9 @@ class RingWyrm(Wyrm, DEQ_Dict):
         
         # Initialize parent classes
         Wyrm.__init__(self)
-        DEQ_Dict.__init__(self)
-
+        # DEQ_Dict.__init__(self)
+        # Attach empty Heirarchical DEQue with AGE extra field
+        self.hdeq = HDEQ_Dict(extra_contents={'age': 0})
         # Run compatability checks on module
         if isinstance(module, PyEW.EWModule):
             self.module = module
@@ -153,6 +154,7 @@ class RingWyrm(Wyrm, DEQ_Dict):
                 self.conn_info = pd.DataFrame(conn_info).T
             else:
                 raise KeyError('new_conn_info does not contain the required keys')
+        
         # Handle DataFrame input
         elif isinstance(conn_info, pd.DataFrame):
             if len(conn_info) == 1:
@@ -194,10 +196,10 @@ class RingWyrm(Wyrm, DEQ_Dict):
         self._max_queue_size = max_queue_length
         self._max_queue_age = max_age
 
-    def __repr__(self):
+    def __repr__(self, extended=False):
         rstr = f"Module: {self.module}\n"
         rstr += f"Conn Info: {self.conn_info}\n"
-        rstr += f"{DEQ_Dict.__repr__(self)}"
+        rstr += f"{self.hdeq.__repr__(extended=extended)}"
         return rstr
 
     def change_conn_info(self, new_conn_info):
@@ -249,16 +251,45 @@ class RingWyrm(Wyrm, DEQ_Dict):
                     pass
         # END OF _flush_clean_queue
                 
+    def _flush_clean_hdeq(self):
+        """
+        Assess the age and size of each queue in self.hdeq
+        and conduct clean/flush operations based on rules described
+        
+        CLEAN - if queue length exceeds max queue length
+                pop off oldest (right-most) elements in queue
+                until queue length equals max queue length
+        
+        FLUSH - if queue age exceeds max queue age, clear out
+                all contents of the queue and reset age = 0
+        """
+        # Iterate across each SNCL code
+        for _sncl in self.hdeq.codes:
+            # Extract target
+            _target = self.hdeq._get_sncl_target(_sncl)
+            # If HDEQ_Dict entry 'age' is too old, reset
+            if _target['age'] > self._max_queue_age:
+                _target['q'] = deque([])
+                _target['age'] = 0
+            # Else
+            else:
+                # If HDEQ_Dict 'q' is too long, prune from right
+                if len(_target['q']) > self._max_queue_size:
+                    while len(_target['q']) > self._max_queue_size:
+                        _ = self.hdeq.pop(_sncl, key='q')
+                else:
+                    pass
+        # END OF _flush_clean_hdeq
+                
     def _to_ring_pulse(self, x=None):
         # If working with wave-like messaging, use class-methods
         # written into TraceMsg
         if self.mtype == 'TYPE_TRACEBUF2' and self.mcode == 19:
             # Iterate across all _sncl
-            deltas = {}
-            for _k in self.queue_dict.keys():
+            for _sncl in self.hdeq.codes:
                 # Isolate SCNL-keyed deque
-                _qad = self.queue_dict[_k]
-                _qlen = len(_qad['q'])
+                _target = self.hdeq[_sncl]
+                _qlen = len(_target['q'])
                 if self._max_pulse_size >= _qlen > 0:
                     _i = _qlen
                 elif _qlen > self._max_pulse_size:
@@ -269,17 +300,17 @@ class RingWyrm(Wyrm, DEQ_Dict):
                     # iterate across _q items
                     for _ in range(_i):
                         # Pop off _msg
-                        _msg = _qad['q'].pop()
+                        _msg = _target['q'].pop()
                         # If instance of TraceMsg
                         if isinstance(_msg, TraceMsg):
                             # Send to EW
                             _msg.to_ew(self._conn_index)
                         # Otherwise, append value back to the head of the queue
                         else:
-                            _qad['q'].appendleft(_msg)
+                            _target['q'].appendleft(_msg)
                     # If all messages are recycled, increase age
-                    if _qlen == len(_qad['q']):
-                        _qad['age']+=1
+                    if _qlen == len(_target['q']):
+                        _target['age']+=1
             else:
                 NotImplementedError('Other mtype:mcode combination handling not yet developed')
         # END of _to_ring_pulse(x)
@@ -298,16 +329,10 @@ class RingWyrm(Wyrm, DEQ_Dict):
                 else:
                     # Convert into TraceMsg
                     _msg = TraceMsg(_wave)
-                    # If SNCL exists in queue keys
-                    if _msg.sncl in self.queue_dict.keys():
-                        # Appendleft
-                        self.queue_dict[_msg.sncl]['q'].appendleft(_msg)
-                        # and reset age
-                        self.queue_dict[_msg.sncl]['age'] = 0
-                    # If new SNCL, generate a new queue
-                    else:
-                        new_queue = {'q': deque([_msg]), 'age': 0}
-                        self.queue_dict.update(new_queue)
+                    # Build branch (if it doesn't already exist)
+                    self.hdeq._add_index_branch(_msg.scnl)
+                    # Append message to 'q'
+                    self.hdeq.appendleft(_msg.scnl, _msg, key='q')
         # If mtype:mcode arent for TYPE_TRACEBUF2, kick "IN DEVELOPMENT" error
         else:
             NotImplementedError("Other mtype:mcode combination handling not yet developed")
@@ -330,12 +355,12 @@ class RingWyrm(Wyrm, DEQ_Dict):
             # Submit data to ring
             self._to_ring_pulse(x=x)
             # Then do queue cleaning
-            self._flush_clean_queue()
+            self._flush_clean_hdeq()
 
         # If flowing from a ring (EW->PY)
         elif not self._to_ring:
             # Assess flush/clean for queues first
-            self._flush_clean_queue()
+            self._flush_clean_hdeq()
             # Then bring in new data/increase age of un-updated queues
             self._from_ring_pulse(x=x)
         else:
@@ -346,17 +371,15 @@ class RingWyrm(Wyrm, DEQ_Dict):
             
 
 
-class Disk2PyWyrm(Wyrm, DEQ_Dict):
+class Disk2PyWyrm(Wyrm):
     """
-    This Wyrm provides a pulsed behavior that reads waveform files from disk and 
-    presents a queue_dict attribute with identical formatting as RingWyrm, providing
-    a 
+    This Wyrm provides a pulsed read-from-disk functionality
     
     """
     def __init__(self, fdir, file_glob_str='*.mseed', file_format='MSEED', max_pulse_size=50, max_queue_size=50, max_age=50):
         Wyrm.__init__(self)
-        # Initialize queue_dict
-        DEQ_Dict.__init__(self)
+        # Initialize Heirarchical DEQueue
+        self.hdeq = HDEQ_Dict()
 
         # Compatability check on dir
         if not isinstance(fdir, str):
@@ -398,10 +421,10 @@ class Disk2PyWyrm(Wyrm, DEQ_Dict):
         except TypeError:
             raise TypeError
         
-    def __repr__(self):
+    def __repr__(self, extended=False):
         rstr = f"Source Dir: {self.fdir}\n"
         rstr += f"No. Queued Files: {len(self.file_queue)}\n"
-        rstr += DEQ_Dict.__repr__(self)
+        rstr += f"{self.hdeq.__repr__(exdended=extended)}"
         return rstr
 
     
@@ -436,14 +459,21 @@ class Disk2PyWyrm(Wyrm, DEQ_Dict):
                     # Failing that, interpret as float32
                     except TypeError:
                         _trMsg = TraceMsg(_tr, dtype='f4')
-                    # Use DEQ_Dict append to add 
-                    self.append_msg_left(_trMsg)
+                    # Make branch (if needed)
+                    self.hdeq._add_index_branch(_trMsg.sncl)
+                    # Append message to HDEQ_Dict
+                    self.hdeq.appendleft(_trMsg.sncl, _trMsg, key='q')
 
         # Present access to self.queues as a dictionary
-        y = self.queues
+        y = self.hdeq
         return y
 
+
 class Py2DiskWyrm(Wyrm):
+    """
+    This Wyrm provides a pulsed write-to-disk utility
+    """
+
     def __init__(self,
                  root_dir,
                  sncl_filter='*.*.*.*',

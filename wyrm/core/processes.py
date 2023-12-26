@@ -35,14 +35,13 @@ Wyrm (ð)
     under an AGPL-3.0 license.
 
 """
-import PyEW
-from collections import deque
-from wyrm.core.base_wyrms import Wyrm, RingWyrm
+from wyrm.core.wyrm import Wyrm
+import numpy as np
 import pandas as pd
 import seisbench.models as sbm
-from obspy import UTCDateTime, Stream, Trace
+from obspy import UTCDateTime, Stream, Trace, Inventory
 from obspy.realtime import RtTrace
-from wyrm.core.message import WaveMsg
+from wyrm.core.message import TraceMsg
 import fnmatch
 
 
@@ -51,128 +50,321 @@ class BuffWyrm(Wyrm):
     This Wyrm handles WaveMsg data buffering in the form
     of a dictionary of rttrace objects
 
-    {SNCL: (deque, sindex)} --> {SNCL: rttrace}
+    HDEQ_Dict.queues --> self.buffer = Stream(SNCL: rttrace, ...}
     """
 
-    def __init__(self, station, network, channels='*', locations='*', max_buff_sec=300, rt_proc_steps=None):
+    def __init__(self, age_threshold=5, sncl_list=['GNW.UW.BHZ.--','GNW.UW.BHN.--','GNW.UW.BHE.--'], max_length=300):
+        """
+        Initialize a BuffWyrm object that subscribes to a particular set of SNCL codes (LOGO)
+
+        :: ATTRIBUTES ::
+        :attrib sncl_list: [list] ordered list of SNCL codes for a single
+                            seismometer
+        :attrib max_length: [float-like] number of seconds to set as RtTrace
+        """
         # Static SNCL fields (one instance per site)
-        self.station = station
-        self.network = network
-        self.channels = channels
-        self.locations = locations
-        self.max_buff_sec = max_buff_sec
-        self.sncl_search_code = f'{self.station}.{self.network}.{self.channels}.{self.locations}'
+        if not isinstance(sncl_list, (list)):
+            raise TypeError('sncl_list must be type list')
+        elif not all(len(sncl.split('.')) != 4 for sncl in sncl_list):
+            raise SyntaxError('sncl_list entries must be formatted as a "." delimited string (see default example)')
+        else:
+            pass
+
+        if max_length <= 0:
+            raise ValueError('max_length must be positive')
+        elif not np.isfinite(max_length):
+            raise ValueError('max_length must be finite')
+        else:
+            self.max_length = max_length
+        
+        if not isinstance(age_threshold, int):
+            raise TypeError('age_threshold must be type int')
+        elif gap_thresold < 1:
+            raise ValueError('age_threshold must be positive valued')
+        elif not np.isfinite(age_threshold):
+            raise ValueError('age_threshold must be finite')
+        else:
+            self.age_threshold = age_threshold
+
+        # Populate buffer
         self.buffer = {}
+        for _k in self.sncl_list:
+            comp = _k.split('.')[2][-1]
+            if comp in ['Z','3']:
+                comp = 'Z'
+            elif comp in ['N','1']:
+                comp = 'N'
+            elif comp in ['E','2']:
+                comp = 'E'
+            else:
+                raise SyntaxError(f'Provided sncl {_k} has invalid component code {comp}')
+            self.buffer.update({_k:{'trace': RtTrace(max_length=self.max_length),
+                                    'age': 0,
+                                    'comp': comp}})
+        
+        self.next_starttime = None
+        self.next_endtime = None
+
+        
 
     def __resp__(self):
-        rstr = f'Search String: {self.sncl_search_code}\n'
-        rstr += f'Max Buff: {self.max_buff_sec:.3f} sec\n' 
+        rstr = f'Search String: {self.sncl_list}\n'
+        rstr += f'Max Buff: {self.max_length:.3f} sec\n' 
         rstr += '--- Buffered RtTraces ---\n'
-        for _k in self.buffer.keys():
-            rstr += f'{self.buffer[_k]}\n'
+        for _k in self.buffer.keys()
+            rstr += f'({self.buffer[_k]['comp']}) '
+            rstr += f'{self.buffer[_k]['trace']} | '
+            rstr += f'{self.buffer[_k]['age']} pulses'
         return rstr
          
-    def _wavemsg2buffer(self, wavemsg):
-        """
-        Convert an input WaveMsg into an obspy trace and add
-        it to the buffer attribute of this BuffWyrm, creating
-        and populating a new RtTrace object if the SNCL code
-        of the WaveMsg is not a key in BuffWyrm.buffer.keys()
-        or appending the WaveMsg data to a matching SNCL entry.
-
-        :: INPUT ::
-        :param wavemsg: [wyrm.core.pyew_msg.WaveMsg] wave message
-                        object that contains at least 1 data point
-
-        :: UPDATE ::
-        :attrib buffer[wavemsg.code]:
-
-        :: OUTPUT ::
-        :return None:
-
-        """
-
-        # Check that the wavemsg is WaveMsg and has some data
-        if isinstance(wavemsg, WaveMsg):
-            if wavemsg.npts > 0:
-                # Use WaveMsg class method to convert to obspy.Trace
-                _tr = wavemsg.to_trace()
-                # If SNCL exists in buffer, append data to associated rttrace object
-                if wavemsg.code in self.buffer.keys():
-                    self.buffer[wavemsg.code].append(_tr)
-                # If SNCL is new to this buffer, create a new buffer key:value entry
-                if wavemsg.code not in self.buffer.keys():
-                    new_rttrace = RtTrace(max_length=self.max_buff_sec)
-                    new_rttrace.append(_tr)    
-                    self.buffer.update({wavemsg.code:new_rttrace})
-                else:
-                    raise KeyError
-            elif wavemsg.npts == 0:
-                pass
-            else:
-                print('wavemsg.npts is negative...')
-                raise ValueError
+    def _append_tracemsg_to_buffer(self, tracemsg):
+        if not isinstance(tracemsg, TraceMsg):
+            raise TypeError('tracemsg must be type TraceMsg')
         else:
-            print(f'wavemsg is type {type(wavemsg)} --> must be type WaveMsg')
-            raise TypeError
-        
-    def _pull_from_Wave2PyWyrm_queue_dict(self, queue_dict):
-        """
-        Iteratively pop WaveMsg objects out of the queue_dict
-        attribute of a Wave2PyWyrm object that have matching
-        SNCL codes that this particular BuffWyrm is seeking
+            msg_sncl = tracemsg.sncl
 
-        :: INPUT ::
-        :param queue_dict: [dict] accessible variable version of
-                            the data cointained in a Wave2PyWyrm
-                            object's `queue_dict` attribute.
-        
-        :: UPDATES ::
-        :Wave2PyWyrm.queue_dict[SNCL]: WaveMsg entries are shifted
-                            to this object, converted into obspy.Trace
-                            objects and...
-        :BuffWyrm.buffer[SNCL]: ...appended to the corresponding RtTrace
-                            object in this object. Idea is to minimize
-                            copying/doubling of data in memory
-        
-        :: OUTPUT ::
-        :return None:
-        """
-        # Find matching SNCL entries in queue_dict
-        matches = fnmatch.filter(queue_dict.keys(), self.sncl_search_code)
-        # Iterate across SNCL codes
-        for _sncl in matches:
-            # alias queue_dict from Wave2PyWyrm object
-            in_queue = queue_dict[_sncl][0]
-            # Until the queue_dict deque is empty...
-            _safety_catch = 10000
-            while len(in_queue) > 0:
-                # ...pop out oldest message...
-                _msg = in_queue.pop()
-                # ...and add it to the buffer
-                self._wavemsg2buffer(_msg)
+        if msg_sncl not in self.buffer.keys():
+            raise KeyError('tracemsg SNCL is not in this buffer')
+        else:
+            self.buffer[msg_sncl]['trace'].append(tracemsg.to_trace())
+        #END
+    
+    def _claim_traces(self, hdeq_dict):
+        for _k in self.buffer.keys():
+            if _k in hdeq_dict.codes:
+                _target = hdeq_dict._get_sncl_target(_k)
+                _qlen = len(_target['q'])
+                for _ in range(_qlen):
+                    _msg = _target['q'].pop()
+                    if isinstance(_msg, TraceMsg):
+                        self._append_tracemsg_to_buffer(_msg)
+                    else:
+                        _target['q'].appendleft(_msg)
+                # Reset age if the hdeq buffer got shorter
+                if len(_target['q']) < _qlen:
+                    self.buffer[_k]['age'] = 0
+                # Add to age if the length of the buffer didn't change from this action
+                else:
+                    self.buffer[_k]['age'] += 1
+            # Add to age if the component hasn't shown up in input hdeq_dict
+            else:
+                self.buffer[_k]['age'] += 1
+    
 
-                # DEV ELEMENT TO SAFEGUARD AGAINS UNBOUNDED `while`
-                _safety_catch -= 1
-                if _safety_catch == 0:
-                    print('BUFFWYRM - HIT SAFETY CATCH ON DATA TRANSFER!!!')
-                    break
+    def _validate_trace_window(self, sncl):
+        _tr = self.buffer[sncl]['trace']
+        _age = self.buffer[sncl]['age']
+        # If there are valid start/end times from supervisor
+        if self.next_starttime not None and self.next_endtime not None:
+            # If there are enough data to window the trace
+            if _tr.stats.starttime >= self.next_starttime and _tr.stats.endtime <= self.next_endtime:
+                return True
+            # If either case fails, return false
+            else:
+                return False
+        # If invalid start/end times from supervisor, return false
+        else:
+            return False
+        
+    def _validate_buffer_window(self):
+        # Check if all traces have data in the specified window
+        bool_list = [self.validate_trace_window(_k) for _k in self.buffer.keys()]
+        if all(bool_list):
+            return True
+        
+        elif any(bool_list):
+            
+        
+    
+        # If there are valid start/end times
+        if self.next_starttime not None and self.next_endtime not None:
+            bool_set = []
+            for _k in self.buffer.keys():
+                _rtts = self.buffer[_k]['trace'].stats.starttime
+                _rtte = self.buffer[_k]['trace'].stats.endtime
+                _age = self.buffer[_k]['age']
+                if _rtts >= self.next_starttime and _rtte <= self.next_endtime:
+                    bool_set.append(True)
+                else:
+                    bool_set.append(False)
+            if all(bool_set):
+                return True
+            if any(bool_set):
+
+
+
+        # If there isn't a valid starttime
+        if self.next_starttime is None:
+            # And all traces have a reasonable starttime
+            if all(self.buffer[_k]['trace'].stats.starttime > UTCDateTime(0) for _k in self.buffer.keys()):
+                # Get the maximum starttime as initial start time
+                self.next_starttime = max([self.buffer[_k]['trace'].stats.starttime])
+                self.next_endtime = self.next_starttime + self.window_sec
+            # Or if any traces have a reasonable starttime
+            elif any(self.buffer[_k]['trace'].stats.starttime > UTCDateTime(0) for _k in self.buffer.keys()):
+                bool_set = []
+                for _k in self.buffer.keys():
+                    if self.buffer[_k].stats.starttime > UTCDateTime(0):
+                        bool_set.append(True)
+                
+                    elif self.buffer[_k]['age'] >= self.age_threshold:
+                        
+            # If there is no usable data, return False
+            else:
+                return False
+                
+            # Check if there is enough data
+        if all(self.buffer)
+            
+        for _k in self.buffer.keys():
+            # Check that there are some data
+            
+
+            
+    def _window_buffer(self):
+        # If all data have reasonably fresh information
+        if all(self.buffer[_k]['age'] <= self.age_threshold):
+            
+
+
+
+    def pulse(self, x):
+        self._claim_traces(x)
+        if self.validate_window():
+            self._window_buffer()
+        y = self.window_queue
+        return y
+
+
+    def _append_to_buffer(self, tracemsg):
+        # Run compatability check
+        if not isinstance(tracemsg, TraceMsg):
+            raise TypeError('tracemsg must be type TraceMsg')
+        else:
+            pass
+        # Get SNCL code
+        _sncl = tracemsg.sncl
+        # If sncl is not in buffer keys, create new entry
+        if _sncl not in self.buffer.keys():
+            self.buffer.update({_sncl: 
+                {'trace': RtTrace(max_length=self.max_length),
+                 'mtype': tracemsg.mtype,
+                 'mcode': tracemsg.mcode,
+                 'dtype': tracemsg.dtype}})
+        # Otherwise, continue
+        else:
+            pass
+        # Append trace to buffer
+        self.buffer[_sncl]['trace'].append(tracemsg.to_trace())
+
+    def _pull_from_hdeq(self, hdeq):
+
 
     def pulse(self, x):
         """
-        Execute the processing chain for this BuffWyrm object
+        Claim SNCL matched messages from an input HDEQ_Dict
+        structured dictionary (wyrm.core.message.HDEQ_Dict)
 
         :: INPUT ::
-        :param x: [dict] variable representation of a preceding
-                Wave2PyWyrm.queue_dict 
-
+        :param x: [HDEQ_Dict] structured dictionary
+                    (see wyrm.core.message.HDEQ_Dict)
+        
         :: OUTPUT ::
-        :return y: [dict] variable representation of this 
-                object's BuffWyrm.buffer 
+        :return y: [dict] access to self.buffer with structure:
+                    {'s.n.c.l': {'trace': obspy.realtime.RtTrace,
+                                 'mtype': 'TYPE_TRACEBUF2',
+                                 'mcode': 19,
+                                 'dtype': 'f4'}}
         """
-        self._pull_from_Wave2PyWyrm_queue_dict(x)
+        
+        # Compatability check for x
+        if not isinstance(x, dict):
+            raise TypeError('Input must be type dict')
+        else:
+            pass
+        # Get matching SNCL codes
+        _sncl_list = fnmatch(x.keys(), self.sncl_search_code)
+        # Iterate across matches
+        for _sncl in _sncl_list:
+            # Get message deque
+            _queue = x[_sncl]['q']
+            # Iterate through all messages in queue
+            for _i in range(len(_queue)):
+                _msg = _queue.pop()
+                # If message is TraceMsg
+                if isinstance(_msg, TraceMsg):
+                    # Append to buffer
+                    self._append_to_buffer(_msg)
+                # Otherwise, re-append the message to the source deque
+                else:
+                    self.x[_sncl]['q'].append_left(_msg)
+        # Provide access to the buffer as output
         y = self.buffer
         return y
+
+
+class WindowWyrm(Wyrm):
+    """
+    This wyrm creates windowed copies of traces from a BuffWyrm and produces
+    a DEQ_Dict of windowed traces keyed by Station, Network, Location, and
+    the Band/Insturment characters of channel codes 
+    """
+    def __init__(self, search_code='GNW.UW.*.BH?', order='ZNE', window_sec=60, stride_sec=18):
+        self.window_sec = window_sec
+        self.stride_sec = stride_sec
+        self.search_code = search_code
+        self.next_starttime = None
+        self.next_endtime = None
+        self.window_hdeq = HDEQ_Dict(extra_contents={})
+
+    def pulse(self,x):
+        """
+        
+        """
+
+    def _fetch_matches(self, hdeq_dict):
+        matches = fnmatch(self.search_code, buffer.keys):
+
+        
+
+    def _validate_next_window(self, rttrace):
+        # Check that a long enough window can be extracted from target rttrace
+        if rttrace.max_length < self.window_sec:
+            raise ValueError('Specified window_sec for this Wyrm is longer than max_length of received RtTrace objects')
+        else:
+            pass
+
+        # If this is the first check, initialize window indices
+        if self.next_starttime is None:
+            self.next_starttime = rttrace.stats.starttime
+            self.next_endtime = self.next_starttime + self.window_sec
+        else:
+            pass
+        
+        # If next_start/endtime fall within the bounds of target rttrace
+        if self.next_endtime <= rttrace.stats.endtime and self.next_starttime >= rttrace.stats.starttime:
+            return True
+        # If insufficient data are available
+        else:
+            return False
+    
+
+    def _extract_window(self, rtstream):
+        # If all 
+        if all(self._check_for_next_window(_x) for _x in rtstream):
+
+            rttr = rttrace.copy().trim(starttime=self.next_starttime,
+                                           endtime=self.next_endtime)
+            
+            
+            
+
+###############################################
+
+
+
+
+
 
 
 
@@ -260,6 +452,19 @@ class WindowWyrm(Wyrm):
                 _X = _tr.data
 
                 for _e in self.numpy_evals:
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

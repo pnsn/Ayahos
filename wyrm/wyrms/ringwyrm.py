@@ -21,13 +21,11 @@ Wyrm (ð)
     under an AGPL-3.0 license.
 
 """
-import os
 import pandas as pd
-from collections import deque
 from wyrm.wyrms.wyrm import Wyrm
-from wyrm.core.message import _BaseMsg, TraceMsg, HDEQ_Dict
-from obspy import Stream, read
-import fnmatch
+from wyrm.message.base import _BaseMsg
+from wyrm.message.trace import TraceMsg
+from wyrm.structures.queues import DEQ_Dict
 import PyEW
 
 
@@ -96,50 +94,41 @@ class RingWyrm(Wyrm):
     def __init__(
         self,
         module,
-        conn_info,
-        mtype="TYPE_TRACEBUFF2",
-        mcode=19,
-        flow_direction="to python",
+        conn_id,
         max_pulse_size=12000,
-        max_queue_length=150,
-        max_age=60,
+        max_queue_size=150,
+        max_queue_age=60,
+        flow_direction="to python",
+        mtype="TYPE_TRACEBUFF2",
+        mcode=19
     ):
         # Initialize parent classes
         Wyrm.__init__(self)
-        # DEQ_Dict.__init__(self)
-        # Attach empty Heirarchical DEQue with AGE extra field
-        self.hdeq = HDEQ_Dict(extra_contents={"age": 0})
+        # Create an empty DEQ_dict
+        self.queues = DEQ_Dict(extra_fields={"age": 0})
+
         # Run compatability checks on module
         if isinstance(module, PyEW.EWModule):
             self.module = module
         else:
             raise TypeError("module must be a PyEW.EWModule object!")
 
-        # Compatability check for conn_info
-        # Handle Series Input
-        if isinstance(conn_info, pd.Series):
-            if all(x in ["RING_ID", "RING_Name"] for x in conn_info.index):
-                self.conn_info = pd.DataFrame(conn_info).T
-            else:
-                raise KeyError("new_conn_info does not contain the required keys")
-
-        # Handle DataFrame input
-        elif isinstance(conn_info, pd.DataFrame):
-            if len(conn_info) == 1:
-                if all(x in ["RING_ID", "RING_Name"] for x in conn_info.columns):
-                    self.conn_info = conn_info
-                else:
-                    raise KeyError("new_conn_info does not contain the required keys")
-            else:
-                raise ValueError("conn_info must resemble a 1-row DataFrame")
-        # Kick TypeError for any other input
+        # Compatability check for conn_id
+        if not isinstance(conn_id, int):
+            raise TypeError('conn_id must be int')
+        elif conn_id < 0:
+            raise ValueError('conn_id must be 0+')
         else:
-            raise TypeError(
-                "conn_info must be a Series or 1-row DataFrame (see RingWyrm doc)"
-            )
-        # Final bit of formatting for __repr__ purposes
-        if self.conn_info.index.name is not "index":
-            self.conn_info.index.name = "index"
+            self._conn_id = conn_id
+        
+        names = ['max_pulse_size','max_queue_size','max_queue_age']
+        for _i, _x in enumerate([max_pulse_size, max_queue_size, max_queue_age]):
+            if not isinstance(_x, int):
+                raise TypeError(f'{names[_i]} must be type int')
+            elif _x < 1: 
+                raise ValueError(f'{names[_i]} must be positive')
+            else:
+                eval(f'self.{names[_i].split('max')[-1]} = _x')
 
         # Compatability check for flow_direction
         if flow_direction.lower() in [
@@ -170,6 +159,7 @@ class RingWyrm(Wyrm):
             raise ValueError(
                 "flow direction type {flow_direction} is not supported. See RingWyrm header doc"
             )
+    
 
         # Comptatability check for message type using wyrm.core.message._BaseMsg
         try:
@@ -183,35 +173,21 @@ class RingWyrm(Wyrm):
         except ValueError:
             raise ValueError(f"from mtype:mcode | {mtype}:{mcode}")
 
-        # Initialize buffer dictionary & limit indices
-        self._max_pulse_size = max_pulse_size
-        self._max_queue_size = max_queue_length
-        self._max_queue_age = max_age
+        
+
+
 
     def __repr__(self, extended=False):
         rstr = f"Module: {self.module}\n"
-        rstr += f"Conn Info: {self.conn_info}\n"
-        rstr += f"{self.hdeq.__repr__(extended=extended)}"
+        rstr += f'CONN: {self._conn_id} "{self._ring_name}"\n'
+        if self._from_ring:
+            rstr += 'FLOW: EW->PY\n'
+        else:
+            rstr += 'FLOW: PY->EW\n'
+        rstr += f"{self.queues.__repr__(extended=extended)}"
         return rstr
 
-    def change_conn_info(self, new_conn_info):
-        if isinstance(new_conn_info, pd.DataFrame):
-            if len(new_conn_info) == 1:
-                if all(x in ["RING_Name", "RING_ID"] for x in new_conn_info.columns):
-                    self.conn_info = new_conn_info
-                else:
-                    raise KeyError("new_conn_info does not contain the required keys")
-            else:
-                raise ValueError(
-                    "new_conn_info must be a 1-row pandas.DataFrame or pandas.Series"
-                )
-        elif isinstance(new_conn_info, pd.Series):
-            if all(x in ["RING_Name", "RING_ID"] for x in new_conn_info.index):
-                self.conn_info = pd.DataFrame(new_conn_info).T
-            else:
-                raise KeyError("new_conn_info does not contain the required keys")
-
-    def _flush_clean_queue(self):
+    def _flush_clean_queues(self):
         """
         Assess the age and size of each queue in self.queue_dict
         and conduct clean/flush operations based on rules described
@@ -223,101 +199,93 @@ class RingWyrm(Wyrm):
         FLUSH - if queue age exceeds max queue age, clear out
                 all contents of the queue and reset age = 0
         """
-        for _k in self.queue_dict.keys():
-            _qad = self.queue_dict[_k]
+        # Iterate across all SNCL keys
+        for _sncl in self.queues.keys():
+            # Get SNCL keyed queue
+            _queue = self.queue_dict[_sncl]
             # Run FLUSH check
             # If too old, run FLUSH
-            if _qad["age"] > self._max_queue_age:
-                # Reset deque to an empty deque
-                _qad["q"] = deque([])
-                # Reset age to 0
-                _qad["age"] = 0
+            if _queue["age"] > self.pulse_limits['queue_age']:
+                # Reset entry to default template
+                self.queues.add_blank_entry(_sncl, overwrite=True)
             # If too young to FLUSH
             else:
                 # Check if queue is too long
-                if len(_qad["q"]) > self._max_queue_size:
+                if len(_queue["q"]) > self.pulse_limits['queue_size']:
                     # Run while loop that terminates when the queue is max_queue size
-                    while len(_qad["q"]) > self._max_queue_size:
-                        junk = _qad["q"].pop()
-                    # NOTE: Age modification in CLEAN is ambiguous
+                    while len(_queue["q"]) > self.pulse_limits['queue_size']:
+                        _ = self.queues.pop(_sncl)
                 # If queue is shorter than max, do nothing
                 else:
                     pass
         # END OF _flush_clean_queue
 
-    def _flush_clean_hdeq(self):
-        """
-        Assess the age and size of each queue in self.hdeq
-        and conduct clean/flush operations based on rules described
-
-        CLEAN - if queue length exceeds max queue length
-                pop off oldest (right-most) elements in queue
-                until queue length equals max queue length
-
-        FLUSH - if queue age exceeds max queue age, clear out
-                all contents of the queue and reset age = 0
-        """
-        # Iterate across each SNCL code
-        for _sncl in self.hdeq.codes:
-            # Extract target
-            _target = self.hdeq._get_sncl_target(_sncl)
-            # If HDEQ_Dict entry 'age' is too old, reset
-            if _target["age"] > self._max_queue_age:
-                _target["q"] = deque([])
-                _target["age"] = 0
-            # Else
-            else:
-                # If HDEQ_Dict 'q' is too long, prune from right
-                if len(_target["q"]) > self._max_queue_size:
-                    while len(_target["q"]) > self._max_queue_size:
-                        _ = self.hdeq.pop(_sncl, key="q")
-                else:
-                    pass
-        # END OF _flush_clean_hdeq
 
     def _to_ring_pulse(self, x=None):
         # If working with wave-like messaging, use class-methods
         # written into TraceMsg
         if self.mtype == "TYPE_TRACEBUF2" and self.mcode == 19:
-            # Iterate across all _sncl
-            for _sncl in self.hdeq.codes:
-                # Isolate SCNL-keyed deque
-                _target = self.hdeq[_sncl]
-                _qlen = len(_target["q"])
-                if self._max_pulse_size >= _qlen > 0:
-                    _i = _qlen
-                elif _qlen > self._max_pulse_size:
-                    _i = self._max_pulse_size
+            _iwhile = 0
+            killswitch = False
+            sncl_list = list(self.queues.keys())
+            # Iterate until max pulse size is reached or killswitch is activated
+            while _iwhile  < self._pulse_size or not killswitch:
+                # Create a bool list for this iteration
+                updated_list = []
+                # Iterate across SNCL codes
+                for _j, _sncl in sncl_list:
+                    # Pop message off queue
+                    msg = self.queues.pop(_sncl, queue='q')
+                        # If queue is empty, remove it from consideration
+                    if isinstance(msg, type(None)):
+                        sncl_list.remove(_sncl)
+
+                    # If TraceMsg
+                    elif isinstance(msg, TraceMsg):
+                        # submit to earthworm
+                        msg.to_ew(self._conn_info['CONN_ID'])
+                        # Increase iteration counter
+                        _iwhile += 1
+                        # Append True to bool_set to keep killswitch off this time
+                        updated_list.append(True)
+                        # Reset queue age to 0
+                        self.queues[_sncl]['age'] = 0
+
+
+                    # If anything else
+                    else:
+                        # Reappend message to left end of queue
+                        self.queues.appendleft(msg, _sncl, queue='q')
+                        # Append False to updated_list to signal this transaction does not negate killswitch
+                        updated_list.append(False)
+                        # Increase iteration counter
+                        _iwhile += 1 
+                # If any queues submitted, continue
+                if any(updated_list):
+                    killswitch = False
+                # If all queues failed to submit, activate killswitch
                 else:
-                    _i = 0
-                if _i > 0:
-                    # iterate across _q items
-                    for _ in range(_i):
-                        # Pop off _msg
-                        _msg = _target["q"].pop()
-                        # If instance of TraceMsg
-                        if isinstance(_msg, TraceMsg):
-                            # Send to EW
-                            _msg.to_ew(self._conn_index)
-                        # Otherwise, append value back to the head of the queue
-                        else:
-                            _target["q"].appendleft(_msg)
-                    # If all messages are recycled, increase age
-                    if _qlen == len(_target["q"]):
-                        _target["age"] += 1
-            else:
-                NotImplementedError(
-                    "Other mtype:mcode combination handling not yet developed"
-                )
+                    killswitch = True
+            # As clean-up, increment queue age
+            for _sncl in self.queues.keys():
+                if len(self.queues[_sncl]['q']) == 0:
+                    self.queues[_sncl]['age'] = 0
+                else:
+                    self.queues[_sncl]['age'] += 1
+
+        else:
+            NotImplementedError("Other mtype:mcode combination handling not yet developed")
         # END of _to_ring_pulse(x)
 
     def _from_ring_pulse(self, x=None):
         # If working with wave-like messaging, use class-methods
         # written into TraceMsg
         if self.mtype == "TYPE_TRACEBUF2" and self.mcode == 19:
+
+
             # Itrate for _max_pulse_size (but allow break)
-            for _ in range(self._max_pulse_size):
-                _wave = self.module.get_wave()
+            for _ in range(self._pulse_size):
+                _wave = self.module.get_wave(self._conn_id)
                 # If an empty message is returned, end iteration
                 if _wave == {}:
                     break
@@ -325,10 +293,15 @@ class RingWyrm(Wyrm):
                 else:
                     # Convert into TraceMsg
                     _msg = TraceMsg(_wave)
-                    # Build branch (if it doesn't already exist)
-                    self.hdeq._add_index_branch(_msg.scnl)
-                    # Append message to 'q'
-                    self.hdeq.appendleft(_msg.scnl, _msg, key="q")
+                    # Append message to queues
+                    self.queues.appendleft(_msg, _msg.sncl, queue='q')
+                    # Temporarily set age to -1 (will increment up to 0 in cleanup)
+                    self.queues[_msg.scnl]['age'] = -1
+
+            # CLEANUP, increase all ages by 1
+            for _sncl in self.queues.keys():
+                self.queues[_sncl]['age'] += 1
+
         # If mtype:mcode arent for TYPE_TRACEBUF2, kick "IN DEVELOPMENT" error
         else:
             NotImplementedError(
@@ -353,12 +326,12 @@ class RingWyrm(Wyrm):
             # Submit data to ring
             self._to_ring_pulse(x=x)
             # Then do queue cleaning
-            self._flush_clean_hdeq()
+            self._flush_clean_queues()
 
         # If flowing from a ring (EW->PY)
         elif not self._to_ring:
             # Assess flush/clean for queues first
-            self._flush_clean_hdeq()
+            self._flush_clean_queues()
             # Then bring in new data/increase age of un-updated queues
             self._from_ring_pulse(x=x)
         else:

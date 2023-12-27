@@ -35,7 +35,7 @@ Wyrm (ð)
     under an AGPL-3.0 license.
 
 """
-from wyrm.core.wyrms.wyrm import Wyrm
+from wyrm import Wyrm
 import numpy as np
 import pandas as pd
 import seisbench.models as sbm

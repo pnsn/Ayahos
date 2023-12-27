@@ -671,3 +671,252 @@ class TensorMsg(_BaseMsg):
     def __repr__(self):
         rstr = super().__repr__()
         rstr += 
+
+
+
+
+class HDEQ_Dict(object):
+    """
+    Hierarchical Double Ended Queue Dictionary
+    Nested message buffer data structure for Wyrm
+
+    A SNCL-keyed dictionary containing dictionaries with structure:
+    '{Network Code}'
+        '{Station Code}'
+            '{Location Code}'
+                '{Channel Code}'
+                    {'q': deque([]), 'age': int}
+
+    'q': deque([]) for messages
+    'age': int for number of pulses the queue has experienced where
+            the number of elements in DEQ_Dict['sncl']['q'] is unchanged
+    """
+
+    def __init__(self, source_hdeq=None, extra_contents={"age": 0}):
+        
+        if not isinstance(extra_contents, dict):
+            raise TypeError('extra_contents must be type dict')
+        else:
+            self.extra_contents = extra_contents
+
+        if not isinstance(source_hdeq, (type(None), HDEQ_Dict)):
+            raise TypeError('source_hdeq must be type None or a HDEQ_Dict')
+        # If a HDEQ_Dict object is provided on input
+        elif isinstance(source_hdeq, HDEQ_Dict):
+            # Copy queues and codes
+            self.queues = source_hdeq.copy().queues
+            self.codes = source_hdeq.copy().codes
+            # Iterate across contents
+            for _sncl in self.codes:
+                # Do validation of codes
+                _target = self._get_sncl_target(_sncl)
+                for _k in self.extra_contents.keys():
+                    if _k not in _target.keys():
+                        _target.update(self.extra_contents[_k])
+                    else:
+                        pass
+        else:
+            self.queues = {}
+            self.codes = []
+    
+        
+    def __repr__(self, extended=False):
+        rstr = f"HDEQ_Dict containing {len(self.codes)} queue"
+        if len(self.codes) > 1:
+            rstr += 's\n'
+        else:
+            rstr += '\n'
+        for _i, _k in enumerate(self.codes):
+            _s, _n, _c, _l = _k.split(".")
+            if _i < 4:
+                rstr += f'{_k} | {len(self.queues[_n][_s][_l][_c]["q"])} elements | age: {self.queues[_n][_s][_l][_c]["age"]}\n'
+            if not extended and len(self.codes) > 9:
+                if _i == 4:
+                    rstr += "   ...   \n"
+                if _i > len(self.codes) - 5:
+                    rstr += f'{_k} | {len(self.queues[_n][_s][_l][_c]["q"])} elements | age: {self.queues[_n][_s][_l][_c]["age"]}\n'
+                if _i == len(self.codes) - 1:
+                    rstr += (
+                        'For a complete print, call "HDEQ_Dict.__repr__(extended=True)"'
+                    )
+            elif _i >= 4:
+                rstr += f'{_k} | {len(self.queues[_n][_s][_l][_c]["q"])} elements | age: {self.queues[_n][_s][_l][_c]["age"]}\n'
+        return rstr
+
+    def copy(self):
+        return deepcopy(self)
+
+    def _sncl_exists(self, sncl):
+        # Parse input
+        if len(sncl.split(".")) != 4:
+            raise SyntaxError
+        else:
+            _s, _n, _c, _l = sncl.split(".")
+
+        # Check dictionary structure
+        if _n in self.queues.keys():
+            if _s in self.queues[_n].keys():
+                if _l in self.queues[_n][_s].keys():
+                    if _c in self.queues[_n][_s][_l].keys():
+                        # sncl exists in indexing structure
+                        # If sncl not in codes, add it
+                        if sncl not in self.codes:
+                            self.codes.append(sncl)
+                        else:
+                            pass
+                        # And return true
+                        return True
+                    # Channel for SNCL does not exist in indexing structure
+                    else:
+                        return False
+                # Location for SNCL does not exist in indexing strcuture
+                else:
+                    return False
+            # Station for SNCL does not exist in indexing structure
+            else:
+                return False
+        # Network for SNCL does not exist in indexing structure
+        else:
+            return False
+
+    def _get_sncl_target(self, sncl):
+        if self._sncl_exists(sncl):
+            _s, _n, _c, _l = sncl.split(".")
+            _target = self.queues[_n][_s][_l][_c]
+            return _target
+        else:
+            return None
+
+    def _add_index_branch(self, sncl):
+        if not self._sncl_exists(sncl):
+            self.codes.append(sncl)
+            _s, _n, _c, _l = sncl.split(".")
+            # If network code exists
+            if _n in self.queues.keys():
+                # If
+                if _s in self.queues[_n].keys():
+                    if _l in self.queues[_n][_s].keys():
+                        self.queues[_n][_s][_l].update(
+                            {_c: {"q": deque([])}}
+                        )
+                        state = True
+                    else:
+                        self.queues[_n][_s].update(
+                            {_l: {_c: {"q": deque([])}}}
+                        )
+                        state = True
+                else:
+                    self.queues[_n].update(
+                        {_s: {_l: {_c: {"q": deque([])}}}}
+                    )
+                    state = True
+            else:
+                self.queues.update(
+                    {_n: {_s: {_l: {_c: {"q": deque([])}}}}}
+                )
+                state = True
+        else:
+            state = False
+        # Only populate contents if new entry
+        if state:
+            self.queues[_n][_s][_l][_c].update(self.extra_contents)
+        return state
+
+    def _append_pop_queue(self, sncl, value, key="q", method="pop"):
+        _k = key
+
+        if self._sncl_exists(sncl):
+            _target = self._get_sncl_target(sncl)
+            if "append" in method.lower():
+                if _k in _target.keys():
+                    if isinstance(_target[_k], deque):
+                        if method.lower() == "appendleft":
+                            _target[_k].appendleft(value)
+                        elif method.lower() == "append":
+                            _target[_k].append(value)
+                        else:
+                            raise SyntaxError(
+                                f'append-type "method" must be: "append" or "appendleft"'
+                            )
+                    else:
+                        raise TypeError(
+                            "Target key:value needs to be associated with a deque-type value"
+                        )
+                # If key is not present and running an append, append new keyed deque
+                else:
+                    _target.update({_k: deque([value])})
+
+            elif "pop" in method.lower():
+                if _k in _target.keys():
+                    if len(_target[_k]) > 0:
+                        if method.lower() == "pop":
+                            try:
+                                x = _target[_k].pop()
+                                return x
+                            except AttributeError:
+                                raise AttributeError
+                        elif method.lower() == "popleft":
+                            try:
+                                x = _target[_k].popleft()
+                                return x
+                            except AttributeError:
+                                raise AttributeError
+                else:
+                    raise KeyError(
+                        f"key {_k} does not exist in target sncl - no popping allowed"
+                    )
+        else:
+            raise KeyError("Target SNCL is not present in HDEQ_Dict.queues structure")
+
+    def append(self, sncl, value, key='q'):
+        self._append_pop_queue(sncl, value, key=key, method="append")
+    
+    def appendleft(self, sncl, value, key='q'):
+        self._append_pop_queue(sncl, value, key=key, method='appendleft')
+        
+    def pop(self, sncl, key='q'):
+        x = self._append_pop_queue(sncl, None, key=key, method='pop')
+        return x
+
+    def popleft(self, sncl, key='q'):
+        self._append_pop_queue(sncl, None, key=key, method="popleft")
+
+    def _get_keyed_value(self, sncl, key):
+        """
+        Fetch a copy of a keyed value for a given SNCL entry
+        """
+        if self._sncl_exists(sncl):
+            _target = self._get_sncl_target(sncl)
+            if key in _target.keys():
+                return _target[key]
+            else:
+                raise KeyError("Target key is not present in SNCL entry")
+        else:
+            raise KeyError("Target SNCL is not present in HDEQ_Dict.queues structure")
+
+    def _replace_keyed_value(self, sncl, key, value):
+        """
+        Replace the value of a keyed value for a given SNCL entry
+        """
+        if self._sncl_exists(sncl):
+            _target = self._get_sncl_target(sncl)
+            if key in _target.keys():
+                _target[key] = value
+            else:
+                _target.update({key: value})
+        else:
+            raise KeyError("Target SNCL is not present in HDEQ_Dict.queues structure")
+
+
+    def _flatten(self):
+        out = {}
+        for _sncl in self.codes:
+            _target = self.copy()._get_sncl_target(_sncl)
+            _td = {_sncl:_target}
+            out.update(_td)
+        return out
+    
+    def _sort_channels(self, order='Z3N1E2'):
+        for _sncl in self.codes:
+            _s, _n, _c, _l = _sncl.split('.')
+            _target = 

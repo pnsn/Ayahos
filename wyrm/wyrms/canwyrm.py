@@ -30,13 +30,27 @@ class CanWyrm(TubeWyrm):
     """
 
     # Inherits __init__ from TubeWyrm
-    def __init__(self, wyrm_queue=deque([]), output_method=deque):
+    def __init__(self,
+                 wyrm_queue=deque([]),
+                 output_format=deque,
+                 concat_method='appendleft'):
         super().__init__(wyrm_queue=wyrm_queue)
-        self.output_format = output_method
+        if not isinstance(output_format, type):
+            raise TypeError('output_format must be of type "type" - method without ()')
+        elif output_format not in [list, deque]:
+            raise TypeError('output_format must be either "list" or "deque"')
+        else:
+            self.output_format = output_format
+        if concat_method in self.output_format.__dict__.keys():
+            self.concat_method = concat_method
+        else:
+            raise AttributeError(f'{concat_method} is not an attribute of {self.output_format}')
 
     def __repr__(self):
         rstr = "~~~ CanWyrm ~~~"
         rstr += super().__repr__()
+        rstr += '\nOutput Format: {self.output_format}'
+        rstr += '\nConcat Method: {self.concat_method.key()}'
         return rstr
 
     def pulse(self, x):
@@ -60,6 +74,5 @@ class CanWyrm(TubeWyrm):
         y = self.output_format()
         for _wyrm in self.wyrm_queue:
             _y = _wyrm.pulse(x)
-            _y = self.output_format(_y)
-            y.appendleft(_y)
+            eval(f'y.{self.concat_method}(_y)')
         return y

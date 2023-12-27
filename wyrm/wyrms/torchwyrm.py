@@ -1,6 +1,6 @@
 import torch
 import seisbench.models as sbm
-from wyrm.core.wyrm import Wyrm
+from wyrm.wyrms.wyrm import Wyrm
 
 
 class TorchWyrm(Wyrm):

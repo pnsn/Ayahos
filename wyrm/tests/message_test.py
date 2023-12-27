@@ -1,5 +1,6 @@
 import pytest
-from wyrm.core.message import *
+import numpy as np
+from wyrm.core.message import _BaseMsg, EW_GLOBAL_CT
 from obspy.core.tests.test_trace import TestTrace
 
 class Test__BaseMsg:
@@ -26,7 +27,7 @@ class Test__BaseMsg:
         # Values not in earthworm_global.d
         for _i in range(256):
             # Raise SyntaxError for values 0-99
-            if _i not in EW_GLOBAL_DICT.values():
+            if _i not in EW_GLOBAL_CT.values():
                 if _i < 100:
                     with pytest.raises(SyntaxError):
                         _BaseMsg(mcode=_i)
@@ -36,8 +37,8 @@ class Test__BaseMsg:
                         _BaseMsg(mcode=_i)
 
         # Test matches for all type:code pairs from earthworm_global.d
-        for _i, _k in enumerate(EW_GLOBAL_DICT.keys()):
-            for _j, _v in enumerate(EW_GLOBAL_DICT.values()):
+        for _i, _k in enumerate(EW_GLOBAL_CT.keys()):
+            for _j, _v in enumerate(EW_GLOBAL_CT.values()):
                 # If coming from the same indices,
                 # assert match yields valid _BaseMsg
                 if _i == _j:

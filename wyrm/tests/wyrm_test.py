@@ -9,7 +9,7 @@
     This module provides a test suite for the Wyrm class
 """
 import pytest
-from wyrm.core.wyrm import Wyrm
+from wyrm.core.wyrms.wyrm import Wyrm
 
 
 class test_wyrm:

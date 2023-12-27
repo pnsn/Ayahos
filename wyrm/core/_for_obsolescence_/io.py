@@ -53,7 +53,7 @@ import os
 import pandas as pd
 from glob import glob
 from collections import deque
-from wyrm.core.wyrm import Wyrm
+from wyrm.core.wyrms.wyrm import Wyrm
 from wyrm.core.message import _BaseMsg, TraceMsg, HDEQ_Dict
 from obspy import Stream, read
 import fnmatch

@@ -1,5 +1,5 @@
 """
-:module: wyrm.structures.hdeq
+:module: wyrm.structures.deq_dict
 :author: Nathan T. Stevens
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network
@@ -7,12 +7,9 @@
 
 :purpose:
     This module contains the class definition for the 
-    DEQ_Dict and HDEQ_Dict data structure classes used
-    for organizing and passing data between Wyrms
+    DEQ_Dict data structure  used for buffering
+    and passing Msg objects between Wyrms
 
-    This is an abstraction of the earlier DEQ_Dict and seeks to improve
-    on performance by reducing the number of operations necessary 
-    to select particular data
 """
 
 import numpy as np

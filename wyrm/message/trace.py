@@ -2,7 +2,7 @@ import numpy as np
 from obspy import Trace
 from obspy.realtime import RtTrace
 from wyrm.message.base import _BaseMsg
-import PyEW
+# import PyEW
 
 ### DOCUMENT SOME DATA FORMAT TRANSLATIONS AS 
 # NOTE: I've seen both 's4' and 'f4' show up in PyEarthworm documentation.

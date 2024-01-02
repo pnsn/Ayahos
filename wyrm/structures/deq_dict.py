@@ -182,7 +182,7 @@ class DEQ_Dict(dict):
             # Iterate across keys
             for _sncl in self.keys():
                 # If sncl keyed entry has a default value for key, save True
-                if self[_sncl][key] == {key:self._template[key]}
+                if self[_sncl][key] == {key:self._template[key]}:
                     bools.update({_sncl: True})
                 # Otherwise save False
                 else:

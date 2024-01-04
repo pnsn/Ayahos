@@ -1,49 +1,72 @@
+"""
+:module: wyrm.structures.rtstream
+:auth: Nathan T. Stevens
+:email: ntsteven (at) uw.edu
+:org: Pacific Northwest Seismic Network
+:license: AGPL-3.0
+
+:purpose: 
+    This module contains the class definition for Realtime Instrument Stream
+    objects "RtInstStream" that provide a shallow hierarchical dictionary
+    structure based on individual seismometer codes and component codes 
+    for collections of Realtime Buffer Traces (RtBuffTrace).
+
+    The added structure provides appreciable search acceleration compared
+    to a comparable ObsPy stream representation of a Trace collection for
+    forming data tensor inputs common to machine learning algorithms
+    e.g., EQTransformer (Mousavi et al., 2019), PhaseNet (Zhu & Beroza, 2018)
+    and for reconstituting their outputs into continuous streams of modeled
+    feature probabilities.
+"""
+
 from obspy import Trace, Stream, Inventory
-from obspy.realtime.rttrace import RtTrace
-from wyrm.message.trace import TraceMsg
+# from obspy.realtime.rttrace import RtTrace
+from wyrm.structures.rtbufftrace import RtBuffTrace
 from copy import deepcopy
 import numpy as np
 import fnmatch
+from tqdm import tqdm
+
 
 class RtInstStream(dict):
     """
-    Realtime Instrument Stream 
-    This object houses multiple obspy.realtime.rttrace.RtTrace objects
-    organized in a 2-layered python dictionary structure to provide
-    accelerated trace quering via hash-table mechanics that underly
-    dictionary objects.
+    Realtime Instrument Stream
+    This object houses sets of wyrm.structures.rtbufftrace.RtBuffTrace
+    objects organized in a 2-layered python dictionary structure to
+    provide accelerated trace quering via hash-table mechanics that
+    underly dictionary objects.
 
     This structure groups data by instrument components (i.e. data streams
     coming from a single seismic sensor), with a top-level key set composed
     of Network, Station, Location, and SEED Band+Instrument codes (N, S, L, I)
-    matching either the NSLC or SNCL ID format used in ObsPy and Earthworm, 
+    matching either the NSLC or SNCL ID format used in ObsPy and Earthworm,
     respectively, becoming NSLC -> NSLI or SNCL -> SNIL. Within each of these
     keys the SEED component code for each channel is used as a secondary key
     
     Example Structure with one 6-component, one 3-component, and one 1-component
     {'UW.TOUCH..EN':
-        {'Z': RtTrace(UW.TOUCH..ENZ),
-         'N': RtTrace(UW.TOUCH..ENN),
-         'E': RtTrace(UW.TOUCH..ENE)},
+        {'Z': RtBuffTrace(UW.TOUCH..ENZ),
+         'N': RtBuffTrace(UW.TOUCH..ENN),
+         'E': RtBuffTrace(UW.TOUCH..ENE)},
      'UW.TOUCH..HH':
-        {'Z': RtTrace(UW.TOUCH..HHZ),
-         'N': RtTrace(UW.TOUCH..HHN),
-         'E': RtTrace(UW.TOUCH..HHE)},
+        {'Z': RtBuffTrace(UW.TOUCH..HHZ),
+         'N': RtBuffTrace(UW.TOUCH..HHN),
+         'E': RtBuffTrace(UW.TOUCH..HHE)},
      'UW.SLA.00.HN':
-        {'1': RtTrace(UW.SLA.00.HN1),
-         '2': RtTrace(UW.SLA.00.HN2),
-         'Z': RtTrace(UW.SLA.00.HNZ)},
+        {'1': RtBuffTrace(UW.SLA.00.HN1),
+         '2': RtBuffTrace(UW.SLA.00.HN2),
+         'Z': RtBuffTrace(UW.SLA.00.HNZ)},
      'UW.GPW.01.EH':
-        {'Z': RtTrace(UW.GPW.01.EHZ)}
+        {'Z': RtBuffTrace(UW.GPW.01.EHZ)}
     }
 
-    Use of RtTrace objects to buffer data for a specified max_length
+    Use of RtBuffTrace objects to buffer data for a specified max_length
     eliminates the occurrence of multiple identical SNCL/NSLC keys resulting
     from sequential data packets that occurs in obspy.core.stream.Stream objects
 
     This structure accelerates data querying by roughly an order of magnitude
     compared to the stream.select() method on large in-memory collections of
-    traces when trying to query slices of the collection. 
+    traces when trying to query slices of the collection.
 
     for some large, heterogeneous stream:
     e.g., 
@@ -169,10 +192,10 @@ class RtInstStream(dict):
         super().__init__(self)
         
         # Compatability check for max_length:
-        if isinstance(max_length, int):
-            self.max_length = float(max_length)
-        elif isinstance(max_length, float):
+        if isinstance(max_length, float):
             self.max_length = max_length
+        elif isinstance(max_length, int):
+            self.max_length = float(max_length)
         else:
             raise TypeError('max_length must be type int or float')
         
@@ -219,7 +242,6 @@ class RtInstStream(dict):
                 raise TypeError('All elements of input list or Stream "traces" must be type Trace')
         else:
             raise TypeError('traces must be type list, Trace, or Stream. For list all elements must be type Trace')
-        
 
     def _repr_line(self, key):
         _l2 = self[key]
@@ -251,7 +273,7 @@ class RtInstStream(dict):
         ntr = 0
         for _k1 in self.keys():
             for _k2 in self[_k1].keys():
-                if isinstance(self[_k1][_k2], RtTrace):
+                if isinstance(self[_k1][_k2], RtBuffTrace):
                     ntr += 1
         rstr = f'RtInstStream with {len(self)} instrument(s) comprising {ntr} trace(s)\n'
         for _i, _k in enumerate(self.keys()):
@@ -269,8 +291,31 @@ class RtInstStream(dict):
             rstr += '[Use "print(RtInstStream.__str__(extended=True))" to print all sub-dictionary summaries]'
         return rstr
 
+    def __repr__(self, extended=False):
+        rstr = self.__str__(extended=extended)
+        return rstr
 
-    def append(self, trace):
+    def append(self, input):
+        """
+        Wrapper for self.append_trace that can accept
+        Trace-type and Stream-type objects as 'input'
+
+        :: INPUT ::
+        :param input: [obspy.Trace], [obspy.Stream] or child-class
+                    data packet(s) to append to rtstream buffers.
+        """
+        if isinstance(input, Trace):
+            self.append_trace(input)
+        elif isinstance(input, Stream):
+            if all(isinstance(_tr, Trace) for _tr in input):
+                for _tr in tqdm(input, disable=len(input) < 100):
+                    self.append_trace(_tr)
+            else:
+                raise TypeError('not all elements of Stream-type input are Trace-type')
+        else:
+            raise TypeError('input must be type Stream or type Trace')
+        
+    def append_trace(self, trace):
         """
         Append data from Trace-type object into the RtInstStream
         :: INPUT ::
@@ -307,18 +352,18 @@ class RtInstStream(dict):
             if key1 in self.keys():
                 # If key2 exists in RtInstStream[key1]...
                 if key2 in self[key1].keys():
-                    # if RtInstStream[key1][key2] is RtTrace, pass
-                    if isinstance(self[key1][key2], RtTrace):
+                    # if RtInstStream[key1][key2] is RtBuffTrace, pass
+                    if isinstance(self[key1][key2], RtBuffTrace):
                         pass
-                    # otherwise, populate with empty RtTrace
+                    # otherwise, populate with empty RtBuffTrace
                     else:
-                        self[key1][key2] = RtTrace(max_length=self.max_length)
+                        self[key1][key2] = RtBuffTrace(max_length=self.max_length)
                 # If key2 does not exist in RtInstStream[key1], populate
                 else:
-                    self[key1].update({key2: RtTrace(max_length=self.max_length)})
+                    self[key1].update({key2: RtBuffTrace(max_length=self.max_length)})
             # If entirely new branch, populate branch
             else:
-                self.update({key1: {key2: RtTrace(max_length=self.max_length)}})
+                self.update({key1: {key2: RtBuffTrace(max_length=self.max_length)}})
             # Ensure that in_trace is an obspy.core.Trace object
             in_tr = Trace(data=trace.data, header=trace.stats)
 
@@ -357,14 +402,14 @@ class RtInstStream(dict):
                     key2 = _cc
                     if key1 in self.keys():
                         if key2 in self[key1].keys():
-                            if not isinstance(self[key1][key2], RtTrace):
-                                self[key1][key2] = RtTrace(max_length=self.max_length)
+                            if not isinstance(self[key1][key2], RtBuffTrace):
+                                self[key1][key2] = RtBuffTrace(max_length=self.max_length)
                             else:
                                 pass
                         else:
-                            self[key1].update({key2: RtTrace(max_length=self.max_length)})
+                            self[key1].update({key2: RtBuffTrace(max_length=self.max_length)})
                     else:
-                        self.update({key1: {key2: RtTrace(max_length=self.max_length)}})
+                        self.update({key1: {key2: RtBuffTrace(max_length=self.max_length)}})
         # END
 
     def copy(self):
@@ -423,7 +468,7 @@ class RtInstStream(dict):
     def _fnmatch_rtst(self, fnkey1, fnkey2=None):
         """
         Alternative version of the _fnmatch() method that returns a
-        RtInstStream object, rather than a list of RtTrace objects.
+        RtInstStream object, rather than a list of RtBuffTrace objects.
 
         See documentation on wyrm.structure.rtstream.RtInstStream._fnmatch()
         """
@@ -503,73 +548,75 @@ class RtInstStream(dict):
 
         return out_st
 
-    def trim(self, starttime=None, endtime=None, iscopy=True, fnkey1='*', fnkey2='*', otype='trace'):
-        """
-        Conduct trim on RtTraces contained within this RtInstStream
-        Default is to produce trimmed copies of data (non-in-place trim)
-        but an option (iscopy) is provided to do in-place trimming
-        """
+
+    # ### Castings ###
+    # def trim(self, starttime=None, endtime=None, iscopy=True, fnkey1='*', fnkey2='*', otype='trace'):
+    #     """
+    #     Conduct trim on RtTraces contained within this RtInstStream
+    #     Default is to produce trimmed copies of data (non-in-place trim)
+    #     but an option (iscopy) is provided to do in-place trimming
+    #     """
 
 
-    def sync_instrument_buffer_windowing(self, refcomp='[Z3]', fill_value=None):
-        """
-        Using specified reference component code(s), use the rttrace.trim() method
-        to trim/pad data within a given NSLI / SNIL keyed sub-dictionary
+    # def sync_instrument_buffer_windowing(self, refcomp='[Z3]', fill_value=None):
+    #     """
+    #     Using specified reference component code(s), use the rttrace.trim() method
+    #     to trim/pad data within a given NSLI / SNIL keyed sub-dictionary
 
-        :: INPUTS ::
-        :param refcomp: [str] or [None]
+    #     :: INPUTS ::
+    #     :param refcomp: [str] or [None]
         
-                        [str] fnmatch compatable string that selects a single component
-                        for every instrument sub-dictionary present in this RtInstStream.
-                        Default '[Z3]' is highly recommended as these are codes for vertical
-                        components
+    #                     [str] fnmatch compatable string that selects a single component
+    #                     for every instrument sub-dictionary present in this RtInstStream.
+    #                     Default '[Z3]' is highly recommended as these are codes for vertical
+    #                     components
 
-                        [None] pad all rttraces present to the latest endtime value available
-                        for traces within the sub-dictionary (max_te) and back-pad data out to
-                        max_te - self.max_length.
+    #                     [None] pad all rttraces present to the latest endtime value available
+    #                     for traces within the sub-dictionary (max_te) and back-pad data out to
+    #                     max_te - self.max_length.
                         
-                        NOTE: max endtime was chosen for this because it allows for late-arriving
-                        packets to fill in the leading edge of rttraces
+    #                     NOTE: max endtime was chosen for this because it allows for late-arriving
+    #                     packets to fill in the leading edge of rttraces
 
-        :param fill_value: see obspy.core.trace.Trace.trim() for full details. Gist is that
-                        [None] provides masked array padding for gaps or samples outside the
-                        bounds of a given rttrace, which is the desired result for most 
-                        processing using this class
-        """
-        if not isinstance(refcomp, (str, type(None)):
-            raise TypeError('refcomp must be type str or None-type')
-        else:
-            pass
+    #     :param fill_value: see obspy.core.trace.Trace.trim() for full details. Gist is that
+    #                     [None] provides masked array padding for gaps or samples outside the
+    #                     bounds of a given rttrace, which is the desired result for most 
+    #                     processing using this class
+    #     """
+    #     if not isinstance(refcomp, (str, type(None)):
+    #         raise TypeError('refcomp must be type str or None-type')
+    #     else:
+    #         pass
 
-        for _k1 in self.keys():
-            _i1 = self[_k1]
-            if refcomp is not None:
-                _rk = fnmatch.filter(_i1.keys(), refcomp)
-                if len(_rk) != 1:
-                    raise SyntaxError(f'refcomp {refcomp} produced {len(_rk)} options for {_k1}')
-                else:
-                    ts = self[_k1][_rk].stats.starttime
-                    te = self[_k1][_rk].stats.endtime
-                for _k2 in _i1.keys():
-                    _rttr = _i1[_k2]
-                    _rttr.trim(starttime=ts, endtime=te, pad=True, fill_value=fill_value)
-            else:
-                # Find maximum starttime
-                max_ts = UTCDateTime(0)
-                for _k2 in _i1.keys():
-                    if _i1[_k2].stats.starttime > max_ts:
-                        max_ts = _i1[_k2].stats.starttime
-                # Apply trimming/padding
-                for _k2 in _i1.keys():
-                    _rttr = _i1[_k2]
-                    _rttr.trim(starttime=max_te - self.max_length,
-                               endtime=max_te,
-                               pad=True,
-                               fill_value=fill_value)
+    #     for _k1 in self.keys():
+    #         _i1 = self[_k1]
+    #         if refcomp is not None:
+    #             _rk = fnmatch.filter(_i1.keys(), refcomp)
+    #             if len(_rk) != 1:
+    #                 raise SyntaxError(f'refcomp {refcomp} produced {len(_rk)} options for {_k1}')
+    #             else:
+    #                 ts = self[_k1][_rk].stats.starttime
+    #                 te = self[_k1][_rk].stats.endtime
+    #             for _k2 in _i1.keys():
+    #                 _rttr = _i1[_k2]
+    #                 _rttr.trim(starttime=ts, endtime=te, pad=True, fill_value=fill_value)
+    #         else:
+    #             # Find maximum starttime
+    #             max_ts = UTCDateTime(0)
+    #             for _k2 in _i1.keys():
+    #                 if _i1[_k2].stats.starttime > max_ts:
+    #                     max_ts = _i1[_k2].stats.starttime
+    #             # Apply trimming/padding
+    #             for _k2 in _i1.keys():
+    #                 _rttr = _i1[_k2]
+    #                 _rttr.trim(starttime=max_te - self.max_length,
+    #                            endtime=max_te,
+    #                            pad=True,
+    #                            fill_value=fill_value)
                 
 
 
-    def get_time_bounds(self, fnkey1='*', fnkey2='*')
+    # def get_time_bounds(self, fnkey1='*', fnkey2='*')
 
 
 

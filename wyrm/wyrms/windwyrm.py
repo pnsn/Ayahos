@@ -1,402 +1,182 @@
 from wyrm.wyrms.wyrm import Wyrm
-from wyrm.message.trace import TraceMsg
-from wyrm.structures.sncl_dict import RtBuff_Dict
-from copy import deepcopy
-from collections import deque
-import numpy as np
-from obspy import UTCDateTime
+from wyrm.structures.rtinststream import RtInstStream
+from wyrm.structures.rtbufftrace import RtBuffTrace
 
 class WindWyrm(Wyrm):
-    def __init__(
-        self,
-        window_sec=60.0,
-        stride_sec=18.0,
-        sub_str="*.*.*.*",
-        comp_map={"Z": "[Z3]", "N": "[N1]", "E": "[E2]"},
-    ):
-        # Initialize baseclass
-        Wyrm.__init__(self)
-        # Initialize profile dictionary
-        self.profile = {}
-        # Initialize template for profile sub-entries
-        self._template = {_c: False for _c in comp_map.keys()}
-        self._template.update(
-            {"next_starttime": None, "1C": False}
-        )
-        # Initialize output queue
-        self.queue = deque([])
-
-        # Compatability checks for window_sec
-        if isinstance(window_sec, float):
-            self.wlen = window_sec
-        elif isinstance(window_sec, int):
-            self.wlen = float(window_sec)
-        else:
-            raise TypeError("window_sec must be type float or int")
-
-        if self.wlen < 0:
-            raise ValueError("window_sec must be positive")
-        else:
-            pass
-
-        # Compatability checks for stride_sec
-        if isinstance(stride_sec, float):
-            self.slen = stride_sec
-        elif isinstance(stride_sec, int):
-            self.slen = float(stride_sec)
-        else:
-            raise TypeError("stride_sec must be type float or int")
-
-        if self.slen < 0:
-            raise ValueError("stride_sec must be positive")
-        else:
-            pass
-
-        # Compatability checks for sub_str
-        if not isinstance(sub_str, (str, None)):
-            raise TypeError("sub_str must be type str or None")
-        else:
-            self._sub_str = sub_str
-
-        # Compatability checks for comp_map
-        if not isinstance(comp_map, dict):
-            raise TypeError("comp_map must be type dict")
-        else:
-            if not all(isinstance(x, str) for x in comp_map.values()):
-                raise TypeError("all values of comp_map must be type str")
-            else:
-                for _k, _v in comp_map.items():
-                    if _k not in ["Z", "N", "E", "1", "2"]:
-                        raise SyntaxError(
-                            'Channel alias {_k} not in approved values: "Z", "N", "E", "1", "2"'
-                        )
-                    else:
-                        pass
-                    if len(_v) == 0:
-                        raise SyntaxError(
-                            "all comp_map values must have at least one character"
-                        )
-                    elif len(_v) > 1:
-                        if _v[0] == "[" and _v[-1] == "]":
-                            pass
-                        else:
-                            raise SyntaxError(
-                                "Multiple entries per component must be bounded with [] (e.g., [Z3])"
-                            )
-                    else:
-                        pass
-        # If checks pass, complete initialization by preserving comp_map
-        self._comp_map = comp_map
-
-    def _get_sub_keys(self, rtbuff):
-        if isinstance(self._sub_str, str):
-            sub_keys = rtbuff.get_matching_keys(self._sub_str)
-        elif isinstance(self._sub_str, type(None)):
-            sub_keys = rtbuff.keys()
-        else:
-            raise TypeError("sub_str must be type str or None")
-        return sub_keys
-
-
-    def _fetch_rtbuff_entries(self, rtbuff, inst_code, deep=False):
-        """
-        Given an RtBuff_Dict and and an inst_code from self.profile
-        that corresponds to the input rtbuff, return an alias/copy of
-        the data from the rtbuff that correspond with the profiled
-        inst_code
-
-        :: INPUT ::
-        :param rtbuff: [wyrm.structures.sncl_dict.RtBuff_Dict]
-        :param inst_code: [str]
-        :param deep: [bool] create deepcopy of queried rtbuff contents?
-
-        :: OUTPUT ::
-        :return out: [dict] composed of sub-dict entries from rtbuff
-        """
-        if not isinstance(rtbuff, RtBuff_Dict):
-            raise TypeError("rtbuff must be tpe RtBuff_Dict")
-        else:
-            pass
-        if inst_code not in self.profile.keys():
-            raise KeyError("inst_code is not in self.profile keys")
-        else:
-            inst = self.profile[inst_code]
-        out = {}
-        for _c in self._comp_map.keys():
-            if inst[_c]:
-                if deep:
-                    out.update({_c: deepcopy(rtbuff[inst[_c]])})
-                else:
-                    out.update({_c: rtbuff[inst[_c]]})
-            else:
-                out.update({_c: False})
-        return out
-
-    def _profile_rtbuffer(self, rtbuff):
-        """
-        Iterate across RtBuff_Dict keys and populate/update a
-        reverse-look-up dictionary "self._profile" that to groups
-        S.N.C.L codes into ordered dictionaries that are keyed by the
-        "Instrument" code and have sub-keys that match the specified
-        comp_order keys
-        - i.e., Station.Network.Location.BandInstrument_Type
-        for GNW.UW.BHZ. --> {'GNW.UW..BH':{'Z':'GNW.UW.BHZ.'},
-                                         :{'N': None},
-                                         :{'E': None}}
-            where the N and E aliased components have yet to populate
-            as known members of this dictionary
-
-        :: INPUT ::
-        :param rtbuff: [wyrm.structures.sncl_dict.RtBuff_Dict] Populated RtBuff_Dict
-                        object, likely inherited from a WaveBuffWyrm object
-        :: OUTPUT ::
-        :return updates: [int] number of updated sub-dict entries from this profiling
-
-
-        """
-        sub_keys = self._get_sub_keys(rtbuff)
-
-        nupdate = 0
-        # Iterate across known SNCL
-        for _sncl in sub_keys:
-            # Compose S.N.L.BI "inst" code
-            _s, _n, _l, _c = _sncl.split(".")
-            # Get inst code
-            _inst = f"{_s}.{_n}.{_l}.{_c[:2]}"
-            # Get component code
-            _ccode = _c[-1]
-            # Identify component alias
-            for _a, _b in self.comp_order.items():
-                if _ccode in _b:
-                    _acode = _a
-
-            # If new INST instance, create new top-level {INST:self._template} entry in profile
-            if _inst not in self._profile.keys():
-                self.profile.update({_inst: deepcopy(self._template)})
-            # Else, pass
-            else:
-                pass
-
-            # Update inst/aliased component codes if value fills a None
-            if not self.profile[_inst][_acode]:
-                self.profile[_inst][_acode] = _sncl
-                # And increase update counter
-                nupate += 1
-            else:
-                pass
-        
-        # Run check on starttime assignments
-        for _ic in self.profile.keys():
-            icdata = self.profile[_ic]
-            rtdata = self._fetch_rtbuff_entries(rtbuff, _ic, deep=False)
-            # Run check on 1C status
-            if all(icdata[_c] for _c in self._comp_map.keys()):
-                # Update '1C' flag as False
-                icdata["1C"] = False
-            # If Z is mapped
-            elif icdata["Z"]:
-                # If both horizontals are unmapped
-                if any(icdata[_c] for _c in self._comp_map.keys() if _c != "Z"):
-                    # Update '1C' flag as True
-                    icdata["1C"] = True
-                # If one horizontal is also mapped
-                else:
-                    # Update "1C" flag as False
-                    icdata["1C"] = False
-
-            # Run check on next_starttime
-            # If already assigned, pass - NOTE: striding is taken care of by another method.
-            if isinstance(icdata['next_starttime'], UTCDateTime):
-                pass
-            # If next_starttime is unassigned (None), run cross-reference
-            elif icdata['next_starttime'] is None:
-                # If 1C...
-                if icdata['1C']:
-                    # See if Z component has non-masked data
-                    _rttr = rtdata['Z'][rtbuff._mkey]
-                    if np.ma.is_masked(_rttr.data):
-                        nele = sum(_rttr.data.mask)
-                    else:
-                        nele = len(_rttr)
-                    if nele > 0:
-                        # If so, update
-                        icdata['next_starttime'] = _rttr.stats.starttime
-                    else:
-                        pass
-                # If not 1C
-                elif not icdata['1C']:
-                    # Iterate across components
-                    for _c in self._comp_map.keys():
-                        # Grab trace length, discounting masked values
-                        _rttr = rtdata[_c][rtbuff._mkey]
-                        if np.ma.is_masked(_rttr.data):
-                            nele = sum(_rttr.data.mask)
-                        else:
-                            nele = len(_rttr)
-                        
-                        # If trace is non-empty
-                        if nele > 0:
-                            # If next_starttime is None in this iteration, assign
-                            if icdata['next_starttime'] is None:
-                                icdata['next_starttime'] = _rttr.stats.starttime
-                            # If another non-empty component gives a later starttime, update
-                            elif icdata['next_starttime'] < _rttr.stats.starttime:
-                                icdata['next_starttime'] = _rttr.stats.starttime
-                            # Otherwise, pass
-                            else:
-                                pass
-
-        return nupdate
-
-
-
-    def _generate_window(self, rtdata, icdata, mkey='rtbuff'):
-        if icdata['1C']:
-            clist = ['Z']
-        elif not icdata['1C']:
-            clist = [_c for _c in self._comp_map.keys() if icdata[_c]]
-
-        if icdata['next_starttime'] is not None:
-            nwts = icdata['next_starttime']
-            nwte = icdata['next_starttime'] + self.wlen
-            st = Stream()
-            stmsg = StreamMsg(order=self._comp_map.keys())
-            for _c in clist:
-                st += rtdata[_c][mkey].copy()
-            if all(_tr.stats.starttime <= nwts for _tr in st):
-                if all(_tr.stats.endtime >= nwte for _tr in st):
-                    wind = st.copy().trim(starttime=nwts, endtime=nwte)
-                    for _tr in wind:
-                        tracemsg = TraceMsg(_tr)
-                        stmsg.append(tracemsg)
-                else:
-                    pass
-            else:
-                pass
-            return stmsg                
-        else:
-            return StreamMsg()
     
-        
-                    
-
-
-
-
-
-    # Fetch mapped data
-    rt_data = self._fetch_rtbuff_entries(rtbuff, inst_code, deep=False)
-
-    def _validate_inst_window(
-        self,
-        inst_profile,
-        rt_data,
-        mkey='rtbuff',
+    def __init__(
+            self,
+            model_code='EQT',
+            target_sr=100.,
+            stride_pct=.3,
+            vert_comp_pct=.95,
+            hztl_1c_pct=.8,
+            rule_1c='zeros',
+            substr='*.*.*.*'
     ):
-        # Compatability checks
-        if not isinstance(rt_data, dict):
-            raise TypeError("rtbuff must be type RtBuff_Dcit")
+        Wyrm.__init__(self)
+        
+        # Compatability checks for model_code
+        if isinstance(model_code, str):
+            if model_code.upper() in ['EQT','EQTRANSFORMER']:
+                self.model_code = 'EQT'
+                self.wnpts = 6001
+                self.comporder = 'Z3N1E2'
+            elif model_code.upper() in ['PN','PNET','PHASENET']:
+                self.model_code = 'PN'
+                self.wnpts = 3001
+                self.comporder = 'Z3N1E2'
+            else:
+                raise ValueError('Current supported model_code values are "EQT" and "PN"')
+        else:
+            raise TypeError('Current supported model_code values are "EQT" and "PN"')
+        
+        # Compatability checks for target_sr
+        if isinstance(target_sr, int):
+            self.target_sr = target_sr
+        elif isinstance(target_sr, float):
+            self.target_sr = int(target_sr)
+        else:
+            raise TypeError('target_sr must be int-like')
+        if self.target_sr < 0:
+            raise ValueError('target_sr must be positive')
+        else:
+            self.wsec = self.nwpts/self.target_sr
+    
+        # Compatability checks for stride_pct
+        if isinstance(stride_pct, float):
+            if 0 < stride_pct < 1:
+                self.ssec = self.wsec*stride_pct
+            else:
+                raise ValueError('stride_pct must be \in (0, 1)')
+        else:
+            raise TypeError('stride_pct must be type float')
+        
+        # Compatability check for vert_comp_pct
+        if isinstance(vert_comp_pct, float):
+            if 0 < vert_comp_pct < 1:
+                self.vcp_thresh = vert_comp_pct
+            else:
+                raise ValueError('vert_comp_pct must be \in (0, 1)')
+        else:
+            raise TypeError('vert_comp_pct must be type float')
+        
+        # Compatability check for hztl_1c_pct
+        if isinstance(hztl_1c_pct, float):
+            if 0 < hztl_1c_pct < 1:
+                self.h1c_thresh = hztl_1c_pct
+            else:
+                raise ValueError('hztl_1c_pct must be \in (0, 1)')
+        else:
+            raise TypeError('vert_comp_pct must be type float')
+        
+        # Compatability check for rule_1c
+        if isinstance(rule_1c, str):
+            if rule_1c in ['zeros','cloneZ','cloneHZ']:
+                self.rule_1c = rule_1c
+            else:
+                raise ValueError('rule_1c must be in: "zeros", "cloneZ", "cloneHZ"')
+        else:
+            raise TypeError('rule_1c must be type str')
+
+        # Compatability check for substr
+        if isinstance(substr, str):
+            if len(substr.split('.')) == 4:
+                self.substr = substr
+            elif '*' in substr:
+                self.substr = substr
+            else:
+                raise ValueError('substr should resemble some form of a 4-element, "." delimited string for SNIL/NSLI codes compatable with fnmatch.filter()')
+        else:
+            raise TypeError('substr must be type str')
+
+        self.index = {}
+        self._template = {'next_ts': None, '1C': False, 'z_code': False}
+
+    def _index_rtinststream_branches(self, rtinststream):
+        if not isinstance(rtinststream, RtInstStream):
+            raise TypeError('rtinststream must be a wyrm.structures.rtinststream.RtInstStream')
         else:
             pass
+    
+        # Iterate across INST codes
+        for k1 in rtinststream.keys():
+            # Alias branch
+            _rtsbranch = rtinststream[k1]
+            
+            # Initial checks for populating new self.index entry
+            if k1 not in self.index.keys()
+                # Test that all limbs in branch are RtBuffTrace's
+                if not all(isinstance(_rtsbranch[_c], RtBuffTrace) for _c in _rtsbranch.keys()):
+                    # Go to next _rtsbranch if untrue
+                    continue
+                else:
+                    # Proceed if limbs are RtBuffTrace
+                    pass
 
-        if not isinstance(inst_profile, dict):
-            raise TypeError("inst_profile must be type dict")
-        elif inst_profile not in self.profile.values():
-            raise ValueError("inst_value must be a value in self.profile")
-        else:
-            inst = inst_profile
-
-        # -- Run update checks on 1C status from the profile side --
-        # If all components are mapped
-        if all(inst[_c] for _c in self._comp_map.keys()):
-            # Update '1C' flag as False
-            inst["1C"] = False
-        # If Z is mapped
-        elif inst["Z"]:
-            # If both horizontals are unmapped
-            if any(inst[_c] for _c in self._comp_map.keys() if _c != "Z"):
-                # Update '1C' flag as True
-                inst["1C"] = True
-            # If one horizontal is also mapped
-            else:
-                # Update "1C" flag as False
-                inst["1C"] = False
-        # Otherwise, return false
-        else:
-            return False
-
-        # -- Run cross reference on window times and trace bounds -- #
-        if inst['1C']:
-            _rttr = rt_data['Z'][mkey]
-            if np.ma.is_masked(_rttr.data):
-                nele = sum(_rttr.data.mask)
-            else:
-                nele = len(_rttr)
-            if nele > 0:
-                if inst['next_starttime'] is None:
-                    inst['next_starttime'] = _rttr.stats.starttime
-                    inst['next_endtime'] = inst['next_starttime'] + self.wlen
+                # Test that a vertical component is present
+                for _c in _rtsbranch.keys():
+                    if _c.upper() in ['Z', '3']:
+                        _zcode = _c.upper()
+                        # Terminate inner loop if successful match
+                        continue
+                    else:
+                        _zcode = False
+                # If a vertical component is not present, go to next _rtsbranch
+                if not _zcode:
+                    continue
+                # Otherwise, proceed
                 else:
                     pass
 
-        elif not inst['1C']:
-            for _c in self._comp_map.keys():
-                _rttr = rt_data[_c][mkey]
-                if np.ma.is_masked(_rttr.data):
-                    nele = sum(_rttr.data.mask)
+                # If initial tests are passed, populate entry in index
+                self.index.update({k1: deepcopy(self._template)})
+                # Alias index branch
+                _idxbranch = self.index[k1]
+                _idxbranch['zcode'] = _zcode
+            else:
+                pass
+        
+
+            # Test for 1C processing flag
+            # Get number of buffers present
+            _nbuff = len(_rtsbranch)
+            # if only vertical present -> flag as 1C
+            if _nbuff == 1 and _idxbranch['zcode'] in _rtsbranch.keys():
+                _idxbranch['1C'] = True
+            # if two components, including vertical...
+            elif _nbuff == 2 and _idxbranch['zcode'] in _rtsbranch.keys():
+                # If a 0-pad or vertical-clone rule for partial data, treat as 1C data
+                if self.rule_1c in ['zeros', 'cloneZ']:
+                    _idxbranch['1C'] = True
+                # Otherwise, do not treat as 1C data
                 else:
-                    nele = len(_rttr)
-                if nele > 0:
-                    if inst['next_starttime'] is None:
-                        inst['next_starttime'] = _rttr.stats.starttime
-                        inst['next_endtime'] = inst['next_starttime'] + self.wlen
-                    elif inst['next_starttime'] < _rttr.stats.starttime:
-                        inst['next_starttime'] = _rttr.stats.starttime
-                        inst['next_endtime'] = inst['next_starttime'] + self.wlen
-                    else:
-                        pass
+                    _idxbranch['1C'] = False
+            # If it appears to have 3-C data, do not treat as 1C at this point
+            elif _nbuff == 3 and _idxbranch['zcode'] in _rtsbranch.keys():
+                _idxbranch['1C'] = False
+            else:
+                print('something went wrong probing 1C status')
+                breakpoint()
+            
+            # Assess window validity
+            _buff_zts = _rtsbranch[_idxbranch['zcode']].stats.starttime
+            _buff_zte = _rtsbranch[_idxbranch['zcode']].stats.endtime
+            # Get max start-time of buffers
+            if _idxbranch['1C']:
+                _buff_tsmax = _rtsbranch[_idxbranch['zcode']].stats.starttime
+            else:
+                _buff_ts = [_rtsbranch[_c].stats.starttime for _c in _rtsbranch.keys()]
+                _buff_tsmax = max(_buff_ts)
+            # Get min end-time of buffers
+            if _idxbranch['1C']
+                _buff_temin = _rtsbranch[_idxbranch['zcode']].stats.endtime
+            else:
+                _buff_te = [_rtsbranch[_c].stats.endtime for _c in _rtsbranch.keys()]
+                _buff_temin = min(_buff_te)
+
+
+
+
 
                         
-        # -- Run cross reference on data -- #
-        # If flagged as 1C, just operate on Z metadata
-        if inst["1C"]:
-            # Get realtime trace from Z only
-            _rttr = rt_data["Z"][mkey]
-            # Check if it's masked
-            if np.ma.is_masked(_rttr.data):
-                nele = sum(_rttr.data.mask)
-            else:
-                nele = len(_rttr)
-            # If RtTrace has non-masked data
-            if nele > 0:
-                # If next_starttime is None, pull this from trace
-                if inst_profile["next_starttime"] is None:
-                    inst_profile["next_starttime"] = _rttr.stats.starttime
-                    inst_profile["next_endtime"] = (
-                        inst_profile["next_starttime"] + self.wlen
-                    )
-                else:
-                    rtts = _rttr.stats.starttime
-                    rtte = _rttr.stats.endtime
-                    nwts = inst_profile['next_starttime']
-                    nwte = inst_profile['next_endtime']
-                    if rtts <= nwts and rtte >= nwte:
-                        return True
-                    else:
-                        return False
-            else:
-                return False
-        
-        elif not inst['1C']:
-            for _c in self._comp_map.keys():
-                if inst[_c]:
-
-
-    def _validate_unmasked_rtdata_window(self, rt_data, inst_profile, mkey='rtbuff', comp='Z'):
-        _tr = rt_data[comp][mkey]
-        if np.ma.is_masked(_tr.data):
-            nele = sum(_tr.data.mask)
-        else:
-            nele = len(_tr)
-        if 
-        

@@ -1,3 +1,19 @@
+"""
+:module: wyrm.structures.rtbufftrace
+:auth: Nathan T. Stevens
+:email: ntsteven (at) uw.edu
+:org: Pacific Northwest Seismic Network
+:license: AGPL-3.0
+
+:purpose:
+    This module contains the class definition for RtBuffTrace
+    which is an adaptation of the obspy.realtime.rttrace.RtTrace
+    class in ObsPy that provides further development of handling
+    gappy, asyncronous data packet sequencing and fault tolerance
+    against station acquisition configuration changes without having
+    to re-initialize the RtBuffTrace object.
+"""
+
 from obspy import Trace, Stream
 import numpy as np
 from copy import deepcopy
@@ -18,7 +34,19 @@ class RtBuffTrace(Trace):
     """
 
     def __init__(self, max_length=None, fill_value=None):
-        """ """
+        """
+        Initialize an empty RtBuffTrace object
+
+        :: INPUTS ::
+        :param max_length: [int], [float], or [None]
+                            maximum length of the buffer in seconds
+                            with the oldest data being trimmed from
+                            the trace (left trim) in the case where
+                            max_length is not None
+        :param fill_value: [None], [float], or [int]
+                            fill_value to assign to all masked
+                            arrays associated with this RtBuffTrace
+        """
         # Compatability check for max_length
         if not isinstance(max_length, (int, float, type(None))):
             raise TypeError("max_length must be type int, float or None")
@@ -32,14 +60,87 @@ class RtBuffTrace(Trace):
             raise TypeError("fill_value must be type int, float, or None")
         else:
             self.fill_value = fill_value
-
+        # Set holder for dtype preservation
         self.dtype = None
-
+        # Set initial state of have_appended trace
         self.have_appended_trace = False
+        # Initialize with an empty, masked trace
         super(RtBuffTrace, self).__init__(
             data=np.ma.masked_array([], mask=False, fill_value=self.fill_value),
             header=None,
         )
+
+    def __str__(self, extended=True, disc=100, showkey=False):
+        """
+        Return short summary string of the current RtBuffTrace
+        with options for displaying buffer status graphically
+
+        :: INPUTS ::
+        :param extended: [bool] show buffer status?
+
+        ..see RtBuffTrace._display_buff_status() for
+        :param disc: [int]
+        :param showkey: [bool]
+        """
+        rstr = super().__str__()
+        rstr += f" | max {self.max_length} sec"
+        if extended:
+            rstr += "\n"
+            rstr += self._display_buff_status(disc=disc, showkey=showkey, asprint=False)
+        return rstr
+
+    def _display_buff_status(self, disc=100, showkey=False, asprint=True):
+        if not isinstance(disc, int):
+            raise TypeError("disc must be type int")
+        elif disc < 0:
+            raise ValueError("disc must be positive")
+        else:
+            pass
+        if not isinstance(showkey, bool):
+            raise TypeError("showkey must be type bool")
+        else:
+            pass
+
+        rstr = "Buffer |"
+        dt = self.max_length / disc
+        if dt < self.stats.delta:
+            dt = self.stats.delta
+            disc = int(self.max_length / dt)
+        ts0 = self.stats.starttime
+        te0 = self.stats.endtime
+        for _i in range(disc):
+            ts = self.stats.starttime + _i * dt
+            te = self.stats.starttime + (_i + 1) * dt
+            # If window ends before start of buffered data
+            if te <= ts0:
+                rstr += "_"
+            # If window starts after end of buffered data
+            elif te0 <= ts:
+                rstr += "_"
+            # Otherwise
+            else:
+                try:
+                    _tr = self.copy().trim(starttime=ts, endtime=te, pad=True)
+                except:
+                    breakpoint()
+                if not np.ma.is_masked(_tr.data):
+                    rstr += "D"
+                # If all masked
+                elif all(_tr.data.mask):
+                    rstr += "m"
+                # If any masked
+                elif any(_tr.data.mask):
+                    rstr += "p"
+                # If none masked
+                elif not any(_tr.data.mask):
+                    rstr += "D"
+        rstr += "|"
+        if showkey:
+            rstr += "\n (D)ata (p)artial (m)asked (_)none"
+        if asprint:
+            print(rstr)
+        else:
+            return rstr
 
     def __eq__(self, other):
         """
@@ -52,16 +153,20 @@ class RtBuffTrace(Trace):
         else:
             return super(RtBuffTrace, self).__eq__(other)
 
-    def append(
-        self,
-        trace,
-        merge_method=1,
-        merge_interp_samp=-1,
-        verbose=True
-    ):
+    def append(self, trace, merge_method=1, merge_interp_samp=-1, verbose=True):
         """
         Appends a Trace-like object to this RtBuffTrace
         with a series of compatability checks
+
+        :: INPUTS ::
+        :param trace: [obspy.core.trace.Trace] or child-class
+                        Trace or Trace-inheriting class object
+                        to be appended to this RtBuffTrace
+        :param merge_method: [int] `method` kwarg input for
+                        obspy.core.stream.Stream.merge()
+        :param merge_interp_samp: [int] `interpolation_samples`
+                        kwarg input for Stream.merge()
+        :param verbose: [bool] print warning messages?
         """
         # Compatability check for trace
         if not isinstance(trace, Trace):
@@ -162,7 +267,8 @@ class RtBuffTrace(Trace):
                     if verbose:
                         print(emsg)
                 elif oversize_gap and predates:
-                    esmg += f"preceeding RtBuffTrace with gap of {gap_size:.3f} sec"
+                    emsg += "preceeding RtBuffTrace with gap of "
+                    emsg += f"{gap_size:.3f} sec"
                     if verbose:
                         print(emsg)
             else:
@@ -180,7 +286,8 @@ class RtBuffTrace(Trace):
                     if verbose:
                         print(emsg)
                 elif oversize_gap and predates:
-                    esmg += f"preceeding RtBuffTrace with gap of {gap_size:.3f} sec"
+                    emsg += "preceeding RtBuffTrace with gap of "
+                    emsg += f"{gap_size:.3f} sec"
                     if verbose:
                         print(emsg)
             else:
@@ -198,7 +305,8 @@ class RtBuffTrace(Trace):
                     if verbose:
                         print(emsg)
                 elif oversize_gap and predates:
-                    esmg += f'preceeding RtBuffTrace with gap of {gap_size:.3f} sec'
+                    emsg += "preceeding RtBuffTrace with gap of "
+                    emsg += "{gap_size:.3f} sec"
                     if verbose:
                         print(emsg)
             else:
@@ -207,10 +315,10 @@ class RtBuffTrace(Trace):
             # PROCESSING FOR OVERSIZE_GAP APPEND FROM PAST DATA
             if oversize_gap and predates:
                 emsg = f"{self.id} | trace significantly pre-dates "
-                emsg += f"data contained in this RtBufftrace "
-                emsg += f"assuming timing is bad on candidate packet "
+                emsg += "data contained in this RtBufftrace.\n"
+                emsg += "Assuming timing is bad on candidate packet.\n"
                 emsg += f"tr({trace.stats.endtime}) -> "
-                emsg += f"RtBuffTrace({self.stats.starttime}). "
+                emsg += f"RtBuffTrace({self.stats.starttime}).\n"
                 emsg += "Canceling append"
                 if verbose:
                     print(emsg)
@@ -309,9 +417,54 @@ class RtBuffTrace(Trace):
 
     # END of RtBuffTrace.append()
 
+    # Copying and indexing-support methods
+
     def copy(self, *args, **kwargs):
         """
         Returns a deepcopy of this RtBuffTrace
         """
         new = deepcopy(self, *args, **kwargs)
         return new
+
+    def get_sncl(self):
+        """
+        Fetch string for
+        Sta.Net.Chan.Loc
+        """
+        sta = self.stats.station
+        net = self.stats.network
+        cha = self.stats.channel
+        loc = self.stats.location
+        sncl = f"{sta}.{net}.{cha}.{loc}"
+        return sncl
+
+    def get_snil_c(self):
+        """
+        Fetch strings for tuple
+        ('Sta.Net.Inst.Loc', 'Comp')
+        """
+        sta = self.stats.station
+        net = self.stats.network
+        cha = self.stats.channel
+        inst = cha[:-1]
+        comp = cha[-1]
+        loc = self.stats.location
+        snil = f"{sta}.{net}.{inst}.{loc}"
+        return (snil, comp)
+
+    def get_nsli_c(self):
+        """
+        Fetch strings for tuple
+        ('Net.Sta.Loc.Inst', 'Comp')
+        """
+        sta = self.stats.station
+        net = self.stats.network
+        cha = self.stats.channel
+        inst = cha[:-1]
+        comp = cha[-1]
+        loc = self.stats.location
+        nsli = f"{net}.{sta}.{loc}.{inst}"
+        return (nsli, comp)
+    
+    def get_valid_pct(self):
+        

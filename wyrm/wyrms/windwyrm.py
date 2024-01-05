@@ -1,6 +1,9 @@
 from wyrm.wyrms.wyrm import Wyrm
 from wyrm.structures.rtinststream import RtInstStream
 from wyrm.structures.rtbufftrace import RtBuffTrace
+from wyrm.message.window import WindowMsg
+from obspy import UTCDateTime
+from collections import deque
 
 class WindWyrm(Wyrm):
     
@@ -9,9 +12,13 @@ class WindWyrm(Wyrm):
             model_code='EQT',
             target_sr=100.,
             stride_pct=.3,
+            blind_pct=1/12,
+            taper_type='cosine',
             vert_comp_pct=.95,
+            vert_codes='Z3',
             hztl_1c_pct=.8,
-            rule_1c='zeros',
+            hztl_codes='N1E2',
+            ch_fill_rule='zeros',
             substr='*.*.*.*'
     ):
         Wyrm.__init__(self)
@@ -70,14 +77,14 @@ class WindWyrm(Wyrm):
         else:
             raise TypeError('vert_comp_pct must be type float')
         
-        # Compatability check for rule_1c
-        if isinstance(rule_1c, str):
-            if rule_1c in ['zeros','cloneZ','cloneHZ']:
-                self.rule_1c = rule_1c
+        # Compatability check for ch_fill_rule
+        if isinstance(ch_fill_rule, str):
+            if ch_fill_rule in ['zeros','cloneZ','cloneHZ']:
+                self.ch_fill_rule = ch_fill_rule
             else:
-                raise ValueError('rule_1c must be in: "zeros", "cloneZ", "cloneHZ"')
+                raise ValueError('ch_fill_rule must be in: "zeros", "cloneZ", "cloneHZ"')
         else:
-            raise TypeError('rule_1c must be type str')
+            raise TypeError('ch_fill_rule must be type str')
 
         # Compatability check for substr
         if isinstance(substr, str):
@@ -91,92 +98,231 @@ class WindWyrm(Wyrm):
             raise TypeError('substr must be type str')
 
         self.index = {}
-        self._template = {'next_ts': None, '1C': False, 'z_code': False}
+        self._template = {'next_starttime': None, '1C': False, 'pcomp': False}
+        self.queue = deque([])
 
-    def _index_rtinststream_branches(self, rtinststream):
-        if not isinstance(rtinststream, RtInstStream):
-            raise TypeError('rtinststream must be a wyrm.structures.rtinststream.RtInstStream')
-        else:
-            pass
-    
-        # Iterate across INST codes
-        for k1 in rtinststream.keys():
-            # Alias branch
-            _rtsbranch = rtinststream[k1]
-            
-            # Initial checks for populating new self.index entry
-            if k1 not in self.index.keys()
-                # Test that all limbs in branch are RtBuffTrace's
-                if not all(isinstance(_rtsbranch[_c], RtBuffTrace) for _c in _rtsbranch.keys()):
-                    # Go to next _rtsbranch if untrue
-                    continue
-                else:
-                    # Proceed if limbs are RtBuffTrace
-                    pass
+    def _assess_risbranch_windowing(self, risbranch, **kwargs):
+        """
+        Conduct assessment of window readiness and processing
+        style for a given RtInstStream branch based on thresholds
+        and 1C rules set for this WindWyrm
 
-                # Test that a vertical component is present
-                for _c in _rtsbranch.keys():
-                    if _c.upper() in ['Z', '3']:
-                        _zcode = _c.upper()
-                        # Terminate inner loop if successful match
-                        continue
-                    else:
-                        _zcode = False
-                # If a vertical component is not present, go to next _rtsbranch
-                if not _zcode:
-                    continue
-                # Otherwise, proceed
-                else:
-                    pass
+        :: INPUTS ::
+        :param risbranch: [dict] of [RtBuffTrace] objects
+                Realtime Instrument Stream branch
+        :param **kwargs: key-word argment collector to pass
+                to RtBuffTrace.get_window_stats()
+                    starttime
+                    endtime
+                    pad
+                    taper_sec
+                    taper_type
+                    vert_codes
+                    hztl_codes
 
-                # If initial tests are passed, populate entry in index
-                self.index.update({k1: deepcopy(self._template)})
-                # Alias index branch
-                _idxbranch = self.index[k1]
-                _idxbranch['zcode'] = _zcode
-            else:
-                pass
         
+        :: OUTPUT ::
+        :return pstats: [dict] dictionary with the following keyed fields
+                '1C'     [bool]: Process as 1C data?
+                'pcomp'  [list]: list of component codes to process starting
+                                 with the vertical component that have passed
+                                 validation.
 
-            # Test for 1C processing flag
-            # Get number of buffers present
-            _nbuff = len(_rtsbranch)
-            # if only vertical present -> flag as 1C
-            if _nbuff == 1 and _idxbranch['zcode'] in _rtsbranch.keys():
-                _idxbranch['1C'] = True
-            # if two components, including vertical...
-            elif _nbuff == 2 and _idxbranch['zcode'] in _rtsbranch.keys():
-                # If a 0-pad or vertical-clone rule for partial data, treat as 1C data
-                if self.rule_1c in ['zeros', 'cloneZ']:
-                    _idxbranch['1C'] = True
-                # Otherwise, do not treat as 1C data
+            NOTE: {'1C': False, 'pcomp': False} indicates no valid window due to
+                    absence of vertical component buffer
+                  {'1C': True, 'pcomp': False} indicates no valid window due to
+                    insufficient data on the vertical
+        """
+        # Create holder for branch member stats
+        bstats = {'vcode': False, 'nbuff': len(risbranch)}
+        # Get individual buffer stats
+        for k2 in risbranch.keys():
+            # Get RtBuffTrace.get_window_stats()
+            stats = risbranch[k2].get_window_stats(**kwargs)
+            bstats.update({k2:stats})
+            # Snag code 
+            if stats['comp_type'] == 'Vertical':
+                bstats.update({'vcode': k2})
+            elif stats['comp_type'] == 'Horizontal':
+                if 'hcode' not in bstats.keys():
+                    bstats.update({'hcodes':[k2]})
                 else:
-                    _idxbranch['1C'] = False
-            # If it appears to have 3-C data, do not treat as 1C at this point
-            elif _nbuff == 3 and _idxbranch['zcode'] in _rtsbranch.keys():
-                _idxbranch['1C'] = False
+                    bstats['hcodes'].append(k2)
+        
+        # ### SENSE VERTICAL DATA PRESENT
+        # TODO: a lot of this can get contracted out to WindowMsg!
+        pstats = {}
+        # if no vertical present, return bstats as-is
+        if not bstats['vcode']:
+            pstats.update({'1C': False, 'pcomp': False})
+        # If vertical is present, proceed
+        elif bstats['vcode']:
+            # If there is not sufficient vertical data in the assessed window
+            if bstats[bstats['vcode']]['percent_valid'] < self.vcp_thresh:
+                pstats.update({'1C': True, 'pcomp': False})
+            # If there is sufficient vertical data
             else:
-                print('something went wrong probing 1C status')
-                breakpoint()
-            
-            # Assess window validity
-            _buff_zts = _rtsbranch[_idxbranch['zcode']].stats.starttime
-            _buff_zte = _rtsbranch[_idxbranch['zcode']].stats.endtime
-            # Get max start-time of buffers
-            if _idxbranch['1C']:
-                _buff_tsmax = _rtsbranch[_idxbranch['zcode']].stats.starttime
-            else:
-                _buff_ts = [_rtsbranch[_c].stats.starttime for _c in _rtsbranch.keys()]
-                _buff_tsmax = max(_buff_ts)
-            # Get min end-time of buffers
-            if _idxbranch['1C']
-                _buff_temin = _rtsbranch[_idxbranch['zcode']].stats.endtime
-            else:
-                _buff_te = [_rtsbranch[_c].stats.endtime for _c in _rtsbranch.keys()]
-                _buff_temin = min(_buff_te)
-
-
-
-
-
+                # If there is only a vertical, flag as ready, 1C
+                if bstats['nbuff'] == 1:
+                    pstats.update({'1C': True, 'pcomp': [bstats['vcode']]})
+                # If there is at least one horizontal buffer
+                elif bstats['nbuff'] == 2:
+                    # If zero-pad or clone vertical 1c rule, flag as ready, 1C
+                    if self.ch_fill_rule in ['zeros','cloneZ']:
+                        pstats.update({'1C': True, 'pcomp': [bstats['vcode']]})
+                    # If horizontal cloning
+                    elif self.ch_fill_rule == 'cloneZH':
+                        # If 
+                        if bstats[bstats['hcodes'][0]]['percent_valid'] < self.h1c_thresh:
+                            pstats.update({'1C': True, 'pcomp': [bstats['vcode']]})
+                        else:
+                            pstats.update({'1C': False, 'pcomp': [bstats['vcode']] + bstats['hcodes']})
+                    else:
+                        raise ValueError(f'ch_fill_rule {self.ch_fill_rule} incompatable')
+                # If there are three buffers
+                elif bstats['nbuff'] == 3:
+                    # If both horizontals have sufficient data flag as ready, 3C
+                    if all(bstats[_c]['percent_valid'] >= self.h1c_thresh for _c in bstats['hcodes']):
+                        pstats.update({'1C': False, 'pcomp': [bstats['vcode']] + bstats['hcodes']})
+                    # If one horizontal has sufficient data
+                    elif any(bstats[_c]['percent_valid'] >= self.h1c_thresh for _c in bstats['hcodes']):
+                        pstats.update({'1C': False, 'pcomp': [bstats['vcode']]})
+                        # If clone horizontal ch_fill_rule
+                        if self.ch_fill_rule == 'cloneZH':
+                            for _c in bstats['hcodes']:
+                                if bstats[_c]['percent_valid'] >= self.h1c_thresh:
+                                    pstats['pcomp'].append(_c)
+                        else:
+                            pstats.update({'1C': True})
+                    # If no horizontal has sufficient data
+                    else:
+                        pstats.update({'1C': True, 'pcomp': [bstats['vcode']]})
+        return pstats
                         
+    def window_rtinststream(self, rtinststream, **kwargs):
+        nsubmissions = 0
+        for k1 in rtinststream.keys():
+            # Alias risbranch
+            _risbranch = rtinststream[k1]
+            # Create new template in index if k1 is not present
+            if k1 not in self.index.keys():
+                self.index.update({k1:{deepcopy(self._template)}})
+                _idxbranch = self.index[k1]
+            else:
+                _idxbranch = self.index[k1]
+            # # # ASSESS IF NEW WINDOW CAN BE GENERATED # # #
+            # If next_starttime is still template value
+            if isinstance(_idxbranch['next_starttime'], type(None)):
+                # Search for vertical component
+                for _c in self.vert_codes:
+                    if _c in _risbranch.keys():
+                        # If vertical component has any data
+                        if len(_risbranch[_c]) > 0:
+                            # Assign `next_starttime` using buffer starttime
+                            _buff_ts = _risbranch[_c].stats.starttime
+                            _idxbranch['next_starttime'] = _buff_ts
+                            # break iteration loop
+                            break
+
+            # Handle case if next_starttime already assigned
+            if isinstance(_idxbranch['next_starttime'], UTCDateTime):
+                ts = _idxbranch['next_starttime']
+                te = ts + self.wsec
+
+                pstats = self._assess_risbranch_windowing(
+                    _risbranch,
+                    starttime=ts,
+                    endtime=te,
+                    vert_codes=self.vert_codes,
+                    hztl_codes=self.hztl_codes,
+                    taper_type=self.ttype,
+                    taper_sec=self.blindsec)
+                
+                # Update with pstats
+                _idxbranch.update(pstats)
+
+            # If flagged for windowing
+            if isinstance(_idxbranch['pcomp'], list):
+                _pcomp = _idxbranch['pcomp']
+                # If not 3-C
+                if len(_pcomp) <= 2:
+                    # Get vertical buffer
+                    _buff = _risbranch[_pcomp[0]]
+                    _trZ = _buff.as_trace().trim(
+                        starttime=ts,
+                        endtime=te,
+                        pad=True,
+                        nearest_sample=True)
+                    # If zero-padding rule
+                    if self.ch_fill_rule == 'zeros':
+                        _trH = _trZ.copy()
+                        _trH.data *= 0
+                    # If cloning rule
+                    elif self.ch_fill_rule in ['cloneZ', 'cloneHZ']:
+                        # If only vertical available, clone vertical
+                        if len(_pcomp) == 1:
+                            _trH = _trZ.copy()
+                        # If horziontal available
+                        elif len(_pcomp) == 2:
+                            # For cloneZ, still clone vertical
+                            if self.ch_fill_rule == 'cloneZ':
+                                _trH = _trZ.copy()                              
+                            # Otherwise, clone horizontal
+                            else:
+                                _buff = _risbranch[_pcomp[1]]
+                                _trH = _buff.as_trace().trim(
+                                    starttime=ts,
+                                    endtime=te,
+                                    pad=True,
+                                    nearest_sample=True)
+                    # Compose window dictionary
+                    window ={'Z': _trZ,
+                             'N': _trH,
+                             'E': _trH}
+                # If 3C
+                elif len(_pcomp)==3:
+                    window = {}
+                    for _c,_a in zip(_pcomp, ['Z','N','E']):
+                        _buff = _risbranch[_c]
+                        _tr = _buff.as_trace().trim(
+                            starttime=ts,
+                            endtime=te,
+                            pad=True,
+                            nearest_sample=True)
+                        window.update({_a:_tr})
+                # Append processing metadata to window
+                window.update(deepcopy(_idxbranch))
+
+                # Append window to output queue
+                self.queue.appendleft(window)
+
+                # Advance next_window by stride seconds
+                _idxbranch['next_starttime'] += self.ssec
+
+                # Increase index for submitted
+                nsubmissions += 1
+        return nsubmissions
+    
+    def pulse(self, x):
+        """
+        :: INPUT ::
+        :param x: [RtInstStream] populated realtime instrument
+                    stream object
+
+        :: OUTPUT ::
+        :return y: [deque]
+        """
+        for _ in self.maxiter:
+            ns = self.window_rtinststream(x)
+            if ns == 0:
+                break
+        y = self.queue
+        return y
+
+                    
+
+
+
+
+
+

@@ -14,7 +14,7 @@
     to re-initialize the RtBuffTrace object.
 """
 
-from obspy import Trace, Stream
+from obspy import Trace, Stream, UTCDateTime
 import numpy as np
 from copy import deepcopy
 
@@ -70,7 +70,7 @@ class RtBuffTrace(Trace):
             header=None,
         )
 
-    def __str__(self, extended=True, disc=100, showkey=False):
+    def __str__(self, extended=True, disc=30, showkey=False):
         """
         Return short summary string of the current RtBuffTrace
         with options for displaying buffer status graphically
@@ -83,6 +83,7 @@ class RtBuffTrace(Trace):
         :param showkey: [bool]
         """
         rstr = super().__str__()
+        rstr += f" | masked {100.*(1. - self.get_valid_pct()):.0f}%"
         rstr += f" | max {self.max_length} sec"
         if extended:
             rstr += "\n"
@@ -90,6 +91,9 @@ class RtBuffTrace(Trace):
         return rstr
 
     def _display_buff_status(self, disc=100, showkey=False, asprint=True):
+        """
+        Display a grapic representation of the data validity
+        """
         if not isinstance(disc, int):
             raise TypeError("disc must be type int")
         elif disc < 0:
@@ -425,6 +429,14 @@ class RtBuffTrace(Trace):
         """
         new = deepcopy(self, *args, **kwargs)
         return new
+    
+    def as_trace(self):
+        """
+        returns a deepcopy of the data and header attributes
+        as a plain-vanilla obspy.core.trace.Trace
+        """
+        new = Trace(data=self.copy().data, header=self.copy().header)
+        return new
 
     def get_sncl(self):
         """
@@ -465,6 +477,182 @@ class RtBuffTrace(Trace):
         loc = self.stats.location
         nsli = f"{net}.{sta}.{loc}.{inst}"
         return (nsli, comp)
-    
-    def get_valid_pct(self):
+
+    def get_valid_pct(
+        self, starttime=None, endtime=None, pad=True, taper_sec=0.0, taper_type="cosine"
+    ):
+        """
+        Get the (weighted) fraction value of valid (unmasked)
+        data in a buffer or a specified slice of the buffer
+
+        :: INPUTS ::
+        :param starttime: [None] or [UTCDateTime]
+                        starttime passed to self.copy().trim()
+        :param endtime [None] or [UTCDateTime]
+                        endtime passed to self.copy().trim()
+        :param pad: [bool] pad argument passed to self.copy().trim()
+        :param taper_sec: [float] tapered weighting function length
+                        for each end of (subset) trace in seconds
+        :param taper_type: [str] type of taper to apply. Supported:
+                    'cosine' - cosine taper
+                    'step' - Step functions centered on the nearest sample to
+                            starttime + taper_sec and endtime - taper_sec
+        :: OUTPUT ::
+        :return pct_val: [float] value \in [0,1] indicating the (weighted)
+                            fraction of valid (non-masked) samples in the
+                            (subset)buffer
+
+        NOTE: The 'step' taper_type is likely useful when assessing data windows
+        that will be subject to blinding (e.g., continuous, striding predictions
+        with ML workflows like EQTransformer and PhaseNet). The 'cosine' taper_type
+        is likely more appropriate for general assessments of data when targeted
+        features are assumed to be window-centered.
+        """
+
+        # Compatability check for starttime
+        if isinstance(starttime, UTCDateTime):
+            ts = starttime
+        elif isinstance(starttime, type(None)):
+            ts = None
+        else:
+            raise TypeError("starttime must be UTCDateTime or None")
+        # Compatability check for endtime
+        if isinstance(endtime, UTCDateTime):
+            te = endtime
+        elif isinstance(endtime, type(None)):
+            te = None
+        else:
+            raise TypeError("endtime must be UTCDateTime or None")
+        # Cmopatability check for pad
+        if not isinstance(pad, bool):
+            raise TypeError("pad must be bool")
+        else:
+            pass
+        # Compatability check for taper_sec
+        if isinstance(taper_sec, float):
+            pass
+        elif isinstance(taper_sec, int):
+            taper_sec = float(taper_sec)
+        else:
+            raise TypeError("taper_sec must be type float or int")
+        # Compatability check for taper_type
+        if not isinstance(taper_type, str):
+            raise TypeError("taper_type must be type str")
+        else:
+            pass
+        # Taper generation section
+        if taper_sec <= 0:
+            tsamp = 0
+            tap = 1
+        else:
+            tsamp = int(taper_sec * self.stats.sampling_rate)
+            if taper_type.lower() in ["cosine", "cos"]:
+                tap = 0.5 * (1.0 + np.cos(np.linspace(np.pi, 2.0 * np.pi, tsamp)))
+            elif taper_type.lower() in ["step", "h", "heaviside"]:
+                tap = np.zeros(tsamp)
+            else:
+                raise ValueError(
+                    f"taper_type {taper_type} not supported. Supported values: 'cosine','step'"
+                )
+        # Apply trim function with cleared arguments
+        _tr = self.copy().trim(
+            starttime=ts,
+            endtime=te,
+            pad=pad,
+            nearest_sample=True,
+            fill_value=self.fill_value,
+        )
+        # Assess percent valid (pct_val)
+        # If unmasked slice of buffer --> 100% completeness
+        if not np.ma.is_masked(_tr.data):
+            pct_val = 1.0
+        else:
+            # Compose binary array from bool mask
+            mask_array = _tr.data.mask
+            if len(mask_array) != _tr.npts:
+                raise TypeError(
+                    "expected _tr.data.mask and _tr.data to have the same length"
+                )
+            # Unmasked values = 1
+            bin_array = np.ones(_tr.stats.npts)
+            # Masked values = 0
+            bin_array[mask_array] = 0
+            # If no tapered weighting function
+            if tsamp == 0:
+                pct_val = np.mean(bin_array)
+            # If tapered weighting function
+            elif tsamp > 0:
+                # Compose weight array
+                wt_array = np.ones(_tr.stats.npts)
+                wt_array[:tsamp] *= tap
+                wt_array[-tsamp:] *= tap[::-1]
+                # Calculate weighted average
+                num = np.sum(wt_array * bin_array)
+                den = np.sum(wt_array)
+                pct_val = num / den
+
+        return pct_val
+
+    def get_window_stats(
+        self,
+        starttime=None,
+        endtime=None,
+        pad=True,
+        taper_sec=0.0,
+        taper_type="cosine",
+        vert_codes='Z3',
+        hztl_codes='N1E2'
+    ):
+        """
+        Produce a dictionary of key statistics / bool results for this rtbufftrace for a specified window
+        """
+        nsli, comp = self.get_nsli_c()
+        if comp in vert_codes:
+            stats = {'comp_type': 'Vertical', 'comp_code': comp}
+        elif comp in hztl_codes:
+            stats = {'comp_type': 'Horizontal', 'comp_code': comp}
+        else:
+            stats = {'comp_type': 'Unassigned', 'comp_code': comp}
+
+        # Compatability check for starttime
+        if isinstance(starttime, UTCDateTime):
+            ts = starttime
+        elif isinstance(starttime, type(None)):
+            ts = self.stats.starttime
+        else:
+            raise TypeError("starttime must be UTCDateTime or None")
+
+        stats.update({'starttime': ts})
+
+        # Compatability check for endtime
+        if isinstance(endtime, UTCDateTime):
+            te = endtime
+        elif isinstance(endtime, type(None)):
+            te = self.stats.endtime
+        else:
+            raise TypeError("endtime must be UTCDateTime or None")
+
+        stats.update({'endtime': te})        
+
+        # Cmopatability check for pad
+        if not isinstance(pad, bool):
+            raise TypeError("pad must be bool")
+        else:
+            pass
+        # Compatability check for taper_sec
+        if isinstance(taper_sec, float):
+            pass
+        elif isinstance(taper_sec, int):
+            taper_sec = float(taper_sec)
+        else:
+            raise TypeError("taper_sec must be type float or int")
+        # Compatability check for taper_type
+        if not isinstance(taper_type, str):
+            raise TypeError("taper_type must be type str")
+        else:
+            pass
         
+        # Get percent valid
+        pct_val = self.get_valid_pct(starttime=ts, endtime=te, pad=pad, taper_sec=taper_sec, taper_type=taper_type)
+
+        stats.update({'percent_valid': pct_val})

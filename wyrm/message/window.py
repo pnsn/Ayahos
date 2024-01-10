@@ -1,9 +1,55 @@
-from obspy import Trace, Stream
+from obspy import Trace, Stream, UTCDateTime
 from wyrm.structures.rtbufftrace import RtBuffTrace
 
 
 class WindowMsg(Stream):
-    """ """
+    """
+    Class WindowMsg. This class is a child of the obspy.core.stream.Stream
+    class type to structure slices of buffered waveform data by seismometer
+    (i.e., a specific instrument/band at a specific site) that provides the
+    following additional attributes and functionalities
+
+    :: Component Aliases ::
+    :attrib V0: Vertical component aliased trace
+    :attrib H1: First horizontal component aliased trace
+    :attrib H2: Second horizontal component aliased trace
+
+    :: Incomplete Data Handling Rules:
+    :attrib ch_fill_rule: sets the rule for converting incomplete data into
+                    a 3-channel representation of the data.
+            Current supported rules:
+            'zeros' - if one or both horizontal channels are missing, fill
+                      with zero-vector data (after Retailleau et al., 2021)
+                      and populate a 0-valued trace with slightly altered
+                      metadata from vertical channel data. Specifically,
+                      the SEED channel code letter for component will be set
+                      to 0. I.e., HNZ --> HN0
+                      This will populate a second trace object in the self.traces
+                      class attribute
+            'cloneZ' - if one or both horizontal channels are missing, clone
+                      vertical component data as horizontal channel data
+                      (after Ni et al., 2023). This strictly aliases data
+            'cloneHZ' - if one horizontal channel is missing, clone the other
+                      horizontal component data to fill the missing data, if
+                      both horizontal channels are missing, do 'cloneZ'
+                      (after Lara et al., 2023). This strictly aliases data
+
+    :: Windowing Information ::
+    :attrib target_sr: Target sampling rate this window will end with
+    :attrib target_npts: Target number of samples this window will end with
+    :attrib ref_starttime: Reference starttime for first sample of final window
+
+
+    :: obspy.core.stream.Stream inheritance ::
+    WindowMsg is a child-class of Stream and its data storage structure is the sam
+    i.e., self.traces = list of Trace objects. To make WindowMsg objects more compact
+    cloned channels are just aliases to the same Trace objects in self.traces.
+
+    As such, any pre-/post-processing conducted on the contents of a WindowMsg object
+    should be conducted using obspy.core.stream.Stream class methods to avoid accidentially
+    applying processing steps multiple times as might arise in the case of iterating
+    across the component aliases. DO NOT ITERATE ACROSS Component Aliases.
+    """
 
     def __init__(
         self,
@@ -11,9 +57,39 @@ class WindowMsg(Stream):
         H1=None,
         H2=None,
         ch_fill_rule="zeros",
-        model_code="EQT",
         target_sr=100.0,
+        target_npts=6000,
+        ref_starttime=None,
+        tolsamp=3,
     ):
+        """
+        Initialize a WindowMsg object
+
+        :: INPUTS ::
+        :param V0: [obspy.Trace] or [None]
+                    Vertical component Trace object
+        :param H1: [obspy.Trace] or [None]
+                    Horizontal component Trace object 1
+        :param H2: [obspy.Trace] or [None]
+                    Horizontal component Trace object 2
+        :param ch_fill_rule: [str]
+                    Empty channel fill rule. Supported options:
+                    "zeros" - make horizontals 0-traces if any H1, H2 are None
+                    "cloneZ" - clone vertical if any horizontals are None
+                    "cloneHZ" - clone horizontal if one is present, clone vertical
+                                if both horizontals are missing
+        :param target_sr: [float] target sampling rate used to generate windowed data slice
+        :param target_npts: [int] target number of samples used to generate windowed data slice
+        :param ref_starttime: [None] or [obspy.UTCDateTime]
+                            Reference starttime for window. Should be within a `tolsamp`
+                            samples of the target window sampling rate and the starttime of
+                            V0.
+        :param tolsamp: [int] number of samples at target_sr that input trace starttimes
+                            can mismatch one another or that V0 can mismatch ref_starttime
+        
+        WindowMsg is a child class of obspy.Stream, inheriting all of its class methods
+        structure for storing lists of obspy.Trace data objects. 
+        """
         # Initialize parent class attributes (stream)
         super().__init__(self)
 
@@ -63,13 +139,13 @@ class WindowMsg(Stream):
                 f'ch_fill_rule {ch_fill_rule} not supported. Only "zeros", "cloneZ", or "cloneHZ"'
             )
 
-        # model_code compatability checks
-        if not isinstance(model_code, str):
-            raise TypeError("model_code must be type str")
-        elif model_code in ["EQT", "PN"]:
-            self.model_code = model_code
-        else:
-            raise ValueError(f"model code {model_code} not supported")
+        # # model_code compatability checks
+        # if not isinstance(model_code, str):
+        #     raise TypeError("model_code must be type str")
+        # elif model_code in ["EQT", "PN"]:
+        #     self.model_code = model_code
+        # else:
+        #     raise ValueError(f"model code {model_code} not supported")
 
         # target_sr compatability checks
         if isinstance(target_sr, (int, float)):
@@ -80,13 +156,68 @@ class WindowMsg(Stream):
         else:
             raise TypeError("target_sr must be int or float")
 
-        # Mutual compatability checks
+        # target_npts compatability checks
+        if isinstance(target_npts, int):
+            if target_npts > 0:
+                self.target_npts = target_npts
+            else:
+                raise ValueError("target_npts must be a positive integer")
+        elif isinstance(target_npts, float):
+            if target_npts > 0:
+                self.target_npts = int(target_npts)
+            else:
+                raise ValueError("target_npts must be a positive integer")
+        else:
+            raise TypeError("target_npts must be an int-like number")
+
+        # tolsamp compatability checks
+        if isinstance(tolsamp, int):
+            if tolsamp >= 0:
+                self.tolsamp = tolsamp
+            else:
+                raise ValueError("tolsamp must be g.e. 0")
+        elif isinstance(tolsamp, float):
+            if int(tolsamp) >= 0:
+                self.tolsamp = int(tolsamp)
+            else:
+                raise ValueError("tolsamp must be g.e. 0")
+        else:
+            raise TypeError("tolsamp must be int-like")
+
+        # ref_starttime compatability checks
+        if isinstance(ref_starttime, UTCDateTime):
+            if self.V0 is None:
+                self.ref_starttime = ref_starttime
+            elif isinstance(self.V0, Trace):
+                if abs(
+                    self.V0.stats.starttime - ref_starttime
+                ) / self.target_npts <= self.tolsamp:
+                    self.ref_starttime = ref_starttime
+                else:
+                    emsg = f"specified ref_starttime {ref_starttime} "
+                    emsg += f"mismatches V0 starttime {self.V0.stats.starttime}."
+                    emsg += "\nDefaulting to V0 starttime"
+                    print(emsg)
+                    self.ref_starttime = self.V0.stats.starttime
+            else:
+                raise TypeError("Somehow got a V0 that is not type Trace or None...")
+        elif ref_starttime is None:
+            if isinstance(self.V0, Trace):
+                self.ref_starttime = self.V0.stats.starttime
+            elif self.V0 is None:
+                self.ref_starttime = UTCDateTime(0)
+            else:
+                raise TypeError("Somehow got a V0 that is not type Trace or None...")
+        else:
+            raise TypeError("ref_starttime must be type UTCDateTime or None")
+
+        # Input trace mutual compatability checks
         for _i, _c in enumerate([self.V0, self.H1, self.H2]):
             for _j, _k in enumerate([self.V0, self.H1, self.H2]):
                 if _i > _j:
                     if _c is not None and _k is not None:
                         try:
-                            self.check_inst_meta_compat(_c, _k)
+                            self.check_inst_meta_compat(_c, _k, tolsamp=self.tolsamp)
                         except ValueError:
                             raise ValueError(f"{_c} mismatches {_k}")
 
@@ -122,10 +253,12 @@ class WindowMsg(Stream):
             raise ValueError(f"ch_fill_rule {ch_fill_rule} invalid")
 
     def __str__(self):
+        """string representation of a WindowMsg"""
+
         rstr = f"{len(self)} trace(s) in WindowMsg | "
-        rstr += f'target model: {self.model_code} | '
+        rstr += f"target model: {self.model_code} | "
         rstr += f"channel fill rule: {self.ch_fill_rule} | "
-        rstr += f'target S/R: {self.target_sr} Hz\n'
+        rstr += f"target S/R: {self.target_sr} Hz\n"
         # Vertical component trace display
         rstr += f"Vert:  {self.V0.__str__()} \n"
         # Horizontal component 1 trace display
@@ -147,12 +280,28 @@ class WindowMsg(Stream):
         else:
             rstr += "\n"
         return rstr
-    
+
     def __repr__(self):
+        """Short format representation of a WindowMsg"""
         rstr = self.__str__()
         return rstr
 
     def check_inst_meta_compat(self, c1, c2, tolsamp=3):
+        """
+        Check compatability of two traces supposedly from the
+        same instrument for the same period of time
+
+        :: INPUTS ::
+        :param c1: [obspy.Trace] trace object 1
+        :param c2: [obspy.Trace] trace object 2
+        :param tolsamp: [int] sample tolerance at self.target_sr
+                        sampling rate for differences in starttime
+                        and endtime values for c1 and c2
+        :: OUTPUT ::
+        If compatable, this method returns bool output 'True'
+        otherwise it raises a TypeError or ValueError with some additional
+        information on the specific failed compatability test
+        """
         if not isinstance(c1, Trace):
             raise TypeError("c1 is not type Trace")
         if not isinstance(c2, Trace):
@@ -175,9 +324,48 @@ class WindowMsg(Stream):
             pass
         # Check that starttime and endtime are within tolerance
         for _k in ["starttime", "endtime"]:
-            if abs(s1[_k] - s2[_k]) / s1.sampling_rate > tolsamp:
+            if abs(s1[_k] - s2[_k]) / self.target_sr > tolsamp:
                 raise ValueError(f"difference in {_k}'s outside tolerance")
             else:
                 pass
 
         return True
+
+    def sync_interp(self, **kwargs):
+        """
+        Sync the starttimes and sampling rates of traces using
+        the target_sr and ref_starttime attributes of this WindowMsg
+        """
+        # INTERPOLATION SECTION
+        # If reference starttime matches vertical
+        if self.V0.stats.starttime == self.ref_starttime:
+            # If all sampling rates
+            for _tr in self.traces:
+                if _tr.stats.sampling_rate == self.target_sr:
+                    if _tr.stats.starttime == self.ref_starttime:
+                        continue
+                    
+                elif _tr.stats.sampling_rate < self.target_sr:
+                    _tr.interpolate(self.target_sr, **kwargs)
+                else:
+                    _tr.filter('lowpass', freq= self.target_sr/2)
+                    _tr.interpolate(self.target_sr, **kwargs)
+        
+
+        # TRIM/PAD SECTION
+
+        for _tr in self.traces:
+            if _tr.stats.starttime == self.ref_starttime:
+                if _tr.stats.sampling_rate == self.target_sr:
+                    pass
+                elif _tr.stats.sampling_rate > self.target_sr:
+                    _tr.filter('lowpass', freq=self.target_sr/2)
+                    _tr.interpolate(self.target_sr)
+
+
+
+    def to_array(self, fill_value=0, order='Z12'):
+        
+
+
+    def _example_processing(self):

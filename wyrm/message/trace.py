@@ -1,3 +1,22 @@
+"""
+:module: wyrm.message.trace
+:author: Nathan T. Stevens
+:email: ntsteven (at) uw.edu
+:org: Pacific Northwest Seismic Network
+:license: AGPL-3.0
+
+:purpose:
+    This module contains the class definition for
+    TraceMsg objects that augment the obspy.Trace class
+    by adding read/write methods for PyEarthworm `wave`
+    messages and direct submission/reading from Earthworm
+    WAVE-type rings building on the PyEarthworm API
+
+TODO: Remove data type overwrite options, just have 
+      passive interpretations/translations of dtypes
+      to ensure they are consistent during I/O.
+"""
+
 import numpy as np
 from obspy import Trace
 from obspy.realtime import RtTrace

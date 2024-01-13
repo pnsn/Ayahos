@@ -106,98 +106,11 @@
 ---END OF FILE---
 
 """
+import wyrm.util.input_compatability_checks as icc
 
 # CREATE GLOBAL VARIABLES FOR MESSAGE TYPES FOR NOW..
 # TODO: HAVE SOME FUNCTIONALITY TO CROSS-REFERENCE WITH earthworm_global.d AND
 #       INSTALLATION SPECIFIC MESSAGE CODE (earthworm_local.d?) BEFORE STARTUP
-EW_GLOBAL_MESSAGE_CODES = [
-    0,
-    1,
-    2,
-    3,
-    4,
-    5,
-    6,
-    8,
-    9,
-    10,
-    11,
-    12,
-    13,
-    14,
-    15,
-    17,
-    18,
-    19,
-    20,
-    21,
-    22,
-    23,
-    24,
-    25,
-    26,
-    27,
-    28,
-    29,
-    30,
-    31,
-    32,
-    33,
-    34,
-    35,
-    36,
-    94,
-    95,
-    96,
-    97,
-    98,
-]
-
-EW_GLOBAL_MESSAGE_TYPES = [
-    "TYPE_WILDCARD",
-    "TYPE_ADBUF",
-    "TYPE_ERROR",
-    "TYPE_HEARTBEAT",
-    "TYPE_TRACE2_COMP_UA",
-    "TYPE_NANOBUF",
-    "TYPE_ACK",
-    "TYPE_PICK_SCNL",
-    "TYPE_CODA_SCNL",
-    "TYPE_PICK2K",
-    "TYPE_CODA2K",
-    "TYPE_PICK2",
-    "TYPE_CODA2",
-    "TYPE_HYP2000ARC",
-    "TYPE_H71SUM2K",
-    "TYPE_HINBARC",
-    "TYPE_H71SUM",
-    "TYPE_TRACEBUF2",
-    "TYPE_TRACEBUF",
-    "TYPE_LPTRIG",
-    "TYPE_CUBIC",
-    "TYPE_CARLSTATRIG",
-    "TYPE_TRIGLIST",
-    "TYPE_TRIGLIST2K",
-    "TYPE_TRACE_COMP_UA",
-    "TYPE_STRONGMOTION",
-    "TYPE_MAGNITUDE",
-    "TYPE_STRONGMOTIONII",
-    "TYPE_LOC_GLOBAL",
-    "TYPE_LPTRIG_SCNL",
-    "TYPE_CARLSTATRIG_SCNL",
-    "TYPE_TRIGLIST_SCNL",
-    "TYPE_TD_AMP",
-    "TYPE_MSEED",
-    "TYPE_NOMAGNITUDE",
-    "TYPE_NAMED_EVENT",
-    "TYPE_HYPOTWC",
-    "TYPE_PICK_GLOBAL",
-    "TYPE_PICKTWC",
-    "TYPE_ALARM",
-]
-# Form two-way look-up dictionaries
-EW_GLOBAL_TC = dict(zip(EW_GLOBAL_MESSAGE_TYPES, EW_GLOBAL_MESSAGE_CODES))
-EW_GLOBAL_CT = dict(zip(EW_GLOBAL_MESSAGE_CODES, EW_GLOBAL_MESSAGE_TYPES))
 
 
 class _BaseMsg(object):
@@ -213,72 +126,144 @@ class _BaseMsg(object):
                   documentation.
     """
 
-    def __init__(self, mtype="TYPE_TRACEBUF2", mcode=19):
-        self.mtype = mtype
-        self.mcode = mcode
-        self._validate_basemsg()
-        super().__init__()
+    def __init__(self, mtype="TYPE_TRACEBUF2", mcode=None):
+        # Attach input compatability check methods
+        self.bounded_intlike = icc.bounded_intlike
+        self.bounded_floatlike = icc.bounded_floatlike
+        self.none_str = icc.none_str
+        self.iterable_characters = icc.iterable_characters
+        # Validate message
+        self._validate_basemsg(mtype, mcode)
 
-    def _validate_basemsg(self):
-        # Validate mcode type and value
-        if not isinstance(self.mcode, (int, type(None))):
-            raise TypeError("mcode must be int or None type")
-        # If int - run cross-checks against earthworm_global.d
-        elif isinstance(self.mcode, int):
-            # But not in range
-            if not 0 <= self.mcode <= 255:
-                raise ValueError("mcode must be an int in [0,255]")
-            # Otherwise, if in earthworm_global.d range
-            elif 0 <= self.mcode <= 99:
+    def _validate_basemsg(self, mtype, mcode):
+        EW_GLOBAL_MESSAGE_CODES = [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            94,
+            95,
+            96,
+            97,
+            98,
+        ]
+
+        EW_GLOBAL_MESSAGE_TYPES = [
+            "TYPE_WILDCARD",
+            "TYPE_ADBUF",
+            "TYPE_ERROR",
+            "TYPE_HEARTBEAT",
+            "TYPE_TRACE2_COMP_UA",
+            "TYPE_NANOBUF",
+            "TYPE_ACK",
+            "TYPE_PICK_SCNL",
+            "TYPE_CODA_SCNL",
+            "TYPE_PICK2K",
+            "TYPE_CODA2K",
+            "TYPE_PICK2",
+            "TYPE_CODA2",
+            "TYPE_HYP2000ARC",
+            "TYPE_H71SUM2K",
+            "TYPE_HINBARC",
+            "TYPE_H71SUM",
+            "TYPE_TRACEBUF2",
+            "TYPE_TRACEBUF",
+            "TYPE_LPTRIG",
+            "TYPE_CUBIC",
+            "TYPE_CARLSTATRIG",
+            "TYPE_TRIGLIST",
+            "TYPE_TRIGLIST2K",
+            "TYPE_TRACE_COMP_UA",
+            "TYPE_STRONGMOTION",
+            "TYPE_MAGNITUDE",
+            "TYPE_STRONGMOTIONII",
+            "TYPE_LOC_GLOBAL",
+            "TYPE_LPTRIG_SCNL",
+            "TYPE_CARLSTATRIG_SCNL",
+            "TYPE_TRIGLIST_SCNL",
+            "TYPE_TD_AMP",
+            "TYPE_MSEED",
+            "TYPE_NOMAGNITUDE",
+            "TYPE_NAMED_EVENT",
+            "TYPE_HYPOTWC",
+            "TYPE_PICK_GLOBAL",
+            "TYPE_PICKTWC",
+            "TYPE_ALARM",
+        ]
+        # Form two-way look-up dictionaries
+        EW_GLOBAL_TC = dict(zip(EW_GLOBAL_MESSAGE_TYPES, EW_GLOBAL_MESSAGE_CODES))
+        EW_GLOBAL_CT = dict(zip(EW_GLOBAL_MESSAGE_CODES, EW_GLOBAL_MESSAGE_TYPES))
+
+        # Do initial value/type compatability checks
+        if mcode is None:
+            pass
+        else:
+            mcode = self.bounded_intlike(mcode, name='mcode', minimum=0, maximum=255)
+            # If in earthworm_global.d range
+            if 0 <= self.mcode <= 99:
                 # Error if self.mcode in [0,99] and invalid
-                if self.mcode not in EW_GLOBAL_MESSAGE_CODES:
+                if mcode not in EW_GLOBAL_MESSAGE_CODES:
                     raise ValueError(
                         "mcode falls into earthworm_global.d\
-                                      reserved range [0,99] but is not a\
-                                      valid value"
-                    )
-                # Pass if self.mcode in [0,99] and valid
-                else:
-                    pass
-            # Pass if self.mcode in [100, 255]
-            else:
-                pass
-        # If None
-        else:
-            pass
+                                        reserved range [0,99] but is not a\
+                                        valid value")
 
         # Validation on mtype type and syntax sniff-tests
-        if not isinstance(self.mtype, (str, type(None))):
-            raise TypeError("mtype must be str or None type")
-        # If str
-        elif isinstance(self.mtype, str):
-            # Sniff-test on all-caps syntax
-            if self.mtype.upper() != self.mtype:
-                raise SyntaxError("mtype must be all-caps")
-            # If sniff test passed, continue
-            else:
-                pass
-            # Sniff-test on leading "TYPE_"
-            if self.mtype[:5] != "TYPE_":
-                raise SyntaxError('mtype must start with "TYPE_"')
-            # If sniff test passed, continue
-            else:
-                pass
-        # If None
-        else:
+        if mtype is None:
             pass
-
+        else:
+            mtype = self.none_str(mtype)
+            # Sniff-test on all-caps syntax
+            if mtype.upper() != mtype:
+                raise SyntaxError("mtype must be all-caps")
+            # Sniff-test on leading "TYPE_"
+            if mtype[:5] != "TYPE_":
+                raise SyntaxError('mtype must start with "TYPE_"')
+            
         # Cross validation checks
         # If both are None
-        if self.mtype is None and self.mcode is None:
-            raise TypeError("Must assign mtype and/or mcode as non-None-type")
+        if mtype is None and mcode is None:
+            self.mtype = mtype
+            self.mcode = mcode
+            # raise TypeError("Must assign mtype and/or mcode as non-None-type")
 
         # If mtype is None, but mcode passed individual checks above
-        elif self.mtype is None and self.mcode is not None:
+        elif mtype is None and mcode is not None:
             # If self.mcode falls into earthworm_global.d message code range
             if 0 <= self.mcode <= 99:
-                self.mtype = EW_GLOBAL_CT[self.mcode]
-                return True
+                self.mcode = mcode
+                self.mtype = EW_GLOBAL_CT[mcode]
             # IF self.mcode falls into the installation range, kick error
             # because both mtype and mcode need to be defined for these
             else:
@@ -288,11 +273,11 @@ class _BaseMsg(object):
                 )
 
         # If mtype passed individual checks above but mcode is None
-        elif self.mtype is not None and self.mcode is None:
+        elif mtype is not None and mcode is None:
             # if mtype is in global message types, use this to assign mcode!
-            if self.mtype in EW_GLOBAL_MESSAGE_TYPES:
+            if mtype in EW_GLOBAL_MESSAGE_TYPES:
+                self.mtype = mtype
                 self.mcode = EW_GLOBAL_TC[self.mtype]
-                return True
             # otherwise raise a more-generalized (longer winded) SyntaxError
             else:
                 raise SyntaxError(
@@ -305,25 +290,27 @@ class _BaseMsg(object):
         # If mtype and mcode passed checks and neither is None
         else:
             # If mcode in earthworm_global.d range
-            if 0 <= self.mcode <= 99:
+            if 0 <= mcode <= 99:
                 # If mismatch
-                if EW_GLOBAL_CT[self.mcode] != self.mtype:
+                if EW_GLOBAL_CT[mcode] != mtype:
                     raise ValueError(
                         "mcode is in earthworm_global.d\
                         reserved range [0,99] but mtype does not match"
                     )
                 # Otherwise pass
                 else:
-                    return True
+                    self.mtype = mtype
+                    self.mcode = mcode
             # If mcode in installation range
             else:
                 print(
                     f"Assuming {self.mtype} : {self.mcode} matches\
                           installation message defs"
                 )
-                return True
+                self.mtype = mtype
+                self.mcode = mcode
 
     def __repr__(self):
         rstr = f"MTYPE: {self.mtype}\n"
-        rstr += f"MCODE: {self.mcode}\n"
+        rstr += f"MCODE: {self.mcode}"
         return rstr

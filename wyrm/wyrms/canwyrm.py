@@ -16,6 +16,7 @@ this would be a good candidate class for orchestraing multiprocessing.
 """
 from wyrm.wyrms.tubewyrm import TubeWyrm
 from collections import deque
+from time import sleep
 
 
 class CanWyrm(TubeWyrm):
@@ -32,9 +33,13 @@ class CanWyrm(TubeWyrm):
     # Inherits __init__ from TubeWyrm
     def __init__(self,
                  wyrm_queue=deque([]),
+                 wait_sec=0.,
                  output_format=deque,
-                 concat_method='appendleft'):
-        super().__init__(wyrm_queue=wyrm_queue)
+                 concat_method='appendleft',
+                 max_pulse_size=None,
+                 debug=False):
+        # Initialize from TubeWyrm (and by extension Wyrm)
+        super().__init__(wyrm_queue=wyrm_queue, wait_sec=wait_sec, debug=debug, max_pulse_size=max_pulse_size)
         if not isinstance(output_format, type):
             raise TypeError('output_format must be of type "type" - method without ()')
         elif output_format not in [list, deque]:
@@ -75,4 +80,5 @@ class CanWyrm(TubeWyrm):
         for _wyrm in self.wyrm_queue:
             _y = _wyrm.pulse(x)
             eval(f'y.{self.concat_method}(_y)')
+            sleep(self.wait_sec)
         return y

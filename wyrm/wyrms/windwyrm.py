@@ -2,20 +2,26 @@ from wyrm.wyrms.wyrm import Wyrm
 from wyrm.structures.rtinststream import RtInstStream
 from wyrm.structures.rtbufftrace import RtBuffTrace
 from wyrm.message.window import WindowMsg
-from obspy import UTCDateTime
+from obspy import UTCDateTime, Trace
 from collections import deque
 import numpy as np
+from copy import deepcopy
+
 
 class WindWyrm(Wyrm):
     """
     The WindWyrm class contains a dictionary of window-generation
     metadata for coordinating slicing (copying) data from buffers
-    within a RtInstStream object to initialize WindowMsg objects. 
-    
-    WindowMsg objects are staged in a queue for subsequent 
+    within a RtInstStream object to initialize WindowMsg objects.
+
+    WindowMsg objects are staged in a queue for subsequent
     pre-processing and ML prediction.
-    
+
     Each WindWyrm instance is specific to an ML model type.
+
+    TODO:
+     - either obsolite substr or use it to filter rtinststream's
+     first layer of keys.
     """
     def __init__(
             self,
@@ -24,123 +30,51 @@ class WindWyrm(Wyrm):
             target_sr=100.,
             stride_sec=18.,
             blind_sec=5.,
+            taper_sec=.06,
             vert_comp_pct=.95,
             vert_codes='Z3',
             hztl_comp_pct=.8,
             hztl_codes='N1E2',
             window_fill_rule='zeros',
-            substr='*.*.*.*'
+            substr='*.*.*.*',
+            max_pulse_size=20,
+            debug=False
     ):
-        Wyrm.__init__(self)
-        
+        Wyrm.__init__(self, max_pulse_size=max_pulse_size, debug=debug)
+
         # Compatability checks for model_code
         if isinstance(model_code, str):
             if model_code.upper() in ['EQT', 'EQTRANSFORMER']:
                 self.model_code = 'EQT'
-                self.wnpts = 6000
             elif model_code.upper() in ['PN', 'PNET', 'PHASENET']:
                 self.model_code = 'PN'
-                self.wnpts = 3001
             else:
                 raise ValueError('Current supported model_code values are "EQT" and "PN"')
         else:
             raise TypeError('Current supported model_code values are "EQT" and "PN"')
-        
+        ## RUN COMPATABILITY CHECKS WITH INHERITED METHODS FROM WYRM ##
         # Compatability checks for target_npts
-        if isinstance(target_npts, int):
-            self.target_npts = target_npts
-        elif isinstance(target_npts, float):
-            self.target_npts = int(target_npts)
-        else:
-            raise TypeError('target_npts must be int-like')
-        if self.target_npts < 0:
-            raise ValueError('target_npts must be positive')
-        else:
-            self.target_npts = target_npts
-
+        self.target_npts = self._bounded_intlike_check(target_npts, name="target_npts", minimum=1)
         # Compatability checks for target_sr
-        if isinstance(target_sr, int):
-            self.target_sr = target_sr
-        elif isinstance(target_sr, float):
-            self.target_sr = int(target_sr)
-        else:
-            raise TypeError('target_sr must be int-like')
-        if self.target_sr < 0:
-            raise ValueError('target_sr must be positive')
-        else:
-            self.wsec = (self.target_npts - 1)/self.target_sr
-    
+        self.target_sr = self._bounded_intlike_check(target_sr, name='target_sr', minimum=1)
         # Compatability checks for stride_sec
-        if isinstance(stride_sec, float):
-            if 0 < stride_sec and np.isfinite(stride_sec):
-                self.stride_sec = stride_sec
-            else:
-                raise ValueError('stride_sec must be positive and finite')
-        else:
-            raise TypeError('stride_sec must be type float')
-        
+        self.stride_sec = self._bounded_floatlike_check(stride_sec, name='stride_sec', minimum=0.)
         # Compatability checks for blind_sec
-        if isinstance(blind_sec, float):
-            if 0 < blind_sec and np.isfinite(blind_sec):
-                self.blind_sec = blind_sec
-            else:
-                raise ValueError('blind_sec must be positive and finite')
-        else:
-            raise TypeError('blind_sec must be type float')
-        
+        self.blind_sec = self._bounded_floatlike_check(blind_sec, name='blind_sec', minimum=0.)
+        # Compatability checks for taper_sec
+        self.taper_sec = self._bounded_floatlike_check(taper_sec, name='taper_sec', minimum=0.)
         # Compatability check for vert_comp_pct
-        if isinstance(vert_comp_pct, float):
-            if 0 < vert_comp_pct < 1:
-                self.vcp_thresh = vert_comp_pct
-            else:
-                raise ValueError('vert_comp_pct must be \in (0, 1)')
-        else:
-            raise TypeError('vert_comp_pct must be type float')
-        
-        # Compatability check for vert_codes
-        if isinstance(vert_codes, (str, list)):
-            if isinstance(vert_codes, list):
-                bool_list = []
-                for x in vert_codes:
-                    bool_list.append(isinstance(x, str))
-                    bool_list.append(len(x) == 1)
-                if all(bool_list):
-                    self.vert_codes = vert_codes
-                else:
-                    raise TypeError('list of vert_codes must consist of only single character strings')
-            else:
-                self.vert_codes = [x for x in vert_codes]
-        else:
-            raise TypeError('vert_codes must be a string or list of single character strings')
-
+        self.vcp_thresh = self._bounded_floatlike_check(vert_comp_pct, name='vert_comp_pct', minimum=0, maximum=1)
         # Compatability check for hztl_comp_pct
-        if isinstance(hztl_comp_pct, float):
-            if 0 < hztl_comp_pct < 1:
-                self.h1c_thresh = hztl_comp_pct
-            else:
-                raise ValueError('hztl_comp_pct must be \in (0, 1)')
-        else:
-            raise TypeError('hztl_comp_pct must be type float')
-        
+        self.hcp_thresh = self._bounded_floatlike_check(hztl_comp_pct, name='hztl_comp_pct', minimum=0, maximum=1)
+        # Compatability check for vert_codes
+        self.vert_codes = self._iterable_characters_check(vert_codes, name='vert_codes')
         # Compatability check for hztl_codes
-        if isinstance(hztl_codes, (str, list)):
-            if isinstance(hztl_codes, list):
-                bool_list = []
-                for x in hztl_codes:
-                    bool_list.append(isinstance(x, str))
-                    bool_list.append(len(x) == 1)
-                if all(bool_list):
-                    self.hztl_codes = hztl_codes
-                else:
-                    raise TypeError('list of hztl_codes must consist of only single character strings')
-            else:
-                self.hztl_codes = [x for x in hztl_codes]
-        else:
-            raise TypeError('hztl_codes must be a string or list of single character strings')
-
+        self.hztl_codes = self._iterable_characters_check(hztl_codes, name='hztl_codes')
+        
         # Compatability check for window_fill_rule
         if isinstance(window_fill_rule, str):
-            if window_fill_rule in ['zeros','cloneZ','cloneHZ']:
+            if window_fill_rule in ['zeros', 'cloneZ', 'cloneHZ']:
                 self.window_fill_rule = window_fill_rule
             else:
                 raise ValueError('window_fill_rule must be in: "zeros", "cloneZ", "cloneHZ"')
@@ -158,10 +92,17 @@ class WindWyrm(Wyrm):
         else:
             raise TypeError('substr must be type str')
 
-        # Initialize
+        # Initialize default attributes
         self.index = {}
-        self._default_starttime = {'next_starttime': None}
+        self._template = {'next_starttime': None} # NOTE: Must have a non-UTCDateTime default value
         self.queue = deque([])
+
+    def __str__(self):
+        rstr = f'{super().__str__(self)}\n'
+        rstr += f'Targets    | model: {self.model_code} | npts: {self.target_npts} | S/R: {self.target_sr} Hz\n'
+        rstr += f'Timing     | stride: {self.stride_sec} sec | blind: {self.blind_sec} sec | taper: {self.tap_sec\n'
+        rstr += f'Thresholds | Z completeness {self.vcp_thresh*100}% | H completeness {self.hcp_thresh}%\n'
+        rstr += f'Comp Maps  | Z: {self.vert_codes} | H: {self.hztl_codes}\n'
 
     def _populate_windowmsg(self, ref_starttime=None, V0=None, H1=None, H2=None):
         windowmsg = WindowMsg(
@@ -179,24 +120,35 @@ class WindWyrm(Wyrm):
         return windowmsg
 
     def _branch2windowmsg(self, branch, window_ts, pad=True):
-        windowmsg_inputs = {'V0': None, 'H1': None, 'H2': None, 'ref_starttime': window_ts}
+        windowmsg_inputs = {'V0': None,
+                            'H1': None,
+                            'H2': None,
+                            'ref_starttime': window_ts}
         for _k2 in branch.keys():
             window_te = window_ts + (self.target_npts - 1)/self.target_sr
             i_buff_stat = branch[_k2].get_window_stats(
                 starttime=window_ts,
                 endtime=window_te,
                 taper_sec=self.blind_sec,
-                vert_codes = self.vert_codes,
-                hztl_codes = self.hztl_codes,
+                vert_codes=self.vert_codes,
+                hztl_codes=self.hztl_codes,
                 pad=pad)
             if i_buff_stat['comp_type'] == 'Vertical':
                 if i_buff_stat['percent_valid'] >= self.vcp_thresh:
-                    _tr = branch[_k2].to_trace().trim(starttime=window_ts, endtime=window_te, pad=pad, fill_value=None)
+                    _tr = branch[_k2].to_trace().trim(
+                        starttime=window_ts,
+                        endtime=window_te,
+                        pad=pad,
+                        fill_value=None)
                     windowmsg_inputs.update({'V0': _tr})
             elif i_buff_stat['comp_type'] == 'Horizontal':
                 if i_buff_stat['percent_valid'] >= self.hcp_thresh:
-                    _tr = branch[_k2].to_trace().trim(starttime=window_ts, endtime=window_te, pad=pad, fill_value=None)
-                    for _ik in ['H1','H2']:
+                    _tr = branch[_k2].to_trace().trim(
+                        starttime=window_ts,
+                        endtime=window_te,
+                        pad=pad,
+                        fill_value=None)
+                    for _ik in ['H1', 'H2']:
                         if windowmsg_inputs[_ik] is None:
                             windowmsg_inputs.update({_ik: _tr})
         if isinstance(windowmsg_inputs['V0'], Trace):
@@ -209,25 +161,61 @@ class WindWyrm(Wyrm):
         nnew = 0
         for _k1 in rtinststream.keys():
             _branch = rtinststream[_k1]
+            # If this branch does not exist in the WindWyrm.index
             if _k1 not in self.index.keys():
-                self.index.update({_k1: deepcopy(self._default_starttime)})
+                self.index.update({_k1: {deepcopy(self._template)}})
                 _idx = self.index[_k1]
+            # otherwise, alias matching index entry
             else:
                 _idx = self.index[_k1]
-            if _idx['next_starttime'] == self._default_starttime:
+
+            # If this branch has data for the first time
+            if _idx['next_starttime'] == self._template['next_starttime']:
+                # Iterate across approved vertical component codes
+                for _c in self.vert_codes:
+                    # If there is a match
+                    if _c in _branch.keys():
+                        # and the matching RtBuffTrace in the branch has data
+                        if len(_branch[_c]) > 0:
+                            # use the RtBuffTrace starttime to initialize the windowing index
+                            _first_ts = _branch[_c].stats.starttime
+                            _idx.update({'next_starttime': _first_ts})
+                            # and break
+                            break
+            # Otherwise, if the index has a UTCDateTime starttime
+            elif isinstance(_idx['next_starttime'], UTCDateTime):
+                # Do the match to the vertical trace buffer again
+                # Set initial None-Type values for window edges
+                _data_ts = None
                 for _c in self.vert_codes:
                     if _c in _branch.keys():
                         if len(_branch[_c]) > 0:
-                            _first_ts = _branch[_c].stats.starttime
-                            _idx.update({'next_starttime': _first_ts})
+                            # Grab start and end times
+                            _data_ts = _branch[_c].stats.startime
                             break
-            if isinstance(_idx['next_starttime'], UTCDateTime):
+                # If vertical channel doesn't show up, warning and continue
+                if _data_ts is None:
+                    print(f'Error retrieving starttime from {_k1} vertical: {_branch.keys()}')
+                    continue
+                # If data buffer starttime is before or at next_starttime
+                elif _data_ts <= _idx['next_starttime']:
+                    pass
+                # If update next_starttime if data buffer starttime is later
+                # Simple treatment for a large gap of data.
+                elif _data_ts > _idx['next_starttime']:
+                    _idx.update({'next_starttime': _data_ts})
+                # Attempt to generate window message from this branch
                 ts = _idx['next_starttime']
                 windowmsg = self._branch2windowmsg(_branch, ts, pad=pad)
+                # If window is generated
                 if windowmsg:
+                    # Add WindowMsg to queue
                     self.queue.appendleft(windowmsg)
+                    # update nnew index for iteration reporting
                     nnew += 1
+                    # advance next_starttime for this index by the stride
                     _idx['next_starttime'] += self.stride_sec
+                # If window is not generated, go to next instrument
                 else:
                     continue
     
@@ -235,9 +223,20 @@ class WindWyrm(Wyrm):
 
     def pulse(self, x):
         """
-        Conduct 
+        Conduct up to the specified number of iterations of
+        self._process_windows on an input RtInstStream object
+        and return access to this WindWyrm's queue attribute
+
+        :: INPUT ::
+        :param x: [wyrm.structure.stream.RtInstStream]
+
+        :: OUTPUT ::
+        :return y: [deque] deque of WindowMsg objects
+                    loaded with the appendleft() method, so
+                    the oldest messages can be removed with
+                    the pop() method in a subsequent step
         """
-        for _ in range(self.maxiter)
+        for _ in range(self.max_pulse_size):
             nnew = self._process_windows(x)
             if nnew == 0:
                 break

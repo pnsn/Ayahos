@@ -1,9 +1,12 @@
 from obspy import Trace, Stream, UTCDateTime
 from wyrm.structures.rtbufftrace import RtBuffTrace
+from wyrm.message.base import _BaseMsg
+import wyrm.util.input_compatability_checks as icc
 import numpy as np
+import torch
 
 
-class WindowMsg(Stream):
+class WindowMsg(Stream, _BaseMsg):
     """
     Class WindowMsg. This class is a child of the obspy.core.stream.Stream
     class type to structure slices of buffered waveform data by seismometer
@@ -11,9 +14,9 @@ class WindowMsg(Stream):
     following additional attributes and functionalities
 
     :: Component Aliases ::
-    :attrib V0: Vertical component trace ID
-    :attrib H1: First horizontal component trace ID
-    :attrib H2: Second horizontal component trace ID
+    :attrib Z: Vertical component trace ID
+    :attrib N: First horizontal component trace ID
+    :attrib E: Second horizontal component trace ID
 
     :: Incomplete Data Handling Rules:
     :attrib window_fill_rule: sets the rule for converting incomplete data into
@@ -51,38 +54,39 @@ class WindowMsg(Stream):
     applying processing steps multiple times as might arise in the case of iterating
     across the component aliases. DO NOT ITERATE ACROSS Component Aliases.
 
-    TODO: 
-    - update documentation for new defs of self.V0 self.H1 self.H2
+    TODO:
+    - update documentation for new defs of self.Z self.N self.E
     - streamline handling of zeros
     - eliminate rule "000" - it's kinda silly and introduces extra overhead.
     """
 
     def __init__(
         self,
-        V0=None,
-        H1=None,
-        H2=None,
+        Z=None,
+        N=None,
+        E=None,
         window_fill_rule="zeros",
+        model_name="EQTransformer",
         target_sr=100.0,
         target_npts=6000,
         ref_starttime=None,
         tolsec=0.03,
         tapsec=0.06,
-        normtype='max'
+        normtype="max",
     ):
         """
         Initialize a WindowMsg object
 
         :: INPUTS ::
-        :param V0: [obspy.Trace] or [None]
+        :param Z: [obspy.Trace] or [None]
                     Vertical component Trace object
-        :param H1: [obspy.Trace] or [None]
+        :param N: [obspy.Trace] or [None]
                     Horizontal component 1 Trace object
-        :param H2: [obspy.Trace] or [None]
+        :param E: [obspy.Trace] or [None]
                     Horizontal component 2 Trace object
         :param window_fill_rule: [str]
                     Empty channel fill rule. Supported options:
-                    "zeros" - make horizontals 0-traces if any H1, H2 are None
+                    "zeros" - make horizontals 0-traces if any N, E are None
                     "cloneZ" - clone vertical if any horizontals are None
                     "cloneHZ" - clone horizontal if one is present, clone vertical
                                 if both horizontals are missing
@@ -91,9 +95,9 @@ class WindowMsg(Stream):
         :param ref_starttime: [None] or [obspy.UTCDateTime]
                             Reference starttime for window. Should be within a `tolsec`
                             samples of the target window sampling rate and the starttime of
-                            V0.
+                            Z.
         :param tolsec: [float] seconds that input trace starttimes can mismatch one another
-                               or that V0data() can mismatch ref_starttime
+                               or that Zdata() can mismatch ref_starttime
         :param tapsec: [int] number of seconds for maximum taper length
         :param normtype: [str] type of normalization to apply by default
 
@@ -104,56 +108,62 @@ class WindowMsg(Stream):
         # Initialize parent class attributes (stream)
         super().__init__(self)
 
-        # V0 compatability checks
-        if isinstance(V0, Trace):
-            self.V0 = V0.id
-            if isinstance(V0, RtBuffTrace):
-                self.traces.append(V0.as_trace())
+        # Z compatability checks
+        if isinstance(Z, Trace):
+            self.Z = Z.id
+            if isinstance(Z, RtBuffTrace):
+                self.traces.append(Z.as_trace())
             else:
-                self.traces.append(V0.copy())
-        elif V0 is None:
-            self.V0 = V0
+                self.traces.append(Z.copy())
+        elif Z is None:
+            self.Z = Z
         else:
-            raise TypeError("V0 must be type Trace or None")
+            raise TypeError("Z must be type Trace or None")
         if debug:
-            print(f"init V0 {self.V0}")
+            print(f"init Z {self.Z}")
 
-        # H1 compatability checks
-        if isinstance(H1, Trace):
-            self.H1 = H1.id
-            if isinstance(H1, RtBuffTrace):
-                self.traces.append(H1.as_trace())
+        # N compatability checks
+        if isinstance(N, Trace):
+            self.N = N.id
+            if isinstance(N, RtBuffTrace):
+                self.traces.append(N.as_trace())
             else:
-                self.traces.append(H1.copy())
-        elif H1 is None:
-            self.H1 = H1
+                self.traces.append(N.copy())
+        elif N is None:
+            self.N = N
         else:
-            raise TypeError("H1 must be type Trace or None")
+            raise TypeError("N must be type Trace or None")
         if debug:
-            print(f"init H1 {self.H1}")
-        # H2 compatability checks
-        if isinstance(H2, Trace):
-            self.H2 = H2.id
-            if isinstance(H2, RtBuffTrace):
-                self.traces.append(H2.as_trace())
+            print(f"init N {self.N}")
+        # E compatability checks
+        if isinstance(E, Trace):
+            self.E = E.id
+            if isinstance(E, RtBuffTrace):
+                self.traces.append(E.as_trace())
             else:
-                self.traces.append(H2.copy())
-        elif H2 is None:
-            self.H2 = H2
+                self.traces.append(E.copy())
+        elif E is None:
+            self.E = E
         else:
-            raise TypeError("H2 must be type Trace or None")
+            raise TypeError("E must be type Trace or None")
         if debug:
-            print(f"init H2 {self.H2}")
+            print(f"init E {self.E}")
 
         # window_fill_rule compatability checks
         if not isinstance(window_fill_rule, str):
             raise TypeError("window_fill_rule must be type str")
-        elif window_fill_rule in ["zeros", '000', "cloneZ", "cloneHZ"]:
+        elif window_fill_rule in ["zeros", "000", "cloneZ", "cloneHZ"]:
             self.window_fill_rule = window_fill_rule
         else:
             raise ValueError(
                 f'window_fill_rule {window_fill_rule} not supported. Only "zeros", "000", "cloneZ", or "cloneHZ"'
             )
+
+        # model_name compatability check
+        if not isinstance(model_name, str):
+            raise TypeError("model_name must be type str")
+        else:
+            self.model_name = icc.validate_seisbench_model_name(model_name)
 
         # target_sr compatability checks
         if isinstance(target_sr, (int, float)):
@@ -189,53 +199,60 @@ class WindowMsg(Stream):
 
         # ref_starttime compatability checks
         if isinstance(ref_starttime, UTCDateTime):
-            if V0 is None:
+            if Z is None:
                 self.ref_starttime = ref_starttime
-            elif isinstance(V0, Trace):
-                if abs(V0.stats.starttime - ref_starttime) <= self.tolsec:
+            elif isinstance(Z, Trace):
+                if abs(Z.stats.starttime - ref_starttime) <= self.tolsec:
                     self.ref_starttime = ref_starttime
                 else:
                     emsg = f"specified ref_starttime {ref_starttime} "
-                    emsg += f"mismatches V0 starttime {V0.stats.starttime}."
-                    emsg += "\nDefaulting to V0 starttime"
+                    emsg += f"mismatches Z starttime {Z.stats.starttime}."
+                    emsg += "\nDefaulting to Z starttime"
                     print(emsg)
-                    self.ref_starttime = V0.stats.starttime
+                    self.ref_starttime = Z.stats.starttime
             else:
-                raise TypeError("Somehow got a V0 that is not type Trace or None...")
+                raise TypeError("Somehow got a Z that is not type Trace or None...")
         elif ref_starttime is None:
-            if isinstance(V0, Trace):
-                self.ref_starttime = V0.stats.starttime
-            elif V0 is None:
+            if isinstance(Z, Trace):
+                self.ref_starttime = Z.stats.starttime
+            elif Z is None:
                 self.ref_starttime = UTCDateTime(0)
             else:
-                raise TypeError("Somehow got a V0 that is not type Trace or None...")
+                raise TypeError("Somehow got a Z that is not type Trace or None...")
         else:
             raise TypeError("ref_starttime must be type UTCDateTime or None")
 
         # tapsec compatability checks
-        if isinstance(tapsec, (float,int)):
+        if isinstance(tapsec, (float, int)):
             if tapsec > 0 and np.isfinite(tapsec):
                 self.tapsec = float(tapsec)
             else:
-                raise ValueError('tapsec must be a non-zero, finite value')
+                raise ValueError("tapsec must be a non-zero, finite value")
         else:
-            raise TypeError('tapsec must be float-like')
+            raise TypeError("tapsec must be float-like")
 
         # normtype compatability checks
         if isinstance(normtype, str):
-            if normtype.lower() in ['max','maximum','m','minmax','minmaxscalar']:
-                self.normtype = 'max'
-            elif normtype.lower() in ['std','stdev','o','standard','standardscalar']:
-                self.normtype = 'std'
+            if normtype.lower() in ["max", "maximum", "m", "minmax", "minmaxscalar"]:
+                self.normtype = "max"
+            elif normtype.lower() in [
+                "std",
+                "stdev",
+                "o",
+                "standard",
+                "standardscalar",
+            ]:
+                self.normtype = "std"
             else:
-                raise ValueError('normtype must be "max", "std" or select aliases - see source code')
+                raise ValueError(
+                    'normtype must be "max", "std" or select aliases - see source code'
+                )
         else:
-            raise TypeError('normtype must be type str')
-            
+            raise TypeError("normtype must be type str")
 
         # Input trace mutual compatability checks
-        for _i, _id1 in enumerate([self.V0, self.H1, self.H2]):
-            for _j, _id2 in enumerate([self.V0, self.H1, self.H2]):
+        for _i, _id1 in enumerate([self.Z, self.N, self.E]):
+            for _j, _id2 in enumerate([self.Z, self.N, self.E]):
                 if _i > _j:
                     if _id1 is not None and _id2 is not None:
                         try:
@@ -248,11 +265,14 @@ class WindowMsg(Stream):
                             raise ValueError(
                                 f"metadata incompatability between {_id1} and {_id2}"
                             )
-
+        if self.Z is None:
+            self.inst_code = None
+        else:
+            self.inst_code = self.Z[:-1]
         # Handle non 3-C WindowMsg inputs based on window_fill_rule
         self.apply_window_fill_rule()
         if debug:
-            print(f"post wfr apply V0: {self.V0}, H1: {self.H1}, H2: {self.H2}")
+            print(f"post wfr apply Z: {self.Z}, N: {self.N}, E: {self.E}")
 
     def __str__(self, extended=False):
         # WindowMsg parameter summary
@@ -270,11 +290,11 @@ class WindowMsg(Stream):
                         rstr += f"...\n({len(self)-4} other traces)\n...\n"
             else:
                 rstr += f"{_tr.__str__()}\n"
-        # WindowMsg channe alias directory
+        # WindowMsg channel alias directory
         rstr += "Aliases\n"
-        rstr += f"V0: {self.V0} | "
-        rstr += f"H1: {self.H1} | "
-        rstr += f"H2: {self.H2}"
+        rstr += f"Z: {self.Z} | "
+        rstr += f"N: {self.N} | "
+        rstr += f"E: {self.E}"
         # rstr += f"{super().__str__(extended=extended)}"
         return rstr
 
@@ -316,16 +336,16 @@ class WindowMsg(Stream):
 
         return traces
 
-    def V0data(self):
-        trs = self.fetch_with_id(self.V0)
+    def Zdata(self):
+        trs = self.fetch_with_id(self.Z)
         return trs
 
-    def H1data(self):
-        trs = self.fetch_with_id(self.H1)
+    def Ndata(self):
+        trs = self.fetch_with_id(self.N)
         return trs
 
-    def H2data(self):
-        trs = self.fetch_with_id(self.H2)
+    def Edata(self):
+        trs = self.fetch_with_id(self.E)
         return trs
 
     def apply_window_fill_rule(self):
@@ -335,7 +355,7 @@ class WindowMsg(Stream):
         """
         if self.window_fill_rule == "zeros":
             self._apply_zeros_fill_rule()
-        elif self.window_fill_rule == '000':
+        elif self.window_fill_rule == "000":
             self._apply_zeros_fill_rule(explicit_000=True)
         elif self.window_fill_rule == "cloneZ":
             self._apply_cloneZ_fill_rule()
@@ -351,27 +371,27 @@ class WindowMsg(Stream):
         PRIVATE METHOD
         Apply "zeros" window_fill_rule to this WindowMsg
         """
-        if self.H1 is None or self.H2 is None:
-            if self.V0 is None:
-                self.H1 = None
-                self.H2 = None
+        if self.N is None or self.E is None:
+            if self.Z is None:
+                self.N = None
+                self.E = None
             # If vertical data trace is present
-            elif self.V0 is not None:
+            elif self.Z is not None:
                 # Fetch this trace
-                _trs = self.V0data()
+                _trs = self.Zdata()
                 # and overwrite self.traces to remove extraneous data
                 if isinstance(_trs, Trace):
                     if explicit_000:
                         _tr0 = _trs.copy()
                         _tr0.data *= 0
                         _tr0.stats.channel = "000"
-                        self.H1 = _tr0.id
-                        self.H2 = _tr0.id
+                        self.N = _tr0.id
+                        self.E = _tr0.id
                         self.traces = [_trs, _tr0]
                     else:
                         self.traces = [_trs]
-                        self.H1 = None
-                        self.H2 = None
+                        self.N = None
+                        self.E = None
 
                 elif isinstance(_trs, Stream):
                     self.traces = _trs.traces
@@ -381,16 +401,16 @@ class WindowMsg(Stream):
                             _tr0.data *= 0
                             _tr0.stats.channel = "000"
                             self.traces.append(_tr0)
-                        self.H1 = _tr0.id
-                        self.H2 = _tr0.id
+                        self.N = _tr0.id
+                        self.E = _tr0.id
                     else:
-                        self.H1 = None
-                        self.H2 = None
+                        self.N = None
+                        self.E = None
 
     def enforce_0_trace(self, zeroval=1e-20):
         for _tr in self.traces:
-            if self.window_fill_rule == 'zeros':
-                if _tr.stats.channel == '000':
+            if self.window_fill_rule == "zeros":
+                if _tr.stats.channel == "000":
                     _tr.data = np.ones(_tr.stats.npts) * zeroval
 
     def _apply_cloneZ_fill_rule(self):
@@ -398,13 +418,13 @@ class WindowMsg(Stream):
         PRIVATE METHOD
         Apply "cloneZ" window_fill_rule to this WindowMsg
         """
-        if self.H1 is None or self.H2 is None:
-            self.H1 = self.V0
-            self.H2 = self.V0
+        if self.N is None or self.E is None:
+            self.N = self.Z
+            self.E = self.Z
             # If vertical data trace is present
-            if self.V0 is not None:
-                # Fetch V0 id match data
-                _trs = self.fetch_with_id(self.V0)
+            if self.Z is not None:
+                # Fetch Z id match data
+                _trs = self.fetch_with_id(self.Z)
                 # and overwrite self.traces to remove extraneous data
                 if isinstance(_trs, Trace):
                     self.traces = [_trs]
@@ -417,13 +437,13 @@ class WindowMsg(Stream):
         Apply "cloneHZ" window_fill_rule to this WindowMsg
         """
         # If both horizontals are None, apply cloneZ
-        if self.H1 is None and self.H2 is None:
+        if self.N is None and self.E is None:
             self._apply_cloneZ_fill_rule()
         # Otherwise, duplicate id for None-id horizontal channel
-        elif self.H1 is not None:
-            self.H2 = self.H1
-        elif self.H2 is not None:
-            self.H1 = self.H2
+        elif self.N is not None:
+            self.E = self.N
+        elif self.E is not None:
+            self.N = self.E
 
     def check_trace_compatability(self, id1, id2, tolsec=0.03):
         """
@@ -535,9 +555,7 @@ class WindowMsg(Stream):
             new_traces = self.split()
             self.traces = new_traces
 
-    def merge_msg_data(
-        self, fill_value=None, method=1, interpolation_samples=-1
-    ):
+    def merge_msg_data(self, fill_value=None, method=1, interpolation_samples=-1):
         """
         Merge traces in this WindowMsg by id using obspy.Stream.merge()
         if message appears to be split (see msg_is_split())
@@ -602,6 +620,7 @@ class WindowMsg(Stream):
             raise UserWarning(
                 "WindowMsg appears to have split traces - must merge before syncing"
             )
+        self.sync_starttime = self.ref_starttime
 
     def trim_msg(self, fill_value=0, nearest_sample=True):
         """
@@ -624,15 +643,15 @@ class WindowMsg(Stream):
         if self.normtype == "max":
             for _tr in self.traces:
                 # Exclude case of '000'
-                if _tr.stats.channel != '000':
+                if _tr.stats.channel != "000":
                     _tr.normalize()
                 else:
                     continue
         # If std normalization, use numpy methods for each trace
-        elif self.normtype == 'std':
+        elif self.normtype == "std":
             for _tr in self.traces:
                 # Exclude case of '000'
-                if _tr.stats.channel == '000':
+                if _tr.stats.channel == "000":
                     continue
                 # Get the std of the data
                 if np.ma.is_masked(_tr.data):
@@ -647,16 +666,41 @@ class WindowMsg(Stream):
                         f"{_tr.id} | std normalization gets a non-finite scalar {_tnf}"
                     )
 
-    def to_stream(self, copy=True):
+    def to_stream(self, order="ZNE"):
         new_stream = Stream()
-        for _tr in self.traces:
-            if copy:
+        keys = {"Z": self.Z, "N": self.N, "E": self.E}
+
+        if isinstance(order, (str, list)):
+            if len(order) == 3:
+                if all(str(x) in ["Z", "N", "E"] for x in order):
+                    pass
+                else:
+                    raise ValueError(
+                        'order must be a unique character comprising "Z", "N", and "E"'
+                    )
+            else:
+                raise SyntaxError("order must have precisely 3 elements")
+        else:
+            raise TypeError("order must be a 3-element string or list of characters")
+        if isinstance(order, str):
+            order = [x for x in order]
+        # Ensure order entries are strings
+        if isinstance(order, list):
+            order = [str(x) for x in order]
+
+        for _o in order:
+            _tr = self.fetch_with_id(keys[_o])
+            if isinstance(_tr, Trace):
                 new_stream.append(_tr.copy())
             else:
+                _tr = self.fetch_with_id(self.Z).copy()
+                _tr.stats.channel = _tr.stats.channel[:-1] + _o
+                _tr.data = np.zeros(_tr.stats.npts)
                 new_stream.append(_tr)
+        return new_stream
 
-    def to_numpy(self, order="012", fill_value=0):
-        keys = {"0": self.V0, "1": self.H1, "2": self.H2}
+    def to_numpy(self, order="ZNE", fill_value=0):
+        keys = {"Z": self.Z, "N": self.N, "E": self.E}
         if any(_tr.stats.npts != self.target_npts for _tr in self.traces):
             raise UserWarning(
                 "not all traces conform to target_npts. Preprocessing required!"
@@ -666,11 +710,11 @@ class WindowMsg(Stream):
 
         if isinstance(order, (str, list)):
             if len(order) == 3:
-                if all(str(x) in ["0", "1", "2"] for x in order):
+                if all(str(x) in ["Z", "N", "E"] for x in order):
                     pass
                 else:
                     raise ValueError(
-                        'order must be a unique character comprising "0", "1", and "2"'
+                        'order must be a unique character comprising "Z", "N", and "E"'
                     )
             else:
                 raise SyntaxError("order must have precisely 3 elements")
@@ -692,7 +736,9 @@ class WindowMsg(Stream):
             if isinstance(_tr, Trace):
                 _data = _tr.data
             elif isinstance(_tr, Stream):
-                raise TypeError(f'key {keys[_k]} returned a Stream - Must merge split traces before export')
+                raise TypeError(
+                    f"key {keys[_k]} returned a Stream - Must merge split traces before export"
+                )
             elif _tr is None:
                 _data = np.zeros(self.target_npts)
             # Homogenize all arrays as masked with uniform fill value
@@ -704,13 +750,30 @@ class WindowMsg(Stream):
                     _data.fill_value = fill_value
             # Append to holder
             array_holder.append(_data)
-
+        # Concatenate arrays and fill if needed
         if any(ma_status):
             out_array = np.ma.array(array_holder)
+            out_array = out_array.filled()
         else:
             out_array = np.array(array_holder)
 
+        # Add leading index
+        out_array = out_array[np.newaxis, :, :]
+        self.numpy_array = out_array
+
         return out_array
+
+    def to_torch(self, order="ZNE", fill_value=0):
+        array = self.to_numpy(order=order, fill_value=fill_value)
+        tensor = torch.Tensor(array)
+        self.tensor = tensor
+        metadata = {
+            "components": order,
+            "inst_code": self.inst_code,
+            "starttime": self.sync_starttime,
+            "samprate": self.target_sr,
+        }
+        return tensor, metadata
 
     def _preproc_example(self, fill_value=0):
         # Split if masked gaps exist
@@ -726,7 +789,7 @@ class WindowMsg(Stream):
         # Merge traces
         self.merge_msg_data(fill_value=fill_value)
         # Interpolate traces
-        if self.window_fill_rule == '000':
+        if self.window_fill_rule == "000":
             self.enforce_0_trace(zeroval=1e-20)
         self.sync_msg_starttimes(fill_value=fill_value)
         # Trim to specific length
@@ -736,8 +799,8 @@ class WindowMsg(Stream):
         ## STEPS PROBABLY BEST HANDLED IN TorchWrym.pulse(x=)
         # Normalize traces
         self.normalize_msg()
-        if self.window_fill_rule == '000':
-            self.enforce_0_trace(zeroval=0.)
-        # Convert to tensor
-        array = self.to_numpy(order="012")
-        return array
+        if self.window_fill_rule == "000":
+            self.enforce_0_trace(zeroval=0.0)
+        # # Convert to tensor
+        # array = self.to_numpy(order="012")
+        # return array

@@ -1,5 +1,7 @@
 from wyrm.wyrms.tubewyrm import Tubewyrm
 from threading import Thread
+from time import sleep
+import pandas as pd
 import PyEW
 
 
@@ -11,12 +13,19 @@ class HeartWyrm(Tubewyrm):
     of Earthworm.
 
     This class inherits the pulse method from wyrm.core.base_wyrms.TubeWyrm
-    and adds the functionality of setting a "pulse_rate" that acts as a pause
+    and adds the functionality of setting a "wait_sec" that acts as a pause
     between instances of triggering pulses to allow data accumulation.
     """
 
     def __init__(
-        self, pulse_rate, DR_ID, MOD_ID, INST_ID, HB_PERIOD, debug=False, wyrm_list=[]
+        self,
+        wait_sec,
+        DR_ID,
+        MOD_ID,
+        INST_ID,
+        HB_PERIOD,
+        wyrm_list=[],
+        debug=False
     ):
         """
         ChildClass of wyrm.core.base_wyrms.TubeWyrm
@@ -29,7 +38,7 @@ class HeartWyrm(Tubewyrm):
         the EWModule object with a subsequent heartwyrm.initialize_module().
 
         :: INPUTS ::
-        :param pulse_rate: [float] rate in seconds to wait between pulses
+        :param wait_sec: [float] wait time in seconds between pulses
         :param DR_ID: [int-like] Identifier for default reference memory ring
         :param MOD_ID: [int-like] Module ID for this instace of Wyrms
         :param INST_ID: [int-like] Installation ID (Institution ID)
@@ -40,7 +49,7 @@ class HeartWyrm(Tubewyrm):
 
         :: PUBLIC ATTRIBUTES ::
         :attrib module: False or [PyEW.EWModule] - Holds Module Object
-        :attrib pulse_rate: [float] rate in seconds to wait between pulses
+        :attrib wait_sec: [float] rate in seconds to wait between pulses
         :attrib connections: [pandas.DataFrame]
                             with columns 'Name' and 'Ring_ID' that provides
                             richer indexing and display of connections
@@ -56,18 +65,21 @@ class HeartWyrm(Tubewyrm):
         :attrib _HBP: [float] Saved HB_PERIOD input
         :attrib _debug: [bool] Saved debug input
         """
-        super().__init__(wyrm_list)
+        super().__init__(
+            wyrm_list=wyrm_list,
+            wait_sec=wait_sec,
+            max_pulse_size=None,
+            debug=debug)
+        
         # Public Attributes
         self.module = False
-        self.pulse_rate = pulse_rate
-        self.conn_info = DataFrame(columns=["Name", "RING_ID"])
+        self.conn_info = pd.DataFrame(columns=["Name", "RING_ID"])
 
         # Private Attributes
-        self._default_ring_id = int(DR_ID)
-        self._module_id = int(MOD_ID)
-        self._installation_id = int(INST_ID)
-        self._HBP = HB_PERIOD
-        self._debug = debug
+        self._default_ring_id = self._bounded_intlike_check(DR_ID, name='DR_ID', minimum=0, maximum=9999)
+        self._module_id = self._bounded_intlike_check(MOD_ID, name='MOD_ID', minimum=0, maximum=255)
+        self._installation_id = self._bounded_intlike_check(INST_ID, name='INST_ID', minimum=0, maximum=255)
+        self._HBP = self._bounded_floatlike_check(HB_PERIOD, name='HB_PERIOD', minimum=1)
 
         # Module run attributes
         # Threading - TODO - need to understand this better
@@ -76,9 +88,9 @@ class HeartWyrm(Tubewyrm):
 
     def __repr__(self):
         # Start with TubeWyrm __repr__
-        rstr = super().__repr__()
+        rstr = f"{super().__repr__()}\n"
         # List Pulse Rate
-        rstr += f"Pulse Rate: {self.pulse_rate:.4f} sec\n"
+        rstr += f"Pulse Wait Time: {self.wait_sec:.4f} sec\n"
         # List Module Status and Parameters
         if isinstance(self.module, PyEW.EWModule):
             rstr += "Module: Initialized\n"
@@ -88,7 +100,6 @@ class HeartWyrm(Tubewyrm):
         rstr += f"DR: {self._default_ring_id}\n"
         rstr += f"INST: {self._installation_id}\n"
         rstr += f"HB: {self._HBP} sec\n"
-        rstr == f"debug: {self._debug}\n"
         # List Connections
         rstr += "---- Connections ----\n"
         rstr += f"{self.conn_info}\n"
@@ -99,10 +110,10 @@ class HeartWyrm(Tubewyrm):
         if user_check:
             cstr = "About to initialize the following PyEW.EWModule\n"
             cstr += f"Default ring ID: {self._default_ring_id:d}\n"
-            cstr += f"Moudle ID: {self._module_id:d}\n"
+            cstr += f"Module ID: {self._module_id:d}\n"
             cstr += f"Inst. ID: {self._installation_id:d}\n"
             cstr += f"Heartbeat: {self._HBP:.1f} sec\n"
-            cstr += f"Debug?: {self._debug}\n"
+            cstr += f"Debug?: {self.debug}\n"
             cstr += "\n Do you want to continue? [(y)/n]"
             ans = input(cstr)
             if ans.lower().startswith("y") or ans == "":
@@ -123,7 +134,7 @@ class HeartWyrm(Tubewyrm):
                         self._module_id,
                         self._installation_id,
                         self._HBP,
-                        debug=self._debug,
+                        debug=self.debug,
                     )
                 except RuntimeError:
                     print("HeartWyrm: There is already a EWModule running!")
@@ -148,14 +159,8 @@ class HeartWyrm(Tubewyrm):
         """
         # === RUN COMPATABILITY CHECKS ON INPUT VARIABLES === #
         # Enforce integer RING_ID type
-        try:
-            RING_ID = int(RING_ID)
-        except ValueError:
-            print(
-                f"Invalid RING_ID type (wants int-like) -\
-                   input type is {type(RING_ID)}"
-            )
-
+        RING_ID = self._bounded_intlike_check(RING_ID,name='RING_ID', minimum=0, maximum=9999)
+        
         # Warn on non-standard RING_Name types and convert to String
         if not isinstance(RING_Name, (int, float, str)):
             print(
@@ -240,7 +245,7 @@ class HeartWyrm(Tubewyrm):
         while self.runs:
             if self.module.mod_sta() is False:
                 break
-            time.sleep(self.pulse_rate)
+            sleep(self.wait_sec)
             # Run Pulse Command inherited from TubeWyrm
             self.pulse()  # conn_in = conn_in, conn_out = conn_out)
         # Polite shut-down of module

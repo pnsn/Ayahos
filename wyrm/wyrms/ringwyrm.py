@@ -1,5 +1,5 @@
 """
-:module: wyrm.core.io
+:module: wyrm.wyrms.ringwyrm
 :auth: Nathan T. Stevens
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network
@@ -50,14 +50,14 @@ class RingWyrm(Wyrm):
         module=None,
         conn_id=0,
         max_buff_sec=150,
-        max_pulse_size=12000
+        max_pulse_size=12000,
+        debug=False
     ):
         """
         Initialize a RingWyrm 
         """
-        Wyrm.__init__(self)
+        Wyrm.__init__(self, debug=debug, max_pulse_size=max_pulse_size)
         # Compatability checks for `module`
-        # PLACEHOLDER
         if module is None:
             self.module = module
             print('No EW connection provided - for debugging/dev purposes only')
@@ -67,34 +67,17 @@ class RingWyrm(Wyrm):
             self.module = module
 
         # Compatability checks for `conn_id`
-        if not isinstance(conn_id, int):
-            raise TypeError('conn_id must be type int')
-        elif conn_id < 0:
-            raise ValueError('conn_id must be a g.e. 0 integer')
-        else:
-            self.conn_id = conn_id
+        self.conn_id = self._bounded_intlike_check(conn_id, name='conn_id', minimum=0)
 
         # Compatability checks for RtInstStream.__init__()
-        if isinstance(max_buff_sec, (float, int)):
-            self.buff_sec = max_buff_sec
-            self.buffer = RtInstStream(max_length=max_buff_sec)
-        else:
-            raise TypeError('max_buff_sec must be type int or float')
+        self.max_buff_sec = self._bounded_floatlike_check(max_buff_sec, name='max_buff_sec', minimum=1.)
         
-        # Compatability checks for `max_pulse_size`
-        if isinstance(max_pulse_size, int):
-            self.pulse_size = max_pulse_size
-        elif isinstance(max_pulse_size, float):
-            self.pulse_size = int(max_pulse_size)
-        else:
-            raise TypeError('max_pulse_size must be type int or float')
+        # Initialize Realtime Instrument Stream Object as buffer
+        self.buffer = RtInstStream(max_length=self.max_buff_sec)
         
-        if self.pulse_size < 0:
-            raise ValueError('max_pulse_size must be positive')
-        else:
-            pass
 
     def __str__(self, extended=False):
+        rstr = super().__str__()
         rstr = f'Module: {self.module} | Conn ID: {self.conn_id}\n'
         rstr += 'FLOW:   EW --> PY\n\n'
         rstr += 'RingWyrm.buffer contents:\n'

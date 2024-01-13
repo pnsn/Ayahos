@@ -17,7 +17,8 @@
 """
 from collections import deque
 from wyrm.wyrms.wyrm import Wyrm
-
+from time import sleep
+from numpy import isfinite
 
 class TubeWyrm(Wyrm):
     """
@@ -31,7 +32,7 @@ class TubeWyrm(Wyrm):
     queue are provided
     """
 
-    def __init__(self, wyrm_queue=deque([])):
+    def __init__(self, wyrm_queue=deque([]), wait_sec=0., debug=False):
         """
         Create a tubewyrm object
         :: INPUT ::
@@ -43,6 +44,8 @@ class TubeWyrm(Wyrm):
         :: OUTPUT ::
         Initialized TubeWyrm object
         """
+        super().__init__(max_pulse_size=None, debug=debug)
+
         # Run compatability checks on wyrm_list
         # If given a single Wyrm, wrap it in a deque
         if isinstance(wyrm_queue, Wyrm):
@@ -58,14 +61,17 @@ class TubeWyrm(Wyrm):
             # Final check that the wyrm_queue is a deque
             if isinstance(wyrm_queue, list):
                 self.wyrm_queue = deque(wyrm_queue)
-                
         # In any other case:
         else:
             print('Provided wyrm_list was not a list or a Wyrm')
             raise TypeError
+        
+        # Compatability checks for wait_sec:
+        self.wait_sec = self._bounded_floatlike_check(wait_sec, name='wait_sec', minimum=0.)
 
     def __repr__(self):
-        rstr = '--- Tube ---\n'
+        rstr = super().__repr__(self)
+        rstr = '(wait: {self.wait_sec} sec)\n'
         for _i, _wyrm in enumerate(self.wyrm_queue):
             if _i == 0:
                 rstr += '(head) '
@@ -139,5 +145,6 @@ class TubeWyrm(Wyrm):
         """
         for _wyrm in self.wyrm_list:
             x = _wyrm.pulse(x)
+            sleep(self.wait_sec)
         y = x
         return y

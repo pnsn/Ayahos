@@ -2,7 +2,28 @@ import numpy as np
 from collections import deque
 import seisbench.models as sbm
 
-def bounded_intlike(x, name="x", minimum=1, maximum=1e9):
+def bounded_value(x, minimum=None, maximum=None, inclusive=True):
+    if minimum is None:
+        minb = -np.inf
+    elif np.isfinite(minimum):
+        minb = minimum
+    else:
+        raise ValueError('specified minimum must be None or a finite value')
+    
+    if maximum is None:
+        maxb = np.inf
+    elif np.isfinite(maximum):
+        maxb = maximum
+    else:
+        raise ValueError('specified minimum must be None or a finite value')
+    
+    if not inclusive:
+        return minb < x < maxb
+    else:
+        return minb <= x <= maxb
+            
+
+def bounded_intlike(x, name="x", minimum=1, maximum=None, inclusive=True):
     """
     
     """
@@ -10,21 +31,30 @@ def bounded_intlike(x, name="x", minimum=1, maximum=1e9):
         raise TypeError(f"{name} must be int-like")
     if not np.isfinite(x):
         raise ValueError(f"{name} must be finite")
-    if minimum <= int(x) <= maximum:
+    if bounded_value(x, minimum=minimum, maximum=maximum, inclusive=inclusive):
         return int(x)
     else:
-        raise ValueError(f"{name} must be in the bounds [{minimum}, {maximum}]")
+        if inclusive:
+            raise ValueError(f"{name} must be in the bounds [{minimum}, {maximum}]")
+        else:
+            raise ValueError(f"{name} must be in the bounds ({minimum}, {maximum})")
 
 
-def bounded_floatlike(x, name="x", minimum=1., maximum=1e9):
+def bounded_floatlike(x, name="x", minimum=1, maximum=None, inclusive=True):
+    """
+    
+    """
     if not isinstance(x, (int, float)):
         raise TypeError(f"{name} must be float-like")
     if not np.isfinite(x):
         raise ValueError(f"{name} must be finite")
-    if minimum <= float(x) <= maximum:
+    if bounded_value(x, minimum=minimum, maximum=maximum, inclusive=inclusive):
         return float(x)
     else:
-        raise ValueError(f"{name} must be in the bounds [{minimum}, {maximum}]")
+        if inclusive:
+            raise ValueError(f"{name} must be in the bounds [{minimum}, {maximum}]")
+        else:
+            raise ValueError(f"{name} must be in the bounds ({minimum}, {maximum})")
 
 
 def iterable_characters(x, name='x', listlike_types=(list, deque, np.array)):

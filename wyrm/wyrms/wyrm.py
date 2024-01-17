@@ -12,7 +12,8 @@
 """
 import wyrm.util.input_compatability_checks as icc
 
-class Wyrm:
+
+class Wyrm(object):
     """
     Fundamental Base Class for all *Wyrm classes in this module that are
     defined by having the y = *wyrm.pulse(x) class method.

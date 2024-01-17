@@ -1,21 +1,22 @@
 import numpy as np
 from collections import deque
 import seisbench.models as sbm
+from math import inf
 
 def bounded_value(x, minimum=None, maximum=None, inclusive=True):
-    if minimum is None:
+    if minimum in [None, -inf, -np.inf]:
         minb = -np.inf
     elif np.isfinite(minimum):
         minb = minimum
     else:
-        raise ValueError('specified minimum must be None or a finite value')
+        raise ValueError('specified minimum must be None, inf, or a finite value')
     
-    if maximum is None:
+    if maximum in [None, inf, np.inf]:
         maxb = np.inf
     elif np.isfinite(maximum):
         maxb = maximum
     else:
-        raise ValueError('specified minimum must be None or a finite value')
+        raise ValueError('specified maximum must be None, -inf or a finite value')
     
     if not inclusive:
         return minb < x < maxb

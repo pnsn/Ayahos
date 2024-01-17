@@ -2,6 +2,7 @@ import pytest
 from wyrm.structures.rtbufftrace import RtBuffTrace
 from obspy import Trace, read, Stream
 import numpy as np
+import os
 
 # Create test set of traces
 # NOTE: Get a better event/station combo for demo...
@@ -16,6 +17,11 @@ class Test_RtBuffTrace:
     """
     Test suite for wyrm.structures.RtBuffTrace
     """
+    def mseed_stream(self):
+        st = read(
+            os.path.join("..", "..", "example", "uw61957912", "CC.ARAT..BH_ENZ.mseed")
+        )
+        return st
 
     def __init__(self):
         self.type_list = [True, 1, -1, 0, 1.0, "a", RtBuffTrace(), str, None]
@@ -62,8 +68,12 @@ class Test_RtBuffTrace:
 
 
     def test_append(self):
+        st = self.mseed_stream()
+        tr1 = st[2].copy().trim(endtime=st[2].stats.starttime + 20)
+        tr2  =st[2].copy().trim(starttime=st[2].stats.starttime + 10,
+                                endtime = st[2].stats.endtime + 30)
         rtbt = RtBuffTrace(max_length=10)
-        # Test compatability checks
+        # Test compatability check for empty
         for val in self.type_list:
             if val is not RtBuffTrace():
                 with pytest.raises(TypeError):
@@ -71,11 +81,21 @@ class Test_RtBuffTrace:
             else:
                 # assert that even appending an empty trace preserves max_length
                 assert rtbt.append(val) == RtBuffTrace(max_length=10)
-        assert rtbt.append(ST[0])
+        # Append a trace
+        rtbt.append(tr1)
+        # Assert that the metadata for an initial append is unchanged
+        assert rtbt.stats == tr1.stats
+        # Assert that the data values for an initial append is unchanged
+        assert all(rtbt.data == tr1.data)
+        # Assert that the rtbt data becomes a masked array
+        assert np.ma.isMaskedArray(rtbt.data)
+        
+
         with pytest.raises(TypeError)
 
 
     def test_display_buff_status(self):
-        rtbt = 
+        rtbt = RtBuffTrace(max_length=30)
+        rtbt.append()
 
     def test_str_(self):

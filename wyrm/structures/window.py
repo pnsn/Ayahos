@@ -6,7 +6,10 @@ import numpy as np
 import torch
 from copy import deepcopy
 
-
+"""child-class object of obspy.Stream
+                            that provides additional support methods and attributes for
+                            generating windowed, preprocessed data for input to
+                            SeisBench WaveformModels"""
 class LabeledArray(object):
     """
     Support class that bundles a numpy.ndarray 'data' attribute
@@ -62,7 +65,8 @@ class LabeledArray(object):
         data_dict = self.labels.copy()
         data_dict.update({'data': self.data.copy()})
         return data_dict
-    
+
+
 class MLInstWindow(Stream):
     """
     Class MLInstWindow (Instrument-Level Data Forming Window for ML models).
@@ -130,8 +134,7 @@ class MLInstWindow(Stream):
         E=None,
         target_starttime=None,
         fill_value=0.0,
-        tolsec=0.03,
-        tapsec=0.06,
+        tolsec=2.,
         missing_component_rule="Zeros",
         model=sbm.EQTransformer(),
     ):
@@ -155,8 +158,6 @@ class MLInstWindow(Stream):
         :param tolsec: [float] tolerance in seconds for mismatching start
                     times for input traces
                     default is 0.03 sec (3 samples @ 100 sps)
-        :param tapsec: [float] length of taper to apply to trace (segments) in
-                    seconds default is 0.06 (6 samples @ 100 sps)
         :param missing_component_rule: [str]
                     Empty channel fill rule. Supported options:
                     "Zeros" - make horizontals 0-traces if any N, E are None
@@ -257,11 +258,6 @@ class MLInstWindow(Stream):
             tolsec, name="tolsec", minimum=0, maximum=None, inclusive=True
         )
 
-        # tapsec compatabity checks
-        self.tapsec = icc.bounded_intlike(
-            tapsec, name="tapsec", minimum=0, maximum=None, inclusive=True
-        )
-
         # fill_value compatability checks
         if fill_value is None:
             self.fill_value = fill_value
@@ -324,8 +320,8 @@ class MLInstWindow(Stream):
                 )
                 self._target_in_channels = 3
 
-            self._target_stride_npts = model._annotate_args['sride'][-1]
-
+            self._target_stride_npts = model._annotate_args['stride'][-1]
+            self._target_overlap_npts = model._annotate_args['overlap'][-1]
         # Input trace mutual compatability checks
         for _i, _id1 in enumerate([self.Z, self.N, self.E]):
             for _j, _id2 in enumerate([self.Z, self.N, self.E]):
@@ -389,13 +385,14 @@ class MLInstWindow(Stream):
 
     # DATA LOOKUP METHODS #
 
-    def fetch_with_id(self, nslc_id):
+    def fetch_with_id(self, nslc_id, ascopy=False):
         """
         Fetch the trace(s) that match the specified N.S.L.C formatted
         id string
 
         :: INPUT ::
         :param nslc_id: [str] N.S.L.C formatted channel ID string
+        :param ascopy: [bool] operate on copies of traces?
 
         :: OUTPUT ::
         :return traces: [None] - if no traces matches nslc_id
@@ -410,7 +407,10 @@ class MLInstWindow(Stream):
         else:
             for _tr in self.traces:
                 if _tr.id == nslc_id:
-                    traces.append(_tr)
+                    if ascopy:
+                        traces.append(_tr.copy())
+                    else:
+                        traces.append(_tr)
         if len(traces) == 0:
             traces = None
         elif len(traces) == 1:
@@ -420,16 +420,16 @@ class MLInstWindow(Stream):
 
         return traces
 
-    def Zdata(self):
-        trs = self.fetch_with_id(self.Z)
+    def Zdata(self, ascopy=False):
+        trs = self.fetch_with_id(self.Z, ascopy=ascopy)
         return trs
 
-    def Ndata(self):
-        trs = self.fetch_with_id(self.N)
+    def Ndata(self, ascopy=False):
+        trs = self.fetch_with_id(self.N, ascopy=ascopy)
         return trs
 
-    def Edata(self):
-        trs = self.fetch_with_id(self.E)
+    def Edata(self, ascopy=False):
+        trs = self.fetch_with_id(self.E, ascopy=ascopy)
         return trs
 
     def apply_missing_component_rule(self):
@@ -529,8 +529,8 @@ class MLInstWindow(Stream):
         otherwise it raises a TypeError or ValueError with some additional
         information on the specific failed compatability test
         """
-        tr1 = self.fetch_with_id(id1).copy()
-        tr2 = self.fetch_with_id(id2).copy()
+        tr1 = self.fetch_with_id(id1, ascopy=True)
+        tr2 = self.fetch_with_id(id2, ascopy=True)
         # Handle case where where fetch_with_id returns a Stream object
         if isinstance(tr1, Stream):
             print(f"{id1} maps to Stream --> merge()'d copy to trace")
@@ -662,27 +662,34 @@ class MLInstWindow(Stream):
         if not self.is_wind_split():
             # Check if message contains masked values
             if not any(self.are_traces_masked()):
-                # Check if any traces have differen starttimes
-                if any(
-                    _tr.stats.starttime != self._target_starttime for _tr in self.traces
-                ):
-                    # Check if trace starttimes are outside tolerance
-                    exceeds_tolerance = self.are_starttimes_outside_tolerance()
-                    for _i, _tr in enumerate(self.traces):
-                        # If outside tolerance, apply a non-mask generating padding
-                        if exceeds_tolerance[_i]:
+                # Check if any traces have different starttimes
+                for _tr in self.traces:
+                    # If a given trace has a different starttime
+                    if _tr.stats.starttime != self._target_starttime:
+                        # Check if samples are misaligned
+                        if (_tr.stats.starttime - self._target_starttime)%_tr.stats.delta != 0:
+                            # Apply a non-mask generating padding that encompasses _target_starttime
                             _tr.trim(
-                                starttime=self._target_starttime,
+                                starttime=self._target_starttime - _tr.stats.delta,
                                 pad=True,
                                 fill_value=self.fill_value,
                             )
-                        _tr.interpolate(
-                            _tr.stats.sampling_rate, starttime=self._target_starttime
-                        )
-                # If all starttimes are identical, do nothing
-                else:
-                    pass
-            # print warning if
+                            # Use interpolation to sync the starttimes
+                            _tr.interpolate(
+                                _tr.stats.sampling_rate, starttime=self._target_starttime
+                            )
+                            # Remove any padding values
+                            _tr.trim(starttime=self._target_starttime)
+                        # if different start times is due to a gap, not sampling misalignment
+                        else:
+                            # do nothing to this trace
+                            pass
+                    # if trace and target starttimes are identical
+                    else:
+                        # do nothing to this trace
+                        pass
+              
+            # print warning if trying to pass masked traces into sync
             else:
                 raise UserWarning(
                     "WindowMsg contains masked traces - must fill values prior to sync starttimes"
@@ -754,13 +761,13 @@ class MLInstWindow(Stream):
         new_stream = Stream()
         keys = {"Z": self.Z, "N": self.N, "E": self.E}
         for _o in self._component_order:
-            _tr = self.fetch_with_id(keys[_o]).copy()
-            if _o != _tr.stats.channel[-1]:
-                _tr.stats.channel = _tr.stats.channel[:-1] + _o.lower()
+            _tr = self.fetch_with_id(keys[_o], ascopy=True)
             if isinstance(_tr, Trace):
+                if _o != _tr.stats.channel[-1]:
+                    _tr.stats.channel = _tr.stats.channel[:-1] + _o.lower()
                 new_stream.append(_tr.copy())
-            else:
-                _tr = self.fetch_with_id(self.Z).copy()
+            elif _tr is None:
+                _tr = self.fetch_with_id(self.Z, ascopy=True)
                 _tr.stats.channel = _tr.stats.channel[:-1] + _o.lower()
                 _tr.data = np.zeros(_tr.stats.npts)
                 new_stream.append(_tr)
@@ -840,11 +847,11 @@ class MLInstWindow(Stream):
         }
         return tensor, metadata
 
-    def to_labeled_tensor(self):
-        lt = LabeledTensor
+    # def to_labeled_tensor(self):
+    #     lt = LabeledTensor
 
 
-    def _preproc_example(self):
+    def _preproc_example(self, tapsec=0.06):
         # Split if masked gaps exist
         self.wind_split()
         # Filter
@@ -856,7 +863,7 @@ class MLInstWindow(Stream):
         # Resample data with Nyquist sensitive filtering
         self.resample(self._target_sr)
         # Taper traces (or segments) on both ends
-        self.taper(None, max_length=self.tapsec, side="both")
+        self.taper(None, max_length=tapsec, side="both")
         # Merge traces
         self.wind_merge()
         # Interpolate traces

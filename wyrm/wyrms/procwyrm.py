@@ -35,9 +35,9 @@
     
 TODO: Clean up hanging try - except in def pulse():
 """
-from wyrm import Wyrm, WindowMsg
+from wyrm import Wyrm
 from collections import deque
-
+from wyrm.structures.window import MLInstWindow
 
 class ProcWyrm(Wyrm):
     """
@@ -48,9 +48,9 @@ class ProcWyrm(Wyrm):
 
     def __init__(
         self,
-        target_class=WindowMsg,
-        self_eval_strings=["._preproc_example(fill_value=0)"],
-        out_eval_string=['.to_numpy(order="012")'],
+        target_class=MLInstWindow,
+        self_eval_string_list=["._preproc_example(fill_value=0)"],
+        out_eval_string='.to_torch()',
         max_pulse_size=10000,
         debug=False
     ):
@@ -59,9 +59,9 @@ class ProcWyrm(Wyrm):
 
         :: INPUTS ::
         :param target_class: [type] expected type for objects being processed
-                                    by this ProcWyrm. 
+                                    by this ProcWyrm.
                                     E.g., obspy.Trace
-        :param self_eval_strings: [list-like] set of strings taking the form
+        :param self_eval_string_list: [list-like] set of strings taking the form
                                     ".classmethod(args, kwargs)" to be applied
                                     to expected objects.
                                     e.g., '.resample(100, no_filter=True)'
@@ -85,35 +85,35 @@ class ProcWyrm(Wyrm):
         except NameError:
             raise NameError(f"{target_class} is not defined")
 
-        # Compatability checks for self_eval_strings
-        if isinstance(self_eval_strings, str):
-            self_eval_strings = [self_eval_strings]
-        elif isinstance(self_eval_strings, list):
-            if all(isinstance(_es, str) for _es in self_eval_strings):
-                self_eval_strings = self_eval_strings
+        # Compatability checks for self_eval_string_list
+        if isinstance(self_eval_string_list, str):
+            self_eval_string_list = [self_eval_string_list]
+        elif isinstance(self_eval_string_list, list):
+            if all(isinstance(_es, str) for _es in self_eval_string_list):
+                self_eval_string_list = self_eval_string_list
             else:
                 raise TypeError("not all etries in eval_strigns are type str")
         else:
-            raise TypeError("self_eval_strings must be type str or list of str")
+            raise TypeError("self_eval_string_list must be type str or list of str")
 
-        # Syntax checks for all self_eval_strings elements
+        # Syntax checks for all self_eval_string_list elements
         all_bool_list = [
-            self._check_class_method_string_formatting(_e) for _e in self_eval_strings
+            self._check_class_method_string_formatting(_e) for _e in self_eval_string_list
         ]
         if all(all_bool_list):
-            self.self_eval_strings = self_eval_strings
+            self.self_eval_string_list = self_eval_string_list
         # Otherwise
         else:
             # Iterate across checks
-            for _i, _e in self_eval_strings:
+            for _i, _e in enumerate(self_eval_string_list):
                 # Highlight specific bad eval_string entries
                 if not all_bool_list[_i]:
                     print(
-                        f'self_eval_strings entry "{_e}" does not pass formatting checks'
+                        f'self_eval_string_list entry "{_e}" does not pass formatting checks'
                     )
             # Then raise SyntaxError with advice on formatting
             raise SyntaxError(
-                'self_eval_strings entries must have basic form ".classmethod()"'
+                'self_eval_string_list entries must have basic form ".classmethod()"'
             )
 
         # Compatabiliy checks for out_eval_string
@@ -169,8 +169,8 @@ class ProcWyrm(Wyrm):
         bool_set.append(len(string.split("(")) >= 2)
         # Check that string ends with ')'
         bool_set.append(string[-1] == ")")
-        # Check that splitting on ")" gives one less part than "(" split
-        bool_set.append(len(string.split("(")) == len(string.split(")") + 1))
+        # Check that splitting on ")" gives the same amount of elements as "(" split
+        bool_set.append(len(string.split("(")) == len(string.split(")")))
         # Check that proposed method is in target class's class methods
         bool_set.append(string.split("(")[0][1:] in dir(self.target_class))
         status = all(bool_set)
@@ -192,7 +192,7 @@ class ProcWyrm(Wyrm):
 
     def _run_self_eval_statements(self, obj):
         """
-        Run self_eval_strings elements in sequence on target object
+        Run self_eval_string_list elements in sequence on target object
         :: INPUT ::
         :param obj: [object] candidate object
 
@@ -200,8 +200,8 @@ class ProcWyrm(Wyrm):
         :return obj: [object] candidate object with self-altering
                               class methods applied
         """
-        for _e in self.eval_strings:
-            eval(f"{obj}{_e}")
+        for _e in self.self_eval_string_list:
+            eval(f"obj{_e}")
         return obj
 
     def _run_out_eval_statement(self, obj):
@@ -223,7 +223,7 @@ class ProcWyrm(Wyrm):
         """
         For an input deque of objects, sequentially pop off objects,
         assess if they are type self.target_class, apply sequential
-        self_eval_strings to those matching objects, and finally apply
+        self_eval_string_list to those matching objects, and finally apply
         out_eval_string to the final altered object, collecting the
         output in self.queue with .appendleft(). 
 

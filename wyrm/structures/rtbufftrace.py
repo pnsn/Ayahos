@@ -74,8 +74,9 @@ class RtBuffTrace(Trace):
         self.interpolation_samples = icc.bounded_intlike(
             interpolation_samples,
             minimum=-1,
-            maximum=self.max_length*1e6,
-            inclusive=True)
+            maximum=self.max_length * 1e6,
+            inclusive=True,
+        )
         if not isinstance(interpolation_samples, int):
             raise TypeError(
                 "interpolation_samples must be type int - see obspy.core.stream.Stream.merge"
@@ -219,9 +220,11 @@ class RtBuffTrace(Trace):
         :attrib _have_appended_trace: update to True
         """
         if self._have_appended_trace:
-            raise AttributeError('Cannot execute _first_append() with self._have_appended_trace == True')
+            raise AttributeError(
+                "Cannot execute _first_append() with self._have_appended_trace == True"
+            )
         if not isinstance(trace, Trace):
-            raise TypeError('trace must be type obspy.Trace')
+            raise TypeError("trace must be type obspy.Trace")
         self.data = trace.copy().data
         self.stats = trace.copy().stats
         self._have_appended_trace = True
@@ -233,7 +236,7 @@ class RtBuffTrace(Trace):
         Append data method for when contiguous data are anticipated
         """
         if not isinstance(trace, Trace):
-            raise TypeError('trace must be type obspy.Trace')
+            raise TypeError("trace must be type obspy.Trace")
         tr_self = self.to_trace()
         st = Stream([tr_self, trace.copy()])
         st.merge(
@@ -261,8 +264,8 @@ class RtBuffTrace(Trace):
         split() method internally to create a stream of contiguous data
         segments and then merge to re-merge the data into (semi) contiguous
         data. This also allows for nonsequential packet loading (i.e., gap
-        back-filling) that could occur in some marginal cases. 
-        
+        back-filling) that could occur in some marginal cases.
+
         This added split() requires additional compute resources, but is safe
         for both gappy and contiguous data.
 
@@ -276,7 +279,7 @@ class RtBuffTrace(Trace):
         :attrib interpolation_samples: kwarg value passed to obspy.Stream.merge
         """
         if not isinstance(trace, Trace):
-            raise TypeError('trace must be type obspy.Trace')
+            raise TypeError("trace must be type obspy.Trace")
         # Create a trace representation
         tr_self = self.to_trace()
         # Put trace and tr_self into a stream
@@ -426,10 +429,48 @@ class RtBuffTrace(Trace):
         ffden = self.max_length
         return ffnum / ffden
 
-    def get_trimmed_valid_fraction(self, starttime=None, endtime=None, wgt_taper_sec=0.0, wgt_taper_type='cosine')
+    def get_trimmed_valid_fraction(
+        self, starttime=None, endtime=None, wgt_taper_sec=0.0, wgt_taper_type="cosine"
+    ):
+        """
+        Get the valid (unmasked) fraction of data contained within a specified
+        time window, with the option of introducing downweighting functions at
+        the edges of the candidate window.
+
+        :: INPUTS ::
+        :param starttime: [None] or [obspy.UTCDateTime] starttime to pass
+                            to obspy.Trace.trim. None input uses starttime
+                            of this RtBuffTrace
+        :param endtime: [None] or [obspy.UTCDateTime] endtime to pass
+                            to obspy.Trace.trim. None input uses endtime
+                            of this RtBuffTrace
+                            NOTE: trim operations are conducted on a temporary
+                            copy of this RtBuffTrace and the trim uses pad=True
+                            and fill_value=None to generate masked samples
+                            if the specified start/endtimes lie outside the
+                            bounds of data in this RtBuffTrace
+        :param wgt_taper_sec: [float] non-negative, finite number of seconds
+                            that a specified taper function should last on
+                            each end of the candidate window. Value of 0
+                            results in no taper applied.
+        :param wgt_taper_type: [str] name of taper type to apply
+                        Supported values:
+                        "cosine" - apply a cosine taper to the data weighting
+                                   function
+                            aliases: 'cos', 'tukey'
+                        "step" - set all data weights in the tapered 
+                                 region to 0
+                            aliases: 'h', 'heaviside'
+        :: OUTPUT ::
+        :return vf: [float] (weighted) fraction of non-masked data in the
+                    candidate window. vf \in [0, 1]
+        """
+
         tmp_copy = self.copy()
         tmp_copy.trim(starttime=starttime, endtime=endtime, pad=True, fill_value=None)
-        vf = tmp_copy.get_unmasked_fraction(wgt_taper_sec=wgt_taper_sec, wgt_taper_type=wgt_taper_type)
+        vf = tmp_copy.get_unmasked_fraction(
+            wgt_taper_sec=wgt_taper_sec, wgt_taper_type=wgt_taper_type
+        )
         return vf
 
     def get_unmasked_fraction(self, wgt_taper_sec=0.0, wgt_taper_type="cosine"):
@@ -464,7 +505,7 @@ class RtBuffTrace(Trace):
         """
         # Handle empty buffer case
         if self.stats.npts == 0:
-            valid_frac = 1.
+            valid_frac = 1.0
         else:
             # Compatability check for wgt_taper_sec
             wgt_taper_sec = icc.bounded_floatlike(
@@ -601,390 +642,390 @@ class RtBuffTrace(Trace):
 
 ### FOR OBSOLESCENSE - NTS 1/17/2024
 
-    # def __display_buff_status(self, disc=100, showkey=False, asprint=True):
-    #     """
-    #     Display a grapic representation of the data validity
-    #     """
-    #     disc = icc.bounded_intlike(disc, str='disc', minimum=1)
-    #     if not isinstance(showkey, bool):
-    #         raise TypeError("showkey must be type bool")
-    #     else:
-    #         pass
+# def __display_buff_status(self, disc=100, showkey=False, asprint=True):
+#     """
+#     Display a grapic representation of the data validity
+#     """
+#     disc = icc.bounded_intlike(disc, str='disc', minimum=1)
+#     if not isinstance(showkey, bool):
+#         raise TypeError("showkey must be type bool")
+#     else:
+#         pass
 
-    #     rstr = "Buffer |"
-    #     dt = self.max_length / disc
-    #     if dt < self.stats.delta:
-    #         dt = self.stats.delta
-    #         disc = int(self.max_length / dt)
-    #     ts0 = self.stats.starttime
-    #     te0 = self.stats.endtime
-    #     for _i in range(disc):
-    #         ts = self.stats.starttime + _i * dt
-    #         te = self.stats.starttime + (_i + 1) * dt
-    #         # If window ends before start of buffered data
-    #         if te <= ts0:
-    #             rstr += "_"
-    #         # If window starts after end of buffered data
-    #         elif te0 <= ts:
-    #             rstr += "_"
-    #         # Otherwise
-    #         else:
-    #             try:
-    #                 _tr = self.copy().trim(starttime=ts, endtime=te, pad=True)
-    #             except:
-    #                 breakpoint()
-    #             if not np.ma.is_masked(_tr.data):
-    #                 rstr += "D"
-    #             # If all masked
-    #             elif all(_tr.data.mask):
-    #                 rstr += "m"
-    #             # If any masked
-    #             elif any(_tr.data.mask):
-    #                 rstr += "p"
-    #             # If none masked
-    #             elif not any(_tr.data.mask):
-    #                 rstr += "D"
-    #     rstr += "|"
-    #     if showkey:
-    #         rstr += "\n (D)ata (p)artial (m)asked (_)none"
-    #     if asprint:
-    #         print(rstr)
-    #     else:
-    #         return rstr
+#     rstr = "Buffer |"
+#     dt = self.max_length / disc
+#     if dt < self.stats.delta:
+#         dt = self.stats.delta
+#         disc = int(self.max_length / dt)
+#     ts0 = self.stats.starttime
+#     te0 = self.stats.endtime
+#     for _i in range(disc):
+#         ts = self.stats.starttime + _i * dt
+#         te = self.stats.starttime + (_i + 1) * dt
+#         # If window ends before start of buffered data
+#         if te <= ts0:
+#             rstr += "_"
+#         # If window starts after end of buffered data
+#         elif te0 <= ts:
+#             rstr += "_"
+#         # Otherwise
+#         else:
+#             try:
+#                 _tr = self.copy().trim(starttime=ts, endtime=te, pad=True)
+#             except:
+#                 breakpoint()
+#             if not np.ma.is_masked(_tr.data):
+#                 rstr += "D"
+#             # If all masked
+#             elif all(_tr.data.mask):
+#                 rstr += "m"
+#             # If any masked
+#             elif any(_tr.data.mask):
+#                 rstr += "p"
+#             # If none masked
+#             elif not any(_tr.data.mask):
+#                 rstr += "D"
+#     rstr += "|"
+#     if showkey:
+#         rstr += "\n (D)ata (p)artial (m)asked (_)none"
+#     if asprint:
+#         print(rstr)
+#     else:
+#         return rstr
 
-    # def _fussy_append(self, trace, merge_method=1, merge_interp_samp=-1, verbose=True):
-    #         """
-    #         Earlier version of self.append() that has much more picky rules and syntax
+# def _fussy_append(self, trace, merge_method=1, merge_interp_samp=-1, verbose=True):
+#         """
+#         Earlier version of self.append() that has much more picky rules and syntax
 
-    #         Appends a Trace-like object to this RtBuffTrace
-    #         with a series of compatability checks
+#         Appends a Trace-like object to this RtBuffTrace
+#         with a series of compatability checks
 
-    #         :: INPUTS ::
-    #         :param trace: [obspy.core.trace.Trace] or child-class
-    #                         Trace or Trace-inheriting class object
-    #                         to be appended to this RtBuffTrace
-    #         :param merge_method: [int] `method` kwarg input for
-    #                         obspy.core.stream.Stream.merge()
-    #         :param merge_interp_samp: [int] `interpolation_samples`
-    #                         kwarg input for Stream.merge()
-    #         :param verbose: [bool] print warning messages?
-    #         """
-    #         # Compatability check for trace
-    #         if not isinstance(trace, Trace):
-    #             raise TypeError("trace must be a Trace-like object")
-    #         else:
-    #             pass
+#         :: INPUTS ::
+#         :param trace: [obspy.core.trace.Trace] or child-class
+#                         Trace or Trace-inheriting class object
+#                         to be appended to this RtBuffTrace
+#         :param merge_method: [int] `method` kwarg input for
+#                         obspy.core.stream.Stream.merge()
+#         :param merge_interp_samp: [int] `interpolation_samples`
+#                         kwarg input for Stream.merge()
+#         :param verbose: [bool] print warning messages?
+#         """
+#         # Compatability check for trace
+#         if not isinstance(trace, Trace):
+#             raise TypeError("trace must be a Trace-like object")
+#         else:
+#             pass
 
-    #         # Enforce masked data array for candidate data packet
-    #         if not np.ma.is_masked(trace.data):
-    #             trace.data = np.ma.masked_array(
-    #                 trace.data, fill_value=self.fill_value, mask=[False] * trace.stats.npts
-    #             )
-    #         elif trace.data.fill_value != self.fill_value:
-    #             trace.data.fill_value = self.fill_value
-    #         else:
-    #             pass
+#         # Enforce masked data array for candidate data packet
+#         if not np.ma.is_masked(trace.data):
+#             trace.data = np.ma.masked_array(
+#                 trace.data, fill_value=self.fill_value, mask=[False] * trace.stats.npts
+#             )
+#         elif trace.data.fill_value != self.fill_value:
+#             trace.data.fill_value = self.fill_value
+#         else:
+#             pass
 
-    #         # If first append to RtBuffTrace, scrape data from input trace
-    #         if not self.have_appended_trace:
-    #             self.data = trace.data
-    #             self.dtype = trace.data.dtype
-    #             self.stats = trace.stats
-    #             self.have_appended_trace = True
-    #             if not np.ma.is_masked(self.data):
-    #                 self.data = np.ma.masked_array(
-    #                     self.data, mask=[False] * len(self), fill_value=self.fill_value
-    #                 )
+#         # If first append to RtBuffTrace, scrape data from input trace
+#         if not self.have_appended_trace:
+#             self.data = trace.data
+#             self.dtype = trace.data.dtype
+#             self.stats = trace.stats
+#             self.have_appended_trace = True
+#             if not np.ma.is_masked(self.data):
+#                 self.data = np.ma.masked_array(
+#                     self.data, mask=[False] * len(self), fill_value=self.fill_value
+#                 )
 
-    #         elif self.have_appended_trace:
-    #             # IN ALL CASES, ID MUST MATCH
-    #             # ID check
-    #             if self.id != trace.id:
-    #                 raise TypeError(f"Trace ID differs: {self.id} vs {trace.id}")
-    #             else:
-    #                 pass
+#         elif self.have_appended_trace:
+#             # IN ALL CASES, ID MUST MATCH
+#             # ID check
+#             if self.id != trace.id:
+#                 raise TypeError(f"Trace ID differs: {self.id} vs {trace.id}")
+#             else:
+#                 pass
 
-    #             # # Time Checks # #
-    #             # Alias starttimes and endtimes for convenience
-    #             ts0 = self.stats.starttime
-    #             te0 = self.stats.endtime
-    #             ts1 = trace.stats.starttime
-    #             te1 = trace.stats.starttime
-    #             # Check for overlap
-    #             # ... if trace starttime after self starttime
-    #             if ts0 <= ts1 <= te0:
-    #                 starts_inside = True
-    #             else:
-    #                 starts_inside = False
-    #             # ... if trace endtime before self endtime
-    #             if ts0 <= te1 <= te0:
-    #                 ends_inside = True
-    #             else:
-    #                 ends_inside = False
+#             # # Time Checks # #
+#             # Alias starttimes and endtimes for convenience
+#             ts0 = self.stats.starttime
+#             te0 = self.stats.endtime
+#             ts1 = trace.stats.starttime
+#             te1 = trace.stats.starttime
+#             # Check for overlap
+#             # ... if trace starttime after self starttime
+#             if ts0 <= ts1 <= te0:
+#                 starts_inside = True
+#             else:
+#                 starts_inside = False
+#             # ... if trace endtime before self endtime
+#             if ts0 <= te1 <= te0:
+#                 ends_inside = True
+#             else:
+#                 ends_inside = False
 
-    #             if any([starts_inside, ends_inside]):
-    #                 overlapping = True
-    #             else:
-    #                 overlapping = False
+#             if any([starts_inside, ends_inside]):
+#                 overlapping = True
+#             else:
+#                 overlapping = False
 
-    #             # Check for too-large data gap (oversize_gap)
-    #             # to prevent generation of temporary, large masked arrays in memory
-    #             # if a given station was offline for awhile and then comes back
-    #             # online, potentially with a different digitization configuration.
-    #             # This should also enable adaptation to digitizer configuration
-    #             # changes while data are streaming within ~max_length sec.
-    #             if not overlapping and self.max_length is not None:
-    #                 gap_size = ts1 - te0
-    #                 if gap_size < 0:
-    #                     if gap_size < -1.0 * self.max_length:
-    #                         oversize_gap = True
-    #                         predates = True
-    #                     else:
-    #                         oversize_gap = False
-    #                         predates = True
+#             # Check for too-large data gap (oversize_gap)
+#             # to prevent generation of temporary, large masked arrays in memory
+#             # if a given station was offline for awhile and then comes back
+#             # online, potentially with a different digitization configuration.
+#             # This should also enable adaptation to digitizer configuration
+#             # changes while data are streaming within ~max_length sec.
+#             if not overlapping and self.max_length is not None:
+#                 gap_size = ts1 - te0
+#                 if gap_size < 0:
+#                     if gap_size < -1.0 * self.max_length:
+#                         oversize_gap = True
+#                         predates = True
+#                     else:
+#                         oversize_gap = False
+#                         predates = True
 
-    #                 elif 0 <= gap_size:
-    #                     if gap_size < self.max_length:
-    #                         oversize_gap = False
-    #                         predates = False
-    #                     else:
-    #                         oversize_gap = True
-    #                         predates = False
+#                 elif 0 <= gap_size:
+#                     if gap_size < self.max_length:
+#                         oversize_gap = False
+#                         predates = False
+#                     else:
+#                         oversize_gap = True
+#                         predates = False
 
-    #             else:
-    #                 oversize_gap = False
-    #                 predates = False
+#             else:
+#                 oversize_gap = False
+#                 predates = False
 
-    #             # S/R check
-    #             if self.stats.sampling_rate != trace.stats.sampling_rate:
-    #                 emsg = f"{self.id} | Sampling rate differs "
-    #                 emsg += f"{self.stats.sampling_rate} vs "
-    #                 emsg += f"{trace.stats.sampling_rate}"
-    #                 if not oversize_gap:
-    #                     raise TypeError(emsg)
-    #                 elif oversize_gap and not predates:
-    #                     emsg += f"after oversize gap: {gap_size:.3f} sec"
-    #                     emsg += f" (> {self.max_length} sec max_length)"
-    #                     if verbose:
-    #                         print(emsg)
-    #                 elif oversize_gap and predates:
-    #                     emsg += "preceeding RtBuffTrace with gap of "
-    #                     emsg += f"{gap_size:.3f} sec"
-    #                     if verbose:
-    #                         print(emsg)
-    #             else:
-    #                 pass
+#             # S/R check
+#             if self.stats.sampling_rate != trace.stats.sampling_rate:
+#                 emsg = f"{self.id} | Sampling rate differs "
+#                 emsg += f"{self.stats.sampling_rate} vs "
+#                 emsg += f"{trace.stats.sampling_rate}"
+#                 if not oversize_gap:
+#                     raise TypeError(emsg)
+#                 elif oversize_gap and not predates:
+#                     emsg += f"after oversize gap: {gap_size:.3f} sec"
+#                     emsg += f" (> {self.max_length} sec max_length)"
+#                     if verbose:
+#                         print(emsg)
+#                 elif oversize_gap and predates:
+#                     emsg += "preceeding RtBuffTrace with gap of "
+#                     emsg += f"{gap_size:.3f} sec"
+#                     if verbose:
+#                         print(emsg)
+#             else:
+#                 pass
 
-    #             # Calib check
-    #             if self.stats.calib != trace.stats.calib:
-    #                 emsg = f"{self.id} | Calibration factor differs"
-    #                 emsg += f"{self.stats.calib} vs {trace.stats.calib}"
-    #                 if not oversize_gap:
-    #                     raise TypeError(emsg)
-    #                 elif oversize_gap and not predates:
-    #                     emsg += f"after oversize gap: {gap_size:.3f} sec"
-    #                     emsg += f" (> {self.max_length} sec max_length)"
-    #                     if verbose:
-    #                         print(emsg)
-    #                 elif oversize_gap and predates:
-    #                     emsg += "preceeding RtBuffTrace with gap of "
-    #                     emsg += f"{gap_size:.3f} sec"
-    #                     if verbose:
-    #                         print(emsg)
-    #             else:
-    #                 pass
+#             # Calib check
+#             if self.stats.calib != trace.stats.calib:
+#                 emsg = f"{self.id} | Calibration factor differs"
+#                 emsg += f"{self.stats.calib} vs {trace.stats.calib}"
+#                 if not oversize_gap:
+#                     raise TypeError(emsg)
+#                 elif oversize_gap and not predates:
+#                     emsg += f"after oversize gap: {gap_size:.3f} sec"
+#                     emsg += f" (> {self.max_length} sec max_length)"
+#                     if verbose:
+#                         print(emsg)
+#                 elif oversize_gap and predates:
+#                     emsg += "preceeding RtBuffTrace with gap of "
+#                     emsg += f"{gap_size:.3f} sec"
+#                     if verbose:
+#                         print(emsg)
+#             else:
+#                 pass
 
-    #             # Check dtype
-    #             if self.data.dtype != trace.data.dtype:
-    #                 emsg = f"{self.id} | Data type differs "
-    #                 emsg += f"{self.data.dtype} vs {trace.data.dtype}"
-    #                 if not oversize_gap:
-    #                     raise TypeError(emsg)
-    #                 elif oversize_gap and not predates:
-    #                     emsg += f"after oversize gap: {gap_size:.3f} sec"
-    #                     emsg += f" (> {self.max_length} sec max_length)"
-    #                     if verbose:
-    #                         print(emsg)
-    #                 elif oversize_gap and predates:
-    #                     emsg += "preceeding RtBuffTrace with gap of "
-    #                     emsg += "{gap_size:.3f} sec"
-    #                     if verbose:
-    #                         print(emsg)
-    #             else:
-    #                 pass
+#             # Check dtype
+#             if self.data.dtype != trace.data.dtype:
+#                 emsg = f"{self.id} | Data type differs "
+#                 emsg += f"{self.data.dtype} vs {trace.data.dtype}"
+#                 if not oversize_gap:
+#                     raise TypeError(emsg)
+#                 elif oversize_gap and not predates:
+#                     emsg += f"after oversize gap: {gap_size:.3f} sec"
+#                     emsg += f" (> {self.max_length} sec max_length)"
+#                     if verbose:
+#                         print(emsg)
+#                 elif oversize_gap and predates:
+#                     emsg += "preceeding RtBuffTrace with gap of "
+#                     emsg += "{gap_size:.3f} sec"
+#                     if verbose:
+#                         print(emsg)
+#             else:
+#                 pass
 
-    #             # PROCESSING FOR OVERSIZE_GAP APPEND FROM PAST DATA
-    #             if oversize_gap and predates:
-    #                 emsg = f"{self.id} | trace significantly pre-dates "
-    #                 emsg += "data contained in this RtBufftrace.\n"
-    #                 emsg += "Assuming timing is bad on candidate packet.\n"
-    #                 emsg += f"tr({trace.stats.endtime}) -> "
-    #                 emsg += f"RtBuffTrace({self.stats.starttime}).\n"
-    #                 emsg += "Canceling append"
-    #                 if verbose:
-    #                     print(emsg)
+#             # PROCESSING FOR OVERSIZE_GAP APPEND FROM PAST DATA
+#             if oversize_gap and predates:
+#                 emsg = f"{self.id} | trace significantly pre-dates "
+#                 emsg += "data contained in this RtBufftrace.\n"
+#                 emsg += "Assuming timing is bad on candidate packet.\n"
+#                 emsg += f"tr({trace.stats.endtime}) -> "
+#                 emsg += f"RtBuffTrace({self.stats.starttime}).\n"
+#                 emsg += "Canceling append"
+#                 if verbose:
+#                     print(emsg)
 
-    #             # PROCESSING FOR OVERSIZE_GAP APPEND FROM FUTURE DATA
-    #             elif oversize_gap and not predates:
-    #                 # read in data from trace
-    #                 self.data = trace.data
-    #                 # get new stats information
-    #                 self.stats = trace.stats
-    #                 # back-pad data to max_length
-    #                 sr = self.stats.sampling_rate
-    #                 te = self.stats.endtime
-    #                 max_samp = int(self.max_length * sr + 0.5)
-    #                 ts = te - max_samp / sr
-    #                 self._ltrim(
-    #                     ts,
-    #                     pad=True,
-    #                     nearest_sample=True,
-    #                     fill_value=self.fill_value,
-    #                 )
+#             # PROCESSING FOR OVERSIZE_GAP APPEND FROM FUTURE DATA
+#             elif oversize_gap and not predates:
+#                 # read in data from trace
+#                 self.data = trace.data
+#                 # get new stats information
+#                 self.stats = trace.stats
+#                 # back-pad data to max_length
+#                 sr = self.stats.sampling_rate
+#                 te = self.stats.endtime
+#                 max_samp = int(self.max_length * sr + 0.5)
+#                 ts = te - max_samp / sr
+#                 self._ltrim(
+#                     ts,
+#                     pad=True,
+#                     nearest_sample=True,
+#                     fill_value=self.fill_value,
+#                 )
 
-    #                 if not np.ma.is_masked(self.data):
-    #                     self.data = np.ma.masked_array(
-    #                         self.data, mask=[False] * len(self), fill_value=self.fill_value
-    #                     )
-    #                 # Allows for changes in data precision
-    #                 self.dtype = trace.data.dtype
+#                 if not np.ma.is_masked(self.data):
+#                     self.data = np.ma.masked_array(
+#                         self.data, mask=[False] * len(self), fill_value=self.fill_value
+#                     )
+#                 # Allows for changes in data precision
+#                 self.dtype = trace.data.dtype
 
-    #             # PROCESSING FOR NON-OVERSIZE_GAP APPEND
-    #             # ALLOWING FOR ASYNCHRONOUS LOADING WITHIN BOUNDS
-    #             # I.e., predates is not used as a descriminator here.
-    #             elif not oversize_gap:
-    #                 # # Use Merge to combine traces # #
-    #                 # Create Trace representation of self
-    #                 tr = Trace(data=deepcopy(self.data), header=deepcopy(self.stats))
-    #                 # Place self and trace into a stream
-    #                 st = Stream([tr, trace.copy()])
-    #                 # if overlap check flagged an overlap, run split
-    #                 # NOTE: split helps gracefully merge in delayed packets
-    #                 # in the case that the arrive in asynchronously.
-    #                 # NOTE: This behavior becomes useful in reconstituting ML
-    #                 # outputs into traces.
-    #                 if overlapping:
-    #                     st = st.split()
-    #                 # Merge in either case (overlapping or not overlapping)
-    #                 st.merge(
-    #                     fill_value=self.fill_value,
-    #                     method=merge_method,
-    #                     interpolation_samples=merge_interp_samp,
-    #                 )
-    #                 # Check that one trace resulted from merge...
-    #                 if len(st) == 1:
-    #                     tr = st[0]
-    #                 # ...raise a warning if it didnt and cancel append
-    #                 else:
-    #                     emsg = f"RtBuffTrace({self.id}).append "
-    #                     emsg += f"produced {len(st)} distinct traces "
-    #                     emsg += "rather than 1 expected. Canceling append."
-    #                     print(emsg)
+#             # PROCESSING FOR NON-OVERSIZE_GAP APPEND
+#             # ALLOWING FOR ASYNCHRONOUS LOADING WITHIN BOUNDS
+#             # I.e., predates is not used as a descriminator here.
+#             elif not oversize_gap:
+#                 # # Use Merge to combine traces # #
+#                 # Create Trace representation of self
+#                 tr = Trace(data=deepcopy(self.data), header=deepcopy(self.stats))
+#                 # Place self and trace into a stream
+#                 st = Stream([tr, trace.copy()])
+#                 # if overlap check flagged an overlap, run split
+#                 # NOTE: split helps gracefully merge in delayed packets
+#                 # in the case that the arrive in asynchronously.
+#                 # NOTE: This behavior becomes useful in reconstituting ML
+#                 # outputs into traces.
+#                 if overlapping:
+#                     st = st.split()
+#                 # Merge in either case (overlapping or not overlapping)
+#                 st.merge(
+#                     fill_value=self.fill_value,
+#                     method=merge_method,
+#                     interpolation_samples=merge_interp_samp,
+#                 )
+#                 # Check that one trace resulted from merge...
+#                 if len(st) == 1:
+#                     tr = st[0]
+#                 # ...raise a warning if it didnt and cancel append
+#                 else:
+#                     emsg = f"RtBuffTrace({self.id}).append "
+#                     emsg += f"produced {len(st)} distinct traces "
+#                     emsg += "rather than 1 expected. Canceling append."
+#                     print(emsg)
 
-    #                 # # Use _ltrim to enforce maximum buffer length (if needed) # #
-    #                 if self.max_length is not None:
-    #                     # Get metadata
-    #                     merge_samples = len(tr.data)
-    #                     sr = tr.stats.sampling_rate
-    #                     max_samples = int(self.max_length * self.stats.sampling_rate + 0.5)
-    #                     # Assess if buffer at capacity
-    #                     if merge_samples > max_samples:
-    #                         ltst = tr.stats.starttime + (merge_samples - max_samples) / sr
-    #                         tr._ltrim(
-    #                             ltst,
-    #                             pad=True,
-    #                             nearest_sample=True,
-    #                             fill_value=self.fill_value,
-    #                         )
+#                 # # Use _ltrim to enforce maximum buffer length (if needed) # #
+#                 if self.max_length is not None:
+#                     # Get metadata
+#                     merge_samples = len(tr.data)
+#                     sr = tr.stats.sampling_rate
+#                     max_samples = int(self.max_length * self.stats.sampling_rate + 0.5)
+#                     # Assess if buffer at capacity
+#                     if merge_samples > max_samples:
+#                         ltst = tr.stats.starttime + (merge_samples - max_samples) / sr
+#                         tr._ltrim(
+#                             ltst,
+#                             pad=True,
+#                             nearest_sample=True,
+#                             fill_value=self.fill_value,
+#                         )
 
-    #                 # Enforce masked array if merge unmasked data
-    #                 if not np.ma.is_masked(tr.data):
-    #                     self.data = np.ma.masked_array(
-    #                         tr.data,
-    #                         mask=[False] * tr.stats.npts,
-    #                         fill_value=self.fill_value,
-    #                     )
-    #                 # Otherwise transfer from tr to self as-is
-    #                 else:
-    #                     self.data = tr.data
-    #                     # ... with a check that fill_value is preserved
-    #                     if tr.data.fill_value != self.fill_value:
-    #                         self.data.fill_value = self.fill_value
-    #                     # Explicit pass for completeness if everything checks out
-    #                     else:
-    #                         pass
-    #             # END not oversize_gap
-    #         # END self.have_appended_trace
+#                 # Enforce masked array if merge unmasked data
+#                 if not np.ma.is_masked(tr.data):
+#                     self.data = np.ma.masked_array(
+#                         tr.data,
+#                         mask=[False] * tr.stats.npts,
+#                         fill_value=self.fill_value,
+#                     )
+#                 # Otherwise transfer from tr to self as-is
+#                 else:
+#                     self.data = tr.data
+#                     # ... with a check that fill_value is preserved
+#                     if tr.data.fill_value != self.fill_value:
+#                         self.data.fill_value = self.fill_value
+#                     # Explicit pass for completeness if everything checks out
+#                     else:
+#                         pass
+#             # END not oversize_gap
+#         # END self.have_appended_trace
 
-    #     # END of RtBuffTrace.append()
+#     # END of RtBuffTrace.append()
 
-    # def get_window_stats(
-    #     self,
-    #     starttime=None,
-    #     endtime=None,
-    #     pad=True,
-    #     taper_sec=0.0,
-    #     taper_type="cosine",
-    #     vert_codes="Z3",
-    #     hztl_codes="N1E2",
-    # ):
-    #     """
-    #     Produce a dictionary of key statistics / bool results for this rtbufftrace for a specified window
+# def get_window_stats(
+#     self,
+#     starttime=None,
+#     endtime=None,
+#     pad=True,
+#     taper_sec=0.0,
+#     taper_type="cosine",
+#     vert_codes="Z3",
+#     hztl_codes="N1E2",
+# ):
+#     """
+#     Produce a dictionary of key statistics / bool results for this rtbufftrace for a specified window
 
-    #     """
-    #     nsli, comp = self.get_nsli_c()
-    #     if comp in vert_codes:
-    #         stats = {"comp_type": "Vertical", "comp_code": comp}
-    #     elif comp in hztl_codes:
-    #         stats = {"comp_type": "Horizontal", "comp_code": comp}
-    #     else:
-    #         stats = {"comp_type": "Unassigned", "comp_code": comp}
+#     """
+#     nsli, comp = self.get_nsli_c()
+#     if comp in vert_codes:
+#         stats = {"comp_type": "Vertical", "comp_code": comp}
+#     elif comp in hztl_codes:
+#         stats = {"comp_type": "Horizontal", "comp_code": comp}
+#     else:
+#         stats = {"comp_type": "Unassigned", "comp_code": comp}
 
-    #     # Compatability check for starttime
-    #     if isinstance(starttime, UTCDateTime):
-    #         ts = starttime
-    #     elif isinstance(starttime, type(None)):
-    #         ts = self.stats.starttime
-    #     else:
-    #         raise TypeError("starttime must be UTCDateTime or None")
+#     # Compatability check for starttime
+#     if isinstance(starttime, UTCDateTime):
+#         ts = starttime
+#     elif isinstance(starttime, type(None)):
+#         ts = self.stats.starttime
+#     else:
+#         raise TypeError("starttime must be UTCDateTime or None")
 
-    #     stats.update({"starttime": ts})
+#     stats.update({"starttime": ts})
 
-    #     # Compatability check for endtime
-    #     if isinstance(endtime, UTCDateTime):
-    #         te = endtime
-    #     elif isinstance(endtime, type(None)):
-    #         te = self.stats.endtime
-    #     else:
-    #         raise TypeError("endtime must be UTCDateTime or None")
+#     # Compatability check for endtime
+#     if isinstance(endtime, UTCDateTime):
+#         te = endtime
+#     elif isinstance(endtime, type(None)):
+#         te = self.stats.endtime
+#     else:
+#         raise TypeError("endtime must be UTCDateTime or None")
 
-    #     stats.update({"endtime": te})
+#     stats.update({"endtime": te})
 
-    #     # Cmopatability check for pad
-    #     if not isinstance(pad, bool):
-    #         raise TypeError("pad must be bool")
-    #     else:
-    #         pass
-    #     # Compatability check for taper_sec
-    #     if isinstance(taper_sec, float):
-    #         pass
-    #     elif isinstance(taper_sec, int):
-    #         taper_sec = float(taper_sec)
-    #     else:
-    #         raise TypeError("taper_sec must be type float or int")
-    #     # Compatability check for taper_type
-    #     if not isinstance(taper_type, str):
-    #         raise TypeError("taper_type must be type str")
-    #     else:
-    #         pass
+#     # Cmopatability check for pad
+#     if not isinstance(pad, bool):
+#         raise TypeError("pad must be bool")
+#     else:
+#         pass
+#     # Compatability check for taper_sec
+#     if isinstance(taper_sec, float):
+#         pass
+#     elif isinstance(taper_sec, int):
+#         taper_sec = float(taper_sec)
+#     else:
+#         raise TypeError("taper_sec must be type float or int")
+#     # Compatability check for taper_type
+#     if not isinstance(taper_type, str):
+#         raise TypeError("taper_type must be type str")
+#     else:
+#         pass
 
-    #     # Get percent valid
-    #     pct_val = self.get_valid_pct(
-    #         starttime=ts,
-    #         endtime=te,
-    #         pad=pad,
-    #         taper_sec=taper_sec,
-    #         taper_type=taper_type,
-    #     )
+#     # Get percent valid
+#     pct_val = self.get_valid_pct(
+#         starttime=ts,
+#         endtime=te,
+#         pad=pad,
+#         taper_sec=taper_sec,
+#         taper_type=taper_type,
+#     )
 
-    #     stats.update({"percent_valid": pct_val})
+#     stats.update({"percent_valid": pct_val})

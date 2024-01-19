@@ -1,6 +1,6 @@
 from wyrm.wyrms.wyrm import Wyrm
 from wyrm.message.trace import TraceMsg
-from wyrm.structures.sncl_dict import RtBuff_Dict
+from wyrm.structures.castings.sncl_dict import RtBuff_Dict
 from copy import deepcopy
 from collections import deque
 import numpy as np

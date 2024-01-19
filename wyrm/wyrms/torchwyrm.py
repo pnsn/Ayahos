@@ -4,7 +4,7 @@ from wyrm.wyrms.wyrm import Wyrm
 import fnmatch
 import numpy as np
 from collections import deque
-
+from wyrm.structures.window import MLInstWindow, LabeledArray
 
 # class HardwareUnavailableError(Exception):
 #     def __init__(self, msg):
@@ -158,6 +158,20 @@ class TorchNNWyrm(Wyrm):
     def __repr__(self):
         rstr = self.__str__()
         return rstr
+
+class SeisBenchWyrm(TorchNNWyrm):
+    def __init__(
+            self,
+            model=sbm.EQTransformer().from_pretrained('pnw'),
+            device='mps',
+            max_batch_size=1000,
+            max_pulse_size=None,
+            debug=False):
+        
+        # Compatability check for model
+        if not isinstance(model, sbm.WaveformModel):
+            raise TypeError('model must be a seisbench.model.WaveformModel')
+
 
 
 class SeisBenchWyrm(TorchNNWyrm):

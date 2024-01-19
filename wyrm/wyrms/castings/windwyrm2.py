@@ -1,10 +1,10 @@
 from wyrm.wyrms.wyrm import Wyrm
-from wyrm.structures.window import MLInstWindow
-import wyrm.util.seisbench_model_params as smp
-import wyrm.util.input_compatability_checks as icc
-import seisbench.models as sbm
-from obspy import UTCDateTime
+from wyrm.structures.rtinststream import RtInstStream
+from wyrm.structures.rtbufftrace import RtBuffTrace
+from wyrm.message.window import WindowMsg
+from obspy import UTCDateTime, Trace
 from collections import deque
+import numpy as np
 from copy import deepcopy
 
 
@@ -23,196 +23,140 @@ class WindWyrm(Wyrm):
      - either obsolite substr or use it to filter rtinststream's
      first layer of keys.
     """
-
     def __init__(
-        self,
-        model=sbm.EQTransformer().from_pretrained("pnw"),
-        tapsec=0.06,
-        tolsec=0.03,
-        z_valid_frac=0.95,
-        Z_codes="Z3",
-        h_valid_frac=0.8,
-        N_codes="N1",
-        E_codes="E2",
-        window_fill_value=0.0,
-        missing_component_rule="Zeros",
-        max_pulse_size=20,
-        debug=False,
+            self,
+            model_code='EQT',
+            target_npts=6000,
+            target_sr=100.,
+            stride_sec=18.,
+            blind_sec=5.,
+            taper_sec=.06,
+            vert_comp_pct=.95,
+            vert_codes='Z3',
+            hztl_comp_pct=.8,
+            hztl_codes='N1E2',
+            window_fill_rule='zeros',
+            substr='*.*.*.*',
+            max_pulse_size=20,
+            debug=False
     ):
-        """
-        Initialize a WindWyrm object
-
-        :: INPUTS ::
-        :param model: [seisbench.models.WaveformModel] model object to
-                        scrape information from on windowing parameters
-        :param tapsec: [float] length of cosine taper to apply to data
-                        in seconds as part of data preprocessing
-                        see MLInstWindow()
-        :param tolsec: [float] amount of time difference between input
-                        trace timings to MLInstWindow() that is acceptable
-        :param z_valid_frac: [float]
-
-        """
         Wyrm.__init__(self, max_pulse_size=max_pulse_size, debug=debug)
 
-
-            
-        if not isinstance(model, sbm.WaveformModel):
-            raise TypeError("model must be a seisbench.models.WaveformModel")
-        else:
-            # Tag Model as an attribute
-            self.model = model
-            # Get window advance seconds
-            self._advance_sec = self.get_window_advance_seconds()
-        # Compatability check for tapsec
-        tapsec = icc.bounded_floatlike(
-            tapsec,
-            name="tapsec",
-            minimum=0,
-            maximum=self.model.in_samples / self.model.sampling_rate,
-            inclusive=True,
-        )
-        # Compatability check for tolsec
-        tolsec = icc.bounded_floatlike(
-            tolsec,
-            name="tolsec",
-            minimum=0,
-            maximum=self.model.in_samples / self.model.sampling_rate,
-            inclusive=True,
-        )
-
-        # Compatability check for window_fill_value
-        window_fill_value = icc.bounded_floatlike(
-            window_fill_value,
-            name="window_fill_value",
-            minimum=None,
-            maximum=None,
-            inclusive=False,
-        )
-
-        # Compatability check for missing_component_rule
-        if isinstance(missing_component_rule, str):
-            if missing_component_rule.lower() in ["zeros", "clonez", "clonehz"]:
-                _missing_component_rule = missing_component_rule
+        # Compatability checks for model_code
+        if isinstance(model_code, str):
+            if model_code.upper() in ['EQT', 'EQTRANSFORMER']:
+                self.model_code = 'EQT'
+            elif model_code.upper() in ['PN', 'PNET', 'PHASENET']:
+                self.model_code = 'PN'
             else:
-                raise ValueError(
-                    'missing_component_rule must be in: "Zeros", "CloneZ", "CloneHZ"'
-                )
+                raise ValueError('Current supported model_code values are "EQT" and "PN"')
         else:
-            raise TypeError("missing_component_rule must be type str")
+            raise TypeError('Current supported model_code values are "EQT" and "PN"')
+        ## RUN COMPATABILITY CHECKS WITH INHERITED METHODS FROM WYRM ##
+        # Compatability checks for target_npts
+        self.target_npts = self._bounded_intlike_check(target_npts, name="target_npts", minimum=1)
+        # Compatability checks for target_sr
+        self.target_sr = self._bounded_intlike_check(target_sr, name='target_sr', minimum=1)
+        # Compatability checks for stride_sec
+        self.stride_sec = self._bounded_floatlike_check(stride_sec, name='stride_sec', minimum=0.)
+        # Compatability checks for blind_sec
+        self.blind_sec = self._bounded_floatlike_check(blind_sec, name='blind_sec', minimum=0.)
+        # Compatability checks for taper_sec
+        self.taper_sec = self._bounded_floatlike_check(taper_sec, name='taper_sec', minimum=0.)
+        # Compatability check for vert_comp_pct
+        self.vcp_thresh = self._bounded_floatlike_check(vert_comp_pct, name='vert_comp_pct', minimum=0, maximum=1)
+        # Compatability check for hztl_comp_pct
+        self.hcp_thresh = self._bounded_floatlike_check(hztl_comp_pct, name='hztl_comp_pct', minimum=0, maximum=1)
+        # Compatability check for vert_codes
+        self.vert_codes = self._iterable_characters_check(vert_codes, name='vert_codes')
+        # Compatability check for hztl_codes
+        self.hztl_codes = self._iterable_characters_check(hztl_codes, name='hztl_codes')
+        
+        # Compatability check for window_fill_rule
+        if isinstance(window_fill_rule, str):
+            if window_fill_rule in ['zeros', 'cloneZ', 'cloneHZ']:
+                self.window_fill_rule = window_fill_rule
+            else:
+                raise ValueError('window_fill_rule must be in: "zeros", "cloneZ", "cloneHZ"')
+        else:
+            raise TypeError('window_fill_rule must be type str')
 
-
-        # Compatability check for z_valid_frac
-        self._zvft = icc.bounded_floatlike(
-            z_valid_frac, name="z_valid_frac", minimum=0, maximum=1
-        )
-        # Compatability check for h_valid_frac
-        self._hvft = icc.bounded_floatlike(
-            h_valid_frac, name="h_valid_frac", minimum=0, maximum=1
-        )
-        # Compatability check for Z_codes
-        self._Z_codes = icc.iterable_characters_check(Z_codes, name="Z_codes")
-        # Compatability check for N_codes
-        self.N_codes = icc.iterable_characters_check(N_codes, name="N_codes")
-        # Compatability check for E_codes
-        self.E_codes = icc.iterable_characters_check(E_codes, name="E_codes")
+        # Compatability check for substr
+        if isinstance(substr, str):
+            if len(substr.split('.')) == 4:
+                self.substr = substr
+            elif '*' in substr:
+                self.substr = substr
+            else:
+                raise ValueError('substr should resemble some form of a 4-element, "." delimited string for SNIL/NSLI codes compatable with fnmatch.filter()')
+        else:
+            raise TypeError('substr must be type str')
 
         # Initialize default attributes
-        self._windowing_args = {
-            "fill_value": window_fill_value,
-            "tolsec": tolsec,
-            "tapsec": tapsec,
-            "missing_component_rule": _missing_component_rule,
-            "model": self.model,
-        }
         self.index = {}
-        self._template = {
-            "next_starttime": None
-        }  # NOTE: Must have a non-UTCDateTime default value
+        self._template = {'next_starttime': None} # NOTE: Must have a non-UTCDateTime default value
         self.queue = deque([])
 
+    def __str__(self):
+        rstr = f'{super().__str__(self)}\n'
+        rstr += f'Targets    | model: {self.model_code} | npts: {self.target_npts} | S/R: {self.target_sr} Hz\n'
+        rstr += f'Timing     | stride: {self.stride_sec} sec | blind: {self.blind_sec} sec | taper: {self.tap_sec\n'
+        rstr += f'Thresholds | Z completeness {self.vcp_thresh*100}% | H completeness {self.hcp_thresh}%\n'
+        rstr += f'Comp Maps  | Z: {self.vert_codes} | H: {self.hztl_codes}\n'
 
-    def _update_model(self, model):
+    def _populate_windowmsg(self, ref_starttime=None, V0=None, H1=None, H2=None):
+        windowmsg = WindowMsg(
+            V0=V0,
+            H1=H1,
+            H2=H2,
+            window_fill_rule=self.window_fill_rule,
+            target_sr=self.target_sr,
+            target_npts=self.target_npts,
+            ref_starttime=ref_starttime,
+            normtype=self.norm_type,
+            tolsec=self.tolsec,
+            tapsec=self.tapsec
+            )
+        return windowmsg
 
-        if not isinstance(model, sbm.WaveformModel):
-            raise TypeError("model must be a seisbench.models.WaveformModel")
-        else:
-            # Tag Model as an attribute
-            self.model = model
-            # Update window advance seconds
-            self._advance_sec = self.get_window_advance_seconds()
-            # Update model in _windowing_args dict
-            self._windowing_args.update({'model': model})
-
-    def get_window_advance_seconds(self):
-        npts = self.model.in_samples
-        opts = smp.get_overlap(self.model)
-        apts = npts - opts
-        asec = apts / self.model.sampling_rate
-        return asec
-
-    def _branch2instwindow(self, data_branch={}, index_branch=self._template.copy(), pad=True, extra_sec=1.0):
-        if not isinstance(data_branch, dict):
-            raise TypeError
-        if not isinstance(index_branch, dict):
-            raise TypeError
-        # Create a copy of the kwargs to pass to MLInstWindow()
-        window_inputs = self._windowing_args.copy()
-        # Add target_starttime
-        window_inputs.update({"target_starttime": index_branch['next_starttime']})
-
-        # Calculate the expected end of the window
-        window_te = window_ts + (self.model.in_samples) / self.model.sampling_rate
-        # Compose kwarg dictionary for RtBuffTrace.get_trimmed_valid_fract()
-        valid_fraction_kwargs = {
-            "starttime": window_ts,
-            "endtime": window_te,
-            "wgt_taper_sec": smp.get_blinding(self.model) / self.model.sampling_rate,
-            "wgt_taper_type": "cosine",
-        }
-        # Iterate across component codes in branch
-        for _k2 in data_branch.keys():
-            # If _k2 is a Z component code
-            if _k2 in self._Z_codes:
-                # Pull RtBuffTrace
-                zbuff = data_branch[_k2]
-                # Get windowed valid fraction
-                valid_fract = zbuff.get_trimmed_valid_fract(**valid_fraction_kwargs)
-                # Check valid_fraction
-                if valid_fract >= self._zvft:
-                    # If sufficient data, trim a copy
-                    _tr = zbuff.to_trace()
-                    _tr.trim(
-                        starttime=window_ts - extra_sec,
-                        endtime=window_te + extra_sec,
+    def _branch2windowmsg(self, branch, window_ts, pad=True):
+        windowmsg_inputs = {'V0': None,
+                            'H1': None,
+                            'H2': None,
+                            'ref_starttime': window_ts}
+        for _k2 in branch.keys():
+            window_te = window_ts + (self.target_npts - 1)/self.target_sr
+            i_buff_stat = branch[_k2].get_window_stats(
+                starttime=window_ts,
+                endtime=window_te,
+                taper_sec=self.blind_sec,
+                vert_codes=self.vert_codes,
+                hztl_codes=self.hztl_codes,
+                pad=pad)
+            if i_buff_stat['comp_type'] == 'Vertical':
+                if i_buff_stat['percent_valid'] >= self.vcp_thresh:
+                    _tr = branch[_k2].to_trace().trim(
+                        starttime=window_ts,
+                        endtime=window_te,
                         pad=pad,
-                        fill_value=None,
-                    )
-                    # Append to input holder
-                    window_inputs.update({"Z": _tr})
-
-            elif _k2 in self.N_codes + self.E_codes:
-                hbuff = data_branch[_k2]
-                valid_fract = hbuff.get_trimmed_valid_fract(**valid_fraction_kwargs)
-                if valid_fract >= self._hvft:
-                    _tr = hbuff.to_trace()
-                    _tr.trim(
-                        starttime=window_ts - extra_sec,
-                        endtime=window_te + extra_sec,
+                        fill_value=None)
+                    windowmsg_inputs.update({'V0': _tr})
+            elif i_buff_stat['comp_type'] == 'Horizontal':
+                if i_buff_stat['percent_valid'] >= self.hcp_thresh:
+                    _tr = branch[_k2].to_trace().trim(
+                        starttime=window_ts,
+                        endtime=window_te,
                         pad=pad,
-                        fill_value=None,
-                    )
-                    # Append to input holder
-                    if _k2 in self.N_codes:
-                        window_inputs.update({"N": _tr})
-                    elif _k2 in self.E_codes:
-                        window_inputs.update({"N": _tr})
-        if "Z" in window_inputs.keys():
-            output = MLInstWindow(**window_inputs)
+                        fill_value=None)
+                    for _ik in ['H1', 'H2']:
+                        if windowmsg_inputs[_ik] is None:
+                            windowmsg_inputs.update({_ik: _tr})
+        if isinstance(windowmsg_inputs['V0'], Trace):
+            windowmsg = self._populate_windowmsg(**windowmsg_inputs)
         else:
-            output = None
-        return output
-
+            windowmsg = False
+        return windowmsg
+                    
     def _process_windows(self, rtinststream, pad=True):
         nnew = 0
         for _k1 in rtinststream.keys():
@@ -226,24 +170,24 @@ class WindWyrm(Wyrm):
                 _idx = self.index[_k1]
 
             # If this branch has data for the first time
-            if _idx["next_starttime"] == self._template["next_starttime"]:
+            if _idx['next_starttime'] == self._template['next_starttime']:
                 # Iterate across approved vertical component codes
-                for _c in self._Z_codes:
+                for _c in self.vert_codes:
                     # If there is a match
                     if _c in _branch.keys():
                         # and the matching RtBuffTrace in the branch has data
                         if len(_branch[_c]) > 0:
                             # use the RtBuffTrace starttime to initialize the windowing index
                             _first_ts = _branch[_c].stats.starttime
-                            _idx.update({"next_starttime": _first_ts})
+                            _idx.update({'next_starttime': _first_ts})
                             # and break
                             break
             # Otherwise, if the index has a UTCDateTime starttime
-            elif isinstance(_idx["next_starttime"], UTCDateTime):
+            elif isinstance(_idx['next_starttime'], UTCDateTime):
                 # Do the match to the vertical trace buffer again
                 # Set initial None-Type values for window edges
                 _data_ts = None
-                for _c in self._Z_codes:
+                for _c in self.vert_codes:
                     if _c in _branch.keys():
                         if len(_branch[_c]) > 0:
                             # Grab start and end times
@@ -251,32 +195,30 @@ class WindWyrm(Wyrm):
                             break
                 # If vertical channel doesn't show up, warning and continue
                 if _data_ts is None:
-                    print(
-                        f"Error retrieving starttime from {_k1} vertical: {_branch.keys()}"
-                    )
+                    print(f'Error retrieving starttime from {_k1} vertical: {_branch.keys()}')
                     continue
                 # If data buffer starttime is before or at next_starttime
-                elif _data_ts <= _idx["next_starttime"]:
+                elif _data_ts <= _idx['next_starttime']:
                     pass
                 # If update next_starttime if data buffer starttime is later
-                # Simple treatment for a large data gap.
-                elif _data_ts > _idx["next_starttime"]:
-                    _idx.update({"next_starttime": _data_ts})
-                # Attempt to generate window from this branch
-                ts = _idx["next_starttime"]
-                window = self._branch2instwindow(_branch, ts, pad=pad)
+                # Simple treatment for a large gap of data.
+                elif _data_ts > _idx['next_starttime']:
+                    _idx.update({'next_starttime': _data_ts})
+                # Attempt to generate window message from this branch
+                ts = _idx['next_starttime']
+                windowmsg = self._branch2windowmsg(_branch, ts, pad=pad)
                 # If window is generated
-                if window:
+                if windowmsg:
                     # Add WindowMsg to queue
-                    self.queue.appendleft(window)
+                    self.queue.appendleft(windowmsg)
                     # update nnew index for iteration reporting
                     nnew += 1
-                    # advance next_starttime for this index by the advance
-                    _idx["next_starttime"] += self._advance_sec
+                    # advance next_starttime for this index by the stride
+                    _idx['next_starttime'] += self.stride_sec
                 # If window is not generated, go to next instrument
                 else:
                     continue
-
+    
         return nnew
 
     def pulse(self, x):
@@ -301,6 +243,13 @@ class WindWyrm(Wyrm):
         # Return y as access to WindowWyrm.queue attribute
         y = self.queue
         return y
+        
+
+
+
+
+
+
 
     # def _assess_risbranch_windowing(self, risbranch, **kwargs):
     #     """
@@ -340,7 +289,7 @@ class WindWyrm(Wyrm):
     #         # Get RtBuffTrace.get_window_stats()
     #         stats = risbranch[k2].get_window_stats(**kwargs)
     #         bstats.update({k2:stats})
-    #         # Snag code
+    #         # Snag code 
     #         if stats['comp_type'] == 'Vertical':
     #             bstats.update({'vcode': k2})
     #         elif stats['comp_type'] == 'Horizontal':
@@ -348,7 +297,7 @@ class WindWyrm(Wyrm):
     #                 bstats.update({'hcodes':[k2]})
     #             else:
     #                 bstats['hcodes'].append(k2)
-
+        
     #     # ### SENSE VERTICAL DATA PRESENT
     #     # TODO: a lot of this can get contracted out to WindowMsg!
     #     pstats = {}
@@ -358,7 +307,7 @@ class WindWyrm(Wyrm):
     #     # If vertical is present, proceed
     #     elif bstats['vcode']:
     #         # If there is not sufficient vertical data in the assessed window
-    #         if bstats[bstats['vcode']]['percent_valid'] < self._zvft:
+    #         if bstats[bstats['vcode']]['percent_valid'] < self.vcp_thresh:
     #             pstats.update({'1C': True, 'pcomp': False})
     #         # If there is sufficient vertical data
     #         else:
@@ -372,7 +321,7 @@ class WindWyrm(Wyrm):
     #                     pstats.update({'1C': True, 'pcomp': [bstats['vcode']]})
     #                 # If horizontal cloning
     #                 elif self.ch_fill_rule == 'cloneZH':
-    #                     # If
+    #                     # If 
     #                     if bstats[bstats['hcodes'][0]]['percent_valid'] < self.h1c_thresh:
     #                         pstats.update({'1C': True, 'pcomp': [bstats['vcode']]})
     #                     else:
@@ -398,7 +347,7 @@ class WindWyrm(Wyrm):
     #                 else:
     #                     pstats.update({'1C': True, 'pcomp': [bstats['vcode']]})
     #     return pstats
-
+    
     # def window_rtinststream(self, rtinststream, **kwargs):
     #     nsubmissions = 0
     #     for k1 in rtinststream.keys():
@@ -414,7 +363,7 @@ class WindWyrm(Wyrm):
     #         # If next_starttime is still template value
     #         if isinstance(_idxbranch['next_starttime'], type(None)):
     #             # Search for vertical component
-    #             for _c in self._Z_codes:
+    #             for _c in self.vert_codes:
     #                 if _c in _risbranch.keys():
     #                     # If vertical component has any data
     #                     if len(_risbranch[_c]) > 0:
@@ -433,11 +382,11 @@ class WindWyrm(Wyrm):
     #                 _risbranch,
     #                 starttime=ts,
     #                 endtime=te,
-    #                 vert_codes=self._Z_codes,
-    #                 hztl_codes=self.h_codes,
+    #                 vert_codes=self.vert_codes,
+    #                 hztl_codes=self.hztl_codes,
     #                 taper_type=self.ttype,
     #                 taper_sec=self.blindsec)
-
+                
     #             # Update with pstats
     #             _idxbranch.update(pstats)
 
@@ -466,7 +415,7 @@ class WindWyrm(Wyrm):
     #                     elif len(_pcomp) == 2:
     #                         # For cloneZ, still clone vertical
     #                         if self.ch_fill_rule == 'cloneZ':
-    #                             _trH = _trZ.copy()
+    #                             _trH = _trZ.copy()                              
     #                         # Otherwise, clone horizontal
     #                         else:
     #                             _buff = _risbranch[_pcomp[1]]
@@ -502,7 +451,7 @@ class WindWyrm(Wyrm):
     #             # Increase index for submitted
     #             nsubmissions += 1
     #     return nsubmissions
-
+    
     # def pulse(self, x):
     #     """
     #     :: INPUT ::
@@ -518,3 +467,11 @@ class WindWyrm(Wyrm):
     #             break
     #     y = self.queue
     #     return y
+
+                    
+
+
+
+
+
+

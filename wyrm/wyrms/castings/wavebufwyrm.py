@@ -4,7 +4,7 @@
 
 
 from wyrm.wyrms.wyrm import Wyrm
-from wyrm.structures.sncl_dict import RtBuff_Dict
+from wyrm.structures.castings.sncl_dict import RtBuff_Dict
 from wyrm.message.trace import TraceMsg
 import fnmatch
 import PyEW

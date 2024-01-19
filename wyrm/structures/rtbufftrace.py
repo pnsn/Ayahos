@@ -374,14 +374,14 @@ class RtBuffTrace(Trace):
         if any mismatch, return False
         else, return True
         """
-        if not isinstance(trace):
+        if not isinstance(trace, Trace):
             raise TypeError("trace must be type obspy.core.trace.Trace")
         xc_attr = ["id", "stats.calib", "stats.sampling_rate", "data.dtype"]
         bool_list = []
         for _attr in xc_attr:
             try:
                 bool_list.append(
-                    self._check_attribute_compatability(self, trace, attr_str=_attr)
+                    self._check_attribute_compatability(trace, attr_str=_attr)
                 )
             except ValueError:
                 bool_list.append(False)
@@ -422,9 +422,15 @@ class RtBuffTrace(Trace):
         Get the fractional amount of data (masked and unmasked)
         present in this RtBuffTrace relative to self.max_length
         """
-        ffnum = self.max_length - (self.stats.endtime - self.stats.starttime)
+        ffnum = self.stats.endtime - self.stats.starttime
         ffden = self.max_length
         return ffnum / ffden
+
+    def get_trimmed_valid_fraction(self, starttime=None, endtime=None, wgt_taper_sec=0.0, wgt_taper_type='cosine')
+        tmp_copy = self.copy()
+        tmp_copy.trim(starttime=starttime, endtime=endtime, pad=True, fill_value=None)
+        vf = tmp_copy.get_unmasked_fraction(wgt_taper_sec=wgt_taper_sec, wgt_taper_type=wgt_taper_type)
+        return vf
 
     def get_unmasked_fraction(self, wgt_taper_sec=0.0, wgt_taper_type="cosine"):
         """
@@ -580,7 +586,7 @@ class RtBuffTrace(Trace):
         :param showkey: [bool]
         """
         rstr = f"{super().__str__()}"
-        rstr += f" | buffered {100.*(self.filled_fraction):.0f}%"
+        rstr += f" | buffer {100.*(self.filled_fraction):.0f}%"
         rstr += f" | masked {100.*(1. - self.valid_fraction):.0f}%"
         rstr += f" | max {self.max_length} sec"
         return rstr

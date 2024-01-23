@@ -6,70 +6,72 @@ import numpy as np
 import torch
 from copy import deepcopy
 
-"""child-class object of obspy.Stream
-                            that provides additional support methods and attributes for
-                            generating windowed, preprocessed data for input to
-                            SeisBench WaveformModels"""
-class LabeledArray(object):
-    """
-    Support class that bundles a numpy.ndarray 'data' attribute
-    with a dict 'label' attribute
-    """
-    def __init__(self, data=[], labels={}):
-        try:
-            self.data = np.array(data)
-        except TypeError:
-            raise TypeError('input data is an invalid type for np.array(data)')
-        except ValueError:
-            raise ValueError('input data is an invalid value for np.array(data)')
+# """child-class object of obspy.Stream
+#                             that provides additional support methods and attributes for
+#                             generating windowed, preprocessed data for input to
+#                             SeisBench WaveformModels"""
+# class LabeledArray(object):
+#     """
+#     Support class that bundles a numpy.ndarray 'data' attribute
+#     with a dict 'label' attribute
+#     """
+#     def __init__(self, data=[], labels={}):
+#         try:
+#             self.data = np.array(data)
+#         except TypeError:
+#             raise TypeError('input data is an invalid type for np.array(data)')
+#         except ValueError:
+#             raise ValueError('input data is an invalid value for np.array(data)')
         
-        if isinstance(labels, dict):
-            self.meta = labels
-        else:
-            raise TypeError('labels must be type dict')
+#         if isinstance(labels, dict):
+#             self.meta = labels
+#         else:
+#             raise TypeError('labels must be type dict')
 
-    def __str__(self):
-        rstr = ''
-        for _k, _v in self.labels.items():
-            rstr += f'{_k}: _v\n'
-        rstr += self.data.__str__()
-        return rstr
+#     def __str__(self):
+#         rstr = ''
+#         for _k, _v in self.labels.items():
+#             rstr += f'{_k}: _v\n'
+#         rstr += self.data.__str__()
+#         return rstr
 
-    def __repr__(self):
-        rstr = self.__str__()
-        return rstr
+#     def __repr__(self):
+#         rstr = self.__str__()
+#         return rstr
     
-    def as_torch(self):
-        """
-        Change self.data in-place from numpy.ndarray to torch.Tensor
-        """
-        self.data = torch.Tensor(self.data)
-        return self
+#     def as_torch(self):
+#         """
+#         Change self.data in-place from numpy.ndarray to torch.Tensor
+#         """
+#         self.data = torch.Tensor(self.data)
+#         return self
 
-    def to_tensor(self):
-        """
-        Return a copy of self.data as a PyTorch Tensor
-        :: OUTPUT ::
-        :return tt: [torch.Tensor] representation of a copy of self.data
-        """ 
-        tt = torch.Tensor(self.data.copy())
-        return tt
+#     def to_tensor(self):
+#         """
+#         Return a copy of self.data as a PyTorch Tensor
+#         :: OUTPUT ::
+#         :return tt: [torch.Tensor] representation of a copy of self.data
+#         """ 
+#         tt = torch.Tensor(self.data.copy())
+#         return tt
     
-    def as_dict(self):
-        """
-        Return a copy of the contents of this LabeledArray as a dictionary
-        with an added key 'data' that corresponds to the contents of self.data
-        :: OUTPUT ::
-        :return data_dict: [dict]
-        """
-        data_dict = self.labels.copy()
-        data_dict.update({'data': self.data.copy()})
-        return data_dict
+#     def as_dict(self):
+#         """
+#         Return a copy of the contents of this LabeledArray as a dictionary
+#         with an added key 'data' that corresponds to the contents of self.data
+#         :: OUTPUT ::
+#         :return data_dict: [dict]
+#         """
+#         data_dict = self.labels.copy()
+#         data_dict.update({'data': self.data.copy()})
+#         return data_dict
 
 
-class MLInstWindow(Stream):
+class InstWindow(Stream):
+
+class InstWindow(Stream):
     """
-    Class MLInstWindow (Instrument-Level Data Forming Window for ML models).
+    Class InstWindow (Instrument-Level Window-Forming Class for ML models).
     This class is a child of the obspy.core.stream.Stream class
     used to structure slices of buffered waveform data from a single
     seismometer under the assumption that there are three channels

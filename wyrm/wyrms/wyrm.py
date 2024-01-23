@@ -26,28 +26,27 @@ class Wyrm(object):
     + pulse
     """
 
-    def __init__(self, max_pulse_size=None, debug=False):
+    def __init__(self, scalar=0, max_pulse_size=None, debug=False):
         """
         Initialize a Wyrm object
         """
+        self.scalar = icc.bounded_floatlike(
+            scalar,
+            name='scalar',
+            minimum=None,
+            maximum=None,
+            inclusive=True)
+        
         if not isinstance(debug, bool):
             raise TypeError("debug must be type bool")
         else:
             self.debug = debug
-
-        # Inherit input compatability check methods
-        self.bounded_intlike = icc.bounded_intlike
-        self.bounded_floatlike = icc.bounded_floatlike
-        self.iterable_characters = icc.iterable_characters
-        self.none_str = icc.none_str
-        self.iscamelcase_str = icc.iscamelcase_str
-        self.isiterable = icc.isiterable
-        self.validate_seisbench_model_name = icc.validate_seisbench_model_name
+        
 
         if max_pulse_size is None:
             self.max_pulse_size = None
         else:
-            self.max_pulse_size = self.bounded_intlike(max_pulse_size, name='max_pulse_size', minimum=1)
+            self.max_pulse_size = icc.bounded_intlike(max_pulse_size, name='max_pulse_size', minimum=1)
 
     def __str__(self):
         """
@@ -65,6 +64,7 @@ class Wyrm(object):
         """
         ~~~ POLYMORPHIC METHOD ~~~
         Run a pulse with input argument and return that argument
+        multiplied by self.scalar
         """
-        y = x
+        y = x*self.scalar
         return y

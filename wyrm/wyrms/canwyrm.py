@@ -34,27 +34,27 @@ class CanWyrm(TubeWyrm):
     def __init__(self,
                  wyrm_queue=deque([]),
                  wait_sec=0.,
-                 output_format=deque,
+                 output_type=deque,
                  concat_method='appendleft',
                  max_pulse_size=None,
                  debug=False):
         # Initialize from TubeWyrm (and by extension Wyrm)
         super().__init__(wyrm_queue=wyrm_queue, wait_sec=wait_sec, debug=debug, max_pulse_size=max_pulse_size)
-        if not isinstance(output_format, type):
-            raise TypeError('output_format must be of type "type" - method without ()')
-        elif output_format not in [list, deque]:
-            raise TypeError('output_format must be either "list" or "deque"')
+        if not isinstance(output_type, type):
+            raise TypeError('output_type must be of type "type" - method without ()')
+        elif output_type not in [list, deque]:
+            raise TypeError('output_type must be either "list" or "deque"')
         else:
-            self.output_format = output_format
-        if concat_method in self.output_format.__dict__.keys():
+            self.output_type = output_type
+        if concat_method in self.output_type.__dict__.keys():
             self.concat_method = concat_method
         else:
-            raise AttributeError(f'{concat_method} is not an attribute of {self.output_format}')
+            raise AttributeError(f'{concat_method} is not an attribute of {self.output_type}')
 
     def __repr__(self):
         rstr = "~~~ CanWyrm ~~~"
         rstr += super().__repr__()
-        rstr += '\nOutput Format: {self.output_format}'
+        rstr += '\nOutput Format: {self.output_type}'
         rstr += '\nConcat Method: {self.concat_method.key()}'
         return rstr
 
@@ -76,7 +76,7 @@ class CanWyrm(TubeWyrm):
                     Serially assembled outputs of each Wyrm
                     (or the tail-wyrm in a tubewyrm)
         """
-        y = self.output_format()
+        y = self.output_type()
         for _wyrm in self.wyrm_queue:
             _y = _wyrm.pulse(x)
             eval(f'y.{self.concat_method}(_y)')

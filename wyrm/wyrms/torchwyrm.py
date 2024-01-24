@@ -292,7 +292,7 @@ class SeisBenchWyrm(TorchNNWyrm):
         # Return raw output of prediction
         return y
 
-    def _assemble_batch_tensor(self, x, target_type=WindowMsg, extraction_method='to_torch(order="ZNE")'):
+    def _assemble_batch_tensor(self, x, target_type=InstWindow, extraction_method='to_torch(order="ZNE")'):
         if not isinstance(x, deque):
             raise TypeError('input x must be type deque')
         x_len = len(x):

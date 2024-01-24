@@ -60,9 +60,16 @@ class RtInstStream(dict):
     }
     """
 
-    def __init__(self, max_length=180, id_fmt="NSLC"):
+    def __init__(self, trace_class=RtBuffTrace, max_length=180, id_fmt="NSLC"):
         # Inherit dict attributes
         super().__init__(self)
+        # Compatability check for trace_class
+        if not isinstance(trace_class, type):
+            raise TypeError(f'trace_class must be a class-defining type, not type {type(trace_class)}')
+        elif trace_class not in [RtBuffTrace, RtPredTrace]:
+            raise ValueError(f'trace_class {trace_class} not supported. Supported: RtBuffTrace and RtPredTrace')
+        else:
+            self.tc = trace_class
         # Compatability check for max_length
         self.max_length = icc.bounded_intlike(
             max_length, name="max_length", minimum=0, maximum=None, inclusive=False
@@ -108,9 +115,9 @@ class RtInstStream(dict):
         if not isinstance(k2, str):
             raise TypeError("k2 must be type str")
         if k1 not in self.keys():
-            self.update({k1: {k2: RtBuffTrace(max_length=self.max_length)}})
+            self.update({k1: {k2: self.tc(max_length=self.max_length)}})
         elif k2 not in self[k1].keys():
-            self[k1].update({k2: RtBuffTrace(max_length=self.max_length)})
+            self[k1].update({k2: self.tc(max_length=self.max_length)})
         else:
             if not verbose:
                 print(f"self[{k1}][{k2}] already exists")

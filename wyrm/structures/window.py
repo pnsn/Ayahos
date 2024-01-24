@@ -6,68 +6,6 @@ import numpy as np
 import torch
 from copy import deepcopy
 
-# """child-class object of obspy.Stream
-#                             that provides additional support methods and attributes for
-#                             generating windowed, preprocessed data for input to
-#                             SeisBench WaveformModels"""
-# class LabeledArray(object):
-#     """
-#     Support class that bundles a numpy.ndarray 'data' attribute
-#     with a dict 'label' attribute
-#     """
-#     def __init__(self, data=[], labels={}):
-#         try:
-#             self.data = np.array(data)
-#         except TypeError:
-#             raise TypeError('input data is an invalid type for np.array(data)')
-#         except ValueError:
-#             raise ValueError('input data is an invalid value for np.array(data)')
-        
-#         if isinstance(labels, dict):
-#             self.meta = labels
-#         else:
-#             raise TypeError('labels must be type dict')
-
-#     def __str__(self):
-#         rstr = ''
-#         for _k, _v in self.labels.items():
-#             rstr += f'{_k}: _v\n'
-#         rstr += self.data.__str__()
-#         return rstr
-
-#     def __repr__(self):
-#         rstr = self.__str__()
-#         return rstr
-    
-#     def as_torch(self):
-#         """
-#         Change self.data in-place from numpy.ndarray to torch.Tensor
-#         """
-#         self.data = torch.Tensor(self.data)
-#         return self
-
-#     def to_tensor(self):
-#         """
-#         Return a copy of self.data as a PyTorch Tensor
-#         :: OUTPUT ::
-#         :return tt: [torch.Tensor] representation of a copy of self.data
-#         """ 
-#         tt = torch.Tensor(self.data.copy())
-#         return tt
-    
-#     def as_dict(self):
-#         """
-#         Return a copy of the contents of this LabeledArray as a dictionary
-#         with an added key 'data' that corresponds to the contents of self.data
-#         :: OUTPUT ::
-#         :return data_dict: [dict]
-#         """
-#         data_dict = self.labels.copy()
-#         data_dict.update({'data': self.data.copy()})
-#         return data_dict
-
-
-class InstWindow(Stream):
 
 class InstWindow(Stream):
     """
@@ -136,9 +74,16 @@ class InstWindow(Stream):
         E=None,
         target_starttime=None,
         fill_value=0.0,
-        tolsec=2.,
+        tolsec=2.0,
         missing_component_rule="Zeros",
-        model=sbm.EQTransformer(),
+        target_norm="peak",
+        target_sr=100.0,
+        target_npts=6000.0,
+        target_channels=3,
+        target_order="ZNE",
+        target_overlap=1800,
+        target_blinding=500,
+        model_name="EQTransformer",
     ):
         """
         Initialize an InstWindow object
@@ -166,12 +111,23 @@ class InstWindow(Stream):
                     "CloneZ" - clone vertical if any horizontals are None
                     "CloneHZ" - clone horizontal if one is present, clone
                                 vertical if both horizontals are missing
+        :param target_norm: [str] name of normalization to apply. Supported
+                    'minmax' / 'peak' - normalize by maximum window amplitude
+                    'std' - normalize by standard deviation of window amplitudes
+        :param target_sr: [float-like] target sampling rate for processed window
+        :param target_npts: [int] number of data per trace for processed window (axis 2)
+        :param target_channels: [int] number of channels for processed window (axis 1)
+        :param target_order: [str] case-sensitive order of components in a string
+                        e.g., 'ZNE', 'Z12', 'ENZ'
+        :param target_overlap: [int] number of data processed windows overlap by
+        :param target_blinding: [int] number of data processed windows will have
+                        blinding appiled to on either end after ML prediction
 
         :param model: [seisbench.models.WaveformModel]
                     from a SeisBench WaveformModel,
                         scrape the following information:
                     self._model_name = model.name
-                    self._component_order = model.component_order
+                    self._target_order = model.component_order
                     self._target_npts = model.in_samples
                         Defaults to 6000 if model has
                         no in_samples attribute
@@ -185,10 +141,10 @@ class InstWindow(Stream):
         WindowMsg is a child class of obspy.Stream, inheriting all of its class methods
         structure for storing lists of obspy.Trace data objects.
         """
-        # Initialize parent class attributes (stream)
+        # # Initialize parent class attributes (stream)
         super().__init__(self)
 
-        # Z compatability checks
+        # # Z compatability checks
         if isinstance(Z, Trace):
             self.Z = Z.id
             if isinstance(Z, RtBuffTrace):
@@ -200,10 +156,10 @@ class InstWindow(Stream):
                 "Z must be type obspy.core.trace.Trace or \
                              wyrm.structure.rtbufftrace.RtBuffTrace"
             )
-
+        # # Define insturment code from full NSLC for Z-component trace
         self._inst_code = self.Z[:-1]
 
-        # N compatability checks
+        # # N compatability checks
         if isinstance(N, Trace):
             self.N = N.id
             if isinstance(N, RtBuffTrace):
@@ -218,7 +174,7 @@ class InstWindow(Stream):
                 wyrm.structure.rtbufftrace.RtBuffTrace, or None"
             )
 
-        # E compatability checks
+        # # E compatability checks
         if isinstance(E, Trace):
             self.E = E.id
             if isinstance(E, RtBuffTrace):
@@ -233,7 +189,33 @@ class InstWindow(Stream):
                 wyrm.structure.rtbufftrace.RtBuffTrace, or None"
             )
 
-        # missing_component_rule compatability checks (with some grace on exact naming)
+        # # target_starttime compatability checks
+        if isinstance(target_starttime, UTCDateTime):
+            # if abs(Z.stats.starttime - target_starttime) <= self.tolsec:
+            self._target_starttime = target_starttime
+        elif target_starttime is None:
+            self._target_starttime = Z.stats.starttime
+        else:
+            raise TypeError("target_starttime must be type UTCDateTime or None")
+
+        # # fill_value compatability checks
+        if fill_value is None:
+            self.fill_value = fill_value
+        else:
+            self.fill_value = icc.bounded_floatlike(
+                fill_value,
+                name="fill_value",
+                minimum=None,
+                maximum=None,
+                inclusive=True,
+            )
+
+        # tolsec compatability checks
+        self.tolsec = icc.bounded_intlike(
+            tolsec, name="tolsec", minimum=0, maximum=None, inclusive=True
+        )
+
+        # # missing_component_rule compatability checks (with some grace on exact naming)
         if not isinstance(missing_component_rule, str):
             raise TypeError("missing_component_rule must be type str")
         elif missing_component_rule.lower() in ["zeros", "0s", "0"]:
@@ -255,76 +237,91 @@ class InstWindow(Stream):
             )
         self._window_fill_status = None
 
-        # tolsec compatability checks
-        self.tolsec = icc.bounded_intlike(
-            tolsec, name="tolsec", minimum=0, maximum=None, inclusive=True
-        )
-
-        # fill_value compatability checks
-        if fill_value is None:
-            self.fill_value = fill_value
+        # # target_norm compatability checks
+        if not isinstance(target_norm, (str, type(None))):
+            raise TypeError("target_norm must be type str or None")
+        elif isinstance(target_norm, str):
+            if target_norm not in ["std", "minmax", "peak"]:
+                raise ValueError(
+                    f'target_norm {target_norm} not supported. Supported values: "peak", "minmax", "std"'
+                )
+            else:
+                self._normtype = target_norm
         else:
-            self.fill_value = icc.bounded_floatlike(
-                fill_value,
-                name="fill_value",
-                minimum=None,
+            self._normtype = "peak"
+
+        # # Compatability check for target_sr
+        if target_sr is not None:
+            _val = icc.bounded_floatlike(
+                target_sr, name="target_sr", minimum=0, maximum=None, inclusive=False
+            )
+            self._target_sr = _val
+
+        # # Compatability check for target_npts
+        if target_npts is not None:
+            _val = icc.bounded_intlike(
+                target_npts,
+                name="target_npts",
+                minimum=0,
                 maximum=None,
+                inclusive=False,
+            )
+            self._target_npts = _val
+
+        # Compatability check for target_channels
+        if target_channels is not None:
+            _val = icc.bounded_intlike(
+                target_channels,
+                name="target_channels",
+                minimum=1,
+                maximum=6,
                 inclusive=True,
             )
+            self._target_channels = _val
 
-        # target_starttime compatability checks
-        if isinstance(target_starttime, UTCDateTime):
-            # if abs(Z.stats.starttime - target_starttime) <= self.tolsec:
-            self._target_starttime = target_starttime
-        # elif
-        # else:
-        #     emsg = f"specified target_starttime {target_starttime} "
-        #     emsg += f"mismatches Z starttime {Z.stats.starttime}."
-        #     emsg += "\nDefaulting to Z starttime"
-        #     print(emsg)
-        #     self._target_starttime = Z.stats.starttime
-        elif target_starttime is None:
-            self._target_starttime = Z.stats.starttime
-        else:
-            raise TypeError("target_starttime must be type UTCDateTime or None")
-
-        # model compatability checks
-        if not isinstance(model, sbm.WaveformModel):
-            raise TypeError("model must be a seisbench.model.WaveformModel object")
-        else:
-            self._model_name = model.name
-            self._component_order = model.component_order
-            if model.in_samples is None:
-                print(
-                    f"input model {self._model_name} does not specify in_samples - defaulting to 6000"
-                )
-                self._target_npts = 6000
+        # Compatability check for target_order:
+        if not isinstance(target_order, (str, type(None))):
+            raise TypeError("target_order must be type str or None")
+        elif isinstance(target_order, str):
+            if target_order.upper() == target_order:
+                if len(target_order) == self._target_channels:
+                    self._target_order = target_order
+                else:
+                    raise ValueError(
+                        "number of elements in target order must match target_channels"
+                    )
             else:
-                self._target_npts = model.in_samples
-            if model.sampling_rate is None:
-                print(
-                    f"input model {self._model_name} does not specify sampling rate - defaulting to 100. sps"
-                )
-                self._target_sr = 100.0
-            self._target_sr = model.sampling_rate
-            try:
-                self._normtype = model.norm
-            except AttributeError:
-                print(
-                    f"input model {self._model_name} does not specify normalization method - defaulting to minmax"
-                )
-                self._normtype = "minmax"
-            try:
-                self._target_in_channels = model.in_channels
-            except AttributeError:
-                print(
-                    f"input model {self._model_name} does not specify in_channels - defaulting to 3"
-                )
-                self._target_in_channels = 3
+                raise SyntaxError("target order must be all capital characters")
 
-            self._target_stride_npts = model._annotate_args['stride'][-1]
-            self._target_overlap_npts = model._annotate_args['overlap'][-1]
-        # Input trace mutual compatability checks
+        # Compatability check for target_overlap_npts
+        if target_overlap is not None:
+            _val = icc.bounded_intlike(
+                target_overlap,
+                name="target_overlap",
+                minimum=-1,
+                maximum=self._target_npts,
+                inclusive=False,
+            )
+            self._target_overlap = _val
+
+        # # Compatability check for target_blinding_npts
+        if target_blinding is not None:
+            _val = icc.bounded_intlike(
+                target_blinding,
+                name="target_blinding",
+                minimum=0,
+                maximum=self._target_npts,
+                inclusive=True,
+            )
+            self._target_blinding = _val
+
+        # # model_name compatability checks
+        if not isinstance(model_name, (str, type(None))):
+            raise TypeError("model_name must be type str or None")
+        elif isinstance(model_name, str):
+            self._model_name = model_name
+
+        # # Trace compatability cross-checks
         for _i, _id1 in enumerate([self.Z, self.N, self.E]):
             for _j, _id2 in enumerate([self.Z, self.N, self.E]):
                 if _i > _j:
@@ -345,13 +342,13 @@ class InstWindow(Stream):
         rstr = f"{len(self)} trace(s) in MLInstWindow | "
         rstr += "Target > "
         rstr += f"model: {self._model_name} ð "
-        rstr += f"dims: (1, {self._target_in_channels}, {self._target_npts}) ð "
+        rstr += f"dims: (1, {self._target_channels}, {self._target_npts}) ð "
         rstr += f"S/R: {self._target_sr} Hz | "
         rstr += f"missing comp. rule: {self._missing_component_rule}\n"
         # Unique Trace List
         for _i, _tr in enumerate(self.traces):
             # Get alias list
-            aliases = [_o for _o in self._component_order if keys[_o] == _tr.id]
+            aliases = [_o for _o in self._target_order if keys[_o] == _tr.id]
             # Handle extended formatting
             if len(self) - 3 > _i >= 3:
                 if extended:
@@ -669,7 +666,9 @@ class InstWindow(Stream):
                     # If a given trace has a different starttime
                     if _tr.stats.starttime != self._target_starttime:
                         # Check if samples are misaligned
-                        if (_tr.stats.starttime - self._target_starttime)%_tr.stats.delta != 0:
+                        if (
+                            _tr.stats.starttime - self._target_starttime
+                        ) % _tr.stats.delta != 0:
                             # Apply a non-mask generating padding that encompasses _target_starttime
                             _tr.trim(
                                 starttime=self._target_starttime - _tr.stats.delta,
@@ -678,7 +677,8 @@ class InstWindow(Stream):
                             )
                             # Use interpolation to sync the starttimes
                             _tr.interpolate(
-                                _tr.stats.sampling_rate, starttime=self._target_starttime
+                                _tr.stats.sampling_rate,
+                                starttime=self._target_starttime,
                             )
                             # Remove any padding values
                             _tr.trim(starttime=self._target_starttime)
@@ -690,7 +690,7 @@ class InstWindow(Stream):
                     else:
                         # do nothing to this trace
                         pass
-              
+
             # print warning if trying to pass masked traces into sync
             else:
                 raise UserWarning(
@@ -762,7 +762,7 @@ class InstWindow(Stream):
         """
         new_stream = Stream()
         keys = {"Z": self.Z, "N": self.N, "E": self.E}
-        for _o in self._component_order:
+        for _o in self._target_order:
             _tr = self.fetch_with_id(keys[_o], ascopy=True)
             if isinstance(_tr, Trace):
                 if _o != _tr.stats.channel[-1]:
@@ -802,7 +802,7 @@ class InstWindow(Stream):
         array_holder = []
         ma_status = self.are_traces_masked()
         keys = {"Z": self.Z, "N": self.N, "E": self.E}
-        for _i, _k in enumerate(self._component_order):
+        for _i, _k in enumerate(self._target_order):
             _tr = self.fetch_with_id(keys[_k])
             if isinstance(_tr, Trace):
                 _data = _tr.data
@@ -829,29 +829,26 @@ class InstWindow(Stream):
             out_array = np.array(array_holder)
 
         # Add leading index
-        out_array = out_array.reshape(
-            1, self._target_in_channels, self._target_npts
-            )
+        out_array = out_array.reshape(1, self._target_channels, self._target_npts)
         return out_array
 
     def to_torch(self):
         array = self.to_numpy()
         tensor = torch.Tensor(array)
         metadata = {
-            "model": self._model_name,
-            "component_order": self._component_order,
             "inst_code": self._inst_code,
-            "starttime": self._target_starttime,
+            "component_order": self._target_order,
+            "model": self._model_name,
             "samprate": self._target_sr,
+            "starttime": self._target_starttime,
             "fill_rule": self._missing_component_rule,
             "fill_status": self._window_fill_status,
-            "mask_fill_value": self.fill_value,
+            "fill_value": self.fill_value,
         }
         return tensor, metadata
 
     # def to_labeled_tensor(self):
     #     lt = LabeledTensor
-
 
     def _preproc_example(self, tapsec=0.06):
         # Split if masked gaps exist
@@ -877,3 +874,111 @@ class InstWindow(Stream):
         # Convert to tensor & metadata pair
         tensor, meta = self.to_torch()
         return tensor, meta
+
+
+class SeisBenchWindow(InstWindow):
+    """
+    Child-class of InstWindow that populates the windowing parameters for
+    InstWindow using information carried in a SeisBench WaveformModel object.
+
+    Required inputs
+    model = seisbench.models.WavefromModel
+    Z = obspy.Trace
+    N
+    E
+    target_starttime
+    fill_value
+    tolsec
+    missing_component_rule
+
+    """
+
+    def __init__(
+        self,
+        model,
+        Z,
+        N=None,
+        E=None,
+        target_starttime=None,
+        fill_value=0.0,
+        tolsec=2.0,
+        missing_component_rule="Zeros",
+    ):
+        """
+        Initialize a SeisBenchWindow object
+
+        :: INPUTS ::
+        :param model: [seisbench.models.WaveformModel]
+                    WaveformModel to extract windowing information from. Non-standard
+                    attributes have default values assigned as follows
+                        model.in_samples -> defaults to 6000
+                        model.sampling_rate -> defaults to 100
+                        model.norm -> defaults to 'peak'
+                        model.in_channels -> defaults to len(model.component_order)
+                        model._annotate_args['overlap'][-1] -> defaults to 0
+                        model._annotate_args['blinding'][-1][0] -> defaults to 0
+        :param Z: [obspy.core.trace.Trace] vertical component trace data
+        :param N: [obspy.core.trace.Trace] or [None] north component trace data
+        :param E: [obspy.core.trace.Trace] or [None] east component trace data
+        :param fill_value: [float] or [None] default fill_value for masked arrays
+        :param tolsec: [float] maximum seconds mismatch between trace start/endtimes
+                    for inputs Z, N, and E
+        :param missing_component_rule: [str] name of missing_component_rule to use
+                    see InstWindow
+        """
+
+        # Confirm that model is a seisbench.models.WaveformModel object
+        if not isinstance(model, sbm.WaveformModel):
+            raise TypeError("model must be a seisbench.models.WaveformModel")
+        # Provide default values for attributes not default in sbm.WaveformModel() objects
+        if model.in_samples is None:
+            msamp = 6000
+        else:
+            msamp = model.in_samples
+
+        if model.sampling_rate is None:
+            msrate = 100
+        else:
+            msrate = model.sampling_rate
+
+        if "norm" not in dir(model):
+            mnorm = "peak"
+        else:
+            mnorm = model.norm
+
+        if "in_channels" not in dir(model):
+            mchan = len(model.component_order)
+        else:
+            mchan = model.in_channels
+
+        if "_annotate_args" not in dir(model):
+            mover = 0
+            mblind = 0
+        else:
+            if "overlap" in model._annotate_args.keys():
+                mover = model._annotate_args["overlap"][-1]
+            else:
+                mover = 0
+            if "blinding" in model._annotate_args.keys():
+                mblind = model._annotate_args["blinding"][-1][0]
+            else:
+                mblind = 0
+
+        # Initialize an InstWindow object with provided inputs
+        super().__init__(
+            Z=Z,
+            N=N,
+            E=E,
+            target_starttime=target_starttime,
+            fill_value=fill_value,
+            tolsec=tolsec,
+            missing_component_rule=missing_component_rule,
+            target_sr=msrate,
+            target_norm=mnorm,
+            target_npts=msamp,
+            target_channels=mchan,
+            target_order=model.component_order,
+            target_overlap=mover,
+            target_blinding=mblind,
+            model_name=model.name,
+        )

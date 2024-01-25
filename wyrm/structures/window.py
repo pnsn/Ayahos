@@ -84,6 +84,7 @@ class InstWindow(Stream):
         target_overlap=1800,
         target_blinding=500,
         model_name="EQTransformer",
+        window_index=None,
     ):
         """
         Initialize an InstWindow object
@@ -320,6 +321,18 @@ class InstWindow(Stream):
             raise TypeError("model_name must be type str or None")
         elif isinstance(model_name, str):
             self._model_name = model_name
+
+        # # window_index compatability checks
+        if window_index is None:
+            self.window_index = None
+        else:
+            self.window_index = icc.bounded_intlike(
+                window_index,
+                name="window_index",
+                minimum=0,
+                maximum=None,
+                inclusive=True,
+            )
 
         # # Trace compatability cross-checks
         for _i, _id1 in enumerate([self.Z, self.N, self.E]):
@@ -835,6 +848,9 @@ class InstWindow(Stream):
     def to_torch(self):
         array = self.to_numpy()
         tensor = torch.Tensor(array)
+        return tensor
+
+    def get_metadata(self):
         metadata = {
             "inst_code": self._inst_code,
             "component_order": self._target_order,
@@ -844,8 +860,26 @@ class InstWindow(Stream):
             "fill_rule": self._missing_component_rule,
             "fill_status": self._window_fill_status,
             "fill_value": self.fill_value,
+            "window_index": self.window_index,
         }
-        return tensor, metadata
+        return metadata
+    
+    def export_processed_window(self, out_type='torch'):
+        if not isinstance(out_type, str):
+            raise TypeError('out_type must be type str')
+        elif out_type.lower() == 'torch':
+            data = self.to_torch()
+            meta = self.get_metadata()
+            return (data, meta)
+        elif out_type.lower() == 'numpy': 
+            data = self.to_numpy()
+            meta = self.get_metadata()
+            return (data, meta)
+        elif out_type.lower() == 'obspy':
+            data = self.to_stream()
+            return data
+        else:
+            raise ValueError(f'Unsupported out_type {out_type}. Supported: "torch", "numpy", "obspy"')
 
     # def to_labeled_tensor(self):
     #     lt = LabeledTensor
@@ -872,8 +906,8 @@ class InstWindow(Stream):
         # Normalize traces
         self.wind_normalize()
         # Convert to tensor & metadata pair
-        tensor, meta = self.to_torch()
-        return tensor, meta
+        out = self.export_processed_window(out_type='torch')
+        return out
 
 
 class SeisBenchWindow(InstWindow):
@@ -903,6 +937,7 @@ class SeisBenchWindow(InstWindow):
         fill_value=0.0,
         tolsec=2.0,
         missing_component_rule="Zeros",
+        window_index=None
     ):
         """
         Initialize a SeisBenchWindow object
@@ -981,4 +1016,5 @@ class SeisBenchWindow(InstWindow):
             target_overlap=mover,
             target_blinding=mblind,
             model_name=model.name,
+            window_index=window_index
         )

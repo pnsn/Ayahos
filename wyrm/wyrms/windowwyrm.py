@@ -170,11 +170,18 @@ class WindowWyrm(Wyrm):
         # Set (non-UTCDateTime) default starttime for new windowing indexing
         self.default_starttime = None
         self.window_startindex = 0
-        self._index_template = {'next_starttime': self.default_starttime,
-                                'next_window_no': self.window_startindex}
+        self._index_template = {
+            "last_starttime": self.default_starttime,
+            "next_starttime": self.default_starttime,
+            "next_window_index": self.window_startindex,
+        }
         # Create queue for output collection
         self.queue = deque([])
 
+    # ########################################### #
+    # Primary windowing attributes update methods #
+    # ########################################### #
+        
     def set_windowing_attr(
         self,
         fill_value=None,
@@ -316,7 +323,7 @@ class WindowWyrm(Wyrm):
 
         return self
 
-    def populate_from_seisbench(
+    def set_windowing_from_seisbench(
         self,
         model=sbm.EQTransformer().from_pretrained("pnw"),
         code_remap={"Z": "3A", "N": "1B", "E": "2C"},
@@ -391,6 +398,7 @@ class WindowWyrm(Wyrm):
         extra_sec=1.0,
         wgt_taper_sec=0.0,
         wgt_taper_type="cosine",
+        window_index=None
     ):
         """
         Using a specified candidate window starttime and windowing information
@@ -438,25 +446,28 @@ class WindowWyrm(Wyrm):
                         MLInstWind object, otherwise, it returns None
 
         """
+        # branch basic compatability check
         if not isinstance(branch, dict):
             raise TypeError("branch must be type dict")
+        # next_window_starttime basic compatability check
         if not isinstance(next_window_starttime, UTCDateTime):
             raise TypeError("next_window_starttimest be type obspy.UTCDateTime")
+        # pad basic compatability check
         if not isinstance(pad, bool):
             raise TypeError("pad must be type bool")
-
+        # extra_sec compatability checks
         if extra_sec is None:
             extra_sec = 0
         else:
             extra_sec = icc.bounded_floatlike(
-                extra_sec,
-                name="extra_sec",
-                minimum=0.0,
-                maximum=self._window_sec
+                extra_sec, name="extra_sec", minimum=0.0, maximum=self._window_sec
             )
-
-        if wgt_taper_sec.lower() == "blinding":
-            wgt_taper_sec = self._blinding_sec
+        # wgt_taper_sec compatability checks
+        if isinstance(wgt_taper_sec, str)
+            if wgt_taper_sec.lower() == "blinding":
+                wgt_taper_sec = self._blinding_sec
+            else:
+                raise SyntaxError(f'str input for wgt_taper_sec {wgt_taper_sec} not supported. Supported: "blinding"')
         else:
             wgt_taper_sec = icc.bounded_floatlike(
                 wgt_taper_sec,
@@ -464,7 +475,7 @@ class WindowWyrm(Wyrm):
                 minimum=0.0,
                 maximum=self._window_sec,
             )
-
+        # wgt_taper_type compatability checks
         if not isinstance(wgt_taper_type, str):
             raise TypeError("wgt_taper_type must be type str")
         elif wgt_taper_type.lower() in ["cosine", "cos", "step", "heaviside", "h"]:
@@ -474,10 +485,24 @@ class WindowWyrm(Wyrm):
                 'wgt_taper_type supported values: "cos", "cosine", "step", "heaviside", "h"'
             )
 
+        # window_index compatability checks
+        if window_index is None:
+            pass
+        else:
+            window_index = icc.bounded_intlike(
+                window_index,
+                name='window_index',
+                minimum=0,
+                maximum=None,
+                inclusive=True
+            )
+        # Start of processing section #
         # Create a copy of the windowing attributes to pass to InstWindow()
         window_inputs = self.windowing_attr.copy()
         # Add target_starttime
         window_inputs.update({"target_starttime": next_window_starttime})
+        # Add window_index
+        window_inputs.update({"window_index": window_index})
 
         # Calculate the expected end of the window
         next_window_endtime = next_window_starttime + self._window_sec
@@ -606,14 +631,15 @@ class WindowWyrm(Wyrm):
             _branch = rtinststream[_k1]
             # If this branch does not exist in the WindWyrm.index
             if _k1 not in self.index.keys():
-                self.index.update({_k1: self.default_starttime})
-                next_starttime = self.index[_k1]
+                self.index.update({_k1: self._index_template})
+                next_starttime = self.index[_k1]['next_starttime']
 
             # otherwise, alias matching index entry
             else:
-                next_starttime = self.index[_k1]
+                next_starttime = self.index[_k1]['next_starttime']
 
-            # If this branch has data for the first time
+            # If this branch has data but index has the None next_starttime
+            # Scrape vertical component data for a starttime
             if next_starttime == self.default_starttime:
                 # Iterate across approved vertical component codes
                 for _c in self.code_map["Z"]:
@@ -627,48 +653,89 @@ class WindowWyrm(Wyrm):
                             next_starttime = _first_ts
                             # and break
                             break
-            # Once the index has a UTCDateTime starttime
+
+            # If the index has a UTCDateTime next_starttime
             if isinstance(next_starttime, UTCDateTime):
-                # Do the match to the vertical trace buffer again
-                # Set initial None-Type values for window edges
+                # Cross reference vertical component timing with windowing
                 _data_ts = None
-                for _c in self.code_map["Z"]:
+                _data_te = None
+                _data_max_length = None
+                for _c in self.code_map['Z']:
                     if _c in _branch.keys():
                         if len(_branch[_c]) > 0:
-                            # Grab start and end times
                             _data_ts = _branch[_c].stats.starttime
+                            _data_te = _branch[_c].stats.endtime
+                            _data_maxlength = _branch[_c].max_length
                             break
-                # If vertical channel doesn't show up, warning and continue
-                if _data_ts is None:
-                    emsg = f"Error retrieving starttime from {_k1} "
-                    emsg += f"vertical: {_branch.keys()}"
-                    print(emsg)
-                    continue
-                # If data buffer starttime is before or at next_starttime
-                elif _data_ts <= next_starttime:
+                # Normal operation cases (i.e., no gaps)
+                # If next_starttime falls within the data timing
+                if _data_ts <= next_starttime < _data_te:
+                    # Proceed as normal
                     pass
-                # If update next_starttime if data buffer starttime is later
-                # Simple treatment for a large data gap.
-                elif _data_ts > next_starttime:
-                    self.index.update({_k1: _data_ts})
+                # Case where data has not buffered to the point of
+                # starting to fill the next window
+                elif next_starttime > _data_te:
+                    # Calculate the size of the apparent data gap
+                    gap_dt = next_starttime - _data_te
+                    # If gap is less than two advance lengths, pass
+                    if gap_dt < 2.*self._advance_sec:
+                        # Proceed as normal
+                        pass
+                    # Otherwise trigger debugging/RuntimeError
+                    else:
+                        if self.debug:
+                            print("RuntimeError('suspect a run-away next_starttime incremetation')")
+                            breakpoint()
+                        else:
+                            RuntimeError('Suspect a run-away next_starttime incremetation - run in debug=True for diagnostics')
+
+                ## PROCESSING DECISION NOTE ##
+                # NOTE: This approach below for handling larger data gaps 
+                # seeks to preserve integer values for the expected index of 
+                # overlapping window times once a branch has been initialized. 
+                #
+                # This decision may result in some signal omission following
+                # large data gaps that should not exceed one window in length. 
+
+                # Case where RtBuffTrace may have experienced a gap large enough
+                # to re-initialize a buffer.
+                elif next_starttime < _data_ts:
+                    gap_dt = _data_ts - next_starttime
+                    # If gap_dt is less than the length of the buffer
+                    if gap_dt < _data_max_length:
+                        # Proceed as normal
+                        pass
+                    # Otherwise, determine how many integer window advances are needed
+                    # To account for the gap by advancing windowin indices
+                    else:
+                        # Get number of advances needed to account for gap, rounded down
+                        gap_nadv = gap_dt//self._advance_sec
+                        # update next_starttime with integer number of advances in seconds
+                        self.index[_k1]['next_starttime'] += gap_nadv*self._advance_sec
+                        # update next_window_index by integer number of advances in counts
+                        self.index[_k1]['next_window_index'] += gap_nadv
+                        
                 # Attempt to generate window from this branch
-                ts = next_starttime
                 window = self._branch2instwindow(
                     _branch,
-                    ts,
+                    self.index[_k1]['next_starttime'],
                     pad=pad,
                     extra_sec=extra_sec,
                     wgt_taper_sec=wgt_taper_sec,
                     wgt_taper_type=wgt_taper_type,
+                    window_index=self.index[_k1]['next_window_index']
                 )
                 # If window is generated
                 if window:
-                    # Add WindowMsg to queue
+                    # Add InstWindow object to queue
                     self.queue.appendleft(window)
                     # update nnew index for iteration reporting
                     nnew += 1
-                    # advance next_starttime for this index by the advance
-                    self.index[_k1] += self._advance_sec
+                    # advance next_starttime by _advance_sec
+                    self.index[_k1]['next_starttime'] += self._advance_sec
+                    # advance next_window_index by 1
+                    self.index[_k1]['next_window_index'] += 1
+
                 # If window is not generated, go to next instrument
                 else:
                     continue

@@ -35,7 +35,11 @@ class RtBuffTrace(Trace):
     """
 
     def __init__(
-        self, max_length=1.0, fill_value=None, method=1, interpolation_samples=-1
+        self,
+        max_length=1.0,
+        fill_value=None,
+        method=1,
+        interpolation_samples=-1
     ):
         """
         Initialize an empty RtBuffTrace object

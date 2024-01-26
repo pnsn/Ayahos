@@ -136,20 +136,21 @@ class WindowWyrm(Wyrm):
         self.tcf = trace_comp_fract
 
         # Initialize default windowing attributes
+        # self.windowing_attr = {}
         self.windowing_attr = {
-            "fill_value": None,
-            "tolsec": None,
-            "missing_component_rule": None,
-            "target_norm": None,
-            "target_sr": None,
-            "target_npts": None,
-            "target_channels": None,
-            "target_order": None,
-            "target_overlap": None,
-            "target_blinding": None,
-            "model_name": None,
+            "fill_value": 0,
+            "tolsec": 2,
+            "missing_component_rule": "Zeros",
+            "target_norm": 'peak',
+            "target_sr": 100,
+            "target_npts": 6000,
+            "target_channels": 3,
+            "target_order": 'ZNE',
+            "target_overlap": 1800,
+            "target_blinding": 500,
+            "model_name": 'EQTransformer',
         }
-
+        print(self.windowing_attr['fill_value'])
         # Set window_attributes values from input kwargs
         self.set_windowing_attr(
             fill_value=fill_value,
@@ -163,17 +164,18 @@ class WindowWyrm(Wyrm):
             target_blinding=target_blinding,
             model_name=model_name,
         )
+        print(self.windowing_attr['fill_value'])
 
         # Create empty/default attributes
         # Create index for holding instrument window starttime values
-        self.index = {}
+        self.window_tracker = {}
         # Set (non-UTCDateTime) default starttime for new windowing indexing
         self.default_starttime = None
         self.window_startindex = 0
         self._index_template = {
             "last_starttime": self.default_starttime,
             "next_starttime": self.default_starttime,
-            "next_window_index": self.window_startindex,
+            "next_index": self.window_startindex,
         }
         # Create queue for output collection
         self.queue = deque([])
@@ -184,16 +186,16 @@ class WindowWyrm(Wyrm):
         
     def set_windowing_attr(
         self,
-        fill_value=None,
-        missing_component_rule=None,
-        target_norm=None,
-        target_sr=None,
-        target_npts=None,
-        target_channels=None,
-        target_order=None,
-        target_overlap=None,
-        target_blinding=None,
-        model_name=None,
+        fill_value=False,
+        missing_component_rule=False,
+        target_norm=False,
+        target_sr=False,
+        target_npts=False,
+        target_channels=False,
+        target_order=False,
+        target_overlap=False,
+        target_blinding=False,
+        model_name=False,
     ):
         """
         Set (or update) attributes that specify the target dimensions
@@ -202,7 +204,7 @@ class WindowWyrm(Wyrm):
         # Compatability check for fill_value
         if fill_value is None:
             self.windowing_attr.update({"fill_value": None})
-        else:
+        elif fill_value:
             _val = icc.bounded_floatlike(
                 fill_value,
                 name="fill_value",
@@ -212,7 +214,9 @@ class WindowWyrm(Wyrm):
             )
             self.windowing_attr.update({"fill_value": _val})
         # Compatability check for missing_component_rule
-        if not isinstance(missing_component_rule, (str, type(None))):
+        if not missing_component_rule:
+            pass
+        elif not isinstance(missing_component_rule, (str, type(None))):
             raise TypeError("missing_component_rule must be type str")
         elif isinstance(missing_component_rule, str):
             if missing_component_rule.lower() not in ["zeros", "clonez", "clonehz"]:
@@ -228,7 +232,9 @@ class WindowWyrm(Wyrm):
                     {"missing_component_rule": missing_component_rule}
                 )
         # Compatability check for target_norm
-        if not isinstance(target_norm, (str, type(None))):
+        if not target_norm:
+            pass
+        elif not isinstance(target_norm, (str, type(None))):
             raise TypeError("target_norm must be type str or None")
         elif isinstance(target_norm, str):
             if target_norm not in ["peak", "minmax", "std"]:
@@ -239,13 +245,13 @@ class WindowWyrm(Wyrm):
                 self.windowing_attr.update({"target_norm": target_norm})
 
         # Compatability check for target_sr
-        if target_sr is not None:
+        if target_sr:
             _val = icc.bounded_floatlike(
                 target_sr, name="target_sr", minimum=0, maximum=None, inclusive=False
             )
             self.windowing_attr.update({"target_sr": _val})
         # Compatability check for target_npts
-        if target_npts is not None:
+        if target_npts:
             _val = icc.bounded_intlike(
                 target_npts,
                 name="target_npts",
@@ -255,7 +261,7 @@ class WindowWyrm(Wyrm):
             )
             self.windowing_attr.update({"target_npts": _val})
         # Compatability check for target_channels
-        if target_channels is not None:
+        if target_channels:
             _val = icc.bounded_intlike(
                 target_channels,
                 name="target_channels",
@@ -265,7 +271,9 @@ class WindowWyrm(Wyrm):
             )
             self.windowing_attr.update({"target_channels": _val})
         # Compatability check for target_order:
-        if not isinstance(target_order, (str, type(None))):
+        if not target_order:
+            pass
+        elif not isinstance(target_order, (str, type(None))):
             raise TypeError("target_order must be type str or None")
         elif isinstance(target_order, str):
             if target_order.upper() == target_order:
@@ -279,7 +287,7 @@ class WindowWyrm(Wyrm):
                 raise SyntaxError("target order must be all capital characters")
 
         # Compatability check for target_overlap_npts
-        if target_overlap is not None:
+        if target_overlap:
             _val = icc.bounded_intlike(
                 target_overlap,
                 name="target_overlap",
@@ -289,7 +297,7 @@ class WindowWyrm(Wyrm):
             )
             self.windowing_attr.update({"target_overlap": _val})
         # Compatability check for target_blinding_npts
-        if target_blinding is not None:
+        if target_blinding:
             _val = icc.bounded_intlike(
                 target_blinding,
                 name="target_blinding",
@@ -299,26 +307,28 @@ class WindowWyrm(Wyrm):
             )
             self.windowing_attr.update({"target_blinding": _val})
 
-        if not isinstance(model_name, (str, type(None))):
+        if not model_name:
+            pass
+        elif not isinstance(model_name, (str, type(None))):
             raise TypeError("model_name must be type str or None")
         elif isinstance(model_name, str):
             self.windowing_attr.update({"model_name": model_name})
 
         # UPDATE DERIVATIVE ATTRIBUTES
         # If all inputs are not None for window length in seconds, update
-        if target_sr is not None:
+        if target_sr:
             # if npts and sr are not None - get window_sec
-            if target_npts is not None:
+            if target_npts:
                 self._window_sec = target_npts / target_sr
                 _val = (1.0 - min(self.tcf["N"], self.tcf["E"])) * 0.5
                 _val *= self._window_sec
                 self.windowing_attr.update({"tolsec": _val})
                 # if npts, sr, and overlap are not None - get advance_sec
-                if target_overlap is not None:
+                if target_overlap:
                     adv_npts = target_npts - target_overlap
                     self._advance_sec = adv_npts / target_sr
             # If blinding is specified, calculated seconds equivalent
-            if target_blinding is not None:
+            if target_blinding:
                 self._blinding_sec = target_blinding / target_sr
 
         return self
@@ -398,7 +408,7 @@ class WindowWyrm(Wyrm):
         extra_sec=1.0,
         wgt_taper_sec=0.0,
         wgt_taper_type="cosine",
-        window_index=None
+        index=None
     ):
         """
         Using a specified candidate window starttime and windowing information
@@ -440,10 +450,12 @@ class WindowWyrm(Wyrm):
                                             end of a candidate window to 0, otherwise weights
                                             are 1 for unmasked values and 0 for masked values
                                     aliases: 'h', 'heaviside'
+        :param index: [int] or [None] index value to assign to this window
+                        see wyrm.structures.InstWindow
         :: OUTPUT ::
-        :return window: [wyrm.structures.MLInstWind] or [None]
+        :return window: [wyrm.structures.InstWindow] or [None]
                         If a candidate window is valid, this method returns a populated
-                        MLInstWind object, otherwise, it returns None
+                        InstWindow object, otherwise, it returns None
 
         """
         # branch basic compatability check
@@ -463,7 +475,7 @@ class WindowWyrm(Wyrm):
                 extra_sec, name="extra_sec", minimum=0.0, maximum=self._window_sec
             )
         # wgt_taper_sec compatability checks
-        if isinstance(wgt_taper_sec, str)
+        if isinstance(wgt_taper_sec, str):
             if wgt_taper_sec.lower() == "blinding":
                 wgt_taper_sec = self._blinding_sec
             else:
@@ -485,13 +497,13 @@ class WindowWyrm(Wyrm):
                 'wgt_taper_type supported values: "cos", "cosine", "step", "heaviside", "h"'
             )
 
-        # window_index compatability checks
-        if window_index is None:
+        # index compatability checks
+        if index is None:
             pass
         else:
-            window_index = icc.bounded_intlike(
-                window_index,
-                name='window_index',
+            index = icc.bounded_intlike(
+                index,
+                name='index',
                 minimum=0,
                 maximum=None,
                 inclusive=True
@@ -501,8 +513,8 @@ class WindowWyrm(Wyrm):
         window_inputs = self.windowing_attr.copy()
         # Add target_starttime
         window_inputs.update({"target_starttime": next_window_starttime})
-        # Add window_index
-        window_inputs.update({"window_index": window_index})
+        # Add index
+        window_inputs.update({"index": index})
 
         # Calculate the expected end of the window
         next_window_endtime = next_window_starttime + self._window_sec
@@ -566,6 +578,7 @@ class WindowWyrm(Wyrm):
 
         if "Z" in window_inputs.keys():
             output = InstWindow(**window_inputs)
+            
         else:
             output = None
         return output
@@ -630,13 +643,13 @@ class WindowWyrm(Wyrm):
         for _k1 in rtinststream.keys():
             _branch = rtinststream[_k1]
             # If this branch does not exist in the WindWyrm.index
-            if _k1 not in self.index.keys():
-                self.index.update({_k1: self._index_template})
-                next_starttime = self.index[_k1]['next_starttime']
+            if _k1 not in self.window_tracker.keys():
+                self.window_tracker.update({_k1: deepcopy(self._index_template)})
+                next_starttime = self.window_tracker[_k1]['next_starttime']
 
             # otherwise, alias matching index entry
             else:
-                next_starttime = self.index[_k1]['next_starttime']
+                next_starttime = self.window_tracker[_k1]['next_starttime']
 
             # If this branch has data but index has the None next_starttime
             # Scrape vertical component data for a starttime
@@ -647,9 +660,10 @@ class WindowWyrm(Wyrm):
                     if _c in _branch.keys():
                         # and the matching RtBuffTrace in the branch has data
                         if len(_branch[_c]) > 0:
-                            # use the RtBuffTrace starttime to initialize the windowing index
+                            # use the RtBuffTrace starttime to initialize the next_starttime
+                            # in this branch of self.window_tracker
                             _first_ts = _branch[_c].stats.starttime
-                            self.index.update({_k1: _first_ts})
+                            self.window_tracker[_k1].update({'next_starttime': _first_ts})
                             next_starttime = _first_ts
                             # and break
                             break
@@ -711,20 +725,22 @@ class WindowWyrm(Wyrm):
                         # Get number of advances needed to account for gap, rounded down
                         gap_nadv = gap_dt//self._advance_sec
                         # update next_starttime with integer number of advances in seconds
-                        self.index[_k1]['next_starttime'] += gap_nadv*self._advance_sec
-                        # update next_window_index by integer number of advances in counts
-                        self.index[_k1]['next_window_index'] += gap_nadv
+                        self.window_tracker[_k1]['next_starttime'] += gap_nadv*self._advance_sec
+                        # update next_index by integer number of advances in counts
+                        self.window_tracker[_k1]['next_index'] += gap_nadv
                         
                 # Attempt to generate window from this branch
                 window = self._branch2instwindow(
                     _branch,
-                    self.index[_k1]['next_starttime'],
+                    self.window_tracker[_k1]['next_starttime'],
                     pad=pad,
                     extra_sec=extra_sec,
                     wgt_taper_sec=wgt_taper_sec,
                     wgt_taper_type=wgt_taper_type,
-                    window_index=self.index[_k1]['next_window_index']
+                    index=self.window_tracker[_k1]['next_index']
                 )
+                # if window is None:
+                #     breakpoint()
                 # If window is generated
                 if window:
                     # Add InstWindow object to queue
@@ -732,9 +748,9 @@ class WindowWyrm(Wyrm):
                     # update nnew index for iteration reporting
                     nnew += 1
                     # advance next_starttime by _advance_sec
-                    self.index[_k1]['next_starttime'] += self._advance_sec
-                    # advance next_window_index by 1
-                    self.index[_k1]['next_window_index'] += 1
+                    self.window_tracker[_k1]['next_starttime'] += self._advance_sec
+                    # advance next_index by 1
+                    self.window_tracker[_k1]['next_index'] += 1
 
                 # If window is not generated, go to next instrument
                 else:
@@ -776,7 +792,7 @@ class WindowWyrm(Wyrm):
         :param x: [wyrm.structure.stream.RtInstStream]
 
         :: OUTPUT ::
-        :return y: [deque] deque of MLInstWindow objects
+        :return y: [deque] deque of InstWindow objects
                     loaded with the appendleft() method, so
                     the oldest messages can be removed with
                     the pop() method in a subsequent step

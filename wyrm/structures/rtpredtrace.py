@@ -1,13 +1,14 @@
-from obspy import Trace
+from obspy import Trace, UTCDateTime
 import numpy as np
-from obspy.core.compatibility import round_away
+from collections import deque
 import wyrm.util.input_compatability_checks as icc
 
-class RtPredTrace(Trace):
+class RtPredBuff(object):
     """
-    Adaptation of the obspy.RtTrace and wyrm.
+    Realtime Prediction Buffer - this class acts as a buffer for overlapping
+    predictions 
     """
-    def __init__(self, max_windows=20, window=6000, blinding=(500,500), overlap=1800, method='max'):
+    def __init__(self, max_windows=20, model_name='EQTransofrmer', weight_name='pnw', window=6000, blinding=(500,500), overlap=1800, method='max'):
         """
         Initialize a Realtime Prediction Stack object
 
@@ -77,46 +78,61 @@ class RtPredTrace(Trace):
         elif method.lower() not in ['max','mean']:
             raise ValueError(f'method {method.lower()} not supported. Supported: "max", "mean"')
         # # Calculate stacking attributes
-        self.calc_stacking_attributes()
+        # The maximum number of data this prediction buffer can hold
+        self._max_npts = (self.max_windows - 1)*(self.window - self.overlap)
+        # The number of consecutive stacked windows required to hit max/continuous stacking fold
+        self._burnin_ct = self.window//(self.window - self.overlap) + 1
+        # Model continuous and maximum stacking fold
+        self._max_fold, self._cont_fold = self.model_stacking_fold()
+        # Set the next expected window index counter as 0
+        self.next_index = 0
+        # Create deque for current window index holdings
+        self.index_queue = deque([])
 
+        # Initialize stacked data and fold arrays
+        # NOTE: these are the definitive data attributes in this object
         self.stack = np.full(shape=(self._max_npts), fill_value=np.nan, dtype=np.float32)
         self.fold = np.full(shape=(self._max_npts), fill_value=0, dtype=np.int32)
-        # initialize Trace representation
-        super().__init__(data=[], header={})
-        self._data_appended = False
 
-    def calc_stacking_attributes(self):
-        """
-        Calculate the window stacking attributes
-        for this buffer based on pre-defined
-        windowing attributes
 
-        :: INPUT ::
-        :param pad_windows: [int] number of window lengths to pad
-                        the stacking model by for calculating
-                        the stack fold attributes. Must be
-                        in the range [1, 5]
+        # NTS: I keep waffling back and forth thinking this should
+        # either be included as an inheritance case to handle timing
+        # or simply as an output class-method (i.e., RtPredBuff.to_trace())
+        # that can have some 
+        # # initialize Trace representation
+        # # NOTE: the trace representaion is a mirror to the stack and fold data attributes
+        # super().__init__(data=[], header={})
+        # self._data_appended = False
+       
+    def model_stacking_fold(self):
+         """
+        Create a model of data stacking fold using pre-defined
+        window length, blinding samples, and window overlaps.
 
+
+        :def fold: number of non-blinded samples that share 
+                    a given time index from overlapping prediction
+                    windows
+        
         NOTE:   Depending on the blinding and overlap parameters provided,
                 there may be some saw-toothing in the maximum number of unblinded
                 samples from consecutive windows, as such we calculate both the 
-                maximum data fold (_max_fold) attained and the maximum continuous
-                data fold (_cont_fold) values. 
+                maximum data fold (max_fold) attained and the maximum continuous
+                data fold (cont_fold) values. 
         
-        Populates
-        self._burnin_count - number of consecutive stacks needed
-                         to attain _max_fold
-        self._max_fold - absolute maximum data stacking fold
-        self._cont_fold - continuous maximum data stacking fold
+        :: INPUTS ::
+        :self: 
+        :: OUTPUTS ::
+        :return max_fold: [int] maximum fold value attained 
+                        by stacking of _burnin_ct + 1 + n
+                        consecutive prediction windows
+        :return cont_fold: [int] maximum continuously maintained
+                        fold value from stacking _burnin_ct + 1 + n
+                        consecutive prediction windows
 
-        self._wind_wgts - bindary vector for data blinding
-                          that can be passed to a 
-                          numpy.ma.masked_array as a mask
+        NOTE: Generally, max_fold - cont_fold \in [0, 1]
         """
-        # Get the maximum number of points there should be in this buffer
-        self._max_npts = (self.max_windows - 1)*(self.window - self.overlap) + self.window
-        self._burnin_stack_ct = self.window//(self.window - self.overlap) + 1
-        
+         
         # Construct single window weight vector
         self._wind_wgts = np.ones(self.window)
         self._wind_wgts[:self.blinding[0]] = 0
@@ -135,12 +151,107 @@ class RtPredTrace(Trace):
         pi_ = self._burnin_stack_ct*self.window
         pj_ = pi_+self.window
         stack_sample = model_stack[pi_:pj_]
-        self._max_fold = np.max(stack_sample)
-        self._cont_fold = np.min(stack_sample)
+        max_fold = np.max(stack_sample)
+        cont_fold = np.min(stack_sample)
+
+        return max_fold, cont_fold
+
+    # ###################################################### #
+    # Input model prediction and metadata validation methods #
+    # ###################################################### #
+    def _validate_pred(self, pred):
+        
+        if not isinstance(pred, (torch.Tensor, numpy.ndarray))
+            raise TypeError(f'pred is type {type(pred)} - unsupported. Supported types: torch.Tensor, numpy.ndarray')
+        
+        if len(pred.shape) != 1:
+            try:
+                pred.reshape(self.window)
+            except ValueError:
+                raise ValueError(f'pred {pred.shape} cannot be reshaped into ({self.window},)')
+
+        # If pred hasn't already been detached and 
+        # converted into numpy, do so now
+        if isinstance(pred, torch.Tensor):
+            if pred.device.type != 'cpu':
+                vpred = pred.copy().detach().cpu().numpy()
+            else:
+                vpred = pred.copy().detach().numpy()
+        else:
+            vpred = pred.copy()
+        # Finally, if reshape is needed to peel off extra
+        # singleton axes, do so now
+        if vpred.shape != (self.window,):
+            vpred = vpred.reshape(self.window)        
+        return vpred        
+
+    def _validate_meta(self, meta)
+        """
+        Validate input metadata dictionary against expected
+        keys and value formats as defined in: 
+        wyrm.structures.window.get_metadata()
+        """
+        window_metadata_keys=(
+            'inst_code',
+            'component_order',
+            'model_name',
+            "weight_name",
+            'label_codes',
+            'samprate',
+            'fill_rule',
+            'fill_status',
+            'fill_value',
+            'index')
+        window_metadata_dtypes=(
+            str,
+            str,
+            str,
+            str,
+            str,
+            float,
+            UTCDateTime,
+            str,
+            (bool, str),
+            int
+        )
+        def_dict = dict(zip(window_metadata_keys, window_metadata_dtypes))
+        # Ensure all keys, and only these keys, are present.
+        # But don't be picky about order.
+        if not isinstance(meta, dict):
+            raise TypeError('meta must be type dict')
+
+        if not def_dict.keys() == meta.keys():
+            emsg = 'Misfit keys in "meta":'
+            for _k in meta.keys():
+                if _k not in window_metadata_keys:
+                    emsg += f'\n{_k} (extraneous key in meta)'
+            for _k in def_dict.keys():
+                if _k not in meta.keys():
+                    emsg == f'\n{_k} (missing from meta)'
+            raise KeyError(emsg)
+
+        if not all(isinstance(meta[_k], def_dict[_k]) for _k in def_dict.keys()):
+            emsg = 'meta.values() dtype mismatches:'
+            for _k in def_dict.keys():
+                if not isinstance(meta[_k], def_dict[_k])
+                    emsg += f'\n{_k} is {type(meta[_k])} - {def_dict[_k]} expected'
+            raise TypeError(emsg)
+        
+        if meta['model_name'] != self.model_name:
+            emsg = f'model_name in meta ({meta['model_name']}) '
+            emsg += f'does not match expected ({self.model_name})'
+            raise ValueError(emsg)
+        
+        if meta['model_weight'] != self.model_weight:
+            emsg = f'weight_name in meta ({meta['weight_name']}) '
+            emsg += f'does not match expected ({self.weight_name})'
+            raise ValueError(emsg)
+        # If all checks are passed, alias meta as vmeta
+        vmeta = meta
+        return vmeta
 
 
-        return self
-    
+
     def _populate_data_from_stack(self, fill_value=0, fold_thresh=None):
         """
         Populate the self.data attribute and change-sensitive

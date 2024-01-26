@@ -84,7 +84,7 @@ class InstWindow(Stream):
         target_overlap=1800,
         target_blinding=500,
         model_name="EQTransformer",
-        window_index=None,
+        index=None,
     ):
         """
         Initialize an InstWindow object
@@ -158,7 +158,7 @@ class InstWindow(Stream):
                              wyrm.structure.rtbufftrace.RtBuffTrace"
             )
         # # Define insturment code from full NSLC for Z-component trace
-        self._inst_code = self.Z[:-1]
+        self.inst_code = self.Z[:-1]
 
         # # N compatability checks
         if isinstance(N, Trace):
@@ -322,13 +322,13 @@ class InstWindow(Stream):
         elif isinstance(model_name, str):
             self._model_name = model_name
 
-        # # window_index compatability checks
-        if window_index is None:
-            self.window_index = None
+        # # index compatability checks
+        if index is None:
+            self.index = None
         else:
-            self.window_index = icc.bounded_intlike(
-                window_index,
-                name="window_index",
+            self.index = icc.bounded_intlike(
+                index,
+                name="index",
                 minimum=0,
                 maximum=None,
                 inclusive=True,
@@ -345,14 +345,16 @@ class InstWindow(Stream):
                             raise ValueError(
                                 f"metadata incompatability between {_id1} and {_id2}"
                             )
-
+        self._window_processing = ''
         # Handle non 3-C WindowMsg inputs based on missing_component_rule
         self.apply_missing_component_rule()
+        
 
     def __str__(self, extended=False):
         keys = {"Z": self.Z, "N": self.N, "E": self.E}
         # WindowMsg parameter summary
-        rstr = f"{len(self)} trace(s) in MLInstWindow | "
+        rstr = f"{len(self)} trace(s) in InstWindow | "
+        rstr += f'{self.inst_code} | index: {self.index}\n'
         rstr += "Target > "
         rstr += f"model: {self._model_name} ð "
         rstr += f"dims: (1, {self._target_channels}, {self._target_npts}) ð "
@@ -388,6 +390,7 @@ class InstWindow(Stream):
                 else:
                     rstr += " | [UNUSED]\n"
         rstr += f" Trim Target ð {self._target_starttime} - {self._target_starttime + self._target_npts/self._target_sr} ð"
+        rstr += f'\n Window Processing: {self._window_processing}'
         return rstr
 
     def __repr__(self, extended=False):
@@ -459,6 +462,7 @@ class InstWindow(Stream):
             emsg = f"missing_component_rule {self._missing_component_rule} invalid."
             emsg += 'Supported: "Zeros", "CloneZ", "CloneHZ"'
             raise ValueError(emsg)
+        self._window_processing += f'{self._missing_component_rule} applied'
         return self
 
     def _apply_Zeros_rule(self):
@@ -638,6 +642,7 @@ class InstWindow(Stream):
         if any(self.are_traces_masked()):
             new_traces = self.split()
             self.traces = new_traces
+        self._window_processing += ' -> split'
         return self
 
     def wind_merge(self, method=1, interpolation_samples=-1):
@@ -660,6 +665,7 @@ class InstWindow(Stream):
                 fill_value=self.fill_value,
                 interpolation_samples=interpolation_samples,
             )
+            self._window_processing += ' -> merge'
         return self
 
     def wind_sync(self):
@@ -852,15 +858,17 @@ class InstWindow(Stream):
 
     def get_metadata(self):
         metadata = {
-            "inst_code": self._inst_code,
+            "inst_code": self.inst_code,
             "component_order": self._target_order,
-            "model": self._model_name,
+            "model_name": self._model_name,
+            "weight_name": None,
+            "label_codes": None,
             "samprate": self._target_sr,
             "starttime": self._target_starttime,
             "fill_rule": self._missing_component_rule,
             "fill_status": self._window_fill_status,
             "fill_value": self.fill_value,
-            "window_index": self.window_index,
+            "index": self.index,
         }
         return metadata
     
@@ -888,7 +896,7 @@ class InstWindow(Stream):
         # Split if masked gaps exist
         self.wind_split()
         # Filter
-        self.filter("bandpass", freqmin=1, freqmax=45)
+        # self.filter("bandpass", freqmin=1, freqmax=45)
         # Remove mean
         self.detrend("demean")
         # Remove trend
@@ -905,9 +913,9 @@ class InstWindow(Stream):
         self.wind_trim()
         # Normalize traces
         self.wind_normalize()
-        # Convert to tensor & metadata pair
-        out = self.export_processed_window(out_type='torch')
-        return out
+        # # Convert to tensor & metadata pair
+        # out = self.export_processed_window(out_type='torch')
+        # return out
 
 
 class SeisBenchWindow(InstWindow):
@@ -937,7 +945,7 @@ class SeisBenchWindow(InstWindow):
         fill_value=0.0,
         tolsec=2.0,
         missing_component_rule="Zeros",
-        window_index=None
+        index=None
     ):
         """
         Initialize a SeisBenchWindow object
@@ -1016,5 +1024,5 @@ class SeisBenchWindow(InstWindow):
             target_overlap=mover,
             target_blinding=mblind,
             model_name=model.name,
-            window_index=window_index
+            index=index
         )

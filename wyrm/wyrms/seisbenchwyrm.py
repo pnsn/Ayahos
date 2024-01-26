@@ -1,8 +1,9 @@
 from collections import deque
 from wyrm.wyrms.wyrm import Wyrm
-from wyrm.structures.rtinststream import RtInstStream
-from wyrm.structures.rtpredtrace import RtPredTrace
+# from wyrm.structures.rtinststream import RtInstStream
+# from wyrm.structures.rtpredtrace import RtPredTrace
 import wyrm.util.input_compatability_checks as icc
+from wyrm.structures.window import InstWindow
 import seisbench.models as sbm
 import numpy as np
 import torch
@@ -17,13 +18,15 @@ class WaveformModelWyrm(Wyrm):
         instance
     output - RtPredStream containing stacked predictions
     """
-    def __init__(self, model, device, max_length=180., max_pulse_size=1000, debug=False):
+    def __init__(self, model, weight_names, devicetype='cpu', max_length=180., max_pulse_size=1000, debug=False):
         """
         Initialize a SeisBenchWyrm object
 
         :: INPUTS ::
         :param model: [seisbench.models.WaveformModel-like] a seisbench model
                         that has the WaveformModel parent class.
+        :param weight_names: [str] or [list] model name(s) to pass to 
+                              model.from_pretrained()
         :param device: [torch.device] device to run predictions on
         :param max_length: [float] maximum prediction buffer length in seconds
         :param max_pulse_size: [int] maximum number of data windows to assess
@@ -39,14 +42,35 @@ class WaveformModelWyrm(Wyrm):
             raise TypeError('model must be a child-class of the seisbench.models.WaveformModel class')
         else:
             self.model = model
-        # device compatability checks
-        if not isinstance(device, torch.device):
-            raise TypeError('device must be a torch.device object')
+        # Map model labels to model codes
+        self.label_codes = ''
+        for _l in self.model.labels:
+            self.label_codes += _l[0]
+        # Model weight_names compatability checks
+        pretrained_list = model.list_pretrained()
+        if isinstance(weight_names, str):
+            weight_names = [weight_names]
+        elif isinstance(weight_names, (list, tuple)):
+            if not all(isinstance(_n, str) for _n in weight_names):
+                raise TypeError('not all listed weight_names are type str')
         else:
-            if eval(f'torch.{device.type}.is_available()'):
-                self.device = device
-            else:
-                raise ValueError(f'device type {device.type} is unavailable')
+            for _n in weight_names:
+                if _n not in pretrained_list:
+                    raise ValueError(f'weight_name {_n} is not a valid pretrained model weight_name for {model}')
+        self.weight_names = weight_names
+        # device compatability checks
+        if not isinstance(devicetype, str):
+            raise TypeError('devicetype must be type str')
+        else:
+            try:
+                device = torch.device(devicetype)
+            except RuntimeError:
+                raise RintimeError(f'devicetype {devicetype} is an invalid device string for PyTorch')
+            try:
+                self.model.to(device)
+            except RuntimeError:
+                raise RuntimeError(f'device type {devicetype} is unavailable on this installation')
+            self.device = device
         # max_length compatability checks
         self.max_length = icc.bounded_floatlike(
             max_length,
@@ -56,20 +80,9 @@ class WaveformModelWyrm(Wyrm):
             inclusive=False
         )
 
-        # ################################################### #
-        # Default/Derivative Attribute Initialization Section #
-        # ################################################### #
-
-        # Get convenience aliases for blinding and stacking values
-        self._blinding = self.model._annotate_args['blinding'][-1]
-        self._stacking = self.model._annotate_args['stacking'][-1]
-        self._overlap = self.model._annotate_args['overlap'][-1]
-        self._blind_mask = np.ones((1,self.model.in_samples))
-        self._blind_mask[:self._blinding] = 0
-        self._blind_mask[-self._blinding] = 0
-
         # Initialize Realtime Instrument Stream in PredTrace mode
-        self.buffer = RtInstStream(trace_type=RtPredTrace, max_length=max_length)
+        # self.buffer = RtInstStream(trace_type=RtPredTrace, max_length=max_length)
+        self.queue = deque([])
 
     def pulse(self, x):
         """
@@ -82,99 +95,78 @@ class WaveformModelWyrm(Wyrm):
         """
         if not isinstance(x, deque):
             raise TypeError('input x must be a deque')
-        
+        # Concatenate input tensors and metadata
+        tensor_list = []
+        meta_list = []
         for _i in range(self.max_pulse_size):
             if len(x) > 0:
                 _x = x.pop()
                 if not isinstance(_x, InstWindow):
                     x.appendleft(_x)
-                elif not self._validate_incoming_window(_x):
-                    x.appendleft(_x)
-                
-
-
-    def preds_to_waves(self, preds, meta):
-        """
-        Given raw predictions from a seisbench WaveformModel-type model
-        and input data metadata, convert all vectors into PyEW formatted
-        wave messages
-
-        :: INPUTS ::
-        :param preds: [torch.Tensor] or [numpy.ndarray] array of continuous
-                        predictions with SeisBench defined axes
-                        i.e., (window #, channel #, data #)
-        """
-        # Basic type checks for preds
-        if isinstance(preds, torch.Tensor):
-            preds = self._detach_preds(preds)
-        elif not isinstance(preds, np.ndarray):
-            raise TypeError('preds must be type torch.Tensor or numpy.ndarray')
-        # 
-
-
-        if isinstance(meta, dict):
-            meta = [meta]
-        if not all(isinstance(_m, dict) for _m in meta):
-            raise TypeError('not all entries in meta are type dict')
+                tensor = _x.to_torch()
+                meta = _x.get_metadata()
+                tensor_list.append(tensor)
+                meta_list.append(meta)
         
-        expected_shape = (len(meta), self.model.in_channels, self.model.in_samples)
-        if len(preds.shape) != 3:
-            raise IndexError('preds does not have 3 dimensions')
-        elif preds.shape != expected_shape:
-            raise IndexError('preds ({preds.shape}) does not have the expected shape ({expected_shape})')
-        if 
-            
+        model_inputs = torch.concat(tensor_list)
 
-    def _preds_to_branch(self, preds):
-        """
-        Convert raw prediction outputs from a SeisBench WaveformModel-type
-        into a branch (dictionary) structure keyed by the label code (first
-        character, uppercase) to reflect the branch structure for RtInstStream
-        objects.
-
-        :: INPUT ::
-        :param preds: [torch.Tensor]
-
-        :: OUTPUT ::
-        :return pred_branch: [dict] dictionary with (masked) numpy.ndarray
-                    values and label code keys.
-                    E.g., for EQTransformer
-        """
-
-        vdim_tuple = (1, self.model.in_samples)
-        if isinstance(preds, tuple):
-            if not all(isinstance(p, torch.Tensor) for p in preds):
-                raise TypeError('all elements of preds must be type torch.Tensor')
-        
-        elif len(preds) != len(self.labels):
-            emsg = f'mismatch in number of labels ({len(self.labels)}) '
-            emsg += f'and number of predictions ({len(preds)})'
-            raise IndexError(emsg)
-        
-        elif any(_p.shape != vdim_tuple for _p in preds):
-            emsg = f'shape of prediction vectors mismatches those expected by this model'
-            raise IndexError(emsg)
-
-        pred_branch = {}
-        for _i, _p in enumerate(preds):
-            if _p.device.type != 'cpu':
-                _o = _p.detach().cpu().numpy()
+        # Iterate across specified model_weight(s)
+        for _n in self.weight_names:
+            # Load model weights
+            if self.model.weights_docstring is None:
+                self.model.from_pretrained(_n)
+            elif _n not in self.model.weights_docstring:
+                self.model.from_pretrained(_n)
+            # Ensure model is on specified device
+            if self.model.device.type != self.device.type:
+                self.model.to(self.device)
+            ## !!! PREDICT !!! with check that data are on device ##
+            if model_inputs.device.type == self.device.type:
+                raw_preds = self.model(model_inputs)
             else:
-                _o = _p.detach().numpy()
-            # Convert into a masked array if blinding is present
-            if self._blinding_npts > 0:
-                _o = np.ma.masked_array(
-                    data=_o,
-                    mask=np.zeros(_o.shape))
-                _o.mask[:self._blinding[0]] = True
-                _o.mask[-self._blinding[-1]:] = True
+                raw_preds = self.model(model_inputs.to(self.device))
+            
+            ## Detach predictions and split into tuples to pass onward
+            npy_preds = np.full(
+                shape=model_inputs.shape,
+                fill_value=np.nan,
+                dtype=np.float32
+            )
+            for _j, _p in enumerate(raw_preds):
+                if _p.device.type != 'cpu':
+                    npy_preds[:, _j, :] = _p.detach().cpu().numpy()
+                else:
+                    npy_preds[:, _j, :] = _p.detach().numpy()
+            # Split out windows and re-associate metadata with some updates
+            for _i, _pred in enumerate(npy_preds):
+                ometa = meta_list[_i].copy()
+                ometa.update({'weight_name': _n})
+                ometa.update({'label_codes': self.label_codes})
+                # Compose output dictionary
+                okey = f"{ometa['inst_code']}|{ometa['model_name']}|{ometa['weight_name']}"
+                out_branch = {
+                    okey: {
+                        'data': _pred,
+                        'meta': ometa,
+                        'index': ometa['index']
+                    }
+                }
+                # Append to queue
+                self.queue.appendleft(out_branch)
+            
+    def __repr__(self):
+        # rstr = super().__repr__()
+        rstr = f'model: {self.model.name} | '
+        rstr += f'shape: (1, {self.model.in_channels}, {self.model.in_samples}) ->'
+        rstr += f'(1, {len(self.model.labels)}, {self.model.in_samples}) | '
+        rstr += f'labels: {self.model.labels} (codes: {self.label_codes})\n'
+        rstr += f'batch size: {self.max_pulse_size} | '
+        rstr += f'queue length: {len(self.queue)}\n'
+        rstr += f' model weight names:\n'
+        for _n in self.weight_names:
+            rstr += f'    {_n}\n'
+        return rstr
 
-            pred_branch.update({self.labels[_i]: _o})
-
-        return pred_branch
-        
-
-
-
-        
-        if preds.device != 'cpu':
+    def __str__(self):
+        rstr = self.__repr__()
+        return rstr

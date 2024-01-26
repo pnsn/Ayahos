@@ -66,7 +66,7 @@ class RtInstStream(dict):
         # Compatability check for trace_class
         if not isinstance(trace_class, type):
             raise TypeError(f'trace_class must be a class-defining type, not type {type(trace_class)}')
-        elif trace_class not in [RtBuffTrace, RtPredTrace]:
+        elif trace_class not in [RtBuffTrace]:#, RtPredTrace]:
             raise ValueError(f'trace_class {trace_class} not supported. Supported: RtBuffTrace and RtPredTrace')
         else:
             self.tc = trace_class

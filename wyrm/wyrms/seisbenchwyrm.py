@@ -107,8 +107,8 @@ class WaveformModelWyrm(Wyrm):
             if self.debug:
                 print('Starting {self.model_name}, {_n} weighted prediction')
             # Ensure correct model weights are loaded
-            self.model.from_pretrained(_n)
-            print(_n)
+            self.model = self.model.from_pretrained(_n)
+
             # if self.model.weights_docstring is None:
             #     self.model.from_pretrained(_n)
             # elif _n not in self.model.weights_docstring:

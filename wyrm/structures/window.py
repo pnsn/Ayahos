@@ -865,6 +865,8 @@ class InstWindow(Stream):
             "label_codes": None,
             "samprate": self._target_sr,
             "starttime": self._target_starttime,
+            "advance_npts": self._target_npts - self._target_overlap,
+            "blinding_npts": self._target_blinding,
             "fill_rule": self._missing_component_rule,
             "fill_status": self._window_fill_status,
             "fill_value": self.fill_value,

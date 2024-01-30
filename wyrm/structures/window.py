@@ -896,7 +896,7 @@ class InstWindow(Stream):
         # Split if masked gaps exist
         self.wind_split()
         # Filter
-        # self.filter("bandpass", freqmin=1, freqmax=45)
+        self.filter("bandpass", freqmin=1, freqmax=45)
         # Remove mean
         self.detrend("demean")
         # Remove trend

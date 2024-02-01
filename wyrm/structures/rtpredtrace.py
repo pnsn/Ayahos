@@ -3,13 +3,14 @@ import numpy as np
 from collections import deque
 import wyrm.util.input_compatability_checks as icc
 import torch
+import seisbench.models as sbm
 
 class RtPredBuff(object):
     """
     Realtime Prediction Buffer - this class acts as a buffer for overlapping
     predictions 
     """
-    def __init__(self, max_windows=20, method='max'):
+    def __init__(self, max_windows=20, stack_method='max'):
         """
         Initialize a Realtime Prediction Stack object
 
@@ -21,7 +22,9 @@ class RtPredBuff(object):
                         prediction window overlaps by
         :param window: [int] number of samples in a prediction window
         """
-        # # max_windows compatability checks
+        ### Static parameters (once assigned) ###
+        # max_windows compatability checks
+        # Maximum number of windows allowed in buffer
         self.max_windows = icc.bounded_intlike(
             max_windows,
             name='max_windows',
@@ -29,115 +32,234 @@ class RtPredBuff(object):
             maximum=None,
             inclusive=False
         )
-
+        # stack_method compatability checks
+        # Stacking method for overlapping, unblinded prediction values
+        if not isinstance(stack_method, str):
+            raise TypeError("stack_method must be type str")
+        elif stack_method.lower() in ['max','peak','maximum']:
+            self.stack_method = 'max'
+        elif stack_method.lower() in ['mean','avg','average']:
+            self.stack_method = 'avg'
+        else:
+            raise ValueError(f'stack method "{stack_method}" is unsupported. Supported values: "max", "avg"')
+        # Instrument Metadata
         self.inst_code = None
-        self.component_codes = None
-        self.component_names = None
+        # ML Model Metadata
         self.model_name = None
         self.weight_name = None
+        self.label_codes = None
+        self.label_names = None
+        # Window Indexing Scalars
+        self.window_npts = None
+        self.overlap_npts = None
+        self.blinding_npts = None        
+        # Sampling Rate (float)
+        self.samprate = None
+        # Placeholder for binary array for blinding samples
+        self.blinding_array = None
+
+        ### Dynamic parameters ###
+        # NOTE: Reference Index Number / Start Time / array j_index
+        # refer to the first sample in the chronologically most-recent
+        # window successfully appended to the stack and fold arrays
+        # Reference Window Index Number (int)
         self.ref_index = None
+        # Reference Window Start Time (UTCDateTime)
         self.ref_time = None
-        self.sampling_rate = None
+        self.ref_j = None
+
+        # Dynamic data arrays
+        self.stack = None
+        self.fold = None
+
+
+        self._has_data = False
+
+    def initial_append(self, pred, meta, model, wgt_name):
+        # If data have already been appended - raise error
+        if self._has_data:
+            raise RuntimeError('This RtPredBuff already contains data - canceling initial_append')
         
-
-        # # model_name compatability checks
-        if not isinstance(model_name, str):
-            raise TypeError('model_name must be type str')
-        elif model_name not in ['EQTransformer','PhaseNet']:
-            raise ValueError(f'model_name "{model_name}" not presently supported. Supported model_name values: "EQTransformer", "PhaseNet"')
-        else:    
-            self.model_name = model_name
-
-        # # weight_name compatability check
-        if not isinstance(weight_name, str):
-            raise TypeError('weight_name must be type str')
-        elif self.model_name == 'EQTransformer':
-            if weight_name not in ['ethz', 'geofon', 'instance', 'iquique', 'lendb', 'neic', 'obs', 'original', 'original_nonconservative', 'pnw', 'scedc', 'stead']:
-                raise ValueError(f'weight_name "{weight_name}" is not a currently supported SeisBench pretrained weight for EQTransformer')
-            else:
-                self.weight_name = weight_name
-        elif self.model_name == 'PhaseNet':
-            if weight_name not in ['diting', 'ethz', 'geofon', 'instance', 'iquique', 'lendb', 'neic', 'obs', 'original', 'scedc', 'stead']:
-                raise ValueError(f'weight_name "{weight_name}" is not a currently supported SeisBench pretrained weight for PhaseNet')
-            else:
-                self.weight_name = weight_name
-
-        # # window compatability checks
-        self.window = icc.bounded_intlike(
-            window,
-            name='window',
-            minimum=0,
-            maximum=None,
-            inclusive=False
-        )
-        # # blinding compatability checks
-        # checks for (2-)tuple input
-        if isinstance(blinding, tuple):
-            blinding_l = icc.bounded_intlike(
-                blinding[0],
-                name='blinding[0]',
-                minimum=0,
-                maximum=self.window/2,
-                inclusive=True
-            )
-            blinding_r = icc.bounded_intlike(
-                blinding[-1],
-                name='blinding[-1]',
-                minimum=0,
-                maximum=self.window/2,
-                inclusive=True
-            )
-            self.blinding = (blinding_l, blinding_r)
-        # checks for single value input
         else:
-            val = icc.bounded_intlike(
-                blinding,
-                name='blinding',
-                minimum=0,
-                maximum=self.window/2,
-                inclusive=True
-            )
-            self.blinding = (val, val)
-        # # overlap compatability checks
-        self.overlap = icc.bounded_intlike(
-            overlap,
-            name='overlap',
-            minimum=0,
-            maximum=self.window-1,
-            inclusive=True
+            # Run validation checks on metadata
+            vmeta = self._validate_metadata(meta)
+            # Run validation checks on input model
+            vwgt_name = self._validate_model_info(vmeta, model, wgt_name)
+            # Assign attribute values from metadata and model info
+            self.inst_code = vmeta['inst_code']
+            self.model_name= vmeta['model_name']
+            self.weight_name = vwgt_name
+            self.label_names = model.labels
+            self.label_codes = [_c[0].upper() for _c in model.labels]
+            self.window_npts = vmeta['window_npts']
+            self.overlap_npts = vmeta['overlap_npts']
+            self.blinding_npts = vmeta['blinding_npts']
+            self.samprate = vmeta['samprate']
+            self.ref_index = vmeta['index']
+            self.ref_time = vmeta['starttime']
+            self.ref_j = 0
+
+            # Get advance samples
+            self.adv_npts = self.window_npts - self.overlap_npts
+            # Populate stack and fold arrays
+            shp = (len(self.label_codes), 
+                   self.window_npts * self.max_windows - self.overlap_npts * (1 - self.max_windows))
+            self.stack = np.full(shape=shp, fill_value=np.nan, dtype=np.float32)
+            self.fold = np.full(shape=shp, fill_value=np.nan, dtype=np.float32)
+            self.blinding_array = np.ones(shape=(len(self.label_codes), self.window_npts))
+            self.blinding_array[:self.blinding_npts] = 0
+            self.blinding_array[-self.blinding_npts:] = 0
+
+            # Validate prediction
+            vpred = self._validate_prediction(pred)
+
+            # Insert prediction into stack
+            self.stack[:, self.ref_j:self.ref_j + self.window_npts] = vpred * self.blinding_array
+            # Place information into fold
+            self.fold[:, self.ref_j:self.ref_j + self.window_npts] += self.blinding_array
+            
+            # Update _has_data flag
+            self._has_data = True
+        return self
+
+    def subsequent_append(self, pred, meta):
+        vmeta = self._validate_metadata(meta)
+        vpred = self._validate_prediction(pred)
+        d_index = abs(self.ref_index - vmeta['index'])
+        if d_index < self.max_windows:
+            candidate_k = self._get_candidate_k(vmeta['index'])
+            if candidate_k
+
+
+    def _validate_metadata(self, meta):
+        """
+        Validate input metadata dictionary against expected
+        keys and value formats as defined in: 
+        wyrm.structures.window.get_metadata()
+        """
+        window_metadata_keys=(
+            'inst_code',
+            'model_name',
+            'samprate',
+            "window_npts",
+            "overlap_npts",
+            "blinding_npts",
+            'fill_rule',
+            'fill_status',
+            'fill_value',
+            "starttime",
+            'index')
+        window_metadata_dtypes=(
+            str,
+            str,
+            float,
+            int,
+            int,
+            int,
+            str,
+            (bool, str),
+            UTCDateTime,
+            int
         )
-        # # method compatablity checks
-        if not isinstance(method, str):
-            raise TypeError('method must be type str')
-        elif method.lower() not in ['max','mean']:
-            raise ValueError(f'method {method.lower()} not supported. Supported: "max", "mean"')
-        # # Calculate stacking attributes
-        # The maximum number of data this prediction buffer can hold
-        self._max_npts = (self.max_windows - 1)*(self.window - self.overlap)
-        # The number of consecutive stacked windows required to hit max/continuous stacking fold
-        self._burnin_ct = self.window//(self.window - self.overlap) + 1
-        # Model continuous and maximum stacking fold
-        self._max_fold, self._cont_fold = self.model_stacking_fold()
-        # Set the next expected window index counter as 0
-        self.ref_index = 0
-        # Create deque for current window index holdings
-        self.index_queue = deque([])
+        def_dict = dict(zip(window_metadata_keys, window_metadata_dtypes))
+        # Ensure all keys, and only these keys, are present.
+        # But don't be picky about order.
+        if not isinstance(meta, dict):
+            raise TypeError('meta must be type dict')
+        # If there are mismatched keys or missing keys, compose
+        # detailed error message
+        if not def_dict.keys() == meta.keys():
+            emsg = 'Misfit keys in "meta":'
+            for _k in meta.keys():
+                if _k not in window_metadata_keys:
+                    emsg += f'\n{_k} (extraneous key in meta)'
+            for _k in def_dict.keys():
+                if _k not in meta.keys():
+                    emsg == f'\n{_k} (missing from meta)'
+            raise KeyError(emsg)
+        # If there are mismatched datatypes in meta, compose
+        # a detailed error message
+        if not all(isinstance(meta[_k], def_dict[_k]) for _k in def_dict.keys()):
+            emsg = 'meta.values() dtype mismatches:'
+            for _k in def_dict.keys():
+                if not isinstance(meta[_k], def_dict[_k])
+                    emsg += f'\n{_k} is {type(meta[_k])} - {def_dict[_k]} expected'
+            raise TypeError(emsg)
+        
+        # If this is not the RtPredBuff's first rodeo... (i.e., already has data appended)
+        if self._has_data:
+            # Check that static values match
+            self_list = [self.inst_code, self.model_name, self.window_npts, self.overlap_npts, self.blinding_npts, self.samprate]
+            meta_list = ['inst_code','model_name','window_npts','overlap_npts','blinding_npts','samprate']
+            check_tuples = list(zip(self_list, meta_list))
+            for _s, _k in check_tuples:
+                if _s != meta[_k]:
+                    emsg = f'{_k} in meta ({meta[_k]}) does not match'
+                    emsg += f' value recorded in this RtPredBuff ({_s})'
+                    raise ValueError(emsg)
 
-        # Initialize stacked data and fold arrays
-        # NOTE: these are the definitive data attributes in this object
-        self.stack = np.full(shape=(self._max_npts), fill_value=np.nan, dtype=np.float32)
-        self.fold = np.full(shape=(self._max_npts), fill_value=0, dtype=np.int32)
+            # Get delta time compared to reference time
+            dt = self.ref_time - meta['starttime']
+            # Get delta samples equivalent
+            dnpts = dt * self.samprate
+            # Check if the delta npts is an integer scalar
+            # of window advance steps
+            residual_npts = dnpts % (self.window_npts - self.overlap_npts)
+             # if residual is 0
+            if residual_npts == 0:
+                # do final check that the candidate index is correct
+                if self.ref_index - meta['index'] == dnpts // (self.window_npts - self.overlap_npts):
+                    
 
 
-        # NTS: I keep waffling back and forth thinking this should
-        # either be included as an inheritance case to handle timing
-        # or simply as an output class-method (i.e., RtPredBuff.to_trace())
-        # that can have some 
-        # # initialize Trace representation
-        # # NOTE: the trace representaion is a mirror to the stack and fold data attributes
-        # super().__init__(data=[], header={})
-        # self._data_appended = False
+                pass
+            else:
+                raise IndexError(f'Candidate prediction is misaligned by {residual_npts}')
+                # TODO: include an append method where stacking is arbitrary, finding the 
+                # nearest sample to append to (computationally cheap) or conduct interpolation
+                # to shift sampling points (computationally more expensive)
+            # If alignment check is passed
+            # Determine the index placement of the data
+            
+
+        vmeta = meta.copy()
+        return vmeta
+    
+    def _validate_prediction(self, pred):
+        if self.window_npts is None:
+            raise AttributeError('Initial metadata have not been populated')
+        else:
+            shp = (len(self.label_codes), self.window_npts)
+            try:
+                vpred = pred.copy().reshape(shp)
+            except ValueError:
+                raise ValueError(f'pred cannot be reshaped into shape {shp}')
+        return vpred
+
+
+        
+    def _crosscheck_model_info(self, model, wgt_name):
+        # Raise errors if model and metadata have basic information mismatches
+        if not isinstance(model, sbm.WaveformModel):
+            raise TypeError('model must be a child-class of seisbench.models.WaveformModel')
+        elif model.name != self.model_name:
+            raise ValueError('model.name and self.model_name have different values')
+        elif model.in_samples != meta['window_npts']:
+            raise ValueError('model and self.window_npts have different values')
+        
+        if not isinstance(wgt_name, str):
+            raise TypeError()
+        
+        # If all checks are passed, alias meta as vmeta
+        vmeta = meta.copy()
+        vmeta.update({'model_wgt'})
+        return vmeta
        
+    def _validate_prediction(self, pred, vmeta):
+        """
+        Validate candidate prediction 
+        """
+    
     def model_stacking_fold(self):
         """
         Create a model of data stacking fold using pre-defined
@@ -195,7 +317,7 @@ class RtPredBuff(object):
     # ###################################################### #
     def _validate_pred(self, pred):
         
-        if not isinstance(pred, (torch.Tensor, numpy.ndarray))
+        if not isinstance(pred, (torch.Tensor, np.ndarray))
             raise TypeError(f'pred is type {type(pred)} - unsupported. Supported types: torch.Tensor, numpy.ndarray')
         
         if len(pred.shape) != 1:
@@ -219,70 +341,7 @@ class RtPredBuff(object):
             vpred = vpred.reshape(self.window)        
         return vpred        
 
-    def _validate_meta(self, meta):
-        """
-        Validate input metadata dictionary against expected
-        keys and value formats as defined in: 
-        wyrm.structures.window.get_metadata()
-        """
-        window_metadata_keys=(
-            'inst_code',
-            'component_order',
-            'model_name',
-            "weight_name",
-            'label_codes',
-            'samprate',
-            'fill_rule',
-            'fill_status',
-            'fill_value',
-            'index')
-        window_metadata_dtypes=(
-            str,
-            str,
-            str,
-            str,
-            str,
-            float,
-            UTCDateTime,
-            str,
-            (bool, str),
-            int
-        )
-        def_dict = dict(zip(window_metadata_keys, window_metadata_dtypes))
-        # Ensure all keys, and only these keys, are present.
-        # But don't be picky about order.
-        if not isinstance(meta, dict):
-            raise TypeError('meta must be type dict')
 
-        if not def_dict.keys() == meta.keys():
-            emsg = 'Misfit keys in "meta":'
-            for _k in meta.keys():
-                if _k not in window_metadata_keys:
-                    emsg += f'\n{_k} (extraneous key in meta)'
-            for _k in def_dict.keys():
-                if _k not in meta.keys():
-                    emsg == f'\n{_k} (missing from meta)'
-            raise KeyError(emsg)
-
-        if not all(isinstance(meta[_k], def_dict[_k]) for _k in def_dict.keys()):
-            emsg = 'meta.values() dtype mismatches:'
-            for _k in def_dict.keys():
-                if not isinstance(meta[_k], def_dict[_k])
-                    emsg += f'\n{_k} is {type(meta[_k])} - {def_dict[_k]} expected'
-            raise TypeError(emsg)
-        
-        if meta['model_name'] != self.model_name:
-            emsg = f'model_name in meta ({meta['model_name']}) '
-            emsg += f'does not match expected ({self.model_name})'
-            raise ValueError(emsg)
-        
-        if meta['model_weight'] != self.model_weight:
-            emsg = f'weight_name in meta ({meta['weight_name']}) '
-            emsg += f'does not match expected ({self.weight_name})'
-            raise ValueError(emsg)
-        # If all checks are passed, alias meta as vmeta
-        vmeta = meta
-        return vmeta
 
 
 
@@ -473,6 +532,226 @@ class RtPredBuff(object):
 
     def append(self, pred, meta):
         index_status, meta_tests = self.cross
+
+
+
+
+    def append(self, pred, meta):
+        if 
+
+
+
+
+
+
+
+
+
+        # # model_name compatability checks
+        if not isinstance(model_name, str):
+            raise TypeError('model_name must be type str')
+        elif model_name not in ['EQTransformer','PhaseNet']:
+            raise ValueError(f'model_name "{model_name}" not presently supported. Supported model_name values: "EQTransformer", "PhaseNet"')
+        else:    
+            self.model_name = model_name
+
+        # # weight_name compatability check
+        if not isinstance(weight_name, str):
+            raise TypeError('weight_name must be type str')
+        elif self.model_name == 'EQTransformer':
+            if weight_name not in ['ethz', 'geofon', 'instance', 'iquique', 'lendb', 'neic', 'obs', 'original', 'original_nonconservative', 'pnw', 'scedc', 'stead']:
+                raise ValueError(f'weight_name "{weight_name}" is not a currently supported SeisBench pretrained weight for EQTransformer')
+            else:
+                self.weight_name = weight_name
+        elif self.model_name == 'PhaseNet':
+            if weight_name not in ['diting', 'ethz', 'geofon', 'instance', 'iquique', 'lendb', 'neic', 'obs', 'original', 'scedc', 'stead']:
+                raise ValueError(f'weight_name "{weight_name}" is not a currently supported SeisBench pretrained weight for PhaseNet')
+            else:
+                self.weight_name = weight_name
+
+        # # window compatability checks
+        self.window = icc.bounded_intlike(
+            window,
+            name='window',
+            minimum=0,
+            maximum=None,
+            inclusive=False
+        )
+        # # blinding compatability checks
+        # checks for (2-)tuple input
+        if isinstance(blinding, tuple):
+            blinding_l = icc.bounded_intlike(
+                blinding[0],
+                name='blinding[0]',
+                minimum=0,
+                maximum=self.window/2,
+                inclusive=True
+            )
+            blinding_r = icc.bounded_intlike(
+                blinding[-1],
+                name='blinding[-1]',
+                minimum=0,
+                maximum=self.window/2,
+                inclusive=True
+            )
+            self.blinding = (blinding_l, blinding_r)
+        # checks for single value input
+        else:
+            val = icc.bounded_intlike(
+                blinding,
+                name='blinding',
+                minimum=0,
+                maximum=self.window/2,
+                inclusive=True
+            )
+            self.blinding = (val, val)
+        # # overlap compatability checks
+        self.overlap = icc.bounded_intlike(
+            overlap,
+            name='overlap',
+            minimum=0,
+            maximum=self.window-1,
+            inclusive=True
+        )
+        # # method compatablity checks
+        if not isinstance(method, str):
+            raise TypeError('method must be type str')
+        elif method.lower() not in ['max','mean']:
+            raise ValueError(f'method {method.lower()} not supported. Supported: "max", "mean"')
+        # # Calculate stacking attributes
+        # The maximum number of data this prediction buffer can hold
+        self._max_npts = (self.max_windows - 1)*(self.window - self.overlap)
+        # The number of consecutive stacked windows required to hit max/continuous stacking fold
+        self._burnin_ct = self.window//(self.window - self.overlap) + 1
+        # Model continuous and maximum stacking fold
+        self._max_fold, self._cont_fold = self.model_stacking_fold()
+        # Set the next expected window index counter as 0
+        self.ref_index = 0
+        # Create deque for current window index holdings
+        self.index_queue = deque([])
+
+        # Initialize stacked data and fold arrays
+        # NOTE: these are the definitive data attributes in this object
+        self.stack = np.full(shape=(self._max_npts), fill_value=np.nan, dtype=np.float32)
+        self.fold = np.full(shape=(self._max_npts), fill_value=0, dtype=np.int32)
+
+
+        # NTS: I keep waffling back and forth thinking this should
+        # either be included as an inheritance case to handle timing
+        # or simply as an output class-method (i.e., RtPredBuff.to_trace())
+        # that can have some 
+        # # initialize Trace representation
+        # # NOTE: the trace representaion is a mirror to the stack and fold data attributes
+        # super().__init__(data=[], header={})
+        # self._data_appended = False
+
+
+
+
+
+
+
+
+    def _get_candidate_k(self, index):
+        
+
+
+
+    def _shift_stack_k_samples(self, k_samp, safemode=True):
+        """
+        Shift and trim the contents of self.stack by k_samp samples
+        with a negative k_samp value indicating a left shift and
+        a positive k_samp value indicating a right shift.
+
+        Provides a safemode option (default True) that prevents
+        fully shifting contents of self.stack out of range
+
+        :: INPUTS ::
+        :param k_samp: [int] number of samples to shift the contents of
+                        self.stack by over axis 2 (k-axis), adhering to
+                        the [i, j, k] axis structure of SeisBench WaveformModel
+                        inputs and outputs
+        :param safemode: [bool] True - raise warning of k_samp > self.stack.shape[2]
+                                False - overwrite self.stack with a np.nan-filled
+                                        array matching self.stack.shape.
+        :: UPDATE ::
+        :attr stack: 
+        
+        :: OUTPUT ::
+        :return self:
+        """
+
+        if not isinstance(k_samp, int):
+            raise TypeError('k_samp must be type int')
+        elif abs(k_samp) > self.stack.shape[1]:
+            if safemode:
+                raise ValueError(f'k_samp step is larger than stack length ({self.stack.shape[1]})')
+            else:
+                self.stack = np.full(shape=self.stack.shape, fill_value=np.nan, dtype=np.float32)
+                return self
+        else:
+            pass
+        
+        tmp_stack = np.full(shape=self.stack.shape, fill_value=np.nan, dtype=np.float32)
+        if k_samp < 0:
+            tmp_stack[:,:-k_samp] = self.stack[:, k_samp:]
+        elif k_samp > 0:
+            tmp_stack[:, k_samp:] = self.stack[:, :-k_samp]
+        else:
+            tmp_stack = self.stack.copy()
+
+        self.stack = tmp_stack
+        return self
+
+
+    def _shift_fold_k_samples(self, k_samp, safemode=True):
+        """
+        Shift the contents of the self.fold vector by k_samp with
+        a negative k_samp value indicating a leftward shift of contents
+        and a positive k_samp value indicating a rightward shift.
+
+        Provides a safemode (default True) that prevents applying
+        shifts that would completely move 
+        """
+        if not isinstance(k_samp, int):
+            raise TypeError('k_samp must be type int')
+        elif abs(k_samp) > self.fold.shape[0]:
+            if safemode:
+                raise ValueError(f'k_samp step is larger than fold length ({self.stack.shape[0]})')
+            else:
+                self.fold = np.full(shape=self.fold.shape, fill_value=np.nan, dtype=np.float32)
+        else:
+            pass
+        
+        tmp_fold = np.full(shape=self.fold.shape, fill_value=np.nan, dtype=np.float32)
+        if k_samp < 0:
+            tmp_fold[:,:-k_samp] = self.fold[:, k_samp:]
+        elif k_samp > 0:
+            tmp_fold[:, k_samp:] = self.fold[:, :-k_samp]
+        else:
+            tmp_fold = self.fold.copy()
+
+        self.fold = tmp_fold
+        return self
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     # def _first_stack(self, vpred, vmeta):
     #     current_stack = self.data.copy()

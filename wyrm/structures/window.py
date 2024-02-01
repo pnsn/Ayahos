@@ -861,15 +861,14 @@ class InstWindow(Stream):
             "inst_code": self.inst_code,
             "component_order": self._target_order,
             "model_name": self._model_name,
-            "weight_name": None,
-            "label_codes": None,
             "samprate": self._target_sr,
-            "starttime": self._target_starttime,
-            "advance_npts": self._target_npts - self._target_overlap,
+            "window_npts": self._target_npts,
+            "overlap_npts": self._target_overlap,
             "blinding_npts": self._target_blinding,
             "fill_rule": self._missing_component_rule,
             "fill_status": self._window_fill_status,
             "fill_value": self.fill_value,
+            "starttime": self._target_starttime,
             "index": self.index,
         }
         return metadata

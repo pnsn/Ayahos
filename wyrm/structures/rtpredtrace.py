@@ -1,7 +1,7 @@
-from obspy import Trace, UTCDateTime
+from obspy import Trace, Stream, UTCDateTime
 import numpy as np
-from collections import deque
 import wyrm.util.input_compatability_checks as icc
+from wyrm.util.stacking import shift_trim
 import torch
 import seisbench.models as sbm
 
@@ -10,13 +10,14 @@ class RtPredBuff(object):
     Realtime Prediction Buffer - this class acts as a buffer for overlapping
     predictions 
     """
-    def __init__(self, max_length=120, stack_method='max'):
+    def __init__(self, max_length=120, stack_method='max', fill_value=None, model=None):
         """
         Initialize a Realtime Prediction Buffer object. Most attributes
         will be populated by the first data/metadata append process
         using the self.initial_append(pred, meta) method.
 
         :: INPUTS ::
+
         :param max_length: [float] maximum buffer length in seconds
         :param stack_method: [str] method for stacking non-blinded
                         overlapping predictions.
@@ -27,8 +28,28 @@ class RtPredBuff(object):
                             'avg': update stack for overlapping samples as:
                                   stack[i,j] = (stack[i,j]*fold[i,j] + 
                                                 pred[i,j])/(fold[i,j] + 1)
-        
+        :param fill_value: [scalar] placeholder value `fill_value` in 
+                        numpy.full() - used for empty data entry positions
+                        in self.stack and self.fold
+        :param model: [seisbench.models.WaveformModel] or None
+                        Model from which to scrape metadata (optional)        
         """
+        if not isinstance(model, (sbm.WaveformModel, type(None))):
+            raise TypeError('input model must be type seisbench.models.WaveformModel or None')
+        elif isinstance(model, sbm.WaveformModel):
+            self.model_name = model.name
+            self.label_names = model.labels
+            if self.label_names is not None:
+                self.label_codes = [_l[0].upper() for _l in model.labels]
+            else:
+                self.label_codes = None
+            self.window_npts = model.in_samples
+        else:
+            self.model_name = None
+            self.label_names = None
+            self.label_codes = None
+            self.window_npts = None
+
         ### Static parameters (once assigned) ###
         # max_length compatability checks
         # Maximum number of windows allowed in buffer
@@ -49,39 +70,30 @@ class RtPredBuff(object):
             self.stack_method = 'avg'
         else:
             raise ValueError(f'stack method "{stack_method}" is unsupported. Supported values: "max", "avg"')
+        
+        if not isinstance(fill_value, (int, float, type(None))):
+            raise TypeError('fill_value must be type int, float or None')
+        else:
+            self.fill_value = fill_value
+        
         # Instrument Metadata
         self.inst_code = None
-        # ML Model Metadata
-        self.model_name = None
-        self.weight_name = None
-        self.label_codes = None
-        self.label_names = None
         # Window Indexing Scalars
-        self.window_npts = None
         self.overlap_npts = None
         self.blinding_npts = None        
         # Sampling Rate (float)
         self.samprate = None
         # Placeholder for binary array for blinding samples
         self.blinding_array = None
-
-        ### Dynamic parameters ###
-        # NOTE: Reference Index Number / Start Time / array j_index
-        # refer to the first sample in the chronologically most-recent
-        # window successfully appended to the stack and fold arrays
-        # # Reference Window Index Number (int)
-        # self.ref_index = None
-        # Reference Window Start Time (UTCDateTime)
+        # Placeholder for timestamp corresponding to index 0
         self.t0 = None
-        self.ref_j = None
-
         # Dynamic data arrays
         self.stack = None
         self.fold = None
         # Has data appended flag
         self._has_data = False
 
-    def append(self, pred, meta, model, wgt_name):
+    def append(self, pred, meta, include_blinding=False):
         """
         Generalized wrapper for the methods:
             inital_append(pred, meta, model, wgt_name)
@@ -100,173 +112,44 @@ class RtPredBuff(object):
                     Shorthand name for the training weight set loaded
                     in `model`.
         """
+        # Run metadata validation 
+        vmeta = self.validate_metadata(meta)
+        # If this is an initial append, scrape metadata to fill out attributes
         if not self._has_data:
-            self.initial_append(pred, meta, model, wgt_name)
-        else:
-            self.subsequent_append(pred, meta)
-        return self
+            self._meta2attrib(vmeta)
+        # Run prediction validation
+        vpred = self.validate_prediction(pred)
+        # Get append instructions
+        instr = self.calculate_stacking_instructions(vmeta, include_blinding=include_blinding)
 
-
-    def initial_append(self, pred, meta, model, wgt_name):
-        """
-        Append the first data and metadata to this RtPredBuff and populate
-        most of its attributes.
-
-        :: INPUTS ::
-        :param pred: [numpy.ndarray] or [torch.Tensor]
-                    predicted value array output from SeisBench-hosted
-                    PyTorch model (a WaveformModel-child class)
-        :param meta: [dict]
-                    Dictionary containing metadata associated with
-                    pred
-        :param model: [seisbench.models.WaveformModel]
-                    Model object used to generate pred
-        :param wgt_name: [str]
-                    Shorthand name for the training weight set loaded
-                    in `model`.
-        """
-        
-        # If data have already been appended - raise error
-        if self._has_data:
-            raise RuntimeError('This RtPredBuff already contains data - canceling initial_append')
-        
-        else:
-            # Run validation checks on metadata
-            vmeta = self._validate_metadata(meta)
-            # Run validation checks on input model
-            if not isinstance(wgt_name, str):
-                raise TypeError('"wgt_name" must be type str')
-            else:
-                self.weight_name = wgt_name
-            if not isinstance(model, sbm.WaveformModel):
-                raise TypeError('input "model" must be a seisbench.models.WaveformModel class object')
-            else:
-                self.label_names = model.labels
-                self.label_codes = [_l[0].upper() for _l in model.labels]
-            # Assign attribute values from metadata and model info
-            self.inst_code = vmeta['inst_code']
-            self.model_name= vmeta['model_name']
-            self.window_npts = vmeta['window_npts']
-            self.overlap_npts = vmeta['overlap_npts']
-            self.blinding_npts = vmeta['blinding_npts']
-            self.samprate = vmeta['samprate']
-            self.t0 = vmeta['starttime']
-
-            # Get advance samples
-            self.adv_npts = self.window_npts - self.overlap_npts
-            # Get expected fold ceiling
-            self.max_fold = np.ceil((self.window_npts - 2*self.blinding_npts)/self.adv_npts)
-            # Get expected continuous maximum fold
-            self.cont_fold = np.floor((self.window_npts - 2*self.blinding_npts)/self.adv_npts)
-
-            # Populate stack and fold arrays
-            # Get mapping to max_length in samples
-            self.max_length_npts = int(np.round(self.max_length*self.samprate))
-            shp = (len(self.label_codes), self.max_length_npts)
-            # Populate stack and fold attributes
-            self.stack = np.full(shape=shp, fill_value=np.nan, dtype=np.float32)
-            self.fold = np.full(shape=self.max_length_npts, fill_value=np.nan, dtype=np.float32)
-            # Compose blinding array
-            self.blinding_array = np.ones(shape=self.window_npts)
-            self.blinding_array[:self.blinding_npts] = np.nan
-            self.blinding_array[-self.blinding_npts:] = np.nan
-
-            # Validate prediction
-            vpred = self._validate_prediction(pred)
-
-            # Insert prediction into stack
-            self.stack[:, :self.window_npts] = vpred * self.blinding_array
-            # Place information into fold
-            self.fold[:self.window_npts] = self.blinding_array
-            
-            # Update _has_data flag
+        # Handle different proposed shift cases
+        # If initial append
+        if not self._has_data:
+            # Apply instructions without restrictions
+            self._apply_stack_instructions(instr, vpred)
             self._has_data = True
-        return self
-
-    def subsequent_append(self, pred, meta):
-        """
-        Append an additional pred / meta pair to this RtPredBuff
-        object if it passes data checks. 
-        
-        :: INPUTS ::
-        :param pred: [numpy.ndarray] or [torch.Tensor]
-                    predicted value array output from SeisBench-hosted
-                    PyTorch model (a WaveformModel-child class)
-        :param meta: [dict]
-                    Dictionary containing metadata associated with
-                    pred
-    
-        """
-        # Validate metadata (and calculate index locations)
-        vmeta = self._validate_metadata(meta)
-        # Validate prediction
-        vpred = self._validate_prediction(pred)
-
-        # If proposed shift to data arrays is 0
-        if vmeta['delta i'] == 0:
-            print('noshift')
-            # Check that the candidate pred doesn't appear to be a repeat append
-            if vmeta['i0'] is None:
-                raise IndexError('proposed append appears to be repeat data - canceling append')
-            # Otherwise, append
-            else:
-                self._append_core_process(vpred, vmeta)
-        # If proposed shift to data arrays is leftward
-        elif vmeta['delta i'] < 0:
-            print('leftshift')
-            # Shift data unconditionally
-            breakpoint()
-            self.shift_data_arrays(vmeta['delta i'])
-            # And append
-            self._append_core_process(vpred, vmeta)
-        # If proposed shift to data arrays is rightward
-        elif vmeta['delta i'] > 0:
-            print('rightshift')
-            # Check that the shift will not truncate valid leading edge samples
-            last_non_nan_idx = np.max(np.argwhere(np.isfinite(self.fold)))
-            if self.max_length_npts - vmeta['delta i'] > last_non_nan_idx:
-                self.shift_data_arrays(vmeta['delta i'])
-                self._append_core_process(vpred, vmeta)
-            # If it would, kick error
-            else:
+        else:
+            # If proposal is a leftward shift of the stack (right-end append)
+            if instr['npts_right'] < 0:
+                # Apply instructions without restrictions
+                self._apply_stack_instructions(instr, vpred)
+            # if proposal is a no-shift stacking
+            elif instr['npts_right'] == 0:
+                # Check that the proposed stack still should have room to grow
                 breakpoint()
-                raise IndexError('proposed append would result in truncation of leading edge data - canceling append')
-            
+                if all(self.fold[instr['i0_s']:instr['i1_s']] >= self.cont_fold):
+                    raise BufferError('Attempting to append to a completely filled buffer zone - canceling append')
+                else:
+                    self._apply_stack_instructions(instr, vpred)
+            elif instr['npts_right'] > 0:
+                # Check if the proposed shift would truncate rightward (leading) samples
+                if any(self.fold[:-instr['npts_right']] > 0):
+                    raise BufferError('Attempting to append in a manner that would clip leading prediction values - canceling append')
+                else:
+                    self._apply_stack_instructions(instr, vpred)
         return self
-
-    def _append_core_process(self, vpred, vmeta):
-        """
-        Core process for append methods that handles stack_method choice
-        """
-        blinded_pred = vpred*self.blinding_array
-        i0 = vmeta['i0']
-        if i0 is None:
-            i0 = 0
-        i1 = vmeta['i1']
-        if i1 is None:
-            i1 = self.max_length_npts
-        for _i in range(len(self.label_codes)):
-            for _k, _j in enumerate(np.arange(i0, i1)):
-                # Get stack sample
-                sij = self.stack[_i, _j]
-                # Get fold sample
-                fj = self.fold[_j]
-                # Get blinding array sample
-                bk = self.blinding_array[_k]
-                # Get pred sample
-                pik = blinded_pred[_i, _k]
-                # If max stacking - apply that
-                if self.stack_method == 'max':
-                    self.stack[_i, _j] = np.nanmax([sij, pik])
-                # If avg stacking - apply that
-                elif self.stack_method == 'avg':
-                    self.stack[_i, _j] = np.nansum([sij*fj, pik*bk])/np.nansum([fj, bk])
-                # Update data fold
-                self.fold[_j] = np.nansum([fj, bk])
-
-
-
-    def _validate_metadata(self, meta):
+    
+    def validate_metadata(self, meta):
         """
         Validate input metadata dictionary against expected
         keys and value formats as defined in: 
@@ -328,7 +211,6 @@ class RtPredBuff(object):
         vmeta = meta.copy()
         # If this is not the RtPredBuff's first rodeo... (i.e., already has data appended)
         if self._has_data:
-            # Check that static values match
             # Compose check tuples
             self_list = [self.inst_code, self.model_name, self.window_npts, self.overlap_npts, self.blinding_npts, self.samprate]
             meta_list = ['inst_code','model_name','window_npts','overlap_npts','blinding_npts','samprate']
@@ -339,61 +221,70 @@ class RtPredBuff(object):
                     emsg = f'{_k} in meta ({meta[_k]}) does not match'
                     emsg += f' value recorded in this RtPredBuff ({_s})'
                     raise ValueError(emsg)
-        
-            # Calculate start and end indices for this pred given current indexing
-            dt = meta['starttime'] - self.t0
-            # Current pred start index
-            i0 = dt*self.samprate
-            if int(i0) != i0:
-                raise ValueError('proposed new data samples are misaligned with integer sample time-indexing in this RtPredBuff')
-            else:
-                i0 = int(i0)
-            # Current pred end index
-            i1 = i0 + self.window_npts
-            # Calculate data shift (if needed)
-            # if candidate window starts at the beginning of stack/fold
-            if i0 == 0:
-                vmeta.update({'i0': None,
-                              'i1': self.window_npts,
-                              'delta i': 0})
-            # If candidate window ends at the end of stack/fold
-            elif i1 == self.fold.shape[0]:
-                vmeta.update({'i0': i0,
-                              'i1': None,
-                              'delta i': 0})
-                
-            # If candidate window starts before the current stack/fold bounds
-            elif i0 < 0:
-                vmeta.update({'i0': None,
-                              'i1': self.window_npts,
-                              'delta i': -i0})
-            # if candidate window ends after the current stack/fold bounds
-            elif i1 > self.fold.shape[0]:
-                vmeta.update({'i0': self.fold.shape[0] - 1 - self.window_npts,
-                              'i1': None,
-                              'delta i':self.window_npts - i1})
-            # If candidate window is within the bounds of 
-            else:
-                vmeta.update({'i0': i0, 'i1': i1, 'delta i': 0})
-
         return vmeta
 
-        
-    # def _validate_model_info(self, vmeta, model, wgt_name):
-    #     # Raise errors if model and metadata have basic information mismatches
-    #     if not isinstance(model, sbm.WaveformModel):
-    #         raise TypeError('model must be a child-class of seisbench.models.WaveformModel')
-    #     elif model.name != self.model_name:
-    #         raise ValueError('model.name and self.model_name have different values')
-    #     elif model.in_samples != self.window_npts:
-    #         raise ValueError('model.in_samples and self.window_npts have different values')
-    #     elif model.labels != self.label_names:
-    #         raise ValueError('model.labels and self.model_names')
-    #     if not isinstance(wgt_name, str):
-    #         raise TypeError()
+    def _meta2attrib(self, vmeta, include_blinding=False):
+        """
+        Using a pre-validated meta(data) dictionary (see validate_metadata())
+        to populate most attributes in this RtPredBuff object
 
-       
-    def _validate_prediction(self, pred):
+        :: INPUTS ::
+        :param vmeta: [dict] dictionary formatted with prediction window metadata
+        :param fill_value: [scalar] value to pass to numpy.full as fill_value
+
+        :: ATTRIB ::
+        :inst_code: [str] instrument code used for validating subsequent appends
+        :model_name: [str] ML model name used for validating subsequent appends
+        :window_npts: [int] number of data points in each prediction array
+                        - This is the last axis in SeisBench formatting standards
+        :overlap_npts: [int] number of overlapping window samples expected
+        :blinding_npts: [int] number of samples on each side of a prediction that
+                    will be blinded (i.e. assigned fill_value)
+
+        """
+        # Metadata direct mappings
+        self.inst_code = vmeta['inst_code']
+        if self.model_name is None:
+            self.model_name= vmeta['model_name']
+        else:
+            if self.model_name != vmeta['model_name']:
+                raise ValueError('vmeta model_name does not match assigned model_name')
+        
+        if self.window_npts is None:
+            self.window_npts = vmeta['window_npts']
+        else:
+            if self.window_npts != vmeta['window_npts']:
+                raise ValueError('vmeta window_npts does not match assigned window_npts')
+        
+        self.overlap_npts = vmeta['overlap_npts']
+        self.blinding_npts = vmeta['blinding_npts']
+        self.samprate = vmeta['samprate']
+        if include_blinding:
+            self.t0 = vmeta['starttime']
+        else:
+            self.t0 = vmeta['starttime'] + (self.blinding_npts/self.samprate)
+        
+        # Get advance samples
+        self.adv_npts = self.window_npts - self.overlap_npts
+        # Get expected fold ceiling
+        self.max_fold = np.ceil((self.window_npts - 2*self.blinding_npts)/self.adv_npts)
+        # Get expected continuous maximum fold
+        self.cont_fold = np.floor((self.window_npts - 2*self.blinding_npts)/self.adv_npts)
+
+        # Populate stack and fold arrays
+        # Get mapping to max_length in samples
+        self.max_length_npts = int(np.round(self.max_length*self.samprate))
+        shp = (len(self.label_codes), self.max_length_npts)
+        # Populate stack and fold attributes
+        self.stack = np.full(shape=shp, fill_value=self.fill_value, dtype=np.float32)
+        self.fold = np.full(shape=self.max_length_npts, fill_value=0, dtype=np.int32)
+        # Compose blinding array
+        self.blinding_array = np.ones(shape=self.window_npts)
+        self.blinding_array[:self.blinding_npts] = self.fill_value
+        self.blinding_array[-self.blinding_npts:] = self.fill_value
+        return self
+
+    def validate_prediction(self, pred):
         """
         Validate candidate predicted value array against expected shape
         based on metadata scraped from the first 
@@ -432,106 +323,440 @@ class RtPredBuff(object):
         # Return altered data object
         return vpred
 
-       
-    # ##################################### #
-    # Data array shift and trim subroutines #
-    # ##################################### #
-    def shift_data_arrays(self, samps, safemode=True):
-        dt = samps/self.samprate
-        # Shift data
-        self._shift_stack_j_samples(samps, safemode=safemode)
-        self._shift_fold_i_samples(samps, safemode=safemode)
-        # Update referenceframes
-        self.t0 += dt
-        return self
-        
-
-    def _shift_stack_j_samples(self, j_samp, safemode=True):
+    def calculate_stacking_instructions(self, vmeta, include_blinding=True):
         """
-        Shift and trim the contents of self.stack by j_samp samples
-        with a negative j_samp value indicating a left shift and
-        a positive j_samp value indicating a right shift.
+        Calculate the instructions for stacking a new prediction window
+        to this RtPredBuff given pre-validated metadata (vmeta) and
+        attributes of this RtPredBuff object.
 
-        Provides a safemode option (default True) that prevents
-        fully shifting contents of self.stack out of range
+        :: INPUT ::
+        :param vmeta: [dict] dictionary output by validate_metadata()
+        (IN DEVELOPMENT)
+        :param include_blinding: [bool] should blinded samples be considered
+                        when calculating shifts?
+        :: OUTPUT ::
+        :return instructions: [dict] instructions for shifting/trimming
+                    and stacking in new window. 
+                    Keys:
+                        'npts_right': number of points to shift samples
+                            along their data axes. 
+                            Value should be passed to wyrm.util.stacking.shift_trim()
+                        'i0_p': None or positive [int]
+                            first sample from pred along data axis to include in
+                            stacking
+                        'i0_s': None or positive [int]
+                            first index value that the candidate prediction
+                            window will occupy AFTER the stack and fold have
+                            been shifted
+                        'i1_p': None or positive [int]
+                            last sample from pred along data axis to include
+                            in stacking
+                        'i1_s': None or positive [int]
+                            last index value that the candidate prediction
+                            window will occupy AFTER the stack and fold have
+                            been shifted
+        """
+        # Start construction of instructions
+        if include_blinding:
+            instructions = {'i0_p': None,
+                            'i1_p': None}
+            
+        else:
+            instructions = {'i0_p': self.blinding_npts,
+                            'i1_p': -self.blinding_npts}
+    
+        if not self._has_data:
+            instructions.update({'npts_right': 0,
+                                 'i0_s': None})
+            if include_blinding:
+                instructions.update({'i1_s': self.window_npts})
+            else:
+                instructions.update({'i1_s': self.window_npts - 2*self.blinding_npts})
+
+
+        elif self._has_data:
+            dt = vmeta['starttime'] - self.t0
+            # print(f'new append delta time is {dt}')
+            i0_init = dt*self.samprate
+            if int(i0_init) != i0_init:
+                raise ValueError('proposed new data samples are misaligned with integer sample time-indexing in this RtPredBuff')
+            # Otherwise, ensure i0 is type int
+            else:
+                i0_init = int(i0_init)
+            # Get index of last sample in candidate prediction window
+            i1_init = i0_init + self.window_npts
+
+            if not include_blinding:
+                i0_init += self.blinding_npts
+                i1_init -= self.blinding_npts
+
+            di = i1_init - i0_init
+
+            # If the start of pred is before the start of the current buffer timing
+            if i0_init < 0:
+                # Instruct shift to place the start of pred at the start of the buffer
+                instructions.update({'npts_right': -i0_init,
+                                     'i0_s': None,
+                                     'i1_s': i1_init})
+            # If the end of pred would be after the end of the current buffer timing
+            elif i1_init > self.max_length_npts:
+                # Instruct shift to place the end of pred at the end of the buffer
+                instructions.update({'npts_right': -di,
+                                     'i0_s': self.max_length_npts - di,
+                                     'i1_s': None})
+            # If pred entirely fits into the current bounds of buffer timing
+            else:
+                # Instruct no shift and provide in-place indices for stacking pred into buffer
+                instructions.update({'npts_right': 0,
+                                     'i0_s': i0_init,
+                                     'i1_s': i1_init})
+
+        return instructions
+
+    def _apply_stack_instructions(self, instructions, vpred):
+        """
+        Apply stacking instructions for validated prediction
+        array `vpred`, using general instructions set when this
+        RtPredBuff was initialized (i.e., stack_method & fill_value)
+        and window-specific instructions contained in `instructions`
 
         :: INPUTS ::
-        :param j_samp: [int] number of samples to shift the contents of
-                        self.stack by over axis 1 (k-axis), adhering to
-                        the [i, j] axis structure of individual prediction
-                        windows with i-axis for label type and j-axis for
-                        data point indexing
-        :param safemode: [bool] True - raise warning of j_samp > self.stack.shape[1]
-                                False - overwrite self.stack with a np.nan-filled
-                                        array matching self.stack.shape.
-        :: UPDATE ::
-        :attr stack: 
+        :param instructions: dictionary output by the calculate_stacking_instructions()
+                        class method for this specific prediction window
+        :param vpred: validated prediction window array
+                        see class method validate_prediction()
         
-        :: OUTPUT ::
-        :return self:
+        :: ALTERS ::
+        :attr stack:
+        :attr fold:
+        :attr t0: updates reference time for data-index position 0
         """
-
-        if not isinstance(j_samp, int):
-            raise TypeError('j_samp must be type int')
-        elif abs(j_samp) > self.stack.shape[1]:
-            if safemode:
-                raise ValueError(f'j_samp step is larger than stack length ({self.stack.shape[1]})')
-            else:
-                self.stack = np.full(shape=self.stack.shape, fill_value=np.nan, dtype=np.float32)
-                return self
-        else:
-            pass
+        instr = instructions
+        # print(f'shift will be {instr["npts_right"]}')
+        # Shift stack along 1-axis
+        self.stack = shift_trim(
+            self.stack,
+            instr['npts_right'],
+            axis=1,
+            fill_value=self.fill_value,
+            dtype=self.stack.dtype)
         
-        tmp_stack = np.full(shape=self.stack.shape, fill_value=np.nan, dtype=np.float32)
-        # Left shift along j-axis
-        if j_samp < 0:
-            tmp_stack[:, :-j_samp] = self.stack[:, j_samp:]
-        # Right shift along j-axis
-        elif j_samp > 0:
-            tmp_stack[:, j_samp:] = self.stack[:, :-j_samp]
-        # 0-shift handling
-        else:
-            tmp_stack = self.stack.copy()
-        # Update
-        self.stack = tmp_stack
+        # Shift fold along 0-axis
+        self.fold = shift_trim(
+            self.fold,
+            instr['npts_right'],
+            axis=0,
+            fill_value=self.fill_value,
+            dtype=self.fold.dtype)
+        
+        # Update t0
+        if instr['npts_right'] != 0:
+            self.t0 -= (instr['npts_right']/self.samprate)
+
+        # Update stack and fold entries with local variables
+        pred = vpred[:, instr['i0_p']:instr['i1_p']]
+        stack = self.stack[:, instr['i0_s']:instr['i1_s']]
+        fold = self.fold[instr['i0_s']:instr['i1_s']]
+        for _i in range(pred.shape[0]):
+            for _j in range(pred.shape[1]):
+                # Get individual samples
+                sij = stack[_i, _j]
+                pij = pred[_i, _j]
+                fj = fold[_j]
+                # Apply stacking_method instruction
+                if self.stack_method == 'max':
+                    stack[_i, _j] = np.nanmax([sij, pij])
+                elif self.stack_method == 'avg':
+                    stack[_i, _j] = np.nansum([sij * fj, pij])/np.nansum([fj, 1])
+                # Update fold entry for this sample
+                fold[_j] = np.nansum([fj, 1])
+        # Re-assign values to stack and fold
+        self.stack[:, instr['i0_s']:instr['i1_s']] = stack
+        self.fold[instr['i0_s']:instr['i1_s']] = fold
+
         return self
 
+    def to_stream(self, minimum_fold=1, fill_value=None):
+        st = Stream()
+        mask = self.fold >= minimum_fold
+        if fill_value is None:
+            fill_value = self.fill_value
+        n,s,l,bi = self.inst_code.split('.')
+        header = {'network': n,
+                  'station': s,
+                  'location': l,
+                  'starttime': self.t0,
+                  'sampling_rate': self.samprate}
+        for _i, _l in enumerate(self.label_codes):
+            _header = header.copy().update({'channel':f'{bi}{_l}'})
+            _tr = Trace(
+                data=np.ma.masked_array(
+                    data=self.stack[_i,:],
+                    mask=mask,
+                    fill_value=fill_value),
+                header=_header)
+            st += _tr
+        return st
 
-    def _shift_fold_i_samples(self, i_samp, safemode=True):
-        """
-        Shift the contents of the self.fold vector by i_samp with
-        a negative i_samp value indicating a leftward shift of contents
-        and a positive i_samp value indicating a rightward shift.
+    def __str__(self):
+        rstr = f'Instrument: {self.inst_code} Pred: {self.label_codes}\n'
+        rstr += f'Model: {self.model_name}\nOut_Samp: {self.window_npts} '
+        rstr += f'Blind_Samp: {self.blinding_npts} Over_Samp: {self.overlap_npts} Stack_Rule: {self.stack_method}\n'
+        return rstr
+    
+    def __repr__(self):
+        rstr = self.__str__()
+        return rstr
 
-        Provides a safemode (default True) that prevents applying
-        shifts that would completely move 
-        """
-        if not isinstance(i_samp, int):
-            raise TypeError('i_samp must be type int')
-        elif abs(i_samp) > self.fold.shape[0]:
-            if safemode:
-                raise ValueError(f'i_samp step is larger than fold length ({self.stack.shape[0]})')
-            else:
-                self.fold = np.full(shape=self.fold.shape, fill_value=np.nan, dtype=np.float32)
-        else:
-            pass
         
-        tmp_fold = np.full(shape=self.fold.shape, fill_value=np.nan, dtype=np.float32)
-        # Left shift along i-axis
-        if i_samp < 0:
-            tmp_fold[:-i_samp] = self.fold[i_samp:]
-        # Right shift along i-axis
-        elif i_samp > 0:
-            tmp_fold[i_samp:] = self.fold[:-i_samp]
-        # 0-shift handling
-        else:
-            tmp_fold = self.fold.copy()
+    # def _validate_model_info(self, vmeta, model, wgt_name):
+    #     # Raise errors if model and metadata have basic information mismatches
+    #     if not isinstance(model, sbm.WaveformModel):
+    #         raise TypeError('model must be a child-class of seisbench.models.WaveformModel')
+    #     elif model.name != self.model_name:
+    #         raise ValueError('model.name and self.model_name have different values')
+    #     elif model.in_samples != self.window_npts:
+    #         raise ValueError('model.in_samples and self.window_npts have different values')
+    #     elif model.labels != self.label_names:
+    #         raise ValueError('model.labels and self.model_names')
+    #     if not isinstance(wgt_name, str):
+    #         raise TypeError()
 
-        self.fold = tmp_fold
-        return self
+       
+#  def subsequent_append(self, pred, meta, include_blinding=False):
+#         """
+#         Append an additional pred / meta pair to this RtPredBuff
+#         object if it passes data checks. 
+        
+#         :: INPUTS ::
+#         :param pred: [numpy.ndarray] or [torch.Tensor]
+#                     predicted value array output from SeisBench-hosted
+#                     PyTorch model (a WaveformModel-child class)
+#         :param meta: [dict]
+#                     Dictionary containing metadata associated with
+#                     pred
+    
+#         """
+#         # Validate metadata (and calculate index locations)
+#         vmeta = self.validate_metadata(meta)
+#         instructions = self.calculate_stacking_instructions(vmeta, include_blinding=include_blinding)
+#         # Validate prediction
+#         vpred = self.validate_prediction(pred)
+
+#         # If proposed shift to data arrays is 0
+#         if vmeta['delta i'] == 0:
+#             print('noshift')
+#             # Check that the candidate pred doesn't appear to be a repeat append
+#             if vmeta['i0'] is None:
+#                 raise IndexError('proposed append appears to be repeat data - canceling append')
+#             # Otherwise, append
+#             else:
+#                 self._append_core_process(vpred, vmeta)
+#         # If proposed shift to data arrays is leftward
+#         elif vmeta['delta i'] < 0:
+#             print('leftshift')
+#             # Shift data unconditionally
+#             breakpoint()
+#             self.shift_data_arrays(vmeta['delta i'])
+#             # And append
+#             self._append_core_process(vpred, vmeta)
+#         # If proposed shift to data arrays is rightward
+#         elif vmeta['delta i'] > 0:
+#             print('rightshift')
+#             # Check that the shift will not truncate valid leading edge samples
+#             last_non_nan_idx = np.max(np.argwhere(np.isfinite(self.fold)))
+#             if self.max_length_npts - vmeta['delta i'] > last_non_nan_idx:
+#                 self.shift_data_arrays(vmeta['delta i'])
+#                 self._append_core_process(vpred, vmeta)
+#             # If it would, kick error
+#             else:
+#                 breakpoint()
+#                 raise IndexError('proposed append would result in truncation of leading edge data - canceling append')
+            
+#         return self
+    # def _append_core_process(self, vpred, vmeta):
+    #     """
+    #     Core process for append methods that handles stack_method choice
+    #     """
+    #     blinded_pred = vpred*self.blinding_array
+    #     i0 = vmeta['i0']
+    #     if i0 is None:
+    #         i0 = 0
+    #     i1 = vmeta['i1']
+    #     if i1 is None:
+    #         i1 = self.max_length_npts
+    #     for _i in range(len(self.label_codes)):
+    #         for _k, _j in enumerate(np.arange(i0, i1)):
+    #             # Get stack sample
+    #             sij = self.stack[_i, _j]
+    #             # Get fold sample
+    #             fj = self.fold[_j]
+    #             # Get blinding array sample
+    #             bk = self.blinding_array[_k]
+    #             # Get pred sample
+    #             pik = blinded_pred[_i, _k]
+    #             # If max stacking - apply that
+    #             if self.stack_method == 'max':
+    #                 self.stack[_i, _j] = np.nanmax([sij, pik])
+    #             # If avg stacking - apply that
+    #             elif self.stack_method == 'avg':
+    #                 self.stack[_i, _j] = np.nansum([sij*fj, pik*bk])/np.nansum([fj, bk])
+    #             # Update data fold
+    #             self.fold[_j] = np.nansum([fj, bk])
+       
+    # # ##################################### #
+    # # Data array shift and trim subroutines #
+    # # ##################################### #
+    # def shift_data_arrays(self, samps, safemode=True):
+    #     dt = samps/self.samprate
+    #     # Shift data
+    #     self._shift_stack_j_samples(samps, safemode=safemode)
+    #     self._shift_fold_i_samples(samps, safemode=safemode)
+    #     # Update referenceframes
+    #     self.t0 += dt
+    #     return self
+        
+
+    # def _shift_stack_j_samples(self, j_samp, safemode=True):
+    #     """
+    #     Shift and trim the contents of self.stack by j_samp samples
+    #     with a negative j_samp value indicating a left shift and
+    #     a positive j_samp value indicating a right shift.
+
+    #     Provides a safemode option (default True) that prevents
+    #     fully shifting contents of self.stack out of range
+
+    #     :: INPUTS ::
+    #     :param j_samp: [int] number of samples to shift the contents of
+    #                     self.stack by over axis 1 (k-axis), adhering to
+    #                     the [i, j] axis structure of individual prediction
+    #                     windows with i-axis for label type and j-axis for
+    #                     data point indexing
+    #     :param safemode: [bool] True - raise warning of j_samp > self.stack.shape[1]
+    #                             False - overwrite self.stack with a np.nan-filled
+    #                                     array matching self.stack.shape.
+    #     :: UPDATE ::
+    #     :attr stack: 
+        
+    #     :: OUTPUT ::
+    #     :return self:
+    #     """
+
+    #     if not isinstance(j_samp, int):
+    #         raise TypeError('j_samp must be type int')
+    #     elif abs(j_samp) > self.stack.shape[1]:
+    #         if safemode:
+    #             raise ValueError(f'j_samp step is larger than stack length ({self.stack.shape[1]})')
+    #         else:
+    #             self.stack = np.full(shape=self.stack.shape, fill_value=np.nan, dtype=np.float32)
+    #             return self
+    #     else:
+    #         pass
+        
+    #     tmp_stack = np.full(shape=self.stack.shape, fill_value=np.nan, dtype=np.float32)
+    #     # Left shift along j-axis
+    #     if j_samp < 0:
+    #         tmp_stack[:, :-j_samp] = self.stack[:, j_samp:]
+    #     # Right shift along j-axis
+    #     elif j_samp > 0:
+    #         tmp_stack[:, j_samp:] = self.stack[:, :-j_samp]
+    #     # 0-shift handling
+    #     else:
+    #         tmp_stack = self.stack.copy()
+    #     # Update
+    #     self.stack = tmp_stack
+    #     return self
+
+
+    # def _shift_fold_i_samples(self, i_samp, safemode=True):
+    #     """
+    #     Shift the contents of the self.fold vector by i_samp with
+    #     a negative i_samp value indicating a leftward shift of contents
+    #     and a positive i_samp value indicating a rightward shift.
+
+    #     Provides a safemode (default True) that prevents applying
+    #     shifts that would completely move 
+    #     """
+    #     if not isinstance(i_samp, int):
+    #         raise TypeError('i_samp must be type int')
+    #     elif abs(i_samp) > self.fold.shape[0]:
+    #         if safemode:
+    #             raise ValueError(f'i_samp step is larger than fold length ({self.stack.shape[0]})')
+    #         else:
+    #             self.fold = np.full(shape=self.fold.shape, fill_value=np.nan, dtype=np.float32)
+    #     else:
+    #         pass
+        
+    #     tmp_fold = np.full(shape=self.fold.shape, fill_value=np.nan, dtype=np.float32)
+    #     # Left shift along i-axis
+    #     if i_samp < 0:
+    #         tmp_fold[:-i_samp] = self.fold[i_samp:]
+    #     # Right shift along i-axis
+    #     elif i_samp > 0:
+    #         tmp_fold[i_samp:] = self.fold[:-i_samp]
+    #     # 0-shift handling
+    #     else:
+    #         tmp_fold = self.fold.copy()
+
+    #     self.fold = tmp_fold
+    #     return self
 
 
 
+
+    # def initial_append(self, pred, meta, model, wgt_name, include_blinding=False):
+    #     """
+    #     Append the first data and metadata to this RtPredBuff and populate
+    #     most of its attributes.
+
+    #     :: INPUTS ::
+    #     :param pred: [numpy.ndarray] or [torch.Tensor]
+    #                 predicted value array output from SeisBench-hosted
+    #                 PyTorch model (a WaveformModel-child class)
+    #     :param meta: [dict]
+    #                 Dictionary containing metadata associated with
+    #                 pred
+    #     :param model: [seisbench.models.WaveformModel]
+    #                 Model object used to generate pred
+    #     :param wgt_name: [str]
+    #                 Shorthand name for the training weight set loaded
+    #                 in `model`.
+    #     """
+        
+    #     # If data have already been appended - raise error
+    #     if self._has_data:
+    #         raise RuntimeError('This RtPredBuff already contains data - canceling initial_append')
+        
+    #     else:
+    #         # Run validation checks on metadata
+    #         vmeta = self.validate_metadata(meta)
+    #         # Run validation checks on input model
+    #         if not isinstance(wgt_name, str):
+    #             raise TypeError('"wgt_name" must be type str')
+    #         else:
+    #             self.weight_name = wgt_name
+    #         if not isinstance(model, sbm.WaveformModel):
+    #             raise TypeError('input "model" must be a seisbench.models.WaveformModel class object')
+    #         else:
+    #             self.label_names = model.labels
+    #             self.label_codes = [_l[0].upper() for _l in model.labels]
+                
+    #         # Assign attribute values from metadata contents
+    #         self._meta2attrib(vmeta)
+    #         # Validate prediction
+    #         vpred = self.validate_prediction(pred)
+    #         # Insert prediction into stack
+    #         if include_blinding:
+    #             self.stack[:, :self.window_npts] = vpred * self.blinding_array
+    #             # Place information into fold
+    #             self.fold[:self.window_npts] = self.blinding_array
+    #         else:
+    #             nbidx = self.window_npts - 2*self.blinding_npts
+    #             self.stack[:, :nbidx] = vpred[:, self.blinding_npts:-self.blinding_npts]
+    #             self.fold[:nbidx] = 1
+    #         # Update _has_data flag
+    #         self._has_data = True
+    #     return self
 
 
 

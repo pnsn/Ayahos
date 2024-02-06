@@ -5,7 +5,7 @@ from wyrm.wyrms.seisbenchwyrm import WaveformModelWyrm
 from wyrm.wyrms.windowwyrm import WindowWyrm
 from wyrm.structures.rtinststream import RtInstStream
 from tqdm import tqdm
-import wyrm.structures.rtpredtrace as rtp
+import wyrm.structures.rtpredbuff as rtp
 import numpy as np
 import matplotlib.pyplot as plt
 

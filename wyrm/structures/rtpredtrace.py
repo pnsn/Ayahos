@@ -4,6 +4,7 @@ import wyrm.util.input_compatability_checks as icc
 from wyrm.util.stacking import shift_trim
 import torch
 import seisbench.models as sbm
+import matplotlib.pyplot as plt
 
 class RtPredBuff(object):
     """
@@ -488,17 +489,40 @@ class RtPredBuff(object):
                         stack[_i, _j] = np.nansum([sij * fj, pij])/np.nansum([fj, 1])
                     except:
                         breakpoint()
-                # Update fold entry for this sample
-                fold[_j] = np.nansum([fj, 1])
+                # Update fold entry for this sample once per cycle across labels
+                if _i == 0:
+                    fold[_j] = np.nansum([fj, 1])
         # Re-assign values to stack and fold
         self.stack[:, instr['i0_s']:instr['i1_s']] = stack
         self.fold[instr['i0_s']:instr['i1_s']] = fold
 
         return self
+    
+    def plot(self):
+        fig = plt.figure()
+        gs = fig.add_gridspec(ncols=1, nrows=self.stack.shape[0] + 1)
+        axf = fig.add_subplot(gs[-1])
+        axs = [fig.add_subplot(gs[_i], sharex=axf) for _i in range(self.stack.shape[0])]
+        axs.append(axf)
+        t_vect = np.arange(0,self.fold.shape[0])/self.samprate
+        names = self.label_names + ['fold']
+        for _i in range(self.stack.shape[0]):
+            axs[_i].plot(t_vect, self.stack[_i, :])
+            axs[_i].set_ylabel(self.label_names[_i])
+            axs[_i].xaxis.set_visible(False)
+            if _i == 0:
+                axs[_i].set_title(f'{self.inst_code}\nModel: {self.model_name} | Stacking: {self.stack_method}')
+        axf.fill_between(t_vect, np.zeros(self.fold.shape), self.fold)
+        axf.set_ylabel('Data fold')
+        axf.set_xlabel(f'Elapsed time since {self.t0} [sec]')
+        out_dict = {'fig': fig}
+        out_dict.update(dict(zip(names, axs)))
+
+        return out_dict
 
     def to_stream(self, minimum_fold=1, fill_value=None):
         st = Stream()
-        mask = self.fold >= minimum_fold
+        mask = self.fold < minimum_fold
         if fill_value is None:
             fill_value = self.fill_value
         n,s,l,bi = self.inst_code.split('.')
@@ -508,14 +532,11 @@ class RtPredBuff(object):
                   'starttime': self.t0,
                   'sampling_rate': self.samprate}
         for _i, _l in enumerate(self.label_codes):
-            _header = header.copy().update({'channel':f'{bi}{_l}'})
-            _tr = Trace(
-                data=np.ma.masked_array(
-                    data=self.stack[_i,:],
-                    mask=mask,
-                    fill_value=fill_value),
-                header=_header)
-            st += _tr
+            header.update({'channel':f'{bi}{_l}'})
+            _tr = Trace(data=np.ma.masked_array(data=self.stack[_i,:],
+                                                mask=mask, fill_value=fill_value),
+                        header=header)
+            st.append(_tr)
         return st
 
     def __str__(self):

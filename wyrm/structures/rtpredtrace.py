@@ -136,14 +136,14 @@ class RtPredBuff(object):
             # if proposal is a no-shift stacking
             elif instr['npts_right'] == 0:
                 # Check that the proposed stack still should have room to grow
-                breakpoint()
                 if all(self.fold[instr['i0_s']:instr['i1_s']] >= self.cont_fold):
                     raise BufferError('Attempting to append to a completely filled buffer zone - canceling append')
                 else:
                     self._apply_stack_instructions(instr, vpred)
             elif instr['npts_right'] > 0:
                 # Check if the proposed shift would truncate rightward (leading) samples
-                if any(self.fold[:-instr['npts_right']] > 0):
+                if any(self.fold[-instr['npts_right']:] > 0):
+                    breakpoint()
                     raise BufferError('Attempting to append in a manner that would clip leading prediction values - canceling append')
                 else:
                     self._apply_stack_instructions(instr, vpred)
@@ -210,6 +210,7 @@ class RtPredBuff(object):
         
         vmeta = meta.copy()
         # If this is not the RtPredBuff's first rodeo... (i.e., already has data appended)
+        # Run additional checks to match instrument and model parameters
         if self._has_data:
             # Compose check tuples
             self_list = [self.inst_code, self.model_name, self.window_npts, self.overlap_npts, self.blinding_npts, self.samprate]
@@ -357,27 +358,33 @@ class RtPredBuff(object):
                             been shifted
         """
         # Start construction of instructions
+        # If blinding is included, result in an indexer of [:]
         if include_blinding:
-            instructions = {'i0_p': None,
+            instructions = {'i0_p': 0,
                             'i1_p': None}
-            
+        # Otherwise, provide an indexer of [blinding_npts:-blinding_npts]
         else:
             instructions = {'i0_p': self.blinding_npts,
                             'i1_p': -self.blinding_npts}
-    
+        # If this is for the first append
         if not self._has_data:
+            # Do not apply a shift and pin the first pred sample to the 0 index
             instructions.update({'npts_right': 0,
                                  'i0_s': None})
+            # If blinding is included, place the entire
             if include_blinding:
                 instructions.update({'i1_s': self.window_npts})
             else:
                 instructions.update({'i1_s': self.window_npts - 2*self.blinding_npts})
 
-
+        # If this is a subsequent append
         elif self._has_data:
+            # Get second-scaled time shift between the reference time and the
+            # starttime of the new data
             dt = vmeta['starttime'] - self.t0
-            # print(f'new append delta time is {dt}')
+            # Calculate the integer location of the first sample of the prediction window
             i0_init = dt*self.samprate
+            # Sanity check that location is integer-valued
             if int(i0_init) != i0_init:
                 raise ValueError('proposed new data samples are misaligned with integer sample time-indexing in this RtPredBuff')
             # Otherwise, ensure i0 is type int
@@ -385,23 +392,26 @@ class RtPredBuff(object):
                 i0_init = int(i0_init)
             # Get index of last sample in candidate prediction window
             i1_init = i0_init + self.window_npts
-
+            # If blinding samples are removed, adjust the indices
             if not include_blinding:
                 i0_init += self.blinding_npts
                 i1_init -= self.blinding_npts
+                di = self.window_npts - 2*self.blinding_npts
+            else:
+                di = self.window_npts
 
-            di = i1_init - i0_init
-
-            # If the start of pred is before the start of the current buffer timing
+                
+            # Handle data being appended occurs before the current buffered data
             if i0_init < 0:
                 # Instruct shift to place the start of pred at the start of the buffer
                 instructions.update({'npts_right': -i0_init,
                                      'i0_s': None,
-                                     'i1_s': i1_init})
+                                     'i1_s': di})
+
             # If the end of pred would be after the end of the current buffer timing
             elif i1_init > self.max_length_npts:
                 # Instruct shift to place the end of pred at the end of the buffer
-                instructions.update({'npts_right': -di,
+                instructions.update({'npts_right': self.max_length_npts - i1_init,
                                      'i0_s': self.max_length_npts - di,
                                      'i1_s': None})
             # If pred entirely fits into the current bounds of buffer timing
@@ -432,7 +442,7 @@ class RtPredBuff(object):
         :attr t0: updates reference time for data-index position 0
         """
         instr = instructions
-        # print(f'shift will be {instr["npts_right"]}')
+        print(f'shift will be {instr["npts_right"]}')
         # Shift stack along 1-axis
         self.stack = shift_trim(
             self.stack,
@@ -454,20 +464,30 @@ class RtPredBuff(object):
             self.t0 -= (instr['npts_right']/self.samprate)
 
         # Update stack and fold entries with local variables
+        # Extract/copy predicted values
         pred = vpred[:, instr['i0_p']:instr['i1_p']]
+        # Extract
         stack = self.stack[:, instr['i0_s']:instr['i1_s']]
         fold = self.fold[instr['i0_s']:instr['i1_s']]
         for _i in range(pred.shape[0]):
             for _j in range(pred.shape[1]):
                 # Get individual samples
-                sij = stack[_i, _j]
+                try:
+                    sij = stack[_i, _j]
+                except:
+                    breakpoint()
+                if sij == self.fill_value:
+                    sij = 0
                 pij = pred[_i, _j]
                 fj = fold[_j]
                 # Apply stacking_method instruction
                 if self.stack_method == 'max':
                     stack[_i, _j] = np.nanmax([sij, pij])
                 elif self.stack_method == 'avg':
-                    stack[_i, _j] = np.nansum([sij * fj, pij])/np.nansum([fj, 1])
+                    try:
+                        stack[_i, _j] = np.nansum([sij * fj, pij])/np.nansum([fj, 1])
+                    except:
+                        breakpoint()
                 # Update fold entry for this sample
                 fold[_j] = np.nansum([fj, 1])
         # Re-assign values to stack and fold

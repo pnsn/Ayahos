@@ -412,7 +412,7 @@ class RtPredBuff(object):
             elif i1_init > self.max_length_npts:
                 # Instruct shift to place the end of pred at the end of the buffer
                 instructions.update({'npts_right': self.max_length_npts - i1_init,
-                                     'i0_s': self.max_length_npts - di,
+                                     'i0_s': -di,
                                      'i1_s': None})
             # If pred entirely fits into the current bounds of buffer timing
             else:

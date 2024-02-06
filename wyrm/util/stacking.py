@@ -58,35 +58,48 @@ def shift_trim(array, npts_right, axis=None, fill_value=np.nan, dtype=None, **kw
 
         # If ellipsis use case
         if axis is None:
+            # rightshift
             if npts_right > 0:
-                tmp_array[npts_right, ...] = array.copy()[:-npts_right, ...]
+                tmp_array[npts_right:, ...] = array.copy()[:-npts_right, ...]
+            # leftshift
             elif npts_right < 0:
-                tmp_array[:-npts_right, ...] = array.copy()[npts_right:, ...]
-        elif axis + 1 == len(array.shape) or axis == -1:
+                tmp_array[:npts_right, ...] = array.copy()[-npts_right:, ...]
+            
+        elif axis + 1 == array.ndim or axis == -1:
+            # rightshift
             if npts_right > 0:
                 tmp_array[..., npts_right:] = array.copy()[..., :-npts_right]
+            # leftshift
             elif npts_right < 0:
-                tmp_array[..., :-npts_right] = array.copy()[..., npts_right:]
-        elif axis + 1 < len(array.shape):
-            target_index = '['
-            source_index = '['
-            for _i in range(len(array.shape)):
+                tmp_array[..., :npts_right] = array.copy()[..., -npts_right:]
+        # hack-ey use of 'eval' to do dynamic indexing
+        elif axis + 1 < array.ndim:
+            # Start eval strings for indexing
+            tmp_index = '['
+            array_index = '['
+            for _i in range(array.ndim):
+                # If this is not the target axis, insert :
                 if _i != axis:
-                    target_index += ':'
-                    source_index += ':'
+                    tmp_index += ':'
+                    array_index += ':'
+                # If this is the target axis
                 else:
+                    # append rightshift slice
                     if npts_right > 0:
-                        target_index += 'npts_right:'
-                        source_index += ':-npts_right'
+                        tmp_index += 'npts_right:'
+                        array_index += ':-npts_right'
+                    # append lefshift slice
                     elif npts_right < 0:
-                        target_index += ':-npts_right'
-                        source_index == 'npts_right:'
+                        tmp_index += ':-npts_right'
+                        array_index == 'npts_right:'
+                # If this isn't the final axis, append a comma
                 if _i + 1 < len(array.shape):
-                    target_index += ', '
-                    source_index += ', '
+                    tmp_index += ', '
+                    array_index += ', '
+                # Otherwise, close out eval str
                 else:
-                    target_index += ']'
-                    source_index += ']'
-            eval(f'tmp_array{target_index} = array.copy(){source_index}')
+                    tmp_index += ']'
+                    array_index += ']'
+            eval(f'tmp_array{tmp_index} = array.copy(){array_index}')
     
     return tmp_array

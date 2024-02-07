@@ -7,12 +7,18 @@
 
 :purpose:
     This module contains subroutines built on numpy that facilitate overlapping
-    array stacking and buffering, largely used by the RtPredBuff class.
+    array stacking and buffering, largely used by the RtPredBuff class, and
+    coherence/semblance methods based on code from the ELEP project (Yuan et al., 2023)
+
+:references:
+Yuan, C, Ni, Y, Lin, Y, Denolle, M, 2023, Better Together: Ensemble Learning for Earthquake
+    Detection and Phase Picking. IEEE Transactions on Geoscience and Remote Sensing, 61,
+    doi: 10.1109/TGRS.2023.3320148
 
 """
 
 import numpy as np
-
+import scipy.ndimage as nd
 
 def shift_trim(array, npts_right, axis=None, fill_value=np.nan, dtype=None, **kwargs):
     """
@@ -108,25 +114,113 @@ def shift_trim(array, npts_right, axis=None, fill_value=np.nan, dtype=None, **kw
     
     return tmp_array
 
+def sum2(arr):
+    """"""
+    return sum(arr)
 
-def roll_trim_rows(array, npts_right, fill_value=np.nan):
+def semblance(pstack, order=2, semb_npts=101, method='np', eta=1e-9, weighted=True):
     """
-    Another go at the same end-result
+    Calculate coherence via semblance analysis
+
+    Based on ELEP's ensemble_coherence method
+    Yuan et al. (2023) and references therein
+
+    Semblance:
+    semb(t) = MAX[m](P(m,t))*C[m,t](P(m,t))**order
+
+    Coherence:
+    C(P(t)) = sum[ti, tj]{sum[m]{P(m,t)**2}}/
+                M*sum[ti,tj]{sum[m]{P(m,t)**2}}
+
+    With M = the number of entries in "m"
+
+    :: INPUTS ::
+    :param pstack: [numpy.ndarray] containing stacked, synchronous windowed
+                    prediction outputs from "m" model-weight combinations
+                    for a given prediction label "l" time-series with sample
+                    points "t".
+                    This version requires the following axis assignment
+                        pstack [m, l, t]
+                            or
+                        pstack [m, t]
+                        when run in method = 'nd'
+                    or generally
+                        pstack [m, ..., t]
+                        when run in method = 'np'
+ 
+                    NOTE
+                    If mixing model types (i.e., EQTransformer & PhaseNet)
+                    care is required to make sure l-axis inputs are compatable
+                    i.e., use prediction labels 1 (P-detection) and 2 (S-detection)
+                        but likely omit label 0 (Detection for EqT, Noies for PhaseNet)
+
+    :param order: [int] exponent to apply to the semblance term
+    :param semb_npts: [int] number of samples in the window [ti, tj]
+            NOTE: computational cost scales roughly linearly with semb_npts
+    :param method: [str] method flag for the algorithm to produce rolling windows
+                of stack along the t_axis.
+            Supported:
+                "nd" - use SciPy's ndimage.generic_filter() method (after Yuan et al., 2023)
+                        Slightly less computationally efficient, but provides estimates
+                        at the edges of arrays.
+                "np" - use NumPy's lib.stride_tricks.sliding_window_view() method
+                        Slightly more computationally efficient, but blinds the
+                        first and last semb_npts/2 points in each row vector of semb_array
+                        (blind = np.nan)
+    :param eta: [float] very small floating point number added to the denominator of
+                C(P(t)) to prevent division by 0. Default is 1e-9. 
+    :param weighted: [bool] should the MAX weighting term be applied?
+                        True - yes
+                        False - weighting is uniformly 1
+                        
+    :: OUTPUT ::
+    :return semb_array: [numpy.ndarray] containing semblance time-series with dimensionality
+                semb_array [l, t] for input pstack [m, l, t]
+                    or
+                semb_array [t] for input pstack [m, t]
     """
-    if array.ndim == 1:
-        array = np.roll(array, npts_right, axis=0)
-        if npts_right > 0:
-            array[:npts_right] = fill_value
-        elif npts_right < 0:
-            array[npts_right:] = fill_value
-        
-    elif array.ndim == 2:
-        for _i in range(array.shape[0]):
-            array[_i, :] = np.roll(array[_i, :], npts_right, axis=0)
-            if npts_right > 0:
-                array[_i, :npts_right] = fill_value
-            elif npts_right < 0:
-                array[_i, npts_right:] = fill_value
-    return array
+    # TODO - compatability checks
+    if eta < 0:
+        eta = np.abs(eta)
+
+    if weighted:
+        # Calculate max weighting for each P(l,t)
+        wt = np.max(pstack,axis=0)
+    else:
+        wt = np.ones(shape=pstack.shape[1:])
+
+    if method == 'np':
+        # Preallocate output array
+        semb_array = np.full(shape=pstack.shape[1:],
+                            fill_value=np.nan,
+                            dtype=pstack.dtype)
+        # Get first write location
+        first_t = semb_npts//2
+        # Generate views
+        views = np.lib.stride_tricks.sliding_window_view(pstack, semb_npts, axis=-1)
+        # Calculate numerator
+        num = np.sum(np.sum(views, axis=0)**2, axis=-1)
+        # Calculate denominator
+        den = pstack.shape[0]*np.sum(views**2, axis=(0,-1))
+        semb_array[..., first_t: first_t + views.shape[-2]] = (num/(den+eta))**order
+        semb_array *= wt
+
+    if method == 'nd':
+        # Calculate internal sum/square combinations
+        sq_sums = np.sum(pstack, axis=0)**2
+        sum_sqs = np.sum(pstack**2, axis=0)
+        # Iterate across labels
+        if pstack.ndim == 3:
+            for _l in range(pstack.shape[1]):
+                # Apply 
+                num = nd.generic_filter(sq_sums[_l, :], sum, semb_npts, mode='constant')
+                den = pstack.shape[0]*nd.generic_filter(sum_sqs[_l, :], sum, semb_npts, mode='constant')
+                semb_array[_l, :] = wt[_l, :]*(num/(den+eta))**order
+        # Handle case where label axis has been squeezed
+        elif pstack.ndim == 2:
+            num = nd.generic_filter(sq_sums, sum, semb_npts, mode='constant')
+            den = pstack.shape[0]*nd.generic_filter(sum_sqs, sum, semb_npts, mode='constant')
+            semb_array = wt*(num/(den+eta))**order
 
 
+    return semb_array

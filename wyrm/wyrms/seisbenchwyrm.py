@@ -177,11 +177,20 @@ class WaveformModelWyrm(Wyrm):
         npy_preds = np.full(window_concat_tensor.shape,
                             fill_value=np.nan,
                             dtype=np.float32)
-        for _j, _p in enumerate(raw_preds):
-            if _p.device.type != 'cpu':
-                npy_preds[:, _j, :] = _p.detach().cpu().numpy()
-            else:
-                npy_preds[:, _j, :] = _p.detach().numpy()
+        # TODO: Need to change this from an iteration loop into an explicit
+        if isinstance(raw_preds, tuple):
+            raw_preds = torch.concat(raw_preds)
+        
+        if raw_preds.device.type != 'cpu':
+            npy_preds = raw_preds.detach().cpu().numpy().reshape(window_concat_tensor.shape)
+        else:
+            npy_preds = raw_preds.detach().numpy().reshape(window_concat_tensor.shape)
+
+        # for _i, _p in enumerate(raw_preds):
+        #     if _p.device.type != 'cpu':
+        #         npy_preds[_i, :, :] = _p.detach().cpu().numpy()
+        #     else:
+        #         npy_preds[_i, :, :] = _p.detach().numpy()
         return npy_preds
     
 

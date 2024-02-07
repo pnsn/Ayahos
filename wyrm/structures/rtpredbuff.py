@@ -1,17 +1,20 @@
 from obspy import Trace, Stream, UTCDateTime
 import numpy as np
 import wyrm.util.input_compatability_checks as icc
-from wyrm.util.stacking import shift_trim
+from wyrm.util.stacking import shift_trim, roll_trim_rows
 import torch
 import seisbench.models as sbm
 import matplotlib.pyplot as plt
+from time import time
+
+
 
 class RtPredBuff(object):
     """
     Realtime Prediction Buffer - this class acts as a buffer for overlapping
     predictions 
     """
-    def __init__(self, max_length=120, stack_method='max', fill_value=None, model=None):
+    def __init__(self, max_length=120, stack_method='max', fill_value=0., dtype=np.float32, model=None, debug=False):
         """
         Initialize a Realtime Prediction Buffer object. Most attributes
         will be populated by the first data/metadata append process
@@ -32,6 +35,8 @@ class RtPredBuff(object):
         :param fill_value: [scalar] placeholder value `fill_value` in 
                         numpy.full() - used for empty data entry positions
                         in self.stack and self.fold
+                        -- for compatability with ufunc this needs to be
+                        set to 0. (OBSOLITE AS OPTION)
         :param model: [seisbench.models.WaveformModel] or None
                         Model from which to scrape metadata (optional)        
         """
@@ -50,6 +55,11 @@ class RtPredBuff(object):
             self.label_names = None
             self.label_codes = None
             self.window_npts = None
+
+        if not isinstance(debug, bool):
+            raise TypeError('debug must be type bool')
+        else:
+            self.debug = debug
 
         ### Static parameters (once assigned) ###
         # max_length compatability checks
@@ -113,27 +123,49 @@ class RtPredBuff(object):
                     Shorthand name for the training weight set loaded
                     in `model`.
         """
+        if self.debug:
+            tick0 = time()
         # Run metadata validation 
         vmeta = self.validate_metadata(meta)
+        if self.debug:
+            tick1 = time()
+            print(f'validate metadata {tick1 - tick0:.3f} sec')
+            
         # If this is an initial append, scrape metadata to fill out attributes
         if not self._has_data:
             self._meta2attrib(vmeta)
+            if self.debug:
+                tick2 = time()
+                print(f'scraped metadata {tick2 - tick1:.3f} sec')
         # Run prediction validation
+        elif self.debug:
+            tick2 = time()
         vpred = self.validate_prediction(pred)
+        if self.debug:
+            tick3 = time()
+            print(f'validate prediction {tick3 - tick2:.3f} sec')
         # Get append instructions
         instr = self.calculate_stacking_instructions(vmeta, include_blinding=include_blinding)
-
+        if self.debug:
+            tick4 = time()
+            print(f'calc stacking instr {tick4 - tick3:.3f} sec')
         # Handle different proposed shift cases
         # If initial append
         if not self._has_data:
             # Apply instructions without restrictions
             self._apply_stack_instructions(instr, vpred)
             self._has_data = True
+            if self.debug:
+                tick5 = time()
+                print(f'apply stacking {tick5 - tick4:.3f}sec') 
         else:
             # If proposal is a leftward shift of the stack (right-end append)
             if instr['npts_right'] < 0:
                 # Apply instructions without restrictions
                 self._apply_stack_instructions(instr, vpred)
+                if self.debug:
+                    tick5 = time()
+                    print(f'apply stacking {tick5 - tick4:.3f}sec') 
             # if proposal is a no-shift stacking
             elif instr['npts_right'] == 0:
                 # Check that the proposed stack still should have room to grow
@@ -141,13 +173,18 @@ class RtPredBuff(object):
                     raise BufferError('Attempting to append to a completely filled buffer zone - canceling append')
                 else:
                     self._apply_stack_instructions(instr, vpred)
+                    if self.debug:
+                        tick5 = time()
+                        print(f'apply stacking {tick5 - tick4:.3f}sec') 
             elif instr['npts_right'] > 0:
                 # Check if the proposed shift would truncate rightward (leading) samples
                 if any(self.fold[-instr['npts_right']:] > 0):
-                    breakpoint()
                     raise BufferError('Attempting to append in a manner that would clip leading prediction values - canceling append')
                 else:
                     self._apply_stack_instructions(instr, vpred)
+                    if self.debug:
+                        tick5 = time()
+                        print(f'apply stacking {tick5 - tick4:.3f}sec') 
         return self
     
     def validate_metadata(self, meta):
@@ -225,7 +262,7 @@ class RtPredBuff(object):
                     raise ValueError(emsg)
         return vmeta
 
-    def _meta2attrib(self, vmeta, include_blinding=False):
+    def _meta2attrib(self, vmeta, include_blinding=False, dtype=np.float32):
         """
         Using a pre-validated meta(data) dictionary (see validate_metadata())
         to populate most attributes in this RtPredBuff object
@@ -278,8 +315,8 @@ class RtPredBuff(object):
         self.max_length_npts = int(np.round(self.max_length*self.samprate))
         shp = (len(self.label_codes), self.max_length_npts)
         # Populate stack and fold attributes
-        self.stack = np.full(shape=shp, fill_value=self.fill_value, dtype=np.float32)
-        self.fold = np.full(shape=self.max_length_npts, fill_value=0, dtype=np.int32)
+        self.stack = np.full(shape=shp, fill_value=self.fill_value, dtype=dtype)
+        self.fold = np.full(shape=self.max_length_npts, fill_value=0, dtype=self.stack.dtype)
         # Compose blinding array
         self.blinding_array = np.ones(shape=self.window_npts)
         self.blinding_array[:self.blinding_npts] = self.fill_value
@@ -460,42 +497,75 @@ class RtPredBuff(object):
             fill_value=self.fill_value,
             dtype=self.fold.dtype)
         
-        # Update t0
-        if instr['npts_right'] != 0:
-            self.t0 -= (instr['npts_right']/self.samprate)
-
+        # Benchmarking suggests that this method is slower by 3x
+        # if self.debug:
+        #     time1 = time()
+        # if instr['npts_right'] != 0:
+        #     self.stack = roll_trim_rows(self.stack, instr['npts_right'], fill_value=self.fill_value)
+        #     self.fold = roll_trim_rows(self.fold, instr['npts_right'], fill_value=self.fill_value)
+        #     self.t0 -= (instr['npts_right']/self.samprate)
+        # if self.debug:
+        #     time2 = time()
+        #     print(f'    rolled buffers {time2 - time1: .3f} sec')
+        
+        # OBSOLITE - runs several orders of magnitude slower than ufunc-facilitated operations
         # Update stack and fold entries with local variables
         # Extract/copy predicted values
-        pred = vpred[:, instr['i0_p']:instr['i1_p']]
-        # Extract
-        stack = self.stack[:, instr['i0_s']:instr['i1_s']]
-        fold = self.fold[instr['i0_s']:instr['i1_s']]
-        for _i in range(pred.shape[0]):
-            for _j in range(pred.shape[1]):
-                # Get individual samples
-                try:
-                    sij = stack[_i, _j]
-                except:
-                    breakpoint()
-                if sij == self.fill_value:
-                    sij = 0
-                pij = pred[_i, _j]
-                fj = fold[_j]
-                # Apply stacking_method instruction
-                if self.stack_method == 'max':
-                    stack[_i, _j] = np.nanmax([sij, pij])
-                elif self.stack_method == 'avg':
-                    try:
-                        stack[_i, _j] = np.nansum([sij * fj, pij])/np.nansum([fj, 1])
-                    except:
-                        breakpoint()
-                # Update fold entry for this sample once per cycle across labels
-                if _i == 0:
-                    fold[_j] = np.nansum([fj, 1])
-        # Re-assign values to stack and fold
-        self.stack[:, instr['i0_s']:instr['i1_s']] = stack
-        self.fold[instr['i0_s']:instr['i1_s']] = fold
-
+        # pred = vpred[:, instr['i0_p']:instr['i1_p']]
+        # # Extract
+        # stack = self.stack[:, instr['i0_s']:instr['i1_s']]
+        # fold = self.fold[instr['i0_s']:instr['i1_s']]
+        # # This is slow as a loop - vectorize with ufuncs
+        # for _i in range(pred.shape[0]):
+        #     for _j in range(pred.shape[1]):
+        #         # Get individual samples
+        #         try:
+        #             sij = stack[_i, _j]
+        #         except:
+        #             breakpoint()
+        #         if sij == self.fill_value:
+        #             sij = 0
+        #         pij = pred[_i, _j]
+        #         fj = fold[_j]
+        #         # Apply stacking_method instruction
+        #         if self.stack_method == 'max':
+        #             stack[_i, _j] = np.nanmax([sij, pij])
+        #         elif self.stack_method == 'avg':
+        #             try:
+        #                 stack[_i, _j] = np.nansum([sij * fj, pij])/np.nansum([fj, 1])
+        #             except:
+        #                 breakpoint()
+        #         # Update fold entry for this sample once per cycle across labels
+        #         if _i == 0:
+        #             fold[_j] = np.nansum([fj, 1])
+        # # Re-assign values to stack and fold
+        # self.stack[:, instr['i0_s']:instr['i1_s']] = stack
+        # self.fold[instr['i0_s']:instr['i1_s']] = fold
+            
+        # # ufunc-facilitated stacking # #
+        # Construct in-place prediction slice array
+        pred = np.full(self.stack.shape, fill_value=0., dtype=self.stack.dtype)
+        pred[:, instr['i0_s']:instr['i1_s']] = vpred[:, instr['i0_p']:instr['i1_p']]
+        # Construct in-place fold update array
+        nfold = np.zeros(shape=self.fold.shape, dtype=self.stack.dtype)
+        nfold[instr['i0_s']:instr['i1_s']] += 1
+        # Use fmax to update
+        if self.stack_method == 'max':
+            np.fmax(self.stack, pred, out=self.stack); #<- Run quiet
+            np.add(self.fold, nfold, out=self.fold);
+        elif self.stack_method == 'avg':
+            breakpoint()
+            # Add fold-scaled stack/prediction arrays
+            np.add(self.stack*self.fold, pred*nfold, out=self.stack);
+            # Update fold
+            np.add(self.fold, nfold, out=self.fold);
+            # Normalize by new fold to remove initial fold-rescaling
+            np.divide(self.stack, self.fold, out=self.stack, where=self.fold > 0);
+        # if self.stack_method == 'max':
+        #     self.stack = self.stack
+        if self.debug:
+            time3 = time()
+            print(f'    stacking ({self.stack_method}) {time3 - time2:.3f}sec')
         return self
     
     def plot(self):

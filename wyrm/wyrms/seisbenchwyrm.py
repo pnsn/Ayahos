@@ -1,9 +1,20 @@
+"""
+:module: wyrm.wyrms.prediction
+:author: Nathan T. Stevens
+:email: ntsteven (at) uw.edu
+:org: Pacific Northwest Seismic Network
+:license: AGPL-3.0
+
+:purpose:
+
+
+"""
+
 from collections import deque
 from wyrm.wyrms.wyrm import Wyrm
-# from wyrm.structures.rtinststream import RtInstStream
-# from wyrm.structures.rtpredtrace import RtPredTrace
 import wyrm.util.input_compatability_checks as icc
-from wyrm.structures.window import InstWindow
+from wyrm.structures.window import 
+from wyrm.structures.rtpredbuff import RtPredBuff
 import seisbench.models as sbm
 import numpy as np
 import torch
@@ -20,7 +31,7 @@ class WaveformModelWyrm(Wyrm):
         instance
     output - RtPredStream containing stacked predictions
     """
-    def __init__(self, model, weight_names, devicetype='cpu', max_length=180., max_pulse_size=1000, debug=False):
+    def __init__(self, model, weight_names, devicetype='cpu', max_length=180., max_pulse_size=1000, stack_method='max', debug=False):
         """
         Initialize a SeisBenchWyrm object
 
@@ -82,6 +93,16 @@ class WaveformModelWyrm(Wyrm):
             inclusive=False
         )
 
+        if not isinstance(stack_method, str):
+            raise TypeError('stack_method must be type str')
+        elif stack_method.lower() in ['max','maximum']:
+            self.stack_method='max'
+        elif stack_method.lower() in ['avg','mean']:
+            self.stack_method='avg'
+        else:
+            raise ValueError(f'stack_method {stack_method} not supported. Must be "max", "avg" or select aliases')
+        
+
         # Initialize Realtime Instrument Stream in PredTrace mode
         # self.buffer = RtInstStream(trace_type=RtPredTrace, max_length=max_length)
         # self.queue = deque([])
@@ -119,8 +140,10 @@ class WaveformModelWyrm(Wyrm):
                 print(f'Appending to tree ({time() - tick})')
             # Iterate across windows and append to tree
             for _i, _meta in enumerate(meta_list):
-                self._append_to_tree(_meta, npy_preds[_i, :, :], _n)
-        self._sort_tree_indices()
+                # self._append_to_tree(_meta, npy_preds[_i, :, :], _n)
+                self._append_to_predbuff_tree(_meta, npy_preds[_i, ...], _n)
+                
+        # self._sort_tree_indices()
         y = self.tree
         return y
 
@@ -177,24 +200,45 @@ class WaveformModelWyrm(Wyrm):
         npy_preds = np.full(window_concat_tensor.shape,
                             fill_value=np.nan,
                             dtype=np.float32)
-        # TODO: Need to change this from an iteration loop into an explicit
+        # Handle tuple output of EQTransformer
         if isinstance(raw_preds, tuple):
             raw_preds = torch.concat(raw_preds)
-        
+        # Reshape if needed
+        if raw_preds.shape != window_concat_tensor.shape:
+            raw_preds = raw_preds.reshape(window_concat_tensor.shape)
+        # Convert back to numpy, shift off non-CPU device if needed
         if raw_preds.device.type != 'cpu':
-            npy_preds = raw_preds.detach().cpu().numpy().reshape(window_concat_tensor.shape)
+            npy_preds = raw_preds.detach().cpu().numpy()
         else:
-            npy_preds = raw_preds.detach().numpy().reshape(window_concat_tensor.shape)
-
-        # for _i, _p in enumerate(raw_preds):
-        #     if _p.device.type != 'cpu':
-        #         npy_preds[_i, :, :] = _p.detach().cpu().numpy()
-        #     else:
-        #         npy_preds[_i, :, :] = _p.detach().numpy()
+            npy_preds = raw_preds.detach().numpy()
         return npy_preds
     
 
-    def _append_to_tree(self, meta, pred, wgt_name):
+    def _append_to_predbuff_tree(self, meta, pred, wgt_name):
+        inst_code = meta['inst_code']
+        if inst_code not in self.tree.keys():
+            self.tree.update({inst_code: 
+                              {wgt_name:
+                              RtPredBuff(max_length=self.max_length,
+                                         stack_method=self.stack_method,
+                                         model=self.model,
+                                         fill_value=0,
+                                         debug=self.debug)}})
+        elif wgt_name not in self.tree[inst_code].keys():
+            self.tree[inst_code].update({wgt_name:
+                                         RtPredBuff(max_length=self.max_length,
+                                                    stack_method=self.stack_method,
+                                                    model=self.model,
+                                                    debug=self.debug)})
+        try:
+            self.tree[inst_code][wgt_name].append(pred, meta)
+        except:
+            pass
+
+        return self
+
+
+    def _raw_append_to_tree(self, meta, pred, wgt_name):
         inst_code = meta['inst_code']
         idx = meta['index']
         # If completely new instrument branch
@@ -250,54 +294,3 @@ class WaveformModelWyrm(Wyrm):
         rstr = self.__repr__()
         return rstr
     
-
-
-    #  npy_preds = np.full(
-    #         shape = tensor.shape,
-    #         fill_value=np.nan,
-    #         dtype=np.float32
-    #     )
-
-    #     # Iterate across specified model_weight(s)
-    #     for _n in self.weight_names:
-    #         # Load model weights
-    #         if self.model.weights_docstring is None:
-    #             self.model.from_pretrained(_n)
-    #         elif _n not in self.model.weights_docstring:
-    #             self.model.from_pretrained(_n)
-    #         # Ensure model is on specified device
-    #         if self.model.device.type != self.device.type:
-    #             self.model.to(self.device)
-    #         ## !!! PREDICT !!! with check that data are on device ##
-    #         if model_inputs.device.type == self.device.type:
-    #             raw_preds = self.model(model_inputs)
-    #         else:
-    #             raw_preds = self.model(model_inputs.to(self.device))
-            
-    #         ## Detach predictions and split into tuples to pass onward
-    #         npy_preds = np.full(
-    #             shape=model_inputs.shape,
-    #             fill_value=np.nan,
-    #             dtype=np.float32
-    #         )
-    #         for _j, _p in enumerate(raw_preds):
-    #             if _p.device.type != 'cpu':
-    #                 npy_preds[:, _j, :] = _p.detach().cpu().numpy()
-    #             else:
-    #                 npy_preds[:, _j, :] = _p.detach().numpy()
-    #         # Split out windows and re-associate metadata with some updates
-    #         for _i, _pred in enumerate(npy_preds):
-    #             ometa = meta_list[_i].copy()
-    #             ometa.update({'weight_name': _n})
-    #             ometa.update({'label_codes': self.label_codes})
-    #             # Compose output dictionary
-    #             okey = f"{ometa['inst_code']}|{ometa['model_name']}|{ometa['weight_name']}"
-    #             out_branch = {
-    #                 okey: {
-    #                     'data': _pred,
-    #                     'meta': ometa,
-    #                     'index': ometa['index']
-    #                 }
-    #             }
-    #             # Append to queue
-    #             self.queue.appendleft(out_branch)

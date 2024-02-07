@@ -170,8 +170,8 @@ def semblance(pstack, order=2, semb_npts=101, method='np', eta=1e-9, weighted=Tr
     :param eta: [float] very small floating point number added to the denominator of
                 C(P(t)) to prevent division by 0. Default is 1e-9. 
     :param weighted: [bool] should the MAX weighting term be applied?
-                        True - yes
-                        False - weighting is uniformly 1
+                        True - weighting is via MAX (weighted semblance metric)
+                        False - weighting is uniformly 1 (original semblance metric)
                         
     :: OUTPUT ::
     :return semb_array: [numpy.ndarray] containing semblance time-series with dimensionality
@@ -224,3 +224,18 @@ def semblance(pstack, order=2, semb_npts=101, method='np', eta=1e-9, weighted=Tr
 
 
     return semb_array
+
+
+def generate_example_semblance_data(nlabels=2,mmodels=30):
+    # Create holder
+    pstack = np.zeros(shape=(mmodels, nlabels, 3000))
+    # Create example vector
+    vect = np.zeros(3000)
+    # Create a bell-curvey probability distribution
+    vect[1000:1009] = np.array([0.01,0.03,0.1,0.3,1,0.3,0.1,0.03,0.01])
+    # Iterate across model and label indices
+    for _m in range(mmodels):
+        for _l in range(nlabels):
+            # Perturb example vector with roll and add to pstack
+            pstack[_m, _l, :] = np.roll(vect.copy(), (_m+_l)%4 + _l)
+    return pstack

@@ -102,14 +102,6 @@ class WaveformModelWyrm(Wyrm):
         else:
             raise ValueError(f'stack_method {stack_method} not supported. Must be "max", "avg" or select aliases')
         
-
-        # Initialize Realtime Instrument Stream in PredTrace mode
-        # self.buffer = RtInstStream(trace_type=RtPredTrace, max_length=max_length)
-        # self.queue = deque([])
-
-        # Start layered dict tree {NSLI}{meta}{metadata}
-        #                               {wgt1}{tensor}
-        #                               {wgt2}{tensor}
         self.tree = {}
 
     def pulse(self, x):

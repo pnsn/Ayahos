@@ -256,10 +256,10 @@ class RtInstStream(dict):
             out = Stream()
         elif alt_format.lower() == "list":
             out = []
-        else:
+        elif alt_format is None:
             out = RtInstStream(max_length=self.max_length, id_fmt=self.id_fmt)
         for _k1 in fnmatch.filter(self.keys(), k1):
-            for _k2 in fnmatch.filter(self[k1].keys(), k2):
+            for _k2 in fnmatch.filter(self[_k1].keys(), k2):
                 if as_copy:
                     rtbt = self[k1][k2].copy()
                 else:

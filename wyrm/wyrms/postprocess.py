@@ -1,5 +1,5 @@
 from wyrm.util.stacking import semblance
-from wyrm.wyrms.windowwyrm import WindowWyrm
+from wyrm.wyrms.window import WindowWyrm
 import wyrm.util.input_compatability_checks as icc
 import inspect
 

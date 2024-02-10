@@ -2,7 +2,7 @@ from obspy import read, UTCDateTime
 from importlib import reload
 import seisbench.models as sbm
 from wyrm.wyrms.seisbenchwyrm import WaveformModelWyrm
-from wyrm.wyrms.windowwyrm import WindowWyrm
+from wyrm.wyrms.window import WindowWyrm
 from wyrm.structures.rtinststream import RtInstStream
 from tqdm import tqdm
 import wyrm.structures.rtpredbuff as rtp

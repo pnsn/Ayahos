@@ -1,5 +1,5 @@
-from wyrm.wyrms.windowwyrm import WindowWyrm
-from wyrm.wyrms.wyrm import Wyrm
+from wyrm.wyrms.window import WindowWyrm
+from wyrm.wyrms.base import Wyrm
 from wyrm.structures.rtbufftrace import RtBuffTrace
 from wyrm.structures.rtinststream import RtInstStream
 from collections import deque

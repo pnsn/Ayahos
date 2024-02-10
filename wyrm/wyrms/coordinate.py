@@ -1,4 +1,4 @@
-from wyrm.wyrms.tubewyrm import Tubewyrm
+from wyrm.wyrms.sequence import Tubewyrm
 from threading import Thread
 from time import sleep
 import pandas as pd

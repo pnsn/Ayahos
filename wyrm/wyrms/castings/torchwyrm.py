@@ -1,6 +1,6 @@
 import torch
 import seisbench.models as sbm
-from wyrm.wyrms.wyrm import Wyrm
+from wyrm.wyrms.base import Wyrm
 import fnmatch
 import numpy as np
 from collections import deque

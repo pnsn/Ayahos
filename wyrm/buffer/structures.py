@@ -101,20 +101,28 @@ class TieredBuffer(dict):
                 self[_k0][_k1].method(*args, **kwargs)
         return self
 
-    def append(self, obj, TK0_eval_str='.id[:-1]', TK1_eval_str='.id[-1]', **options):
+    def append(self, obj, TK0, TK1, **options):
         """
         Append a single object to a single buffer object in this TieredBuffer using
         the buffer_object.append() method
         """
-        TK0 = eval(f'obj{TK0_eval_str}')
-        TK1 = eval(f'obj{TK1_eval_str}')
+        # TK0 = eval(f'obj{TK0_eval_str}')
+        # TK1 = eval(f'obj{TK1_eval_str}')
         self.add_branch(TK0, TK1=TK1)
         self[TK0][TK1].append(obj, **options)
         return self
     
 
-    def __repr__(self, extended=False)
+    def __repr__(self, extended=False):
+        if isinstance(self.buff_class, TraceBuff):
+        
+        elif isinstance(self.buff_class, PredBuff):
+            
 
 
-    def __bufftrace_rline__(self):
-        if not isinstance(self.buff_class, BuffTrace):
+    def _trace_buff_rline(self, extended=False):
+
+    def _pred_buff_rline(self, extended=False):
+
+
+    

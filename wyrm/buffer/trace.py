@@ -6,12 +6,12 @@
 :license: AGPL-3.0
 
 :purpose:
-    This module contains the class definition for BuffTrace
+    This module contains the class definition for TraceBuff
     which is an adaptation of the obspy.realtime.rttrace.RtTrace
     class in ObsPy that provides further development of handling
     gappy, asyncronous data packet sequencing and fault tolerance
     against station acquisition configuration changes without having
-    to re-initialize the BuffTrace object.
+    to re-initialize the TraceBuff object.
 """
 
 from obspy import Trace, Stream
@@ -20,7 +20,7 @@ from copy import deepcopy
 import wyrm.util.input_compatability_checks as icc
 
 
-class BuffTrace(Trace):
+class TraceBuff(Trace):
     """
     Adapted version of the obspy.realtime.rttrace.RtTrace class
     that provides handling for gappy data that is not developed
@@ -42,7 +42,7 @@ class BuffTrace(Trace):
         interpolation_samples=-1
     ):
         """
-        Initialize an empty BuffTrace object
+        Initialize an empty TraceBuff object
 
         :: INPUTS ::
         :param max_length: [int], [float], or [None]
@@ -52,9 +52,9 @@ class BuffTrace(Trace):
                             max_length is not None
         :param fill_value: [None], [float], or [int]
                             fill_value to assign to all masked
-                            arrays associated with this BuffTrace
+                            arrays associated with this TraceBuff
         """
-        super(BuffTrace, self).__init__()
+        super(TraceBuff, self).__init__()
         # Compatability check for max_length
         self.max_length = icc.bounded_floatlike(
             max_length, name="max_length", minimum=0.0, maximum=None, inclusive=False
@@ -91,7 +91,7 @@ class BuffTrace(Trace):
         # Set initial state of have_appended trace
         self._have_appended_trace = False
         # Initialize trace contents with an empty trace
-        # super(BuffTrace, self).__init__(data=np.array([]), header=None)
+        # super(TraceBuff, self).__init__(data=np.array([]), header=None)
         # super().__init__()
         # Initialize buffer statistics parameters
         self.filled_fraction = 0
@@ -99,33 +99,33 @@ class BuffTrace(Trace):
 
     def copy(self):
         """
-        Create a deepcopy of this BuffTrace
+        Create a deepcopy of this TraceBuff
         """
         return deepcopy(self)
 
     def __eq__(self, other):
         """
-        Implement rich comparison of BuffTrace objects for "==" operator.
+        Implement rich comparison of TraceBuff objects for "==" operator.
 
         Traces are the same if their data, stats, and mask arrays are the same
         """
-        if not isinstance(other, BuffTrace):
+        if not isinstance(other, TraceBuff):
             return False
         else:
-            return super(BuffTrace, self).__eq__(other)
+            return super(TraceBuff, self).__eq__(other)
 
     def to_trace(self):
         """
         Return a deepcopy obspy.core.trace.Trace representation
-        sof this BuffTrace object
+        sof this TraceBuff object
         """
         tr = Trace(data=self.copy().data, header=self.copy().stats)
         return tr
 
     def enforce_max_length(self):
         """
-        Enforce max_length on data in this BuffTrace using
-        the endtime of the BuffTrace as the reference datum
+        Enforce max_length on data in this TraceBuff using
+        the endtime of the TraceBuff as the reference datum
         and trimming using _ltrim (left-trim) if the data length
         exceeds self.max_length in seconds
 
@@ -254,7 +254,7 @@ class BuffTrace(Trace):
             self.stats = tr.stats
             self.enforce_max_length()._update_buffer_stats()
         else:
-            emsg = f"BuffTrace({self.id}).append "
+            emsg = f"TraceBuff({self.id}).append "
             emsg += f"produced {len(st)} distinct traces "
             emsg += "rather than 1 expected. Canceling append."
             print(emsg)
@@ -277,8 +277,8 @@ class BuffTrace(Trace):
         :param trace: [obspy.core.trace.Trace] candidate trace to append
 
         :: ATTRIBUTES USED ::
-        :attrib data: BuffTrace data array
-        :attrib stats: BuffTrace metadata
+        :attrib data: TraceBuff data array
+        :attrib stats: TraceBuff metadata
         :attrib method: kwarg value passed to obspy.Stream.merge()
         :attrib interpolation_samples: kwarg value passed to obspy.Stream.merge
         """
@@ -303,7 +303,7 @@ class BuffTrace(Trace):
             self.stats = tr.stats
             self.enforce_max_length()._update_buffer_stats()
         else:
-            emsg = f"BuffTrace({self.id}).append "
+            emsg = f"TraceBuff({self.id}).append "
             emsg += f"produced {len(st)} distinct traces "
             emsg += "rather than 1 expected. Canceling append."
             print(emsg)
@@ -311,14 +311,14 @@ class BuffTrace(Trace):
 
     def _assess_relative_timing(self, trace):
         """
-        Assesss the relative start/endtimes of BuffTrace and candidate trace
+        Assesss the relative start/endtimes of TraceBuff and candidate trace
         :: INPUT ::
         :param trace: [obspy.core.trace.Trace] candidate trace
 
         :: OUTPUT ::
-        :return status: [str] 'leading' - trace is entirely before this BuffTrace
-                              'trailing' - trace is entirely after this BuffTrace
-                              'overlapping' - trace overlaps with this BuffTrace
+        :return status: [str] 'leading' - trace is entirely before this TraceBuff
+                              'trailing' - trace is entirely after this TraceBuff
+                              'overlapping' - trace overlaps with this TraceBuff
                               None - in the case where something goes wrong with
                                     types of timing information
         :return gap_sec: [float] - in the case of 'leading' and 'trailing' this is
@@ -418,7 +418,7 @@ class BuffTrace(Trace):
     def _update_buffer_stats(self):
         """
         Update the self.filled_fraction and self.valid_fraction
-        attributes of this BuffTrace with its current contents
+        attributes of this TraceBuff with its current contents
         """
         self.filled_fraction = self.get_filled_fraction()
         self.valid_fraction = self.get_unmasked_fraction()
@@ -427,7 +427,7 @@ class BuffTrace(Trace):
     def get_filled_fraction(self):
         """
         Get the fractional amount of data (masked and unmasked)
-        present in this BuffTrace relative to self.max_length
+        present in this TraceBuff relative to self.max_length
         """
         ffnum = self.stats.endtime - self.stats.starttime
         ffden = self.max_length
@@ -444,15 +444,15 @@ class BuffTrace(Trace):
         :: INPUTS ::
         :param starttime: [None] or [obspy.UTCDateTime] starttime to pass
                             to obspy.Trace.trim. None input uses starttime
-                            of this BuffTrace
+                            of this TraceBuff
         :param endtime: [None] or [obspy.UTCDateTime] endtime to pass
                             to obspy.Trace.trim. None input uses endtime
-                            of this BuffTrace
+                            of this TraceBuff
                             NOTE: trim operations are conducted on a temporary
-                            copy of this BuffTrace and the trim uses pad=True
+                            copy of this TraceBuff and the trim uses pad=True
                             and fill_value=None to generate masked samples
                             if the specified start/endtimes lie outside the
-                            bounds of data in this BuffTrace
+                            bounds of data in this TraceBuff
         :param wgt_taper_sec: [float] non-negative, finite number of seconds
                             that a specified taper function should last on
                             each end of the candidate window. Value of 0
@@ -480,7 +480,7 @@ class BuffTrace(Trace):
     def get_unmasked_fraction(self, wgt_taper_sec=0.0, wgt_taper_type="cosine"):
         """
         Get the fractional amount of unmasked data present in
-        this BuffTrace, or a specified time slice of the data.
+        this TraceBuff, or a specified time slice of the data.
         Options are provided to introduce a tapered down-weighting
         of data on either end of the buffer or specified slice of
         the data
@@ -620,13 +620,13 @@ class BuffTrace(Trace):
     def __str__(self):
         # , extended=True, disc=30, showkey=False):
         """
-        Return short summary string of the current BuffTrace
+        Return short summary string of the current TraceBuff
         with options for displaying buffer status graphically
 
         :: INPUTS ::
         :param extended: [bool] show buffer status?
 
-        ..see BuffTrace._display_buff_status() for
+        ..see TraceBuff._display_buff_status() for
         :param disc: [int]
         :param showkey: [bool]
         """

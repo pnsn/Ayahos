@@ -1,4 +1,4 @@
-from wyrm.wyrms.wyrm import Wyrm
+from wyrm.wyrms.base import Wyrm
 from wyrm.message.trace import TraceMsg
 from wyrm.structures.castings.sncl_dict import RtBuff_Dict
 from copy import deepcopy

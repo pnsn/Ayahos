@@ -9,12 +9,12 @@ from time import time
 
 
 
-class RtPredBuff(object):
+class PredBuff(object):
     """
     Realtime Prediction Buffer - this class acts as a buffer for overlapping
     predictions 
     """
-    def __init__(self, max_length=120, stack_method='max', fill_value=0., dtype=np.float32, model=None, debug=False):
+    def __init__(self, model=None, max_length=120, stack_method='max', fill_value=0., dtype=np.float32, debug=False):
         """
         Initialize a Realtime Prediction Buffer object. Most attributes
         will be populated by the first data/metadata append process
@@ -82,11 +82,14 @@ class RtPredBuff(object):
         else:
             raise ValueError(f'stack method "{stack_method}" is unsupported. Supported values: "max", "avg"')
         
-        if not isinstance(fill_value, (int, float, type(None))):
-            raise TypeError('fill_value must be type int, float or None')
-        else:
-            self.fill_value = fill_value
+        # if not isinstance(fill_value, (int, float, type(None))):
+        #     raise TypeError('fill_value must be type int, float or None')
+        # else:
+        #     # self.fill_value = fill_value
         
+        # Set self.fill_value to default for ufunc
+        self.fill_value = 0.
+
         # Instrument Metadata
         self.inst_code = None
         # Window Indexing Scalars
@@ -247,7 +250,7 @@ class RtPredBuff(object):
             raise TypeError(emsg)
         
         vmeta = meta.copy()
-        # If this is not the RtPredBuff's first rodeo... (i.e., already has data appended)
+        # If this is not the PredBuff's first rodeo... (i.e., already has data appended)
         # Run additional checks to match instrument and model parameters
         if self._has_data:
             # Compose check tuples
@@ -258,14 +261,14 @@ class RtPredBuff(object):
             for _s, _k in check_tuples:
                 if _s != meta[_k]:
                     emsg = f'{_k} in meta ({meta[_k]}) does not match'
-                    emsg += f' value recorded in this RtPredBuff ({_s})'
+                    emsg += f' value recorded in this PredBuff ({_s})'
                     raise ValueError(emsg)
         return vmeta
 
     def _meta2attrib(self, vmeta, include_blinding=False, dtype=np.float32):
         """
         Using a pre-validated meta(data) dictionary (see validate_metadata())
-        to populate most attributes in this RtPredBuff object
+        to populate most attributes in this PredBuff object
 
         :: INPUTS ::
         :param vmeta: [dict] dictionary formatted with prediction window metadata
@@ -365,8 +368,8 @@ class RtPredBuff(object):
     def calculate_stacking_instructions(self, vmeta, include_blinding=True):
         """
         Calculate the instructions for stacking a new prediction window
-        to this RtPredBuff given pre-validated metadata (vmeta) and
-        attributes of this RtPredBuff object.
+        to this PredBuff given pre-validated metadata (vmeta) and
+        attributes of this PredBuff object.
 
         :: INPUT ::
         :param vmeta: [dict] dictionary output by validate_metadata()
@@ -424,7 +427,7 @@ class RtPredBuff(object):
             i0_init = dt*self.samprate
             # Sanity check that location is integer-valued
             if int(i0_init) != i0_init:
-                raise ValueError('proposed new data samples are misaligned with integer sample time-indexing in this RtPredBuff')
+                raise ValueError('proposed new data samples are misaligned with integer sample time-indexing in this PredBuff')
             # Otherwise, ensure i0 is type int
             else:
                 i0_init = int(i0_init)
@@ -465,7 +468,7 @@ class RtPredBuff(object):
         """
         Apply stacking instructions for validated prediction
         array `vpred`, using general instructions set when this
-        RtPredBuff was initialized (i.e., stack_method & fill_value)
+        PredBuff was initialized (i.e., stack_method & fill_value)
         and window-specific instructions contained in `instructions`
 
         :: INPUTS ::
@@ -619,7 +622,30 @@ class RtPredBuff(object):
         rstr = self.__str__()
         return rstr
 
+
+
+class PredBuffMultiWgt(PredBuff):
+
+    def __init__(self, model, wgt_name_list, max_length=120., stack_method='max', dtype=np.float32, debug=False):
+        # Inherit PredBuff 
+        super().__init__(max_length=max_length, stack_method=stack_method, model=model, dtype=dtype, debug=debug)
         
+        # Compat. checks for wgt_name_list
+        if isinstance(wgt_name_list, str):
+            if wgt_name_list in self.model.list_pretrained()
+                self.wgt_name_list = [wgt_name_list]
+        elif isinstance(wgt_name_list, list):
+            if all(isinstance(_w, str) for _w in wgt_name_list):
+                self.wgt_name_list = wgt_name_list
+            else:
+                raise TypeError('Entries in wgt_name_list are not type str')
+        
+        # Predefine some dimensions
+        self.stack_j = len(self.label_codes)
+        self.stack_k = len(self.wgt_name_list)
+        self.fold_j = len(self.wgt_name_list)
+        self.
+
     # def _validate_model_info(self, vmeta, model, wgt_name):
     #     # Raise errors if model and metadata have basic information mismatches
     #     if not isinstance(model, sbm.WaveformModel):
@@ -636,7 +662,7 @@ class RtPredBuff(object):
        
 #  def subsequent_append(self, pred, meta, include_blinding=False):
 #         """
-#         Append an additional pred / meta pair to this RtPredBuff
+#         Append an additional pred / meta pair to this PredBuff
 #         object if it passes data checks. 
         
 #         :: INPUTS ::
@@ -817,7 +843,7 @@ class RtPredBuff(object):
 
     # def initial_append(self, pred, meta, model, wgt_name, include_blinding=False):
     #     """
-    #     Append the first data and metadata to this RtPredBuff and populate
+    #     Append the first data and metadata to this PredBuff and populate
     #     most of its attributes.
 
     #     :: INPUTS ::
@@ -836,7 +862,7 @@ class RtPredBuff(object):
         
     #     # If data have already been appended - raise error
     #     if self._has_data:
-    #         raise RuntimeError('This RtPredBuff already contains data - canceling initial_append')
+    #         raise RuntimeError('This PredBuff already contains data - canceling initial_append')
         
     #     else:
     #         # Run validation checks on metadata

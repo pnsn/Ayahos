@@ -13,17 +13,12 @@ import numpy as np
 from obspy import UTCDateTime, Trace
 
 
-def pyew_tracebuff2_to_trace(
-    py_ew_tracebuff2,
-    maskval=np.nan,
-    fill_value=-999,
-    dtype=None
-):
+def wave2trace(wave):
     """
     Convert the output of an EWModule.get_wave() call into an Obspy Trace
 
     :: INPUTS ::
-    :param py_ew_tracebuff2: [dictionary]
+    :param wave: [dictionary]
             Output dictionary from EWModule.get_wave(). This method uses the
             following elements:
                 'data' - [numpy.ndarray] or [numpy.ma.Masked_Array] -> trace.data
@@ -34,60 +29,20 @@ def pyew_tracebuff2_to_trace(
                 'startt' - [float] -> [UTCDateTime] = trace.stats.starttime
                 'samprate' - [int] - trace.stats.sampling_rate
                 'datatype' - [str] -> trace.data.dtype
-    :param maskval: [numpy.nan] or float-like
-            No-data value to convert into masked elements if present in
-            py_ew_tracebuff['data']
-    :param fill_val: [float-like]
-            Option to overwrite the fill_value on masked arrays.
-            Default = -999 (standard for numpy.ma.masked_array's)
-    :param dtype: [None] or [numpy.float32-like]
-            Option to overwrite datatype inherited from py_ew_tracebuff
 
     :: OUTPUT ::
     :return trace: [obspy.core.trace.Trace]
             Trace object
     """
-    pet = py_ew_tracebuff2
     trace = Trace()
-    _data = pet["data"]
-
-    # Handle potential data gaps...
-    if np.sum(_data == maskval) == 0:
-        trace.data = pet["data"]
-    # ...as a masked array if there are maskvals
-    else:
-        _data = np.ma.masked_equal(pet["data"], maskval)
-        _data.fill_value = fill_value
-
-    # Get assigned data-type from message
-    _dtype = {"i2": np.int16, "i4": np.int32, "i8": np.int64, "s4": np.int32}
-    _dtype = _dtype[pet["datatype"]]
-    # If there is a user-specified dtype, try to apply it
-    if dtype is not None:
-        try:
-            _data.astype(dtype)
-        # ... failing to do so, default to pet datatype
-        except TypeError:
-            print(
-                f"{dtype} is invalid for re-assigning data dtype. Defaulting to tracebuff assigned dtype"
-            )
-            _data.astype(_dtype)
-    # Otherwise, use stated datatype from pet
-    else:
-        _data.astype(_dtype)
-    # Attach the data to the trace
-    trace.data = _data
-
-    # Add SNCL metadata to trace
-    for _k in ["station", "network", "channel", "location"]:
-        trace.stats[_k] = pet[_k]
-
-    # Add start-time
-    trace.stats.starttime = UTCDateTime(pet["startt"])
-
-    # Add sampling_rate
-    trace.stats.sampling_rate = pet["samprate"]
-
+    # Format data vector
+    _data = wave["data"].astype(wave['datatype'])
+    # Compose header
+    _header = {_k:wave[_k] for _k in ['station','network','channel','location']}
+    _header.update({'starttime': UTCDateTime(wave["startt"]),
+                    'sampling_rate': wave['samprate']})
+    # Initialize trace
+    trace = Trace(data=_data, header=_header)
     return trace
 
 

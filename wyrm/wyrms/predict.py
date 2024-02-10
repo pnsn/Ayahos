@@ -11,7 +11,7 @@
 """
 
 from collections import deque
-from wyrm.wyrms.wyrm import Wyrm
+from wyrm.wyrms.base import Wyrm
 import wyrm.util.input_compatability_checks as icc
 from wyrm.structures.window import 
 from wyrm.structures.rtpredbuff import RtPredBuff

@@ -9,8 +9,8 @@
     Provides a test suite for the TubeWyrm class
 """
 
-from wyrm.wyrms.tubewyrm import TubeWyrm
-from wyrm.wyrms.wyrm import Wyrm
+from wyrm.wyrms.sequence import TubeWyrm
+from wyrm.wyrms.base import Wyrm
 from collections import deque
 import numpy as np
 import pytest

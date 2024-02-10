@@ -1,4 +1,4 @@
-from wyrm.wyrms.wyrm import Wyrm
+from wyrm.wyrms.base import Wyrm
 from wyrm.structures.rtinststream import RtInstStream
 from wyrm.structures.window import InstWindow
 import wyrm.util.seisbench_model_params as smp

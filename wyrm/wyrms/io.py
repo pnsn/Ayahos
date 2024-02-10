@@ -1,12 +1,216 @@
 import os
 from glob import glob
-from collections import deque
-from wyrm.wyrms.wyrm import Wyrm
-from wyrm.core.message import _BaseMsg, TraceMsg, HDEQ_Dict
+from wyrm.wyrms.base import Wyrm
+from wyrm.buffer.structures import TieredBuffer
+from wyrm.buffer.trace import TraceBuff
+from wyrm.util.PyEW_translate import wave2trace, trace2wave
+# import PyEW
 from obspy import read
 import fnmatch
 
 
+
+class RingWyrm(Wyrm):
+    
+    def __init__(self, module=None, conn_id=0, pulse_method_str='get_wave', max_pulse_size=None, debug=False, **options):
+        Wyrm.__init__(self, debug=debug, max_pulse_size=max_pulse_size)
+        # Compatability checks for `module`
+        if module is None:
+            self.module = module
+            print('No EW connection provided - for debugging/dev purposes only')
+        elif not isinstance(module, PyEW.EWModule):
+            raise TypeError('module must be a PyEW.EWModule object')
+        else:
+            self.module = module
+
+        # Compatability checks for `conn_id`
+        self.conn_id = self._bounded_intlike_check(conn_id, name='conn_id', minimum=0)
+
+        if not isinstance(pulse_method_str, str):
+            raise TypeError('pulse_method_str must be type_str')
+        elif pulse_method_str not in ['get_wave','put_wave','get_msg','put_msg','get_bytes','put_bytes']:
+            raise ValueError(f'pulse_method_str {pulse_method_str} unsupported. See documentation')
+        else:
+            self.pulse_method = pulse_method_str
+        
+        # Compatability checks for **options
+        if self.pulse_method in ['get_msg','put_msg','get_bytes','put_bytes']:
+            if 'msg_type' not in options.keys():
+                raise TypeError('Optional inputs must include kwarg "msg_type"')
+            else:
+                self.msg_type=options['msg_type']
+        # In the case of get/put_wave, default to msg_type=19 (tracebuff2)
+        else:
+            msg_type=19
+
+    def pulse(self, x):
+        """
+        Conduct a single transaction between an Earthworm ring
+        and the Python instance this RingWyrm is operating in
+        using the PyEW.EWModule.get/put -type method and msg_type
+        assigned to this RingWyrm
+
+        :: INPUT ::
+        :param x: for 'put' type pulse_method_str instances of RingWyrm
+                this is a message object formatted to submit to target 
+                Earthworm ring following PyEW formatting guidelines
+                see
+        :: OUTPUT ::
+        :return msg: for 'get' type pulse_method_str instances of RingWyrm
+                this is a message object produced by a single call of the
+                PyEW.EWModule.get_... method specified when the RingWyrm
+                was initialized. 
+                
+                NOTE: Empty messages return False to signal no new messages 
+                were available of specified msg_type in target ring conn_id.
+
+                for get_wave() - returns a dictionary
+                for get_bytes() - returns a python bytestring
+                for get_msg() - returns a python string
+        """
+        if 'get' in self.pulse_method:
+            if 'wave' in self.pulse_method:
+                msg = self.module.get_wave(self.conn_id)
+            else:
+                evalstr = f'self.module.{self.pulse_method}(self.conn_id, self.msg_type)'
+                msg = eval(evalstr)
+            # Flag empty message results as 'False'
+            if msg == {}:
+                msg = False
+            elif msg == '':
+                msg = False
+            else:
+                pass
+
+            return msg
+
+        elif 'put' in self.pulse_method:
+            if 'wave' in self.pulse_method:
+                self.module.put_wave(self.conn_id, x)
+            else:
+                evalstr = f'self.module.{self.pulse_method}(self.conn_id, self.msg_type, x)'
+                eval(evalstr)
+        
+
+
+class WaveInWyrm(RingWyrm):
+    """
+
+    """
+
+    def __init__(
+        self,
+        module=None,
+        conn_id=0,
+        max_length=150,
+        max_pulse_size=12000,
+        debug=False,
+        **options
+    ):
+        """
+        Initialize a RingWyrm object with a TieredBuffer + TraceBuff 
+
+        :: INPUTS ::
+        :param module: [PyEW.EWModule] active PyEarthworm module object
+        :param conn_id: [int] index number for active PyEarthworm ring connection
+        :param max_length: [float] maximum TraceBuff length in seconds
+                        (passed to TieredBuffer for subsequent buffer element initialization)
+        :param max_pulse_size: [int] maximum number of get_wave() actions to execute per
+                        pulse of this RingWyrm
+        :param debug: [bool] should this RingWyrm be run in debug mode?
+        :param **options: [kwargs] additional kwargs to pass to TieredBuff as
+                    part of **buff_init_kwargs
+                    see wyrm.buffer.structures.TieredBuffer
+        """
+
+
+        # Let TieredBuffer handle the compatability check for max_length
+        self.buffer = TieredBuffer(buff_class=TraceBuff, max_length=max_length, **options)
+
+    def pulse(self, x='*'):
+        """
+        Execute a pulse wherein this RingWyrm pulls copies of 
+        tracebuff2 messages from the connected Earthworm Wave Ring,
+        converts them into obspy.core.trace.Trace objects, and
+        appends traces to the RingWyrm.buffer attribute
+        (i.e. a TieredBuffer object terminating with BuffTrace objects)
+
+        A single pulse will pull up to self.max_pulse_size waveforms
+        from the WaveRing using the PyEW.EWModule.get_wave() method,
+        stopping if it hits a "no-new-messages" message.
+
+        :: INPUT ::
+        :param x: [str] N.S.L.C formatted / unix wildcard compatable
+                string for filtering read waveforms by their N.S.L.C ID
+                (see obspy.core.trace.Trace.id). 
+                E.g., 
+                for only accelerometers, one might use:
+                    x = '*.?N?'
+                for only PNSN administrated broadband stations, one might use:
+                    x = '[UC][WOC].*.*.?H?'
+        
+        :: OUTPUT ::
+        :return y: [wyrm.buffer.structure.TieredBuffer] 
+                alias to this RingWyrm's buffer attribute, 
+                an initalized TieredBuffer object terminating 
+                in TraceBuff objects with the structure:
+                y = {'NN.SSSSS.LL.CC': {'C': TraceBuff()}}
+
+                e.g., 
+                y = {'UW.GNW..BH: {'Z': TraceBuff(),
+                                   'N': TraceBuff(),
+                                   'E': TraceBuff()}}
+
+        """
+        # Start iterations that pull single wave object
+        for _ in range(self.pulse_size):
+            # Pull tracebuff2 message from ring
+            _wave = self.module.get_wave(self.conn_id)
+            # Check if it's a null result (i.e., no new waves)
+            if _wave == {}:
+                # If it is a null, early stop to iteration
+                break
+            # If it has data (i.e., non-empty dict)
+            else:
+                # Convert PyEW wave to obspy trace
+                trace = wave2trace(_wave)
+                if len(fnmatch.filter([trace.id], x)) > 0:
+                    # Append trace to buffer
+                    # Use N.S.L.BandInst for key0
+                    key0 = trace.id[:-1]
+                    # Use Component Character for key1
+                    key1 = trace.id[-1]
+                    self.buffer.append(trace, key0, key1)
+        # Present buffer object as output for sequencing
+        y = self.buffer
+        return y
+        
+    def __str__(self, extended=False):
+        """
+        Provide a string representation of this RingWyrm object
+
+        :: INPUT ::
+        :param extended: [bool] passed to TieredBuffer's __str__() method
+                        to display buffer status.
+        :: OUTPUT ::
+        :return rstr: [str] representative string
+        """
+        rstr = super().__str__()
+        rstr = f'Module: {self.module} | Conn ID: {self.conn_id}\n'
+        rstr += 'FLOW:   EW --> PY\n\n'
+        rstr += 'RingWyrm.buffer contents:\n'
+        rstr += f'{self.buffer.__repr__(extended=extended)}'
+        return rstr
+    
+    def __repr__(self, extended=False):
+        rstr = self.__str__(extended=extended)
+        return rstr
+
+
+
+class RingOutWyrm()
+
+### UPDATES NEEDED - NTS 2/9/2024
 class Disk2PyWyrm(Wyrm):
     """
     This Wyrm provides a pulsed read-from-disk functionality
@@ -14,8 +218,7 @@ class Disk2PyWyrm(Wyrm):
     """
     def __init__(self, fdir, file_glob_str='*.mseed', file_format='MSEED', max_pulse_size=50, max_queue_size=50, max_age=50):
         Wyrm.__init__(self)
-        # Initialize Heirarchical DEQueue
-        self.hdeq = HDEQ_Dict()
+
 
         # Compatability check on dir
         if not isinstance(fdir, str):

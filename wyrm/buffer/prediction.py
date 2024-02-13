@@ -11,18 +11,27 @@ from time import time
 
 class PredBuff(object):
     """
-    Realtime Prediction Buffer - this class acts as a buffer for overlapping
-    predictions 
+    Realtime Prediction Buffer - this class acts as a buffer for semi-sequential
+    prediction windows for a single model architecture on a single seismometer,
+    but allows for multiple model training weights. The buffer is structured
+    as a numpy.ndarray with the following axes
+
+    buffer [w, l, t]
+        w - model training weight
+        l - model prediction label
+        t - time
     """
-    def __init__(self, model=None, max_length=120, stack_method='max', fill_value=0., dtype=np.float32, debug=False):
+    def __init__(self, model, weight_names, max_samples=12001, stack_method='max'):
         """
         Initialize a Realtime Prediction Buffer object. Most attributes
         will be populated by the first data/metadata append process
         using the self.initial_append(pred, meta) method.
 
         :: INPUTS ::
-
-        :param max_length: [float] maximum buffer length in seconds
+        :param model: [seisbench.models.WaveformModel-type] or None
+                        WaveformModel object that provides information on how to scale
+                        the buffer (i.e. - number of labels )
+        :param max_samples: [int] maximum buffer length along the time axis in samples
         :param stack_method: [str] method for stacking non-blinded
                         overlapping predictions.
                         Supported methods:
@@ -40,7 +49,7 @@ class PredBuff(object):
         :param model: [seisbench.models.WaveformModel] or None
                         Model from which to scrape metadata (optional)        
         """
-        if not isinstance(model, (sbm.WaveformModel, type(None))):
+        if not isinstance(model, sbm.WaveformModel):
             raise TypeError('input model must be type seisbench.models.WaveformModel or None')
         elif isinstance(model, sbm.WaveformModel):
             self.model_name = model.name
@@ -48,26 +57,33 @@ class PredBuff(object):
             if self.label_names is not None:
                 self.label_codes = [_l[0].upper() for _l in model.labels]
             else:
-                self.label_codes = None
+                raise TypeError('Likely input a WaveformModel base-class, rather than a child-class. Need a valid, trained ML model as a input. E.g., EQTransformer()')
+            self.nlabels = len(self.label_codes)
             self.window_npts = model.in_samples
-        else:
-            self.model_name = None
-            self.label_names = None
-            self.label_codes = None
-            self.window_npts = None
-
-        if not isinstance(debug, bool):
-            raise TypeError('debug must be type bool')
-        else:
-            self.debug = debug
+        
+        pt_wgt_list = model.list_pretrained()
+        # Compat. checks on weight_names
+        if isinstance(weight_names, str):
+            if weight_names in pt_wgt_list:
+                self.weight_names = [weight_names]
+                self.nwgts = 1
+        elif isinstance(weight_names, (list, tuple)):
+            emsg = ''
+            for _w in weight_names:
+                if _w not in pt_wgt_list:
+                    emsg += f'{_w}, '
+            if emsg != '':
+                raise ValueError(f'Incompatable weight names: {emsg[:-2]}')
+            else:
+                self.weight_names = list(weight_names)
+                self.nwgts = len(self.weight_names)
 
         ### Static parameters (once assigned) ###
-        # max_length compatability checks
-        # Maximum number of windows allowed in buffer
-        self.max_length = icc.bounded_floatlike(
-            max_length,
-            name='max_length',
-            minimum=0,
+        # max_samples compatability checks
+        self.max_samples = icc.bounded_floatlike(
+            max_samples,
+            name='max_samples',
+            minimum=2*self.window_npts,
             maximum=None,
             inclusive=False
         )
@@ -82,13 +98,15 @@ class PredBuff(object):
         else:
             raise ValueError(f'stack method "{stack_method}" is unsupported. Supported values: "max", "avg"')
         
-        # if not isinstance(fill_value, (int, float, type(None))):
-        #     raise TypeError('fill_value must be type int, float or None')
-        # else:
-        #     # self.fill_value = fill_value
-        
         # Set self.fill_value to default for ufunc
         self.fill_value = 0.
+
+        # Initialize stack and fold arrays
+        self.stack = np.full(
+            shape=(self.nwgts, self.nlabels, self.max_samples),
+            fill_value=self.fill_value,
+            dtype=np.float32
+        )
 
         # Instrument Metadata
         self.inst_code = None
@@ -126,49 +144,26 @@ class PredBuff(object):
                     Shorthand name for the training weight set loaded
                     in `model`.
         """
-        if self.debug:
-            tick0 = time()
         # Run metadata validation 
         vmeta = self.validate_metadata(meta)
-        if self.debug:
-            tick1 = time()
-            print(f'validate metadata {tick1 - tick0:.3f} sec')
-            
         # If this is an initial append, scrape metadata to fill out attributes
         if not self._has_data:
             self._meta2attrib(vmeta)
-            if self.debug:
-                tick2 = time()
-                print(f'scraped metadata {tick2 - tick1:.3f} sec')
         # Run prediction validation
-        elif self.debug:
-            tick2 = time()
         vpred = self.validate_prediction(pred)
-        if self.debug:
-            tick3 = time()
-            print(f'validate prediction {tick3 - tick2:.3f} sec')
         # Get append instructions
         instr = self.calculate_stacking_instructions(vmeta, include_blinding=include_blinding)
-        if self.debug:
-            tick4 = time()
-            print(f'calc stacking instr {tick4 - tick3:.3f} sec')
         # Handle different proposed shift cases
         # If initial append
         if not self._has_data:
             # Apply instructions without restrictions
             self._apply_stack_instructions(instr, vpred)
             self._has_data = True
-            if self.debug:
-                tick5 = time()
-                print(f'apply stacking {tick5 - tick4:.3f}sec') 
         else:
             # If proposal is a leftward shift of the stack (right-end append)
             if instr['npts_right'] < 0:
                 # Apply instructions without restrictions
                 self._apply_stack_instructions(instr, vpred)
-                if self.debug:
-                    tick5 = time()
-                    print(f'apply stacking {tick5 - tick4:.3f}sec') 
             # if proposal is a no-shift stacking
             elif instr['npts_right'] == 0:
                 # Check that the proposed stack still should have room to grow
@@ -176,18 +171,12 @@ class PredBuff(object):
                     raise BufferError('Attempting to append to a completely filled buffer zone - canceling append')
                 else:
                     self._apply_stack_instructions(instr, vpred)
-                    if self.debug:
-                        tick5 = time()
-                        print(f'apply stacking {tick5 - tick4:.3f}sec') 
             elif instr['npts_right'] > 0:
                 # Check if the proposed shift would truncate rightward (leading) samples
                 if any(self.fold[-instr['npts_right']:] > 0):
                     raise BufferError('Attempting to append in a manner that would clip leading prediction values - canceling append')
                 else:
                     self._apply_stack_instructions(instr, vpred)
-                    if self.debug:
-                        tick5 = time()
-                        print(f'apply stacking {tick5 - tick4:.3f}sec') 
         return self
     
     def validate_metadata(self, meta):
@@ -316,7 +305,7 @@ class PredBuff(object):
         # Populate stack and fold arrays
         # Get mapping to max_length in samples
         self.max_length_npts = int(np.round(self.max_length*self.samprate))
-        shp = (len(self.label_codes), self.max_length_npts)
+        shp = (len(self.weight_names), len(self.label_codes), self.max_length_npts)
         # Populate stack and fold attributes
         self.stack = np.full(shape=shp, fill_value=self.fill_value, dtype=dtype)
         self.fold = np.full(shape=self.max_length_npts, fill_value=0, dtype=self.stack.dtype)
@@ -612,14 +601,30 @@ class PredBuff(object):
             st.append(_tr)
         return st
 
-    def __str__(self):
-        rstr = f'Instrument: {self.inst_code} Pred: {self.label_codes}\n'
-        rstr += f'Model: {self.model_name}\nOut_Samp: {self.window_npts} '
-        rstr += f'Blind_Samp: {self.blinding_npts} Over_Samp: {self.overlap_npts} Stack_Rule: {self.stack_method}\n'
+    def __str__(self, compact=False):
+        """
+        Simple string representation
+        """
+        f1p = sum(self.fold >= 1)/len(self.fold)
+    
+        hdr = f'Instrument: {self.inst_code} Model: {self.model_name} Stack_Rule: {self.stack_method}\n'
+        hdr += f'Blind_Samp: {self.blinding_npts} Over_Samp: {self.overlap_npts}\n'
+        # Give the fraction that has fold ge 1 
+        dsum = f'f1+:{f1p:.1f}|'
+        # And provide the maximum value for each weight/label combination
+        for _i, _n in enumerate(self.model_name):
+            dsum += f'{_n}'
+            for _j, _l in enumerate(self.label_codes):
+                dsum += f'.{_l}:{np.max(self.stack[_i,_j,:]):.1f}'
+        if compact:
+            rstr = dsum
+        else:
+            rstr = hdr + dsum
         return rstr
     
     def __repr__(self):
-        rstr = self.__str__()
+        rstr = 'wyrm.buffer.prediction.PredBuff('
+        rstr += f'model={self.model}, max_length={self.max_length}, stack_method={self.stack_method})'
         return rstr
 
 

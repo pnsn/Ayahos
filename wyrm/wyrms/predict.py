@@ -13,15 +13,16 @@
 from collections import deque
 from wyrm.wyrms.base import Wyrm
 import wyrm.util.input_compatability_checks as icc
-from wyrm.structures.window import 
-from wyrm.structures.rtpredbuff import RtPredBuff
+from wyrm.structures.window import InstWindow
+from wyrm.buffer.prediction import PredBuff
+from wyrm.buffer.structures import TieredBuffer
 import seisbench.models as sbm
 import numpy as np
 import torch
 from tqdm import tqdm
 from time import time
 
-class WaveformModelWyrm(Wyrm):
+class MachineWyrm(Wyrm):
     """
     Wyrm for housing and operating pulsed prediction by a WaveformModel from
     SeisBench and passing metadata from model inputs to outputs
@@ -29,9 +30,13 @@ class WaveformModelWyrm(Wyrm):
     input - deque([tuple(tensor, metadata), tuple(tensor, metadata),...])
         with each tuple created as the output of a InstWindow.to_torch()
         instance
-    output - RtPredStream containing stacked predictions
+    output - TieredBuffer terminating in wyrm.buffer.prediction.PredBuff objects
+            with tier-0 keys corresponding to instrument codes [N.S.L.bi] and
+            tier-1 keys corresponding to model type. This tier-1 selection results
+            in a single tier at this stage, but becomes useful when applying multiple
+            model architectures to the same data
     """
-    def __init__(self, model, weight_names, devicetype='cpu', max_length=180., max_pulse_size=1000, stack_method='max', debug=False):
+    def __init__(self, model, weight_names, devicetype='cpu', max_samples=12000, max_pulse_size=1000, stack_method='max', debug=False):
         """
         Initialize a SeisBenchWyrm object
 
@@ -41,7 +46,9 @@ class WaveformModelWyrm(Wyrm):
         :param weight_names: [str] or [list] model name(s) to pass to 
                               model.from_pretrained()
         :param device: [torch.device] device to run predictions on
-        :param max_length: [float] maximum prediction buffer length in seconds
+        :param max_samples: [int] maximum prediction buffer length in samples
+                        NOTE: __init__ enforces a 2-window minimum length based on 
+                        the model.in_samples attribute.
         :param max_pulse_size: [int] maximum number of data windows to assess
                     for a pulse (synonymous with batch size)
         :param debug: [bool] run in debug mode?
@@ -59,6 +66,7 @@ class WaveformModelWyrm(Wyrm):
         self.label_codes = ''
         for _l in self.model.labels:
             self.label_codes += _l[0]
+
         # Model weight_names compatability checks
         pretrained_list = model.list_pretrained()
         if isinstance(weight_names, str):
@@ -71,6 +79,7 @@ class WaveformModelWyrm(Wyrm):
                 if _n not in pretrained_list:
                     raise ValueError(f'weight_name {_n} is not a valid pretrained model weight_name for {model}')
         self.weight_names = weight_names
+
         # device compatability checks
         if not isinstance(devicetype, str):
             raise TypeError('devicetype must be type str')
@@ -84,15 +93,17 @@ class WaveformModelWyrm(Wyrm):
             except RuntimeError:
                 raise RuntimeError(f'device type {devicetype} is unavailable on this installation')
             self.device = device
-        # max_length compatability checks
-        self.max_length = icc.bounded_floatlike(
-            max_length,
-            name='max_length',
-            minimum=0,
+
+        # max_samples compatability checks
+        self.max_samples = icc.bounded_floatlike(
+            max_samples,
+            name='max_samples',
+            minimum=2*self.model.in_samples,
             maximum=None,
             inclusive=False
         )
 
+        # stack_method compatability checks
         if not isinstance(stack_method, str):
             raise TypeError('stack_method must be type str')
         elif stack_method.lower() in ['max','maximum']:
@@ -101,8 +112,15 @@ class WaveformModelWyrm(Wyrm):
             self.stack_method='avg'
         else:
             raise ValueError(f'stack_method {stack_method} not supported. Must be "max", "avg" or select aliases')
-        
-        self.tree = {}
+      
+        # Initialize TieredBuffer terminating in PredBuff objects
+        self.buffer = TieredBuffer(
+            buff_class=PredBuff,
+            model=self.model,
+            weight_names=self.weight_names,
+            max_samples=self.max_samples,
+            stack_method=self.stack_method
+            )
 
     def pulse(self, x):
         """
@@ -115,21 +133,32 @@ class WaveformModelWyrm(Wyrm):
         """
         # Construct prediction inputs
         window_concat_tensor, meta_list = self._instwindows2tensor(x)
-        # Iterate across weight_names
-        for _n in self.weight_names:
+        # Preallocate numpy array for outputs
+        pred_nwlt = np.full(shape=(len(self.nwgts),
+                                   len(meta_list),
+                                   len(self.label_codes),
+                                   self.model.in_samples),
+                            fill_value=0.,
+                            dtype=np.float32)
+        
+        # Iterate across weights
+        for _n, wname in enumerate(self.weight_names):
             if self.debug:
-                print('Starting {self.model_name}, {_n} weighted prediction')
-            # Ensure correct model weights are loaded
-            self.model = self.model.from_pretrained(_n)
-
-            # if self.model.weights_docstring is None:
-            #     self.model.from_pretrained(_n)
-            # elif _n not in self.model.weights_docstring:
-            #     self.model.from_pretrained(_n)
+                tick = time()
+                print('Starting {self.model_name}, {wname} weighted prediction')
+            # Load n-th model weight
+            self.model = self.model.from_pretrained(wname)
+            # Run Prediction
             raw_preds = self._run_prediction(window_concat_tensor)
-            npy_preds = self._raw_preds2numpy(window_concat_tensor, raw_preds)
+            # Append output to numpy array
+            pred_nwlt[_n, ...] = self._raw_preds2numpy(window_concat_tensor, raw_preds)
+            # Report runtime
             if self.debug:
-                print(f'Appending to tree ({time() - tick})')
+                print(f'Prediction runtime ({time() - tick})')
+            
+            self._distribute_preds_to_buffer(pred_nwlt, meta_list)
+            
+
             # Iterate across windows and append to tree
             for _i, _meta in enumerate(meta_list):
                 # self._append_to_tree(_meta, npy_preds[_i, :, :], _n)
@@ -206,70 +235,24 @@ class WaveformModelWyrm(Wyrm):
         return npy_preds
     
 
-    def _append_to_predbuff_tree(self, meta, pred, wgt_name):
-        inst_code = meta['inst_code']
-        if inst_code not in self.tree.keys():
-            self.tree.update({inst_code: 
-                              {wgt_name:
-                              RtPredBuff(max_length=self.max_length,
-                                         stack_method=self.stack_method,
-                                         model=self.model,
-                                         fill_value=0,
-                                         debug=self.debug)}})
-        elif wgt_name not in self.tree[inst_code].keys():
-            self.tree[inst_code].update({wgt_name:
-                                         RtPredBuff(max_length=self.max_length,
-                                                    stack_method=self.stack_method,
-                                                    model=self.model,
-                                                    debug=self.debug)})
-        try:
-            self.tree[inst_code][wgt_name].append(pred, meta)
-        except:
-            pass
+    def _append_preds_to_buffer(self, pred_nwlt, meta_list):
+        for _w in range(pred_nwlt.shape[1]):
+            nwind = pred_nwlt[_w]
+            # Fetch metadata for source window
+            meta = meta_list[_w]
+            # Update with i and j indices of weight and label codes
+            mnu = {f'iw{_i}': _n for _i, _n in enumerate(self.weight_names)}
+            mlu = {f'jw{_i}': _l for _i, _l in enumerate(self.label_codes)}
+            meta.update(mnu)
+            meta.update(mlu)
+            # Get tier-0 key as inst_code
+            k0 = meta['inst_code']
+            # Get tier-1 key as model_name
+            k1 = self.model.name
+            # Append to tiered buffer using its 
+            self.buffer.append(nwind, k0, k1)
 
-        return self
-
-
-    def _raw_append_to_tree(self, meta, pred, wgt_name):
-        inst_code = meta['inst_code']
-        idx = meta['index']
-        # If completely new instrument branch
-        if inst_code not in self.tree.keys():
-            self.tree.update({inst_code: {'metadata': {idx: meta}, wgt_name: {idx: pred}}})
-        # for preexisting instrument branch
-        else:
-            # for new weight_name limb
-            if wgt_name not in self.tree[inst_code].keys():
-                self.tree[inst_code].update({wgt_name: {idx: pred}})
-            # for existing weight_name limb
-            elif idx not in self.tree[inst_code][wgt_name].keys():
-                self.tree[inst_code][wgt_name].update({idx: pred})
-            # Raise error if trying to overwrite pre-existing entry
-            else:
-                if self.debug:
-                    print(f'KeyError(Attempting to insert data in pre-existing prediction index {inst_code} {wgt_name} {idx})')
-                    breakpoint()
-                else:
-                    self.tree[inst_code][wgt_name].update({idx: pred})
-            # Do check if new metadata
-            if idx not in self.tree[inst_code]['metadata'].keys():
-                self.tree[inst_code]['metadata'].update({idx: meta})
-        # # Cleanup
-        # self._sort_tree_indices()
-        return self
-
-    def _sort_tree_indices(self):
-        # Iterate across inst_code's
-        for k1 in self.tree.keys():
-            branch = self.tree[k1]
-            # Iterate across metadata and model_weight's
-            for k2 in branch.keys():
-                # Sort by index
-                self.tree[k1][k2] = dict(sorted(branch[k2].items()))
-        return self
-
-            
-    def __repr__(self):
+    def __str__(self, extended=False):
         # rstr = super().__repr__()
         rstr = f'model: {self.model.name} | '
         rstr += f'shape: (1, {self.model.in_channels}, {self.model.in_samples}) ->'
@@ -280,9 +263,15 @@ class WaveformModelWyrm(Wyrm):
         rstr += f' model weight names: '
         for _n in enumerate(self.weight_names):
             rstr += f'{_n}'
+        rstr += f'\n{self.buffer.__str__(extended=extended)}'
         return rstr
 
-    def __str__(self):
-        rstr = self.__repr__()
+    def __repr__(self):
+        """
+        Representative string of the parameters used to initialize this MachineWyrm
+        """
+        rstr = f'wyrm.wyrms.predict.MachineWyrm(model={self.model}, weight_names={self.weight_names}, '
+        rstr += f'devicetype={self.device}, max_samples={self.max_samples}, max_pulse_size={self.max_pulse_size}, '
+        rstr += f'stack_method={self.stack_method}, debug={self.debug})'
         return rstr
     

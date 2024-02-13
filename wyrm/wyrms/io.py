@@ -1,18 +1,21 @@
 import os
 from glob import glob
+from obspy import Trace
 from wyrm.wyrms.base import Wyrm
+import wyrm.util.input_compatability_checks as icc
 from wyrm.buffer.structures import TieredBuffer
 from wyrm.buffer.trace import TraceBuff
-from wyrm.util.PyEW_translate import wave2trace, trace2wave
+from wyrm.util.PyEW_translate import wave2trace, trace2wave, stream2waves
+from collections import deque
 # import PyEW
 from obspy import read
-import fnmatch
+import re
 
 
 
 class RingWyrm(Wyrm):
     
-    def __init__(self, module=None, conn_id=0, pulse_method_str='get_wave', max_pulse_size=None, debug=False, **options):
+    def __init__(self, module=None, conn_id=0, pulse_method_str='get_wave', msg_type=19, max_pulse_size=10000, debug=False):
         Wyrm.__init__(self, debug=debug, max_pulse_size=max_pulse_size)
         # Compatability checks for `module`
         if module is None:
@@ -26,6 +29,7 @@ class RingWyrm(Wyrm):
         # Compatability checks for `conn_id`
         self.conn_id = self._bounded_intlike_check(conn_id, name='conn_id', minimum=0)
 
+        # Compat. chekcs for pulse_method_str
         if not isinstance(pulse_method_str, str):
             raise TypeError('pulse_method_str must be type_str')
         elif pulse_method_str not in ['get_wave','put_wave','get_msg','put_msg','get_bytes','put_bytes']:
@@ -33,15 +37,19 @@ class RingWyrm(Wyrm):
         else:
             self.pulse_method = pulse_method_str
         
-        # Compatability checks for **options
+        # Compatability checks for msg_type
         if self.pulse_method in ['get_msg','put_msg','get_bytes','put_bytes']:
-            if 'msg_type' not in options.keys():
-                raise TypeError('Optional inputs must include kwarg "msg_type"')
-            else:
-                self.msg_type=options['msg_type']
+            self.msg_type = icc.bounded_intlike(
+                msg_type,
+                name='msg_type',
+                minimum=0,
+                maximum=255,
+                inclusive=True
+            )
         # In the case of get/put_wave, default to msg_type=19 (tracebuff2)
         else:
-            msg_type=19
+            self.msg_type=19
+        
 
     def pulse(self, x):
         """
@@ -68,12 +76,23 @@ class RingWyrm(Wyrm):
                 for get_bytes() - returns a python bytestring
                 for get_msg() - returns a python string
         """
+        if not isinstance(x, (deque, list)):
+            if isinstance(x, (Trace, str)):
+                x = deque(x)
+            else:
+                raise TypeError('input x must be a list-like object containing an obspy.core.Trace.trace or str-type object(s)')
+        elif isinstance(x, list):
+            x = deque(x)
+        else:
+            pass
+            
+        # If getting things from Earthworm, use append left to buffer
         if 'get' in self.pulse_method:
             if 'wave' in self.pulse_method:
                 msg = self.module.get_wave(self.conn_id)
             else:
                 evalstr = f'self.module.{self.pulse_method}(self.conn_id, self.msg_type)'
-                msg = eval(evalstr)
+            
             # Flag empty message results as 'False'
             if msg == {}:
                 msg = False
@@ -81,21 +100,52 @@ class RingWyrm(Wyrm):
                 msg = False
             else:
                 pass
-
             return msg
-
-        elif 'put' in self.pulse_method:
-            if 'wave' in self.pulse_method:
-                self.module.put_wave(self.conn_id, x)
-            else:
-                evalstr = f'self.module.{self.pulse_method}(self.conn_id, self.msg_type, x)'
-                eval(evalstr)
         
+        # If sending things to Earthworm, use pop to get items off x
+        elif 'put' in self.pulse_method:
+            # Iterate across elements of X
+            # If sending waves
+            if 'wave' in self.pulse_method:
+                # Convert input trace into wave msg
+                msg = trace2wave(x)
+                # Commit to ring
+                self.module.put_wave(self.conn_id, msg)
+            # If sending byte or string messages
+            else:
+                # Compose evalstr
+                evalstr = f'self.module.{self.pulse_method}(self.conn_id, self.msg_type, _x)'
+                # Execute eval
+                eval(evalstr)
+            return None      
+
+    def __str__(self):
+        """
+        Provide a string representation of this RingWyrm object
+
+        :: OUTPUT ::
+        :return rstr: [str] representative string
+        """
+        # Print from Wyrm
+        rstr = super().__str__()
+        # Add lines for RingWyrm
+        rstr += f'\nModule: {self.module} | Conn ID: {self.conn_id} | '
+        rstr += f'Method: {self.pulse_method} | MsgType: {self.msg_type}'
+        return rstr
+    
+    def __repr__(self):
+        rstr = f'wyrm.wyrms.io.RingWyrm(module={self.module}, '
+        rstr += f'conn_id={self.conn_id}, pulse_method_str={self.pulse_method}, '
+        rstr += f'msg_type={self.msg_type}, '
+        rstr += f'max_pulse_size={self.max_pulse_size}, debug={self.debug})'
+        return rstr
 
 
-class WaveInWyrm(RingWyrm):
+class EarWyrm(RingWyrm):
     """
-
+    Wrapper child-class of RingWyrm specific to listening to an Earthworm
+    WAVE Ring and populating a TieredBuffer object for subsequent sampling
+    by Wyrm sequences
     """
 
     def __init__(
@@ -108,7 +158,8 @@ class WaveInWyrm(RingWyrm):
         **options
     ):
         """
-        Initialize a RingWyrm object with a TieredBuffer + TraceBuff 
+        Initialize a EarWyrm object with a TieredBuffer + TraceBuff.
+        This is a wrapper for a read-from-wave-ring RingWyrm object
 
         :: INPUTS ::
         :param module: [PyEW.EWModule] active PyEarthworm module object
@@ -122,12 +173,23 @@ class WaveInWyrm(RingWyrm):
                     part of **buff_init_kwargs
                     see wyrm.buffer.structures.TieredBuffer
         """
-
-
+        # Inherit from RingWyrm
+        super().__init__(
+            module=module,
+            conn_id=conn_id,
+            pulse_method_str='get_wave',
+            msg_type=19,
+            max_pulse_size=max_pulse_size,
+            debug=debug
+            )
         # Let TieredBuffer handle the compatability check for max_length
-        self.buffer = TieredBuffer(buff_class=TraceBuff, max_length=max_length, **options)
+        self.buffer = TieredBuffer(
+            buff_class=TraceBuff,
+            max_length=max_length,
+            **options
+            )
 
-    def pulse(self, x='*'):
+    def pulse(self, x=None):
         """
         Execute a pulse wherein this RingWyrm pulls copies of 
         tracebuff2 messages from the connected Earthworm Wave Ring,
@@ -140,7 +202,11 @@ class WaveInWyrm(RingWyrm):
         stopping if it hits a "no-new-messages" message.
 
         :: INPUT ::
-        :param x: [str] N.S.L.C formatted / unix wildcard compatable
+        :param x: None or [str] 
+                None (default) input accepts all waves read from ring, as does "*"
+
+                All other string inputs:
+                N.S.L.C formatted / unix wildcard compatable
                 string for filtering read waveforms by their N.S.L.C ID
                 (see obspy.core.trace.Trace.id). 
                 E.g., 
@@ -148,6 +214,9 @@ class WaveInWyrm(RingWyrm):
                     x = '*.?N?'
                 for only PNSN administrated broadband stations, one might use:
                     x = '[UC][WOC].*.*.?H?'
+
+                uses the re.match(x, trace.id) method
+
         
         :: OUTPUT ::
         :return y: [wyrm.buffer.structure.TieredBuffer] 
@@ -164,18 +233,23 @@ class WaveInWyrm(RingWyrm):
         """
         # Start iterations that pull single wave object
         for _ in range(self.pulse_size):
-            # Pull tracebuff2 message from ring
-            _wave = self.module.get_wave(self.conn_id)
-            # Check if it's a null result (i.e., no new waves)
-            if _wave == {}:
-                # If it is a null, early stop to iteration
+            # Run the pulse method from RingWyrm for single wave pull
+            _wave = super().pulse(x=None)
+            # If RingWyrm.pulse() returns False - trigger early stopping
+            if not _wave:
                 break
+
             # If it has data (i.e., non-empty dict)
             else:
                 # Convert PyEW wave to obspy trace
                 trace = wave2trace(_wave)
-                if len(fnmatch.filter([trace.id], x)) > 0:
-                    # Append trace to buffer
+                # If either accept-all case is provided with x, skip filtering
+                if x == '*' or x is None:
+                    key0 = trace.id[:-1]
+                    key1 = trace.id[-1]
+                    self.buffer.append(trace, key0, key1)
+                # otherwise use true-ness of re.search result to filter
+                elif re.search(x, trace.id):
                     # Use N.S.L.BandInst for key0
                     key0 = trace.id[:-1]
                     # Use Component Character for key1
@@ -186,29 +260,73 @@ class WaveInWyrm(RingWyrm):
         return y
         
     def __str__(self, extended=False):
-        """
-        Provide a string representation of this RingWyrm object
-
-        :: INPUT ::
-        :param extended: [bool] passed to TieredBuffer's __str__() method
-                        to display buffer status.
-        :: OUTPUT ::
-        :return rstr: [str] representative string
-        """
         rstr = super().__str__()
-        rstr = f'Module: {self.module} | Conn ID: {self.conn_id}\n'
-        rstr += 'FLOW:   EW --> PY\n\n'
-        rstr += 'RingWyrm.buffer contents:\n'
-        rstr += f'{self.buffer.__repr__(extended=extended)}'
+        rstr += f'\n{self.buffer.__str(extended=extended)}'
         return rstr
-    
+
     def __repr__(self, extended=False):
         rstr = self.__str__(extended=extended)
         return rstr
+    
 
+class MessengerWyrm(RingWyrm):
+    """
+    Wrapper child-class that changes RingWyrm's single pulse into one that
+    pops message objects off an input deque or list and submits them to
+    the target Earthworm ring
+    """
 
+    def __init__(self, module=None, conn_id=0, pulse_method_str='put_msg', msg_type=12, max_pulse_size=10000, debug=False):
+        # Do some additional checks on pulse_method_str
+        if not isinstance(pulse_method_str, str):
+            raise TypeError("pulse_method_str must be type str")
+        elif 'put_' not in pulse_method_str:
+            raise SyntaxError('Must use a "put" type method with MessengerWyrm. Supported: "put_msg" and "put_bytes"')
+        else:
+            pass
+        
+        # Inherit from RingWyrm & use its compatability checks
+        super().__init__(
+            module=module,
+            conn_id=conn_id,
+            pulse_method_str=pulse_method_str,
+            msg_type=msg_type,
+            max_pulse_size=max_pulse_size,
+            debug=debug
+            )   
+        
+    def pulse(self, x):
+        # compatability checks
+        if not isinstance(x, deque):
+            raise TypeError(f'input x must be type collections.deque, not {type(x)}')
+        # Get initial length of x
+        lenx = len(x)
+        # Iterate up to max_pulse_size times
+        for _i in range(self.max_pulse_size):
+            # Pop rightmost object off x
+            _x = x.pop()
+            # Check if it's a string
+            if not isinstance(_x, (str, bytes)):
+                x.appendleft(_x)
+            else:
+                # Try to submit using RingWyrm's single pulse method
+                try:
+                    super().pulse(_x)
+                # Failing that, re-append _x to the left
+                except:
+                    x.appendleft(_x)
 
-class RingOutWyrm()
+            # Early stopping clause
+            if len(x) == 0 or _i == lenx:
+                break
+        return None
+    
+    def __repr__(self):
+        rstr = f'wyrm.wyrms.io.MessengerWyrm(module={self.module}, conn_id={self.conn_id}, '
+        rstr += f'pulse_method_str={self.pulse_method}, msg_type={self.msg_type}, '
+        rstr += f'max_pulse_size={self.max_pulse_size}, debug={self.debug})'
+        return rstr
+
 
 ### UPDATES NEEDED - NTS 2/9/2024
 class Disk2PyWyrm(Wyrm):

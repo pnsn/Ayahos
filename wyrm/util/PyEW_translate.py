@@ -13,9 +13,36 @@ import numpy as np
 from obspy import UTCDateTime, Trace
 
 
+def npy2strdtype(dtype):
+    """
+    Provide formatting checks for dtype for submitting data to Earthworm
+
+    :: INPUT ::
+    :param dtype: [datatype-like object] e.g., np.int32, "int16", "f4"
+
+    :: OUTPUT ::
+    :return sdtype: [str] - string datatype representation
+                Supported values:
+                    'i2' - 16-bit integer
+                    'i4' - 32-bit integer
+                    'i8' - 64-bit integer
+    """
+    if dtype == 'i2':
+        sdtype = 'i2'
+    elif dtype == 'i4':
+        sdtype = 'i4'
+    elif dtype == 'i8':
+        sdtype = 'i8'
+    elif dtype == 'f4':
+        sdtype = 'f4'
+    else:
+        raise TypeError(f'dtype {dtype} is not compatable with PyEW. Supported: "i2", "i4", "i8", and "f4", and python equivalents')
+    return sdtype
+
+
 def wave2trace(wave):
     """
-    Convert the output of an EWModule.get_wave() call into an Obspy Trace
+    Convert the output of an EWModule.get_wave() call into an Obspy Trace.
 
     :: INPUTS ::
     :param wave: [dictionary]
@@ -46,68 +73,76 @@ def wave2trace(wave):
     return trace
 
 
-def trace_to_pyew_tracebuff2(trace, datatype=("s4", np.int32)):
+def trace2wave(trace, dtype=None):
     """
-    Based on the PyEarthworm_Workshop 2.Interactive_PyEarthworm demo
-    https://github.com/Fran89/PyEarthworm_Workshop/blob/master/2.Interactive_PyEarthworm/InteractivePyEarthworm.ipynb
+    Convert an obspy.core.trace.Trace object into a PyEarthworm compatable
+    wave-dict object that can be sent from Python to Earthworm via
+    and active PyEW.EWModule object (see wyrm.core.io.RingWyrm)
 
-    Convert an obspy trace into a pyew_tracebuff2 formatted message
-
-    NOTE: This method currently assumes that the data have no gaps and are already in a
-    buffer. In the event of gappy data (i.e., a trace with (masked) data), consider using
-    trace.split() and submit each contiguous trace as a separate message
-
-    TODO: Add datatype handling
-
-    :: INPUT ::
-    :param trace: [obspy.core.trace.Trace]
-        Obspy Trace Object
-    :param datatype: [2-tuple]
-        2-tuple with [str] pyew_tracebuff2 data type
-                        and
-                     [class] dtype to apply to the data of `trace`
-    :: OUTPUT ::
-    :return tracebuff2_msg: [dict]
-        Dictionary containing all necessary information to populate an Earthworm Tracebuff2 message
+    If the 
+    
     """
-    tracebuff2_msg = {
-        "station": trace.stats.station,
-        "network": trace.stats.network,
-        "channel": trace.stats.channel,
-        "location": trace.stats.location,
-        "nsamp": trace.stats.npts,
-        "samprate": trace.stats.sampling_rate,
-        "startt": np.round(trace.stats.starttime.timestamp, decimals=2),
-        "datatype": datatype[0],
-        "data": trace.data.astype(datatype[1]),
-    }
-    return tracebuff2_msg
+    if dtype is None:
+        try:
+            dtype = npy2strdtype(trace.data.dtype)
+        except TypeError:
+            raise TypeError
+    else:
+        try:
+            dtype = npy2strdtype(dtype)
+        except TypeError:
+            raise TypeError
+    # If data are masked, run split on individual data
+    if np.ma.is_masked(trace.data):
+        st = trace.split()
+        waves = []
+        for _tr in st:
+            waves.append(trace2wave(_tr, dtype=dtype))
+        return waves
+    else:
 
+        wave = {"station": trace.stats.station,
+                "network": trace.stats.network,
+                "channel": trace.stats.channel,
+                "location": trace.stats.location,
+                "nsamp": trace.stats.npts,
+                "samprate": trace.stats.sampling_rate,
+                "startt": np.round(trace.stats.starttime.timestamp, decimals=2),
+                "dtype": dtype,
+                "data": trace.data.astype(dtype)}
+        return wave
 
-def stream_to_pyew_tracebuff2_list(stream, datatype=("s4", np.int32)):
+def stream2waves(stream, dtype=None):
     """
-    Convenience wrapper for preparing a set of tracebuff2 messages
-    from a stream
+    Convenience wrapper for trace2wave to handle converting an
+    obspy.core.stream.Stream's contents into a list of wave
+    messages. 
+
+    This method applys the stream.split() method to a copy
+    of the input `stream` prior to parsing to remove any
+    masked/gappy data.
 
     :: INPUTS ::
     :param stream: [obspy.core.stream.Stream]
-    :param datatype: [tuple] - see trace_to_pyew_tracebuff2()
+    :param dtype: None, [str], or [numpy.dtype] - Datatype to
+                assign to data being converted. None input
+                preserves native dtype of input traces contained
+                in stream and checks those against compatable
+                dtypes for Earthworm (see trace2wave
 
     :: OUTPUT ::
     :return tracebuff2_messages: [list]
-                List of tracebuff2 [dict] messages
+                List of wave messages
     """
-    # Create a copy of the stream
-    st = stream.copy()
-    # Split the stream to dispose of gappy data (if any)
-    st = st.split()
     # Iterate across traces and compose messages
-    tracebuff2_messages = []
-    for _tr in st:
-        tracebuff2_msg = trace_to_pyew_tracebuff2(_tr)
-        tracebuff2_messages.append(tracebuff2_msg)
-
-    return tracebuff2_messages
+    waves = []
+    for _tr in stream:
+        wave = trace2wave(_tr, dtype=dtype)
+        if isinstance(wave, dict):
+            waves.append(wave)
+        elif isinstance(wave, list):
+            waves += wave
+    return waves
 
 
 def format_pick2k_msg(
@@ -159,3 +194,158 @@ def format_pick2k_msg(
     msg += f"{amps[0]:08d}{amps[1]:08d}{amps[2]:08d}\n"
 
     return msg
+
+
+def validate_EW_msg_naming(mtype=None, mcode=None):
+    """
+    Provide a validation check on individual Earthworm Message Type
+    names (mtype) or Message codes (mcode) or combinations thereof
+
+    :: INPUTS ::
+    :param mtype: [str] or None
+                all-caps message type name starting with "TYPE_"
+    :param code: [int] or None
+                int in the range [0, 255]
+
+    :: OUTPUT ::
+    If mtype is None - return mtype associated with mcode, if mcode in [0,99]
+    If mcode is None - return mcode associated with mtype if defined in earthworm_global.d
+    If neither is None - return True if they match, false if they do not
+    """
+
+
+EW_GLOBAL_MESSAGE_CODES = [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        94,
+        95,
+        96,
+        97,
+        98,
+    ]
+
+EW_GLOBAL_MESSAGE_TYPES = [
+    "TYPE_WILDCARD",
+    "TYPE_ADBUF",
+    "TYPE_ERROR",
+    "TYPE_HEARTBEAT",
+    "TYPE_TRACE2_COMP_UA",
+    "TYPE_NANOBUF",
+    "TYPE_ACK",
+    "TYPE_PICK_SCNL",
+    "TYPE_CODA_SCNL",
+    "TYPE_PICK2K",
+    "TYPE_CODA2K",
+    "TYPE_PICK2",
+    "TYPE_CODA2",
+    "TYPE_HYP2000ARC",
+    "TYPE_H71SUM2K",
+    "TYPE_HINBARC",
+    "TYPE_H71SUM",
+    "TYPE_TRACEBUF2",
+    "TYPE_TRACEBUF",
+    "TYPE_LPTRIG",
+    "TYPE_CUBIC",
+    "TYPE_CARLSTATRIG",
+    "TYPE_TRIGLIST",
+    "TYPE_TRIGLIST2K",
+    "TYPE_TRACE_COMP_UA",
+    "TYPE_STRONGMOTION",
+    "TYPE_MAGNITUDE",
+    "TYPE_STRONGMOTIONII",
+    "TYPE_LOC_GLOBAL",
+    "TYPE_LPTRIG_SCNL",
+    "TYPE_CARLSTATRIG_SCNL",
+    "TYPE_TRIGLIST_SCNL",
+    "TYPE_TD_AMP",
+    "TYPE_MSEED",
+    "TYPE_NOMAGNITUDE",
+    "TYPE_NAMED_EVENT",
+    "TYPE_HYPOTWC",
+    "TYPE_PICK_GLOBAL",
+    "TYPE_PICKTWC",
+    "TYPE_ALARM",
+]
+# Form two-way look-up dictionaries
+EW_GLOBAL_TC = dict(zip(EW_GLOBAL_MESSAGE_TYPES, EW_GLOBAL_MESSAGE_CODES))
+EW_GLOBAL_CT = dict(zip(EW_GLOBAL_MESSAGE_CODES, EW_GLOBAL_MESSAGE_TYPES))
+    # Handle case where mtype is not provided
+    if mtype is None:
+        if isinstance(mcode, int):
+            if mcode in EW_GLOBAL_MESSAGE_CODES:
+                return EW_GLOBAL_CT[mcode]
+            elif 0 <= mcode <= 99:
+                print(f'mcode {mcode} is in earthworm_global.d reserved range, but unused.')
+            elif 100 <= mcode <= 255:
+                print(f'mcode {mcode} is in the installation-specific message code range - contact your sysadmin')
+            else:
+                print(f'Value Warning: mcode {mcode} is out of range [0, 255] for Earthworm messages')
+        elif mcode is None:
+            print('both inputs are None - returning None')
+            return None
+        else:
+            raise TypeError(f'mcode {mcode} must be type int or None')
+    # Handle case where mcode is not provided
+    elif mcode is None:
+        if isinstance(mtype, str):
+            if mtype in EW_GLOBAL_MESSAGE_TYPES:
+                return EW_GLOBAL_TC[mtype]
+            elif mtype.upper() in EW_GLOBAL_MESSAGE_TYPES:
+                print('User Notice: message types should be all-caps')
+                return EW_GLOBAL_TC[mtype.upper()]
+            else:
+                if mtype[:5] != 'TYPE_':
+                    print(f'Syntax Warning: EW Message Types all start with "TYPE_" ({mtype})')
+                else:
+                    print('User Notice: message type {mtype} is not in the default Earthworm Message Types - consider codes in the range [100, 255] for installation specific uses')
+        else:
+            raise TypeError('mtype must be type str or None')
+    
+    else:
+        if isinstance(mcode, int) and isinstance(mtype, str):
+            if EW_GLOBAL_CT[mcode] == mtype:
+                return True
+            elif EW_GLOBAL_CT[mcode] == mtype.upper():
+                print('User Notice: message types should be all-caps')
+                return True
+            else:
+                return False
+        elif not isinstance(mcode, int):
+            raise TypeError('mcode must be type int or None')
+        elif not isinstance(mtype, str):
+            raise TypeError('mtype must be type str or None')
+            
+    

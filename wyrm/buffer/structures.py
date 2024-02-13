@@ -114,15 +114,44 @@ class TieredBuffer(dict):
     
 
     def __repr__(self, extended=False):
-        if isinstance(self.buff_class, TraceBuff):
+        rstr = f'wyrm.buffer.structures.TieredBuffer(buff_class={self.buff_class}'
+        for _k, _v in self.bkwargs.items():
+            rstr += f', {_k}={_v}'
+        rstr += ')'
+        return rstr
+    
+    def _str_line_(self, _k0):
+        rstr =  f'[{_k0}] '
+        for _k1 in self[_k0].keys():
+            rstr += f'| [{_k1}] {self[_k0][_k1].__str__(compact=True)} '
+        rstr += '\n'
+        return rstr 
+    
+    def __str__(self, extended=False):
+        """
+        String representation of 
         
-        elif isinstance(self.buff_class, PredBuff):
-            
-
-
-    def _trace_buff_rline(self, extended=False):
-
-    def _pred_buff_rline(self, extended=False):
-
+        """
+        ntiers = 0
+        items = 0
+        for _k0 in self.keys():
+            ntiers += 1
+            for _k1 in self[_k0].keys():
+                items += 1
+        rstr = f'{ntiers} branches holding {items} {self.buff_class} buffers\n'
+        if extended:
+            for _k0 in self.keys():
+                rstr += self._str_line_(_k0)
+                        
+        else:
+            for _i, _k0 in enumerate(self.keys()):
+                if _i < 2 or _i > len(self.keys()) - 3:
+                    rstr += self._str_line_(_k0)
+                elif _i in [2, len(self.keys()) - 3]:
+                    rstr == '    ...    \n'
+                elif _i == 3:
+                    rstr += f' ({ntiers - 4} additional branches)\n'
+            rstr += 'To see full contents, use print(tieredbuffer.__str__(extended=True))'
+        return rstr
 
     

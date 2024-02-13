@@ -19,30 +19,25 @@ class Wyrm(object):
     defined by having the y = *wyrm.pulse(x) class method.
 
     The Wyrm base class produces an object with no attributes and placeholders
-    for the 3 fundamental class-methods common to all Wyrm class objects:
+    for the 4 fundamental class-methods common to all Wyrm class objects:
 
     + __init__
+    + __str__
     + __repr__
     + pulse
     """
 
-    def __init__(self, scalar=0, max_pulse_size=None, debug=False):
+    def __init__(self, max_pulse_size=None, debug=False):
         """
         Initialize a Wyrm object
         """
-        self.scalar = icc.bounded_floatlike(
-            scalar,
-            name='scalar',
-            minimum=None,
-            maximum=None,
-            inclusive=True)
-        
+        # Compatability check for debug
         if not isinstance(debug, bool):
             raise TypeError("debug must be type bool")
         else:
             self.debug = debug
         
-
+        # Compatability check for max_pulse_size
         if max_pulse_size is None:
             self.max_pulse_size = None
         else:
@@ -50,21 +45,23 @@ class Wyrm(object):
 
     def __str__(self):
         """
-        Provide a representation string of a Wyrm
+        Provide a string representation string of essential user data for this Wyrm
         """
         # rstr = "~~wyrm~~\nFundamental Base Class\n...I got no legs...\n"
         rstr = f"Max Pulse Size: {self.max_pulse_size} | debug: {self.debug}"
         return rstr
 
     def __repr__(self):
-        rstr = self.__str__()
+        """
+        Provide a string representation of how to recreate this Wyrm
+        """
+        rstr = f'wyrm.wyrms.base.Wyrm(max_pulse_size={self.max_pulse_size}, debug={self.debug})'
         return rstr
     
     def pulse(self, x=None):
         """
         ~~~ POLYMORPHIC METHOD ~~~
         Run a pulse with input argument and return that argument
-        multiplied by self.scalar
         """
-        y = x*self.scalar
+        y = x
         return y

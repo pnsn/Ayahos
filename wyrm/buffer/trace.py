@@ -617,30 +617,37 @@ class TraceBuff(Trace):
         nsli = f"{net}.{sta}.{loc}.{inst}"
         return (nsli, comp)
 
-    def __str__(self):
-        # , extended=True, disc=30, showkey=False):
+    def __str__(self, compact=False):
         """
         Return short summary string of the current TraceBuff
         with options for displaying buffer status graphically
 
-        :: INPUTS ::
-        :param extended: [bool] show buffer status?
-
-        ..see TraceBuff._display_buff_status() for
-        :param disc: [int]
-        :param showkey: [bool]
+        :: INPUT ::
+        :param compact: [bool] show a compact representation of buffer fill fraction
+                        and masked fraction?
+        :: OUTPUT ::
+        :return rstr: [str] representative string
         """
-        rstr = f"{super().__str__()}"
-        rstr += f" | buffer {100.*(self.filled_fraction):.0f}%"
-        rstr += f" | masked {100.*(1. - self.valid_fraction):.0f}%"
-        rstr += f" | max {self.max_length} sec"
+        # If non-compact representation 
+        if not compact:
+            # Start Trace-inherited __str__ 
+            rstr = f"{super().__str__()}"
+            # Add buffer, mask, and max length metrics in pretty formatting
+            rstr += f" | buffer {100.*(self.filled_fraction):.0f}%"
+            rstr += f" | masked {100.*(1. - self.valid_fraction):.0f}%"
+            rstr += f" | max {self.max_length} sec"
+        # If compact representation (used with TieredBuffer)
+        else:
+            rstr = f"B:{self.filled_fraction: .1f}|M:{(1. - self.valid_fraction):.1f}"
         return rstr
-        # if extended:
-        #     rstr += "\n"
-        #     rstr += self.__display_buff_status(disc=disc, showkey=showkey, asprint=False)
-        # return rstr
 
     def __repr__(self):
-        return self.__str__()
+        """
+        Return a repr string for this TraceBuff
+        """
+        rstr = 'wyrm.buffer.trace.TraceBuff('
+        rstr += f'max_length={self.max_length}, fill_value={self.fill_value}, '
+        rstr += f'method={self.method}, interpolation_samples={self.interpolation_samples})'
+        return rstr
 
 

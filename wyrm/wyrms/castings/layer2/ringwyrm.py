@@ -22,7 +22,7 @@ Wyrm (ð)
 
 """
 import pandas as pd
-from wyrm.wyrms.base import Wyrm
+from wyrm.wyrms._base import Wyrm
 from wyrm.message.base import _BaseMsg
 from wyrm.message.trace import TraceMsg
 from wyrm.structures.castings.deq_dict import DEQ_Dict

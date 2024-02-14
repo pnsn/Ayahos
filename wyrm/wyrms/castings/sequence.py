@@ -16,7 +16,7 @@
     queue are provided via behaviors of collections.deque objects
 """
 from collections import deque
-from wyrm.wyrms.base import Wyrm
+from wyrm.wyrms._base import Wyrm
 from time import sleep
 
 

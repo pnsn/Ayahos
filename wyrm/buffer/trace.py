@@ -90,9 +90,6 @@ class TraceBuff(Trace):
 
         # Set initial state of have_appended trace
         self._have_appended_trace = False
-        # Initialize trace contents with an empty trace
-        # super(TraceBuff, self).__init__(data=np.array([]), header=None)
-        # super().__init__()
         # Initialize buffer statistics parameters
         self.filled_fraction = 0
         self.valid_fraction = 1

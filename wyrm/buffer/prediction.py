@@ -6,6 +6,133 @@ import torch
 import seisbench.models as sbm
 import matplotlib.pyplot as plt
 from time import time
+from copy import deepcopy
+
+
+class PredArray(object):
+    """
+    Support class to house predicted value arrays and windowing/model metadata
+    into a single object used to append to PredBuff
+    """
+    def __init__(self, data=np.array([]), meta={}, weight_names=[], label_names=[]):
+        # Run compatability check on data
+        if not isinstance(data, np.ndarray):
+            raise TypeError('data must be type numpy.ndarray')
+        else:
+            self.data = data
+        # Map some attributes from self.data to self for convenience
+        self.ndim = self.data.ndim
+        self.shape = self.data.shape
+        
+        # metadata compatability checks
+        if not isinstance(meta, dict):
+            raise TypeError('meta must be type dict')
+        else:
+            md = {}
+            emsg = ''
+            for _k in ['t0', 'samprate', 'inst_code', 'model_name']:
+                # If required field is missing, add to emsg
+                if _k not in meta.keys():
+                    emsg += f'{_k}, '
+                # If required field is present, pull to md
+                else:
+                    md.update({_k: meta[_k]})
+            # If emsg populated, raise error
+            if emsg != '':
+                raise KeyError(f'Required keys {emsg[:-2]} not present in meta.')
+            else:
+                self.meta = md
+        
+        # Compatability checks on weight_names
+        if not isinstance(weight_names, (list, str)):
+            raise TypeError('weight_names must be type list or str')
+        elif isinstance(weight_names, str):
+            weight_names = [weight_names]
+
+        if len(weight_names) != self.shape[0]:
+            raise IndexError(f'Scale mismatch: weight_names {len(weight_names)} and data.shape[0] {self.shape[0]}')
+        else:
+            self.i_wgt = {_i: _w for _i, _w in enumerate(weight_names)}
+        
+        # Compatability checks on label names
+        if not isinstance(label_names, (list, str)):
+            raise TypeError('label_names must be type list or str')
+        elif isinstance(label_names, str):
+            label_names = [label_names]
+
+        if len(label_names) != self.shape[0]:
+            raise IndexError(f'Scale mismatch: label_names {len(label_names)} and data.shape[1] {self.shape[0]}')
+        else:
+            self.j_lbl = {_j: _l for _j, _l in enumerate(label_names)}
+        
+
+    def concatenate(self, next_array, axis='wgt'):
+        """
+        Concatenate a PredArray object with matching PredArray.meta information
+        to this PredArray's self.meta information along either the "wgt" [0] or 
+        "lbl" [1] axes and update associated attributes in this PredArray
+
+        :: INPUTS ::
+        :param next_array: [wyrm.buffer.prediction.PredArray] PredArray to append
+        :param axis: [str] or [int] - explicit axis number or a string alias
+                    for the axis labeling. Supported:
+                        0 = 'weight','wgt','i'
+                        1 = 'label','lbl','j'
+        
+        :: OUTPUT ::
+        :return self: [wyrm.buffer.prediction.PredArray] return a representation of
+                    self to enable cascading
+        """
+
+        # next_array compatability check
+        if not isinstance(next_array, PredArray):
+            raise TypeError('next_array must be type wyrm.buffer.prediction.PredArray')
+        
+        # Ensure metadata match
+        if self.meta != next_array.meta:
+            raise ValueError('Metadata mismatch between self.meta and next_array.meta')
+
+        # Parse axis
+        if axis not in ['wgt','lbl','weight','label','i','j', 0, 1]:
+            raise ValueError(f'axis {axis} no supported - see documentation')
+        elif axis in ['wgt','weight','i',0]:
+            # If labels along un-changed axis match
+            if self.j_lbl == next_array.j_lbl:
+                # Concatenate data arrays
+                self.data = np.concatenate((self.data, next_array.data), axis=0)
+                # Get get next index number on the i-axis
+                next_i = self.shape[0] + 1
+                # update the weight labels dictionary
+                self.i_wgt.update({_k+next_i: _v for _k, _v in next_array.i_wgt})
+            else:
+                raise IndexError()
+        
+        elif axis in ['lbl','label','j',1]:
+            caxis = 1
+            a0 = self.j_lbl
+            a1 = next_array.j_lbl
+
+
+
+
+        # Check that target index is not already present in self
+        if a1 == a0:
+            raise ValueError('Axis information identical - canceling concatenate')
+        elif all(a1i in a0.items() for a1i in a1.items()):
+            raise ValueError('Axis information alredy in self - canceling concatenate')
+        else:
+            for a1i in a1.items():
+                if a1i not in a0.items():
+                    if caxis == 0:
+                        na_slice = next_array.data[a1i[0], ...]
+                    elif caxis == 1:
+                        na_slice = next_array.data[:, a1i[0], ...]
+                    
+                    new_a1k = max(a0.keys()) + 1
+                    a0.update({new_a1k: a1})
+                    self.data = np.concatenate((self.data, na_slice), axis=caxis)
+            
+        
 
 
 
@@ -21,17 +148,24 @@ class PredBuff(object):
         l - model prediction label
         t - time
     """
-    def __init__(self, model, weight_names, max_samples=12001, stack_method='max'):
+    def __init__(self,
+                 model=sbm.EQTransformer(),
+                 weight_names=['pnw', 'instance', 'stead'],
+                 max_samples=15000,
+                 stack_method='max'):
         """
         Initialize a Realtime Prediction Buffer object. Most attributes
         will be populated by the first data/metadata append process
         using the self.initial_append(pred, meta) method.
 
         :: INPUTS ::
-        :param model: [seisbench.models.WaveformModel-type] or None
+        :param model: [seisbench.models.WaveformModel-type]
                         WaveformModel object that provides information on how to scale
                         the buffer (i.e. - number of labels )
+        :param weight_names: [str] or [list] of [str] - model.from_pretrained() compatable
+                        pretrained weight names (case sensitive) for input `model`
         :param max_samples: [int] maximum buffer length along the time axis in samples
+                        NOTE: Requires a minimum of 2*model.in_samples
         :param stack_method: [str] method for stacking non-blinded
                         overlapping predictions.
                         Supported methods:
@@ -41,31 +175,30 @@ class PredBuff(object):
                             'avg': update stack for overlapping samples as:
                                   stack[i,j] = (stack[i,j]*fold[i,j] + 
                                                 pred[i,j])/(fold[i,j] + 1)
-        :param fill_value: [scalar] placeholder value `fill_value` in 
-                        numpy.full() - used for empty data entry positions
-                        in self.stack and self.fold
-                        -- for compatability with ufunc this needs to be
-                        set to 0. (OBSOLITE AS OPTION)
-        :param model: [seisbench.models.WaveformModel] or None
-                        Model from which to scrape metadata (optional)        
         """
+        # model compatability check 
         if not isinstance(model, sbm.WaveformModel):
             raise TypeError('input model must be type seisbench.models.WaveformModel or None')
         elif isinstance(model, sbm.WaveformModel):
             self.model_name = model.name
             self.label_names = model.labels
-            if self.label_names is not None:
-                self.label_codes = [_l[0].upper() for _l in model.labels]
+            # If model is valid and has labels, compose a label_names dict that
+            # houses indexing information for the self.stack array
+            if model.labels is not None:
+                self.label_names = {_l: _i for _i, _l in enumerate(model.labels)}
             else:
                 raise TypeError('Likely input a WaveformModel base-class, rather than a child-class. Need a valid, trained ML model as a input. E.g., EQTransformer()')
             self.nlabels = len(self.label_codes)
+            # Get window length in samples
             self.window_npts = model.in_samples
         
+        # Get list of pretrained
+        # This takes a bit of time, so use the "copy()" method to populate TieredBuffer
         pt_wgt_list = model.list_pretrained()
-        # Compat. checks on weight_names
+        # weight_names compatability check
         if isinstance(weight_names, str):
             if weight_names in pt_wgt_list:
-                self.weight_names = [weight_names]
+                self.weight_names = {weight_names: 0}
                 self.nwgts = 1
         elif isinstance(weight_names, (list, tuple)):
             emsg = ''
@@ -75,8 +208,8 @@ class PredBuff(object):
             if emsg != '':
                 raise ValueError(f'Incompatable weight names: {emsg[:-2]}')
             else:
-                self.weight_names = list(weight_names)
-                self.nwgts = len(self.weight_names)
+                self.nwgts = len(weight_names)
+                self.weight_names = dict(zip(weight_names, np.arange(0,self.nwgts)))
 
         ### Static parameters (once assigned) ###
         # max_samples compatability checks
@@ -107,7 +240,10 @@ class PredBuff(object):
             fill_value=self.fill_value,
             dtype=np.float32
         )
-
+        self.fold = np.full(shape=(self.max_samples),
+                            fill_value=self.fill_value,
+                            dtype=np.float32)
+        
         # Instrument Metadata
         self.inst_code = None
         # Window Indexing Scalars
@@ -119,11 +255,14 @@ class PredBuff(object):
         self.blinding_array = None
         # Placeholder for timestamp corresponding to index 0
         self.t0 = None
-        # Dynamic data arrays
-        self.stack = None
-        self.fold = None
         # Has data appended flag
         self._has_data = False
+
+    def copy(self):
+        """
+        Return an deepcopy of this PredBuff object
+        """
+        return deepcopy(self)
 
     def append(self, pred, meta, include_blinding=False):
         """
@@ -489,50 +628,6 @@ class PredBuff(object):
             fill_value=self.fill_value,
             dtype=self.fold.dtype)
         
-        # Benchmarking suggests that this method is slower by 3x
-        # if self.debug:
-        #     time1 = time()
-        # if instr['npts_right'] != 0:
-        #     self.stack = roll_trim_rows(self.stack, instr['npts_right'], fill_value=self.fill_value)
-        #     self.fold = roll_trim_rows(self.fold, instr['npts_right'], fill_value=self.fill_value)
-        #     self.t0 -= (instr['npts_right']/self.samprate)
-        # if self.debug:
-        #     time2 = time()
-        #     print(f'    rolled buffers {time2 - time1: .3f} sec')
-        
-        # OBSOLITE - runs several orders of magnitude slower than ufunc-facilitated operations
-        # Update stack and fold entries with local variables
-        # Extract/copy predicted values
-        # pred = vpred[:, instr['i0_p']:instr['i1_p']]
-        # # Extract
-        # stack = self.stack[:, instr['i0_s']:instr['i1_s']]
-        # fold = self.fold[instr['i0_s']:instr['i1_s']]
-        # # This is slow as a loop - vectorize with ufuncs
-        # for _i in range(pred.shape[0]):
-        #     for _j in range(pred.shape[1]):
-        #         # Get individual samples
-        #         try:
-        #             sij = stack[_i, _j]
-        #         except:
-        #             breakpoint()
-        #         if sij == self.fill_value:
-        #             sij = 0
-        #         pij = pred[_i, _j]
-        #         fj = fold[_j]
-        #         # Apply stacking_method instruction
-        #         if self.stack_method == 'max':
-        #             stack[_i, _j] = np.nanmax([sij, pij])
-        #         elif self.stack_method == 'avg':
-        #             try:
-        #                 stack[_i, _j] = np.nansum([sij * fj, pij])/np.nansum([fj, 1])
-        #             except:
-        #                 breakpoint()
-        #         # Update fold entry for this sample once per cycle across labels
-        #         if _i == 0:
-        #             fold[_j] = np.nansum([fj, 1])
-        # # Re-assign values to stack and fold
-        # self.stack[:, instr['i0_s']:instr['i1_s']] = stack
-        # self.fold[instr['i0_s']:instr['i1_s']] = fold
             
         # # ufunc-facilitated stacking # #
         # Construct in-place prediction slice array
@@ -629,29 +724,29 @@ class PredBuff(object):
 
 
 
-class PredBuffMultiWgt(PredBuff):
+# class PredBuffMultiWgt(PredBuff):
 
-    def __init__(self, model, wgt_name_list, max_length=120., stack_method='max', dtype=np.float32, debug=False):
-        # Inherit PredBuff 
-        super().__init__(max_length=max_length, stack_method=stack_method, model=model, dtype=dtype, debug=debug)
+#     def __init__(self, model, wgt_name_list, max_length=120., stack_method='max', dtype=np.float32, debug=False):
+#         # Inherit PredBuff 
+#         super().__init__(max_length=max_length, stack_method=stack_method, model=model, dtype=dtype, debug=debug)
         
-        # Compat. checks for wgt_name_list
-        if isinstance(wgt_name_list, str):
-            if wgt_name_list in self.model.list_pretrained()
-                self.wgt_name_list = [wgt_name_list]
-        elif isinstance(wgt_name_list, list):
-            if all(isinstance(_w, str) for _w in wgt_name_list):
-                self.wgt_name_list = wgt_name_list
-            else:
-                raise TypeError('Entries in wgt_name_list are not type str')
+#         # Compat. checks for wgt_name_list
+#         if isinstance(wgt_name_list, str):
+#             if wgt_name_list in self.model.list_pretrained()
+#                 self.wgt_name_list = [wgt_name_list]
+#         elif isinstance(wgt_name_list, list):
+#             if all(isinstance(_w, str) for _w in wgt_name_list):
+#                 self.wgt_name_list = wgt_name_list
+#             else:
+#                 raise TypeError('Entries in wgt_name_list are not type str')
         
-        # Predefine some dimensions
-        self.stack_j = len(self.label_codes)
-        self.stack_k = len(self.wgt_name_list)
-        self.fold_j = len(self.wgt_name_list)
-        self.
+#         # Predefine some dimensions
+#         self.stack_j = len(self.label_codes)
+#         self.stack_k = len(self.wgt_name_list)
+#         self.fold_j = len(self.wgt_name_list)
+#         self.
 
-    # def _validate_model_info(self, vmeta, model, wgt_name):
+#     # def _validate_model_info(self, vmeta, model, wgt_name):
     #     # Raise errors if model and metadata have basic information mismatches
     #     if not isinstance(model, sbm.WaveformModel):
     #         raise TypeError('model must be a child-class of seisbench.models.WaveformModel')

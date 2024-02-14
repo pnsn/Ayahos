@@ -11,7 +11,7 @@
 """
 
 from collections import deque
-from wyrm.wyrms.base import Wyrm
+from wyrm.wyrms._base import Wyrm
 import wyrm.util.input_compatability_checks as icc
 from wyrm.structures.window import InstWindow
 from wyrm.buffer.prediction import PredBuff
@@ -22,10 +22,13 @@ import torch
 from tqdm import tqdm
 from time import time
 
+
+
+
 class MachineWyrm(Wyrm):
     """
-    Wyrm for housing and operating pulsed prediction by a WaveformModel from
-    SeisBench and passing metadata from model inputs to outputs
+    Wyrm for housing and operating pulsed prediction by a ML model built on the
+    seisbench.models.WaveformModel baseclass
 
     input - deque([tuple(tensor, metadata), tuple(tensor, metadata),...])
         with each tuple created as the output of a InstWindow.to_torch()
@@ -36,7 +39,14 @@ class MachineWyrm(Wyrm):
             in a single tier at this stage, but becomes useful when applying multiple
             model architectures to the same data
     """
-    def __init__(self, model, weight_names, devicetype='cpu', max_samples=12000, max_pulse_size=1000, stack_method='max', debug=False):
+    def __init__(self,
+                model,
+                weight_names,
+                devicetype='cpu',
+                max_samples=12000,
+                max_pulse_size=1000,
+                stack_method='max',
+                debug=False):
         """
         Initialize a SeisBenchWyrm object
 
@@ -55,6 +65,7 @@ class MachineWyrm(Wyrm):
         """
         # Initialize Wyrm inheritance
         super().__init__(max_pulse_size=max_pulse_size, debug=debug)
+
         # model compatability checks
         if not isinstance(model, sbm.WaveformModel):
             raise TypeError('model must be a seisbench.models.WaveformModel object')
@@ -62,6 +73,7 @@ class MachineWyrm(Wyrm):
             raise TypeError('model must be a child-class of the seisbench.models.WaveformModel class')
         else:
             self.model = model
+        
         # Map model labels to model codes
         self.label_codes = ''
         for _l in self.model.labels:
@@ -132,7 +144,7 @@ class MachineWyrm(Wyrm):
                 of RtPredTrace objects.
         """
         # Construct prediction inputs
-        window_concat_tensor, meta_list = self._instwindows2tensor(x)
+        input_tensor, meta_list = self._instwindows2tensor(x)
         # Preallocate numpy array for outputs
         pred_nwlt = np.full(shape=(len(self.nwgts),
                                    len(meta_list),
@@ -149,9 +161,9 @@ class MachineWyrm(Wyrm):
             # Load n-th model weight
             self.model = self.model.from_pretrained(wname)
             # Run Prediction
-            raw_preds = self._run_prediction(window_concat_tensor)
+            raw_preds = self._run_prediction(input_tensor)
             # Append output to numpy array
-            pred_nwlt[_n, ...] = self._raw_preds2numpy(window_concat_tensor, raw_preds)
+            pred_nwlt[_n, ...] = self._raw_preds2numpy(input_tensor, raw_preds)
             # Report runtime
             if self.debug:
                 print(f'Prediction runtime ({time() - tick})')
@@ -178,11 +190,11 @@ class MachineWyrm(Wyrm):
         :param x: [deque] of [wyrm.structures.window.InstWindow] objects
                   that have been pre-processed
         :: OUTPUTS ::
-        :return window_concat_tensor: [torch.Tensor] with SeisBench dimensions
+        :return input_tensor: [torch.Tensor] with SeisBench dimensions
                                     (window#, component, data)
         :return meta_list: [list] of [dict] containing window information
                             that correspond with the 0-axis indexing of
-                            window_concat_tensor
+                            input_tensor
         """
         if not isinstance(x, deque):
             raise TypeError('input x must be a deque')
@@ -199,34 +211,66 @@ class MachineWyrm(Wyrm):
                 tensor_list.append(tensor)
                 meta_list.append(meta)
         
-        window_concat_tensor = torch.concat(tensor_list)
-        return window_concat_tensor, meta_list
+        input_tensor = torch.concat(tensor_list)
+        return input_tensor, meta_list
     
-    def _run_prediction(self, tensor):
+    def _run_prediction(self, input_tensor):
         """
         Run prediction on an torch.Tensor composed of
-        concatenated, windowed tensors
+        concatenated, windowed tensors. Includes checks
+        to make sure self.model and input_tensor are
+        on the same device (self.device)
 
-        :
+        :: INPUT ::
+        :param tensor: [torch.Tensor] pytorch tensor with
+                    dimensions expected by self.model.
+                    For SeisBench Waveform Models, dimensions
+                    are:
+                    [window_axis, trace_type_axis, trace_sample_axis]
+        :: OUTPUT ::
+        :return raw_preds: [torch.Tensor] or tuple thereof
+                    raw output from self.model.
+                    NOTE: This structure is not be consistent
+                    across model architectures, even within
+                    SeisBench.
+                    E.g., EQTransformer outputs a 3-tuple of
+                          [window_axis, pred_sample] tensors
+                          PhaseNet outputs a tensor matching
+                          the dimensions of input `tensor`
         """
         if self.model.device.type != self.device.type:
             self.model.to(self.device)
-        if tensor.device.type == self.device.type:
-            raw_preds = self.model(tensor)
+        if input_tensor.device.type == self.device.type:
+            raw_preds = self.model(input_tensor)
         else:
-            raw_preds = self.model(tensor.to(self.device))
+            raw_preds = self.model(input_tensor.to(self.device))
         return raw_preds
     
-    def _raw_preds2numpy(self, window_concat_tensor, raw_preds):
-        npy_preds = np.full(window_concat_tensor.shape,
+    def _raw_preds2numpy(self, input_tensor, raw_preds):
+        """
+        Convert raw predictions output from a WaveformModel into 
+        a numpy array with matching dimensions and indexing as the
+        input_tensor. Includes a clause for detaching `raw_preds`
+        from non-cpu devices.
+
+        :: INPUTS ::
+        :param input_tensor: [torch.Tensor] input tensor corresponding
+                            to the ML model prediction output `raw_preds`
+        :param raw_preds: [torch.Tensor] or tuple thereof.
+                            ML model prediction values
+        :: OUTPUT ::
+        :return npy_preds: [numpy.ndarray] numpy array housing predicted
+                            values from raw_preds
+        """
+        npy_preds = np.full(input_tensor.shape,
                             fill_value=np.nan,
                             dtype=np.float32)
         # Handle tuple output of EQTransformer
         if isinstance(raw_preds, tuple):
             raw_preds = torch.concat(raw_preds)
         # Reshape if needed
-        if raw_preds.shape != window_concat_tensor.shape:
-            raw_preds = raw_preds.reshape(window_concat_tensor.shape)
+        if raw_preds.shape != input_tensor.shape:
+            raw_preds = raw_preds.reshape(input_tensor.shape)
         # Convert back to numpy, shift off non-CPU device if needed
         if raw_preds.device.type != 'cpu':
             npy_preds = raw_preds.detach().cpu().numpy()
@@ -235,7 +279,10 @@ class MachineWyrm(Wyrm):
         return npy_preds
     
 
-    def _append_preds_to_buffer(self, pred_nwlt, meta_list):
+    def update_meta_and_append_preds_to_buffer(self, pred_nwlt, meta_list):
+        """
+        
+        """
         for _w in range(pred_nwlt.shape[1]):
             nwind = pred_nwlt[_w]
             # Fetch metadata for source window
@@ -249,11 +296,23 @@ class MachineWyrm(Wyrm):
             k0 = meta['inst_code']
             # Get tier-1 key as model_name
             k1 = self.model.name
-            # Append to tiered buffer using its 
-            self.buffer.append(nwind, k0, k1)
+            # Append to tiered buffer using its append method
+            self.buffer.append(nwind, k0, k1, meta=meta)
 
     def __str__(self, extended=False):
-        # rstr = super().__repr__()
+        """
+        Provide a user-friendly string representation of the contents of
+        this MachineWyrm.
+
+        :: INPUT ::
+        :param extended: [bool] Should self.buffer (a TieredBuffer) be displayed
+                        in extended mode?
+                        Also see wyrm.buffer.structures.TieredBuffer.__str__
+        :: OUTPUT ::
+        :return rstr: [str] representative string
+        """
+        # 
+        rstr = super().__str__()
         rstr = f'model: {self.model.name} | '
         rstr += f'shape: (1, {self.model.in_channels}, {self.model.in_samples}) ->'
         rstr += f'(1, {len(self.model.labels)}, {self.model.in_samples}) | '
@@ -268,7 +327,7 @@ class MachineWyrm(Wyrm):
 
     def __repr__(self):
         """
-        Representative string of the parameters used to initialize this MachineWyrm
+        String representation of the parameters used to initialize this MachineWyrm
         """
         rstr = f'wyrm.wyrms.predict.MachineWyrm(model={self.model}, weight_names={self.weight_names}, '
         rstr += f'devicetype={self.device}, max_samples={self.max_samples}, max_pulse_size={self.max_pulse_size}, '

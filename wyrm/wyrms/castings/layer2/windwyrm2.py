@@ -1,4 +1,4 @@
-from wyrm.wyrms.base import Wyrm
+from wyrm.wyrms._base import Wyrm
 from wyrm.structures.rtinststream import RtInstStream
 from wyrm.structures.rtbufftrace import RtBuffTrace
 from wyrm.message.window import WindowMsg

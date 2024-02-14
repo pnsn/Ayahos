@@ -10,7 +10,7 @@
 """
 
 from wyrm.wyrms.canwyrm import CanWyrm
-from wyrm.wyrms.base import Wyrm
+from wyrm.wyrms._base import Wyrm
 from collections import deque
 import pytest
 

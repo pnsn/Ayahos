@@ -3,7 +3,7 @@
 """
 
 
-from wyrm.wyrms.base import Wyrm
+from wyrm.wyrms._base import Wyrm
 from wyrm.structures.castings.sncl_dict import RtBuff_Dict
 from wyrm.message.trace import TraceMsg
 import fnmatch

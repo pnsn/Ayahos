@@ -1,6 +1,7 @@
 from collections import deque
-from wyrm.buffer.trace import BuffTrace
+from wyrm.buffer.trace import TraceBuff
 import wyrm.util.input_compatability_checks as icc
+from obspy import Stream, Trace
 import inspect
 import fnmatch
 from copy import deepcopy
@@ -27,7 +28,7 @@ class TieredBuffer(dict):
     structure and can base it on the code here.
 
     """
-    def __init__(self, buff_class=BuffTrace, **buff_init_kwargs):
+    def __init__(self, buff_class=TraceBuff, **buff_init_kwargs):
         # Inherit dict properties
         super().__init__()
         # Compatability check for buff_class input
@@ -145,10 +146,10 @@ class TieredBuffer(dict):
 
         :: INPUTS ::
         :param obj: [object] object to append to a self.buff_class object
-                    Must be compatable with the self.buff_class.append()
-                    method
+            Must be compatable with the self.buff_class.append() method
         :param TK0: [str] key string for tier-0 associated with `obj`
         :param TK1: [str] key string for tier-1 associated with `obj`
+
         :param **options: [kwargs] key-word arguments to pass to 
                     self.buff_class.append()
         
@@ -164,7 +165,7 @@ class TieredBuffer(dict):
         return self
     
 
-    def __repr__(self):
+    def __str__(self):
         """
         Provide a representative string documenting the initialization of
         this TieredBuffer
@@ -175,17 +176,17 @@ class TieredBuffer(dict):
         rstr += ')'
         return rstr
     
-    def _str_line_(self, _k0):
+    def _repr_line(self, _k0):
         """
         Compose a single line string that represents contnts of 
         branch [_k0]
         """
-        rstr =  f'[{_k0}] '
+        rstr =  f'{_k0:16} '
         for _k1 in self[_k0].keys():
             rstr += f'| [{_k1}] {self[_k0][_k1].__str__(compact=True)} '
         return rstr 
     
-    def __str__(self, extended=False):
+    def __repr__(self, extended=False):
         """
         String representation of the contents of this TieredBuffer
         similar to the format of obspy.core.stream.Stream objects
@@ -200,12 +201,12 @@ class TieredBuffer(dict):
         """
         _cl = 3
         # Create header line
-        rstr = f'{self.nbranches} branches holding {self.nitems} {self.buff_class} buffers\n'
+        rstr = f'TieredBuffer comprising {self.nbranches} branches holding {self.nitems} {self.buff_class} buffers\n'
         # If extended, iterate across all tier-0 keys
         if extended:
             for _k0 in self.keys():
                 # And print tier-1 keys plus compact buffer representations
-                rstr += self._str_line_(_k0)
+                rstr += self._repr_line(_k0)
                 rstr += '\n'
         # If not extended produce a similar trucated format as 
         # obspy.core.stream.Stream.__str__(extended=False)
@@ -214,12 +215,60 @@ class TieredBuffer(dict):
             for _i, _k0 in enumerate(self.keys()):
                 # If the first 2 or last 2 lines
                 if _i < _cl or _i > len(self.keys()) - _cl - 1:
-                    rstr += self._str_line_(_k0)
+                    rstr += self._repr_line(_k0)
+                    rstr += '\n'
                 elif _i in [_cl, len(self.keys()) - _cl - 1]:
                     rstr == '    ...    \n'
                 elif _i == _cl + 1:
                     rstr += f' ({self.nbranches - _cl*2} other branches)\n'
-            rstr += 'To see full contents, use print(tieredbuffer.__str__(extended=True))'
+            if not extended and len(self) > _cl*2:
+                rstr += 'To see full contents, use print(tieredbuffer.__repr__(extended=True))'
         return rstr
 
-    
+    def append_stream(self, stream):
+        """
+        Convenience method for appending the contents of obspy.core.stream.Stream to
+        a TieredBuffer with buff_class=wyrm.buffer.trace.TraceBuff, using the 
+        following key designations
+
+        TK0 = trace.id[:-1]
+        TK1 = trace.id[-1]
+
+        :: INPUT ::
+        :param stream: [obspy.core.stream.Stream] or [obspy.core.trace.Trace]
+                Trace or Stream to append to this TieredBuffer
+        :: OUTPUT ::
+        :return self: [wyrm.buffer.structures.TieredBuffer] allows cascading
+        """
+        # Ensure the buff_class is TraceBuff
+        if self.buff_class != TraceBuff:
+            raise AttributeError('Can only use this method when buff_class is wyrm.buffer.trace.TraceBuff')
+        # Ensure the input is an obspy Trace or Stream
+        if not isinstance(stream, (Trace, Stream)):
+            raise TypeError
+        # If this is a trace, turn it into a 1-element list
+        if isinstance(stream, Trace):
+            stream = [stream]
+        # Iterate across traces in stream
+        for _tr in stream:
+            # Generate keys
+            TK0 = _tr.id[:-1]
+            TK1 = _tr.id[-1]
+            # Append to TraceBuff, generating branches as needed
+            self.append(_tr, TK0=TK0, TK1=TK1)
+        return self
+
+    def append_predarray(self, predarray):
+        """
+        Convenience method for appending a wyrm.buffer.prediction.PredArray to
+        a TieredBuffer with buff_class=wyrm.buffer.prediction.PredBuff using
+        the following key designations
+
+        TK0 = predarray.id
+        TK1 = predarray.weight_name
+        """
+        if self.buff_class != PredBuff:
+            raise AttributeError('Can only use this method when buff_class is wyrm.buffer.prediction.PredBuff')
+        if not isinstance(predarray, PredArray):
+            raise TypeError
+        TK

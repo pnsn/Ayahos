@@ -5,7 +5,7 @@ from wyrm.wyrms._base import Wyrm
 import wyrm.util.input_compatability_checks as icc
 from wyrm.buffer.structures import TieredBuffer
 from wyrm.buffer.trace import TraceBuff
-from wyrm.util.PyEW_translate import wave2trace, trace2wave, stream2waves
+from wyrm.util.PyEW_translate import is_wave_msg
 from collections import deque
 # import PyEW
 from obspy import read
@@ -14,8 +14,25 @@ import re
 
 
 class RingWyrm(Wyrm):
+    """
+    Wyrm that facilitates transactions between memory rings in the Earthworm
+    Message Transport System and the Python environment. This wraps an active 
+    PyEarthworm (PyEW) module and a single python-ring connection and provides
+    an abstract RingWyrm.pulse() method that facilitates the following PyEW.EWModule
+    class methods:
+        + get_wave() - get TYPE_TRACEBUFF2 (msg_type 19) messages from a WAVE RING
+        + put_wave() - submit a `wave` dict object to a WAVE RING (msg_type 19)
+        + get_msg() - get a string-formatted message* from a RING
+        + put_msg() - put a string-formatted message* onto a RING
+        + get_bytes() - get a bytestring* from a RING
+        + put_bytes() - put a bytestring* onto a RING
+
+        *with appropriate msg_type code
+    """
     
     def __init__(self, module=None, conn_id=0, pulse_method_str='get_wave', msg_type=19, max_pulse_size=10000, debug=False):
+        
+        
         Wyrm.__init__(self, debug=debug, max_pulse_size=max_pulse_size)
         # Compatability checks for `module`
         if module is None:
@@ -49,7 +66,8 @@ class RingWyrm(Wyrm):
         # In the case of get/put_wave, default to msg_type=19 (tracebuff2)
         else:
             self.msg_type=19
-        
+        # Update _in_types and _out_types private attributes for this Wyrm's pulse method
+        self._update_io_types(itype=(Trace, str, bytes), otype=(dict, bool, type(None)))
 
     def pulse(self, x):
         """
@@ -76,36 +94,42 @@ class RingWyrm(Wyrm):
                 for get_bytes() - returns a python bytestring
                 for get_msg() - returns a python string
         """
-        if not isinstance(x, (deque, list)):
-            if isinstance(x, (Trace, str)):
-                x = deque(x)
-            else:
-                raise TypeError('input x must be a list-like object containing an obspy.core.Trace.trace or str-type object(s)')
-        elif isinstance(x, list):
-            x = deque(x)
-        else:
-            pass
-            
-        # If getting things from Earthworm, use append left to buffer
+        # Run Wyrm's pulse for compatability checks on x
+        self._matches_itype(x)
+        # if dealing with waves
+        if 'wave' in self.pulse_method:
+            if 'get' in self.pulse_method:
+                msg = self.module.get_wave(self.conn_id)
+            elif 'put' in self.pulse_method:
+                if is_wave_msg(x):
+                    self.module.put_wave(self.conn_id, x)
+                else:
+                    raise TypeError('x does not conform to the wave dict data format')
+                
+                
+
+        # If getting things from Earthworm...
         if 'get' in self.pulse_method:
+            # ...if getting a TYPE_TRACEBUFF2 (code 19) message, use class method directly
             if 'wave' in self.pulse_method:
                 msg = self.module.get_wave(self.conn_id)
+                # Flag null result as False
+                if msg == {}:
+                    msg = False
+            # ...if getting a string or bytestring, use eval approach for compact code
             else:
-                evalstr = f'self.module.{self.pulse_method}(self.conn_id, self.msg_type)'
+                eval_str = f'self.module.{self.pulse_method}(self.conn_id, self.msg_type)'
+                msg = eval(eval_str)
+                # Flag empty message results as 'False'
+                if msg == '':
+                    msg = False
             
-            # Flag empty message results as 'False'
-            if msg == {}:
-                msg = False
-            elif msg == '':
-                msg = False
-            else:
-                pass
             return msg
         
-        # If sending things to Earthworm, use pop to get items off x
+        # If sending things to Earthworm...
         elif 'put' in self.pulse_method:
             # Iterate across elements of X
-            # If sending waves
+            # ..if sending waves
             if 'wave' in self.pulse_method:
                 # Convert input trace into wave msg
                 msg = trace2wave(x)
@@ -114,9 +138,9 @@ class RingWyrm(Wyrm):
             # If sending byte or string messages
             else:
                 # Compose evalstr
-                evalstr = f'self.module.{self.pulse_method}(self.conn_id, self.msg_type, _x)'
+                eval_str = f'self.module.{self.pulse_method}(self.conn_id, self.msg_type, _x)'
                 # Execute eval
-                eval(evalstr)
+                eval(eval_str)
             return None      
 
     def __str__(self):
@@ -139,6 +163,16 @@ class RingWyrm(Wyrm):
         rstr += f'msg_type={self.msg_type}, '
         rstr += f'max_pulse_size={self.max_pulse_size}, debug={self.debug})'
         return rstr
+
+
+# class DiskWyrm(Wyrm):
+#     """
+#     Wyrm that facilitates I/O with select saved file types and data handling
+#     classes used in the Wyrm package
+#     """
+#     def __init__(self,)
+
+### GRANDCHILD CLASSES ###
 
 
 class EarWyrm(RingWyrm):
@@ -188,6 +222,8 @@ class EarWyrm(RingWyrm):
             max_length=max_length,
             **options
             )
+        self.options = options
+        self._update_io_types(itype=(str, type(None)), otype=TieredBuffer)
 
     def pulse(self, x=None):
         """
@@ -231,8 +267,11 @@ class EarWyrm(RingWyrm):
                                    'E': TraceBuff()}}
 
         """
+        # Run type-check on x inherited from Wyrm
+        self._matches_itype(x, raise_error=True)
+
         # Start iterations that pull single wave object
-        for _ in range(self.pulse_size):
+        for _ in range(self.max_pulse_size):
             # Run the pulse method from RingWyrm for single wave pull
             _wave = super().pulse(x=None)
             # If RingWyrm.pulse() returns False - trigger early stopping
@@ -264,12 +303,17 @@ class EarWyrm(RingWyrm):
         rstr += f'\n{self.buffer.__str(extended=extended)}'
         return rstr
 
-    def __repr__(self, extended=False):
-        rstr = self.__str__(extended=extended)
+    def __repr__(self):
+        rstr = f'wyrm.wyrms.io.EarWyrm(module={self.module}, '
+        rstr += f'conn_id={self.conn_id}, max_length={self.buffer._template_buff.max_length}, '
+        rstr += f'max_pulse_size={self.max_pulse_size}, debug={self.debug}'
+        for _k, _v in self.options.items():
+            rstr += f', {_k}={_v}'
+        rstr += ')'
         return rstr
     
 
-class MessengerWyrm(RingWyrm):
+class PutWyrm(RingWyrm):
     """
     Wrapper child-class that changes RingWyrm's single pulse into one that
     pops message objects off an input deque or list and submits them to

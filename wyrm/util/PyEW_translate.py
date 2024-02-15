@@ -40,6 +40,79 @@ def npy2strdtype(dtype):
     return sdtype
 
 
+def is_wave_msg(wave):
+
+    # Explicitly define keys and types
+    keys = ["station", "network", "channel", "location", 
+            "nsamp", "samprate", "startt", "endt", "datatype", "data"]
+    types = [str, str, str, str,
+             int, float, float, float, str, np.ndarray]
+    template = dict(zip(keys, types))
+    # Check if not dict
+    if not isinstance(wave, dict):
+        return False
+    # Check if missing/extraneous keys
+    elif wave.keys() != template.keys():
+        return False
+    elif not all(isinstance(wave[_k], template[_k]) for _k in template.keys()):
+        return False
+    else:
+        return True
+
+def validate_wave_msg(wave):
+    """
+    Provide a more detailed diagnosis of wave message mismatches
+    """
+    is_wm = is_wave_msg(wave)
+    if is_wm:
+        status = 'all checks passed'
+    else:
+        # Explicitly define keys and types
+        keys = ["station", "network", "channel", "location", 
+                "nsamp", "samprate", "startt", "endt", "datatype", "data"]
+        types = [str, str, str, str,
+                int, float, float, float, str, np.ndarray]
+        template = dict(zip(keys, types))
+        # Run initial type check
+        if not isinstance(wave, dict):
+            status = 'wave is not type dict'
+        # Run checks on keys
+        if wave.keys() == template.keys():
+            # If keys are good, check data types
+            if all(isinstance(wave[_k], template[_k]) for _k in template.keys()):
+                # If all good - set status to true
+                status=True
+            # If keys are good, but types are bad, document and return infostring as status
+            else:
+                status = 'Mismatched types: '
+                for _k in template.keys():
+                    if not isinstance(wave[_k], template[_k]):
+                        status += f'{_k}: {type(wave[_k])} x {template[_k]}, '
+                status = status[:-2] + '\n'
+        # If keys are mismatched
+        else:
+            # Conduct bilateral checks on missing and extraneous keys
+            stat1 = ''
+            stat2 = ''
+            # Compose stat1
+            for _k in wave.keys():
+                if _k not in template.keys():
+                    stat1 += f'{_k}, '
+            # compose stat2
+            for _k in template.keys():
+                if _k not in wave.keys():
+                    stat2 += f'{_k}, '
+            # And compose status infostring
+            status = 'Key Mismatches'
+            if stat1 != '':
+                status += f'\nMissing: {stat1[:-2]}'
+            if stat2 != '':
+                status += f'\nExtraneous: {stat2[:-2]}'
+    # Return status, whatever it may be
+    return status
+        
+
+
 def wave2trace(wave):
     """
     Convert the output of an EWModule.get_wave() call into an Obspy Trace.
@@ -61,6 +134,9 @@ def wave2trace(wave):
     :return trace: [obspy.core.trace.Trace]
             Trace object
     """
+    status = is_wave_msg(wave)
+    if isinstance(status, str):
+        raise SyntaxError(status)
     trace = Trace()
     # Format data vector
     _data = wave["data"].astype(wave['datatype'])
@@ -143,7 +219,6 @@ def stream2waves(stream, dtype=None):
         elif isinstance(wave, list):
             waves += wave
     return waves
-
 
 def format_pick2k_msg(
     modID,

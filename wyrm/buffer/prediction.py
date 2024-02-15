@@ -1,7 +1,7 @@
 from obspy import Trace, Stream, UTCDateTime
 import numpy as np
 import wyrm.util.input_compatability_checks as icc
-from wyrm.util.stacking import shift_trim, roll_trim_rows
+from wyrm.util.stacking import shift_trim
 import torch
 import seisbench.models as sbm
 import matplotlib.pyplot as plt
@@ -14,7 +14,7 @@ class PredArray(object):
     Support class to house predicted value arrays and windowing/model metadata
     into a single object used to append to PredBuff
     """
-    def __init__(self, data=np.array([]), meta={}, weight_names=[], label_names=[]):
+    def __init__(self, data=np.array([]), header={}):
         # Run compatability check on data
         if not isinstance(data, np.ndarray):
             raise TypeError('data must be type numpy.ndarray')
@@ -24,113 +24,166 @@ class PredArray(object):
         self.ndim = self.data.ndim
         self.shape = self.data.shape
         
-        # metadata compatability checks
-        if not isinstance(meta, dict):
-            raise TypeError('meta must be type dict')
-        else:
-            md = {}
-            emsg = ''
-            for _k in ['t0', 'samprate', 'inst_code', 'model_name']:
-                # If required field is missing, add to emsg
-                if _k not in meta.keys():
-                    emsg += f'{_k}, '
-                # If required field is present, pull to md
-                else:
-                    md.update({_k: meta[_k]})
-            # If emsg populated, raise error
-            if emsg != '':
-                raise KeyError(f'Required keys {emsg[:-2]} not present in meta.')
+        # Compatability check
+        if not isinstance(header, dict):
+            raise TypeError
+        # Parse id from header dict
+        if 'id' in header.keys():
+            if isinstance(header['id'], str):
+                self.id = header['id']
             else:
-                self.meta = md
-        
-        # Compatability checks on weight_names
-        if not isinstance(weight_names, (list, str)):
-            raise TypeError('weight_names must be type list or str')
-        elif isinstance(weight_names, str):
-            weight_names = [weight_names]
-
-        if len(weight_names) != self.shape[0]:
-            raise IndexError(f'Scale mismatch: weight_names {len(weight_names)} and data.shape[0] {self.shape[0]}')
+                raise TypeError
         else:
-            self.i_wgt = {_i: _w for _i, _w in enumerate(weight_names)}
-        
-        # Compatability checks on label names
-        if not isinstance(label_names, (list, str)):
-            raise TypeError('label_names must be type list or str')
-        elif isinstance(label_names, str):
-            label_names = [label_names]
-
-        if len(label_names) != self.shape[0]:
-            raise IndexError(f'Scale mismatch: label_names {len(label_names)} and data.shape[1] {self.shape[0]}')
+            self.id = None
+        # Parse 't0' from header dict
+        if 't0' in header.keys():
+            if isinstance(header['t0'], (float, int)):
+                self.t0 = float(header['t0'])
+            elif isinstance(header['t0'], UTCDateTime):
+                self.t0 = header['t0'].timestamp
+            else:
+                raise TypeError
         else:
-            self.j_lbl = {_j: _l for _j, _l in enumerate(label_names)}
-        
+            self.t0 = None
 
-    def concatenate(self, next_array, axis='wgt'):
+        # Parse 'samprate'
+        if 'samprate' in header.keys():
+            if isinstance(header['samprate'], (float, int)):
+                self.samprate = header['samprate']
+            else:
+                raise TypeError
+        else:
+            self.samprate = None
+
+        # Parse 'model_name'
+        if 'model_name' in header.keys():
+            if isinstance(header['model_name'], str):
+                self.model_name = header['model_name']
+            else:
+                raise TypeError
+        else:
+            self.model_name = None
+
+        # Parse 'weight_name'
+        if 'weight_name' in header.keys():
+            if isinstance(header['weight_name'], (str, type(None))):
+                self.weight_name = header['weight_name']
+            else:
+                raise TypeError
+        else:
+            self.weight_name = None
+            
+        # Parse 'label_names'
+        if 'label_names' in header.keys():
+            if isinstance(header['label_names'], str):
+                if self.shape[0] == 1:
+                    self.labels = {header['label_names']: 0}
+            elif not isinstance(header['label_names'], (list, tuple)):
+                raise TypeError
+            elif not all(isinstance(_l, str) for _l in header['label_names']):
+                raise TypeError
+            elif len(header['label_names']) != self.shape[0]:
+                raise IndexError
+            else:
+                self.labels = {_l: _i for _i, _l in enumerate(header['label_names'])}
+
+    def update_labels(self, update_dict):
+        
+        new_keys = []
+        for _k in self.labels.keys():
+            if _k in update_dict.keys():
+                new_keys.append(update_dict[_k])
+            else:
+                new_keys.append(_k)
+        new_labels = dict(zip(new_keys, self.labels.values()))
+        self.labels = new_labels
+
+    def get_metadata(self):
         """
-        Concatenate a PredArray object with matching PredArray.meta information
-        to this PredArray's self.meta information along either the "wgt" [0] or 
-        "lbl" [1] axes and update associated attributes in this PredArray
+        Return a dictionary containing metadata attributes of this PredArray
 
-        :: INPUTS ::
-        :param next_array: [wyrm.buffer.prediction.PredArray] PredArray to append
-        :param axis: [str] or [int] - explicit axis number or a string alias
-                    for the axis labeling. Supported:
-                        0 = 'weight','wgt','i'
-                        1 = 'label','lbl','j'
-        
         :: OUTPUT ::
-        :return self: [wyrm.buffer.prediction.PredArray] return a representation of
-                    self to enable cascading
+        :return meta: [dict] metadata dictionary containing the 
+            following attributes as key:value pairs (note: any of these may also have a None value)
+            'id': [str] - station/instrument ID
+            't0': [float] - starttime of windowed data (epoch seconds / timestamp)
+            'samprate': [float] - sampling rate of windowed data (samples per second)
+            'model_name': []
         """
-
-        # next_array compatability check
-        if not isinstance(next_array, PredArray):
-            raise TypeError('next_array must be type wyrm.buffer.prediction.PredArray')
+        meta = {'id': self.id,
+                't0': self.t0,
+                'samprate': self.samprate,
+                'model_name': self.model_name,
+                'weight_name': self.weight_name,
+                'labels': self.labels.copy()}
+        return meta
         
-        # Ensure metadata match
-        if self.meta != next_array.meta:
-            raise ValueError('Metadata mismatch between self.meta and next_array.meta')
+    
+    # def concatenate(self, next_array, axis='wgt'):
+    #     """
+    #     Concatenate a PredArray object with matching PredArray.meta information
+    #     to this PredArray's self.meta information along either the "wgt" [0] or 
+    #     "lbl" [1] axes and update associated attributes in this PredArray
 
-        # Parse axis
-        if axis not in ['wgt','lbl','weight','label','i','j', 0, 1]:
-            raise ValueError(f'axis {axis} no supported - see documentation')
-        elif axis in ['wgt','weight','i',0]:
-            # If labels along un-changed axis match
-            if self.j_lbl == next_array.j_lbl:
-                # Concatenate data arrays
-                self.data = np.concatenate((self.data, next_array.data), axis=0)
-                # Get get next index number on the i-axis
-                next_i = self.shape[0] + 1
-                # update the weight labels dictionary
-                self.i_wgt.update({_k+next_i: _v for _k, _v in next_array.i_wgt})
-            else:
-                raise IndexError()
+    #     :: INPUTS ::
+    #     :param next_array: [wyrm.buffer.prediction.PredArray] PredArray to append
+    #     :param axis: [str] or [int] - explicit axis number or a string alias
+    #                 for the axis labeling. Supported:
+    #                     0 = 'weight','wgt','i'
+    #                     1 = 'label','lbl','j'
         
-        elif axis in ['lbl','label','j',1]:
-            caxis = 1
-            a0 = self.j_lbl
-            a1 = next_array.j_lbl
+    #     :: OUTPUT ::
+    #     :return self: [wyrm.buffer.prediction.PredArray] return a representation of
+    #                 self to enable cascading
+    #     """
+
+    #     # next_array compatability check
+    #     if not isinstance(next_array, PredArray):
+    #         raise TypeError('next_array must be type wyrm.buffer.prediction.PredArray')
+        
+    #     # Ensure metadata match
+    #     if self.meta != next_array.meta:
+    #         raise ValueError('Metadata mismatch between self.meta and next_array.meta')
+
+    #     # Parse axis
+    #     if axis not in ['wgt','lbl','weight','label','i','j', 0, 1]:
+    #         raise ValueError(f'axis {axis} no supported - see documentation')
+    #     elif axis in ['wgt','weight','i',0]:
+    #         # If labels along un-changed axis match
+    #         if self.j_lbl == next_array.j_lbl:
+    #             # Concatenate data arrays
+    #             self.data = np.concatenate((self.data, next_array.data), axis=0)
+    #             # Get get next index number on the i-axis
+    #             next_i = self.shape[0] + 1
+    #             # update the weight labels dictionary
+    #             self.i_wgt.update({_k+next_i: _v for _k, _v in next_array.i_wgt})
+    #         else:
+    #             raise IndexError()
+        
+    #     elif axis in ['lbl','label','j',1]:
+    #         caxis = 1
+    #         a0 = self.j_lbl
+    #         a1 = next_array.j_lbl
 
 
 
 
-        # Check that target index is not already present in self
-        if a1 == a0:
-            raise ValueError('Axis information identical - canceling concatenate')
-        elif all(a1i in a0.items() for a1i in a1.items()):
-            raise ValueError('Axis information alredy in self - canceling concatenate')
-        else:
-            for a1i in a1.items():
-                if a1i not in a0.items():
-                    if caxis == 0:
-                        na_slice = next_array.data[a1i[0], ...]
-                    elif caxis == 1:
-                        na_slice = next_array.data[:, a1i[0], ...]
+    #     # Check that target index is not already present in self
+    #     if a1 == a0:
+    #         raise ValueError('Axis information identical - canceling concatenate')
+    #     elif all(a1i in a0.items() for a1i in a1.items()):
+    #         raise ValueError('Axis information alredy in self - canceling concatenate')
+    #     else:
+    #         for a1i in a1.items():
+    #             if a1i not in a0.items():
+    #                 if caxis == 0:
+    #                     na_slice = next_array.data[a1i[0], ...]
+    #                 elif caxis == 1:
+    #                     na_slice = next_array.data[:, a1i[0], ...]
                     
-                    new_a1k = max(a0.keys()) + 1
-                    a0.update({new_a1k: a1})
-                    self.data = np.concatenate((self.data, na_slice), axis=caxis)
+    #                 new_a1k = max(a0.keys()) + 1
+    #                 a0.update({new_a1k: a1})
+    #                 self.data = np.concatenate((self.data, na_slice), axis=caxis)
             
         
 
@@ -211,7 +264,7 @@ class PredBuff(object):
                 self.nwgts = len(weight_names)
                 self.weight_names = dict(zip(weight_names, np.arange(0,self.nwgts)))
 
-        ### Static parameters (once assigned) ###
+
         # max_samples compatability checks
         self.max_samples = icc.bounded_floatlike(
             max_samples,
@@ -233,10 +286,16 @@ class PredBuff(object):
         
         # Set self.fill_value to default for ufunc
         self.fill_value = 0.
+        
+        # define dimensions
+        self.nwgts = len(self.weight_names)
+        self.nlabels = len(self.label_names)
+
+        shape = (self.nwgts, self.nlabels, self.max_samples)
 
         # Initialize stack and fold arrays
         self.stack = np.full(
-            shape=(self.nwgts, self.nlabels, self.max_samples),
+            shape=shape,
             fill_value=self.fill_value,
             dtype=np.float32
         )
@@ -244,10 +303,14 @@ class PredBuff(object):
                             fill_value=self.fill_value,
                             dtype=np.float32)
         
+
+
+
+        ## PLACEHOLDER ATTRIBUTES - POPULATED BY FIRST APPEND ##
         # Instrument Metadata
         self.inst_code = None
         # Window Indexing Scalars
-        self.overlap_npts = None
+        self.overlap_npts = None # Slated for obsolescense (too rigid)
         self.blinding_npts = None        
         # Sampling Rate (float)
         self.samprate = None
@@ -724,6 +787,365 @@ class PredBuff(object):
 
 
 
+class PredBuff2(object):
+
+    def __init__(self,
+                 model=sbm.EQTransformer(),
+                 weight_name='pnw',
+                 buff_samples=15000,
+                 stack_method='max',
+                 blinding_samples=(500,500)):
+        """
+        Initialize a Prediction Buffer v2 (PredBuff2) object
+
+        :: INPUTS ::
+        :param model: [seisbench.models.WaveformModel] child-class of this baseclass
+                        used to generate predictions. 
+        :param weight_name: [str] name of pretrained weights used for prediction. Must
+                        be in the list of pretrained model names
+        :param buff_samples: [int] length of this buffer in samples. Must be between
+                        2 and 100x model.in_samples
+        :param stack_method: [str] stacking method for overlapping predicted samples
+                        Supported: 'avg', 'max'
+        :param blinding_samples: [2-tuple] number of samples at the front and end of
+                        an appended PredArray object to suppres (sets to 0)
+    
+        """
+        # model compat. check
+        if not isinstance(model, sbm.WaveformModel):
+            raise TypeError('intput model must be type seisbench.models.WaveformModel')
+        else:
+            self.model_name = model.name
+            self.labels = {_l: _i for _i, _l in enumerate(model.labels)}
+            self.window_samples = model.in_samples
+
+        # weight_name compat. check
+        pt_list = model.list_pretrained()
+        if isinstance(weight_name, str):
+            if weight_name in pt_list:
+                self.weight_name 
+            else:
+                raise ValueError
+        else:
+            raise TypeError
+        
+        # buff_samples compat. check
+        self.buff_samples = icc.bounded_intlike(
+            buff_samples,
+            name='buff_samples',
+            minimum = 2*self.window_samples,
+            maximum = 100*self.window_samples,
+            inclusive=True
+        )
+
+        # stack_method compat. check
+        if not isinstance(stack_method, str):
+            raise TypeError
+        elif stack_method not in ['max', 'avg']:
+            raise ValueError
+        else:
+            self.stack_method = stack_method
+        
+
+        self.shape = (len(self.labels), self.buff_samples)
+
+        # Blinding Samples compatability check and formatting
+        if isinstance(blinding_samples, (list, tuple)):
+            if not all(isinstance(_b, (int,float)) for _b in blinding_samples):
+                raise TypeError
+            if len(blinding_samples) == 2:
+                self.blinding_samples = (int(_b) for _b in blinding_samples)
+            elif len(blinding_samples) == 1:
+                self.blinding_samples = (int(blinding_samples[0]), int(blinding_samples[0]))
+            else:
+                raise SyntaxError('blinding_samples must be a single number, or a 1-/2-tuple of int-like values')
+        elif isinstance(blinding_samples, (int, float)):
+            self.blinding_samples = (int(blinding_samples), int(blinding_samples))
+        else:
+            raise TypeError
+
+        # Initialize data and fold
+        self.stack = np.zeros(shape=self.shape, dtype=np.float32)
+        self.fold = np.zeros(shape=self.buff_samples, dtype=np.float32)
+        # Initialize blinding array 
+        self.blinding = np.ones(shape=(self.shape[1], self.shape[2]))
+        self.blinding[..., :self.blinding_samples[0]] = 0
+        self.blinding[..., -self.blinding_samples[1]:] = 0
+
+        ## PLACEHOLDERS -- POPULATED DURING FIRST APPEND ##
+        self.id = None
+        self.t0 = None
+        self.samprate = None
+        
+        # Flag for if buffer has had an append or not
+        self._has_data = False
+
+
+    def copy(self):
+        return deepcopy(self)
+    
+    def append(self, predarray, include_blinding=False):
+        # Basic compatability checks
+        if not isinstance(predarray, PredArray):
+            raise TypeError
+        if not isinstance(include_blinding, bool):
+            raise TypeError
+        
+        # Handle metadata scrape/crosscheck 
+        if self._has_data:
+            # Run validation in raise_error mode
+            _ = self.validate_prearray_metadata(predarray, raise_error=True)
+        else:
+            # Run PredArray validation
+            self.scrape_predarray_metadata(predarray)
+    
+        # Get append indexing instructions
+        indices = self.get_stacking_indices(predarray, include_blinding=include_blinding)
+        
+        # Run append with scenario-dependent safety catches.
+        # First append - unconditional stacking
+        if not self._has_data:
+            self._shift_and_stack(predarray, indices)
+            self._has_data = True
+        # Unconditionally stack future appends
+        elif indices['npts_right'] < 0:
+            self._shift_and_stack(predarray, indices)
+        # Conditionally apply past appends
+        elif indices['npts_right'] > 0:
+            # Raise error if proposed append would clip the most current predictions
+            if any(self.fold[-indices['npts_right']:] > 0):
+                raise BufferError('Proposed append would trim off most current predictions in this buffer - canceling append')
+            else:
+                self._shift_and_stack(predarray, indices)
+        else: #if indices['npts_right'] == 0:
+            # If all sample points have had more than one append, cancel
+            if all(self.fold[indices['i0_s']:indices['i1_s']] > 1):
+                raise BufferError('Proposed append would strictly stack on samples that already have 2+ predictions - canceling append')
+            else:
+                self._shift_and_stack(predarray, indices)
+        return self
+        
+    def scrape_predarray_metadata(self, predarray):
+        if not isinstance(predarray, PredArray):
+            raise TypeError('predarray must be type wyrm.buffer.prediction.PredArray')
+        
+        if self._has_data:
+            raise RuntimeError('Data have already been appended to this array - will not overwrite metadata')
+        
+        if self.model_name != predarray.model_name:
+            raise ValueError('model_name for this predbuff and input predarray do not match')
+
+        self.id = predarray.id
+        self.samprate = predarray.samprate
+        self.t0 = predarray.t0
+
+    def validate_prearray_metadata(self, predarray, raise_error=False):
+        """
+        Check the compatability of metadata between this PredBuff and a
+        PredArray object. 
+        
+        Required matching attributes are:
+         @ id - Instrument Code, generally Net.Sta.Loc.BandInst (e.g., UW.GNW..BH)
+         @ samprate - sampling rate in samples per second (Hz)
+         @ model_name - name of ML model architecture
+        
+        Attributes checked for type:
+         @ t0 - timestamp for 0th sample
+         @ weight_name - 
+        
+
+        :: INPUTS ::
+        :param predarray: [wyrm.buffer.prediction.PredArray]
+                            Prediction Array object for which metadata will be compared
+        :param raise_error: [bool] 
+                            If a mismatch/error is raised internally, raise error externally?
+                            True - raise errors
+                            False - return False
+        
+        """
+        # Input compatability checks
+        if not isinstance(predarray, PredArray):
+            raise TypeError('predarray must be type wyrm.buffer.prediction.PredArray')
+        
+        if not isinstance(raise_error, bool):
+            raise TypeError('raise_error must be type bool')
+        
+        # Check ID match
+        if self.id != predarray.id:
+            if raise_error:
+                raise ValueError('id for this predbuff and predarray do not match')
+            else:
+                return False    
+            
+        # Check samprate match
+        elif self.samprate != predarray.samprate:
+            if raise_error:
+                raise ValueError('samprate for this predbuff and predarray do not match')
+            else:
+                return False
+            
+        # Check model_name match
+        elif self.model_name != predarray.model_name:
+            if raise_error: 
+                raise ValueError('model_name for this predbuff and predarray do not match')
+            else:
+                return False
+            
+        # Check t0 type
+        elif not isinstance(predarray.t0, float):
+            if raise_error:
+                raise TypeError('predarray.t0 must be type float')
+            else:
+                return False
+    
+        # Check weight_name type
+        elif not isinstance(predarray.weight_name, str):
+            if raise_error:
+                raise TypeError('predarray.weight_name must be type str')
+            else:
+                return False
+        
+        else:
+            return True
+        
+    def get_stacking_indices(self, predarray, include_blinding=True):
+        _ = self.validate_prearray_metadata(predarray, raise_error=True)
+
+        if include_blinding:
+            indices = {'i0_p': 0, 'i1_p': None}
+        else:
+            indices = {'i0_p': self.blinding_samples[0],
+                       'i1_p': -self.blinding_samples[1]}
+        
+        if not self._has_data:
+            indices.update({'npts_right': 0, 'i0_s': None})
+            if include_blinding:
+                indices.update({'i1_s': self.window_samples})
+            else:
+                indices.update({'i1_s': self.window_samples - self.blinding_samples[0] - self.blinding_samples[1]})
+        else:
+            dt = predarray.t0 - self.t0
+            i0_init = dt*self.samprate
+            # Sanity check that location is integer-valued
+            if int(i0_init) != i0_init:
+                raise ValueError('proposed new data samples are misaligned with integer sample time-indexing in this PredBuff')
+            # Otherwise, ensure i0 is type int
+            else:
+                i0_init = int(i0_init)
+            # Get index of last sample in candidate prediction window
+            i1_init = i0_init + self.window_samples
+            # If blinding samples are removed, adjust the indices
+            if not include_blinding:
+                i0_init += self.blinding_samples[0]
+                i1_init -= self.blinding_samples[1]
+                di = self.window_samples - self.blinding_samples[0] - self.blinding_samples[1]
+            else:
+                di = self.window_samples
+
+                
+            # Handle data being appended occurs before the current buffered data
+            if i0_init < 0:
+                # Instruct shift to place the start of pred at the start of the buffer
+                indices.update({'npts_right': -i0_init,
+                                     'i0_s': None,
+                                     'i1_s': di})
+
+            # If the end of pred would be after the end of the current buffer timing
+            elif i1_init > self.buff_samples:
+                # Instruct shift to place the end of pred at the end of the buffer
+                indices.update({'npts_right': self.buff_samples - i1_init,
+                                     'i0_s': -di,
+                                     'i1_s': None})
+            # If pred entirely fits into the current bounds of buffer timing
+            else:
+                # Instruct no shift and provide in-place indices for stacking pred into buffer
+                indices.update({'npts_right': 0,
+                                     'i0_s': i0_init,
+                                     'i1_s': i1_init})
+
+        return indices
+
+    def _shift_and_stack(self, predarray, indices):
+        """
+        Apply specified npts_right shift to self.stack and self.fold and
+        then stack in predarray.data at specified indices with specified
+        stack_method
+        
+        :: INPUTS ::
+        :param predarray: [wyrm.buffer.prediction.PredArray] prediction array
+                            to stack into this PredBuff
+        :param indices: [dict] - stacking index instructions from self.get_stacking_indices()
+        
+        :: OUTPUT ::
+        :return self: [wyrm.buffer.prediction.PredBuff] to enable cascading
+        """
+
+        # Shift stack along 1-axis
+        self.stack = shift_trim(
+            self.stack,
+            indices['npts_right'],
+            axis=1,
+            fill_value=0.,
+            dtype=self.stack.dtype)
+        
+        # Shift fold along 0-axis
+        self.fold = shift_trim(
+            self.fold,
+            indices['npts_right'],
+            axis=0,
+            fill_value=0.,
+            dtype=self.fold.dtype)
+        
+        # # ufunc-facilitated stacking # #
+        # Construct in-place prediction slice array
+        pred = np.zeros(self.stack.shape, dtype=self.stack.dtype)
+        pred[:, indices['i0_s']:indices['i1_s']] = predarray.data[:, indices['i0_p']:indices['i1_p']]
+        # Construct in-place fold update array
+        nfold = np.zeros(shape=self.fold.shape, dtype=self.stack.dtype)
+        nfold[indices['i0_s']:indices['i1_s']] += 1
+        # Use fmax to update
+        if self.stack_method == 'max':
+            # Get max value for each overlapping sample
+            np.fmax(self.stack, pred, out=self.stack); #<- Run quiet
+            # Update fold
+            np.add(self.fold, nfold, out=self.fold); #<- Run quiet
+        elif self.stack_method == 'avg':
+            # Add fold-scaled stack/prediction arrays
+            np.add(self.stack*self.fold, pred*nfold, out=self.stack); #<- Run quiet
+            # Update fold
+            np.add(self.fold, nfold, out=self.fold); #<- Run quiet
+            # Normalize by new fold to remove initial fold-rescaling
+            np.divide(self.stack, self.fold, out=self.stack, where=self.fold > 0); #<- Run quiet
+        
+        # If a shift was applied, update t0 <- NOTE: this was missing in version 1!
+        if indices['npts_right'] != 0:
+            self.t0 -= indices['npts_right']/self.samprate
+
+        return self
+        
+    def to_stream(self, min_fold=1, fill_value=None):
+        # Create stream
+        st = Stream()
+        # Compose boolean mask
+        mask = self.fold < min_fold
+        # Use default fill value
+        if fill_value is None:
+            fill_value = self.fill_value
+        # Compose generic header
+        n,s,l,bi = self.id.split('.')
+        header = {'network': n,
+                  'station': s,
+                  'location': l,
+                  'starttime': self.t0,
+                  'sampling_rate': self.samprate}
+        # Construct specific traces with label names
+        for _i, _l in enumerate(self.labels):
+            header.update({'channel':f'{bi}{_l[0].upper()}'})
+            _tr = Trace(data=np.ma.masked_array(data=self.stack[_i,:],
+                                                mask=mask, fill_value=fill_value),
+                        header=header)
+            st.append(_tr)
+        return st
 # class PredBuffMultiWgt(PredBuff):
 
 #     def __init__(self, model, wgt_name_list, max_length=120., stack_method='max', dtype=np.float32, debug=False):

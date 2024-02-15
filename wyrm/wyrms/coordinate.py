@@ -1,137 +1,208 @@
 from wyrm.wyrms._base import Wyrm
+import wyrm.util.input_compatability_checks as icc
 from collections import deque
 from threading import Thread
 from time import sleep
 import pandas as pd
+import numpy as np
 # import PyEW
 
 
 
 class TubeWyrm(Wyrm):
     """
-    Base Class facilitating chained execution of pulse(x) class methods
+    Wyrm child-class facilitating chained execution of pulse(x) class methods
     for a sequence wyrm objects, with each wyrm.pulse(x) taking the prior
     member's pulse(x) output as its input.
-    This `wyrm_queue` is a double ended queue (collections.deque),
-    which provides easier append/pop syntax for editing the wyrm_queue.
 
-    Convenience methods for appending and popping entries from the processing
-    queue are provided
+    The pulse method operates as follows
+    for wyrm_dict = {key0: <wyrm0>, key2: <wyrm2> , key1: <wyrm1>}
+        tubewyrm.pulse(x) = wyrm1.pulse(wyrm2.pulse(wyrm0.pulse(x)))
+
+        Note that the dictionary ordering dictates the execution order!
     """
 
-    def __init__(self, wyrm_queue=deque([]), wait_sec=0.0, debug=False):
+    def __init__(self, wyrm_dict={}, wait_sec=0.0, max_pulse_size=1, debug=False):
         """
         Create a tubewyrm object
         :: INPUT ::
-        :param wyrm_list: [deque] or [list]
-                            double ended queue of Wyrm objects
-                            if list is provided, will be automatically
-                            converted into a deque
+        :param wyrm_dict: [dict], [list], or [deque] of [Wyrm-type] objects
+                        that are executed in their provided order. dict-type
+                        entries allow for naming of component wyrms for 
+                        user-friendly assessment. list, deque, and Wyrm-type
+                        inputs use a 0-indexed naming system.
+        :param wait_sec: [float] seconds to wait between execution of each
+                        Wyrm in wyrm_dict
+        :param max_pulse_size: [int] number of times to run the sequence of pulses
+                        Generally, this should be 1.
+        :param debug: [bool] run in debug mode?
 
         :: OUTPUT ::
         Initialized TubeWyrm object
         """
-        super().__init__(max_pulse_size=None, debug=debug)
+        # Inherit from Wyrm
+        super().__init__(max_pulse_size=max_pulse_size, debug=debug)
 
-        # Run compatability checks on wyrm_list
-        # If given a single Wyrm, wrap it in a deque
-        if isinstance(wyrm_queue, Wyrm):
-            self.wyrm_queue = deque([wyrm_queue])
-        # If given a list of candidate wyrms, ensure they are all of Wyrm class
-        elif isinstance(wyrm_queue, (list, deque)):
-            if any(not isinstance(_wyrm, Wyrm) for _wyrm in wyrm_queue):
-                raise TypeError("Not all entries of wyrm_queue are type Wyrm")
-            # If all members are Wyrms, write to attribute
-            elif isinstance(wyrm_queue, list):
-                self.wyrm_queue = deque(wyrm_queue)
-            # Final check that the wyrm_queue is a deque
+        # wyrm_dict compat. checks
+        if isinstance(wyrm_dict, Wyrm):
+            self.wyrm_dict = {'_tmp': wyrm_dict}
+        elif isinstance(wyrm_dict, dict):
+            if all(isinstance(_w, Wyrm) for _w in wyrm_dict.values()):
+                self.wyrm_dict = wyrm_dict
             else:
-                self.wyrm_queue = deque(wyrm_queue)
-        # In any other case:
+                raise TypeError('All elements in wyrm_dict must be type Wyrm')
+        # Handle case where a list or deque are provided
+        elif isinstance(wyrm_dict, (list, deque)):
+            if all(isinstance(_w, Wyrm) for _w in wyrm_dict):
+                # Default keys are the sequence index of a given wyrm
+                self.wyrm_dict = {_k: _v for _k, _v in enumerate(wyrm_dict)}
+            else:
+                raise TypeError('All elements in wyrm_dict must be type Wyrm')
         else:
-            emsg = "Provided wyrm_queue was not a deque or list of "
-            emsg += "Wyrm objects, or an individual wyrm"
-            raise TypeError(emsg)
-
-        # Compatability checks for wait_sec:
-        self.wait_sec = self.bounded_floatlike(
-            wait_sec, name="wait_sec", minimum=0.0, maximum=6000.0
+            raise TypeError('wyrm_dict must be a single Wyrm-type object or a list or dictionary thereof')
+        
+        # wait_sec compat. checks
+        self.wait_sec = icc.bounded_floatlike(
+            wait_sec,
+            name='wait_sec',
+            minimum=0,
+            maximum=None,
+            inclusive=True
         )
+        # Create a list representation of keys
+        self.names = list(wyrm_dict.keys())
 
-    def __repr__(self):
-        rstr = super().__repr__(self)
-        rstr = "(wait: {self.wait_sec} sec)\n"
-        for _i, _wyrm in enumerate(self.wyrm_queue):
-            if _i == 0:
-                rstr += "(head) "
-            else:
-                rstr += "       "
-            rstr += f"{type(_wyrm)}"
-            if _i == len(self.wyrm_queue) - 1:
-                rstr += " (tail)"
-            rstr += "\n"
+        # Enforce debug setting on all subsequent wyrms
+        for _w in self.wyrm_dict.values():
+            _w.debug = self.debug
+        
+        # Get input and output types from wyrm_dict
+        self._in_type = self.wyrm_dict[self.names[0]]._in_type
+        self._out_type = self.wyrm_dict[self.names[0]]._out_type
 
-    def append(self, object, end="right"):
+    def update(self, new_dict):
         """
-        Convenience method for left/right append
-        to wyrm_queue
+        Apply update to wyrm_dict using the 
+        dict.update(new_dict) builtin_function_or_method
+        and then update relevant attributes of this TubeWyrm
 
-        :: INPUTS ::
-        :param object: [Wyrm] candidate wyrm object
-        :param end: [str] append side 'left' or 'right'
-
-        :: OUTPUT ::
-        None
-        """
-        if isinstance(object, Wyrm):
-            if end.lower() in ["right", "r"]:
-                self.wyrm_list.append(object)
-            elif end.lower() in ["left", "l"]:
-                self.wyrm_queue.appendleft(object)
-
-        if isinstance(object, (list, deque)):
-            if all(isinstance(_x, Wyrm) for _x in object):
-                if end.lower() in ["right", "r"]:
-                    self.wyrm_list += deque(object)
-                elif end.lower() in ["left", "l"]:
-                    self.wyrm_list = deque(object) + self.wyrm_list
-
-    def pop(self, end="right"):
-        """
-        Convenience method for left/right pop
-        from wyrm_queue
+        This will update existing keyed entries and append new
+        at the end of self.wyrm_dict (same behavior as dict.update)
 
         :: INPUT ::
-        :param end: [str] 'left' or 'right'
+        :param new_dict: [dict] of [Wyrm] objects
 
         :: OUTPUT ::
-        :param x: [Wyrm] popped Wyrm object from
-                wyrm_queue
+        :return self: [TubeWyrm] enables cascading
         """
-        if end.lower() in ["right", "r"]:
-            x = self.wyrm_list.pop()
-        elif end.lower() in ["left", "l"]:
-            x = self.wyrm_list.popleft()
-        return x
+        if not isinstance(new_dict, dict):
+            raise TypeError('new_dict must be type dict')
+        elif not all(isinstance(_w, Wyrm) for _w in new_dict.values()):
+            raise TypeError('new_dict can only have values of type Wyrm')
+        else:
+            pass
+        # Run updates on wyrm_dict, enforce debug, and update names list
+        self.wyrm_dict.update(new_dict)
+        for _w in self.wyrm_dict.values():
+            _w.debug = self.debug
+        self.names = list(self.wyrm_dict.keys())
+        return self
+    
+    def remove(self, key):
+        """
+        Convenience wrapper of the dict.pop() method
+        to remove an element from self.wyrm_dict and
+        associated attributes
+
+        :: INPUT ::
+        :param key: [object] valid key in self.wyrm_dict.keys()
+
+        :: RETURN ::
+        :return popped_item: [tuple] popped (key, value)
+        """
+        if key not in self.wyrm_dict.keys():
+            raise KeyError(f'key {key} is not in self.wyrm_dict.keys()')
+        
+        val = self.wyrm_dict.pop(key)
+        self.names = list(self.wyrm_dict.keys())
+        return (key, val)
+
+    def reorder(self, reorder_list):
+        """
+        Reorder the current contents of wyrm_dict using either
+        an ordered list of wyrm_dict
+
+        :: INPUT ::
+        :reorder_list: [list] unique list of keys from self.wyrm
+        """
+        # Ensure reorder_list is a list
+        if not isinstance(reorder_list, list):
+            raise TypeError('reorder_list must be type list')
+
+        # Ensure reorder_list is a unique set
+        tmp_in = []
+        for _e in reorder_list:
+            if _e not in tmp_in:
+                tmp_in.append(_e)
+        if tmp_in != reorder_list:
+            raise ValueError('reorder_list has repeat entries - all entries must be unique')
+
+        # Conduct reordering if checks are passed
+        # Handle input (re)ordered wyrm_dict key list
+        if all(_e in self.wyrm_dict.keys() for _e in reorder_list):
+            tmp = {_e: self.wyrm_dict[_e] for _e in reorder_list}
+        # Handle input (re)ordered index list
+        elif all(_e in np.arange(0, len(reorder_list)) for _e in reorder_list):
+            tmp_keys = list(self.wyrm_dict.keys())
+            tmp = {_k: self.wyrm_dict[_k] for _k in tmp_keys}
+
+        # Run updates
+        self.wyrm_dict = tmp
+        self.names = list(tmp.keys())
+        return self
+
+
+    def __str__(self, extended=False):
+        rstr = super().__str__()
+        rstr = "(wait: {self.wait_sec} sec)\n"
+        for _i, (_k, _v) in enumerate(self.wyrm_dict.items()):
+            # Provide index number
+            rstr += f'({_i:<2}) '
+            # Provide labeling of order
+            if _i == 0:
+                rstr += "(head) "
+            elif _i == len(self.wyrm_dict) - 1:
+                rstr += "(tail) "
+            else:
+                rstr += "  ||   "
+            rstr += f"{_k} | "
+            if extended:
+                rstr += f'{_v.__str__()}\n'
+            else:
+                rstr += f'{type(_v)}\n'
+        return rstr
+
 
     def pulse(self, x):
         """
         Initiate a chained pulse for elements of wyrm_queue.
 
         E.g.,
-        tubewyrm.wyrm_queue = [<wyrm1>, <wyrm2>, <wyrm3>]
+        tubewyrm.wyrm_dict = {name0:<wyrm0>,
+                              name1:<wyrm1>,
+                              name2:<wyrm3>}
         y = tubewyrm.pulse(x)
             is equivalent to
-        y = wyrm3.pulse(wyrm2.pulse(wyrm1.pulse(x)))
+        y = wyrmw.pulse(wyrmq.pulse(wyrm0.pulse(x)))
 
-        Between each successive wyrm in the wyrm_queue there
+        Between each successive wyrm in the wyrm_dict there
         is a pause of self.wait_sec seconds.
 
         :: INPUT ::
-        :param x: Input `x` for the first Wyrm object in wyrm_queue
+        :param x: Input `x` for the first Wyrm object in wyrm_dict
 
         :: OUTPUT ::
-        :param y: Output `y` from the last Wyrm object in wyrm_queue
+        :param y: Output `y` from the last Wyrm object in wyrm_dict
         """
         for _i, _wyrm in enumerate(self.wyrm_list):
             x = _wyrm.pulse(x)
@@ -145,41 +216,77 @@ class TubeWyrm(Wyrm):
 class CanWyrm(TubeWyrm):
     """
     Child class of TubeWyrm.
-    It's pulse(x) method runs the queue of *wyrm_n.pulse(x)'s
-    sourcing inputs from a common input `x` and creating a queue
+    It's pulse(x) method runs the dict of *wyrm_n.pulse(x)'s
+    sourcing inputs from a common input `x` and creating a dict
     of each wyrm_n.pulse(x)'s output `y_n`.
 
     NOTE: This class runs items in serial, but with some modification
     this would be a good candidate class for orchestraing multiprocessing.
     """
 
-    # Inherits __init__ from TubeWyrm
     def __init__(self,
-                 wyrm_queue=deque([]),
+                 wyrm_dict={},
                  wait_sec=0.,
-                 output_type=deque,
-                 concat_method='appendleft',
-                 max_pulse_size=None,
+                 method='append',
+                 max_pulse_size=1,
                  debug=False):
-        # Initialize from TubeWyrm (and by extension Wyrm)
-        super().__init__(wyrm_queue=wyrm_queue, wait_sec=wait_sec, debug=debug, max_pulse_size=max_pulse_size)
-        if not isinstance(output_type, type):
-            raise TypeError('output_type must be of type "type" - method without ()')
-        elif output_type not in [list, deque]:
-            raise TypeError('output_type must be either "list" or "deque"')
-        else:
-            self.output_type = output_type
-        if concat_method in self.output_type.__dict__.keys():
-            self.concat_method = concat_method
-        else:
-            raise AttributeError(f'{concat_method} is not an attribute of {self.output_type}')
+        """
+        
+        """
+        # Initialize from Wyrm inheritance
+        super().__init__(wyrm_dict=wyrm_dict, wait_sec=wait_sec, debug=debug, max_pulse_size=max_pulse_size)
 
-    def __repr__(self):
-        rstr = "~~~ CanWyrm ~~~"
-        rstr += super().__repr__()
-        rstr += '\nOutput Format: {self.output_type}'
-        rstr += '\nConcat Method: {self.concat_method.key()}'
+        
+
+        # method compat. checks
+        for _v in self.wyrm_dict.values():
+            if 
+
+
+        self.names = list(self.wyrm_dict.keys())
+        self.buffer = {_k: None for _k in self.names}
+
+
+    def __str__(self, view='all', **options):
+        rstr = super().__repr__()
+        rstr += f'\nWyrms in sequence: {len(self.names)}'
+        if view in ['all', 'buffer']:
+            rstr += '\n--- BUFFER ---'
+            for _i, _n in enumerate(self.names):
+                rstr += f'\n<{_i}>==v^v====v^v----*\n{self.buffer[_n].__str__(**options)}'
+            rstr += '\n... BUFFER ...'
+        elif view in ['all', 'wyrms']:
+            rstr += '\n--- WYRMS ---'
+            for _i, _n in enumerate(self.names):
+                rstr += f'\n<{_i}>==v^v====v^v----*\n{self.wyrm_dict[_n].__str__()}'
+            rstr += '\n... WYRMS ...'
         return rstr
+    
+    def __repr__(self):
+        rstr = 'wyrm.wyrms.coordinate.CanWyrm('
+        rstr += f'wyrm_dict={self.wyrm_dict}, '
+        rstr += f'wait_sec={self.wait_sec}, '
+        rstr += f'max_pulse_size={self.max_pulse_size}, '
+        rstr += f'debug={self.debug})'
+        return rstr
+
+    def pulse(self, x):
+        
+        for _ in range(self.max_pulse_size):
+            for _n in self.names:
+                y = self.wyrm_dict[_n].pulse(x)
+                # If empty buffer element
+                if self.buffer[_n] is None:
+                    # Use dict.update class method to create initial population
+                    self.buffer.update({_n: y})
+                # Otherwise
+                else:
+                    # Use the append class method
+                    eval_str = f'self.buffer[_n].{self.method}(y)'
+                    eval(eval_str)
+        y = self.buffer
+        return y
+
 
     def pulse(self, x):
         """

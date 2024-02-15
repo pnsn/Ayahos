@@ -1,11 +1,11 @@
 from obspy import read, UTCDateTime
 from importlib import reload
 import seisbench.models as sbm
-from wyrm.wyrms.seisbenchwyrm import WaveformModelWyrm
+# from wyrm.wyrms.predict import MachineWyrm
 from wyrm.wyrms.window import WindowWyrm
 from wyrm.structures.rtinststream import RtInstStream
 from tqdm import tqdm
-import wyrm.structures.rtpredbuff as rtp
+# import wyrm.structures.rtpredbuff as rtp
 import numpy as np
 import matplotlib.pyplot as plt
 from copy import deepcopy
@@ -23,7 +23,7 @@ rtis = RtInstStream(max_length=300).append(st)
 # Initialize wyrms
 print('initializing wyrms')
 windwyrm = WindowWyrm(fill_value=0.).set_windowing_from_seisbench(model)
-sbwyrm = WaveformModelWyrm(model, [wgt], devicetype='mps', max_pulse_size=10000)
+# sbwyrm = MachineWyrm(model, [wgt], devicetype='mps', max_pulse_size=10000)
 # Pulse windwyrm
 print('windowing data')
 y = windwyrm.pulse(rtis)

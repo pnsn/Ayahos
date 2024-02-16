@@ -614,7 +614,7 @@ class TraceBuff(Trace):
         nsli = f"{net}.{sta}.{loc}.{inst}"
         return (nsli, comp)
 
-    def __str__(self, compact=False):
+    def __repr__(self, compact=False):
         """
         Return short summary string of the current TraceBuff
         with options for displaying buffer status graphically
@@ -638,7 +638,7 @@ class TraceBuff(Trace):
             rstr = f"B:{self.filled_fraction: .1f}|M:{(1. - self.valid_fraction):.1f}"
         return rstr
 
-    def __repr__(self):
+    def __str__(self):
         """
         Return a repr string for this TraceBuff
         """

@@ -5,7 +5,7 @@ from wyrm.wyrms._base import Wyrm
 import wyrm.util.input_compatability_checks as icc
 from wyrm.buffer.structures import TieredBuffer
 from wyrm.buffer.trace import TraceBuff
-from wyrm.util.PyEW_translate import is_wave_msg
+from wyrm.util.PyEW_translate import is_wave_msg, wave2trace
 from collections import deque
 # import PyEW
 from obspy import read
@@ -94,20 +94,8 @@ class RingWyrm(Wyrm):
                 for get_bytes() - returns a python bytestring
                 for get_msg() - returns a python string
         """
-        # Run Wyrm's pulse for compatability checks on x
-        self._matches_itype(x)
-        # if dealing with waves
-        if 'wave' in self.pulse_method:
-            if 'get' in self.pulse_method:
-                msg = self.module.get_wave(self.conn_id)
-            elif 'put' in self.pulse_method:
-                if is_wave_msg(x):
-                    self.module.put_wave(self.conn_id, x)
-                else:
-                    raise TypeError('x does not conform to the wave dict data format')
-                
-                
-
+        # Run compatability checks on x
+        self._matches_itype(x)                        
         # If getting things from Earthworm...
         if 'get' in self.pulse_method:
             # ...if getting a TYPE_TRACEBUFF2 (code 19) message, use class method directly
@@ -128,17 +116,14 @@ class RingWyrm(Wyrm):
         
         # If sending things to Earthworm...
         elif 'put' in self.pulse_method:
-            # Iterate across elements of X
             # ..if sending waves
-            if 'wave' in self.pulse_method:
-                # Convert input trace into wave msg
-                msg = trace2wave(x)
+            if 'wave' in self.pulse_method and is_wave_msg(msg):
                 # Commit to ring
                 self.module.put_wave(self.conn_id, msg)
             # If sending byte or string messages
             else:
                 # Compose evalstr
-                eval_str = f'self.module.{self.pulse_method}(self.conn_id, self.msg_type, _x)'
+                eval_str = f'self.module.{self.pulse_method}(self.conn_id, self.msg_type, x)'
                 # Execute eval
                 eval(eval_str)
             return None      
@@ -163,16 +148,6 @@ class RingWyrm(Wyrm):
         rstr += f'msg_type={self.msg_type}, '
         rstr += f'max_pulse_size={self.max_pulse_size}, debug={self.debug})'
         return rstr
-
-
-# class DiskWyrm(Wyrm):
-#     """
-#     Wyrm that facilitates I/O with select saved file types and data handling
-#     classes used in the Wyrm package
-#     """
-#     def __init__(self,)
-
-### GRANDCHILD CLASSES ###
 
 
 class EarWyrm(RingWyrm):
@@ -299,11 +274,24 @@ class EarWyrm(RingWyrm):
         return y
         
     def __str__(self, extended=False):
+        """
+        Return representative, user-friendly string that details the
+        contents of this EarWyrm
+        
+        :: INPUT ::
+        :param extended: [bool] should the TieredDict
+        
+        """
+        # Populate information from RingWyrm.__str__
         rstr = super().__str__()
+        # Add __str__ from TieredBuffer
         rstr += f'\n{self.buffer.__str(extended=extended)}'
         return rstr
 
     def __repr__(self):
+        """
+        Return descriptive string of how this EarWyrm was initialized
+        """
         rstr = f'wyrm.wyrms.io.EarWyrm(module={self.module}, '
         rstr += f'conn_id={self.conn_id}, max_length={self.buffer._template_buff.max_length}, '
         rstr += f'max_pulse_size={self.max_pulse_size}, debug={self.debug}'
@@ -311,7 +299,9 @@ class EarWyrm(RingWyrm):
             rstr += f', {_k}={_v}'
         rstr += ')'
         return rstr
-    
+
+
+## IN DEVELOPMENT ##
 
 class PutWyrm(RingWyrm):
     """
@@ -375,10 +365,21 @@ class PutWyrm(RingWyrm):
 ### UPDATES NEEDED - NTS 2/9/2024
 class Disk2PyWyrm(Wyrm):
     """
-    This Wyrm provides a pulsed read-from-disk functionality
-    
+    This Wyrm provides a pulsed read-from-disk functionality that iterates
+    over distinct files that can be loaded with obspy.core.stream.read
     """
-    def __init__(self, fdir, file_glob_str='*.mseed', file_format='MSEED', max_pulse_size=50, max_queue_size=50, max_age=50):
+    def __init__(self, fdir='.', file_glob_str='*.mseed', file_format='MSEED', max_pulse_size=50, max_queue_size=50, max_age=50):
+        """
+        Initialize a Disk2PyWyrm object
+
+        :: INPUTS ::
+        :param fdir: [str] root directory from which to extend file_glob str
+                        i.e., filepath = fdir/file_glob_str
+        :param file_glob_str: [str] string to pass to glob.glob for composing a list of files for this wyrm to load
+        :param file_format: [str] file format to pass to obspy.core.stream.read's `fmt` kwarg
+        :param max_pulse_size: [int] number of files to load with each pulse
+        :param max_queu
+        """
         Wyrm.__init__(self)
 
 

@@ -43,7 +43,20 @@ from wyrm.wyrms.window import WindowWyrm
 import wyrm.util.input_compatability_checks as icc
 import inspect
 
-class ProcWyrm(Wyrm):
+
+class EvalWyrm(Wyrm):
+    """
+    Wyrm that applies a series of class methods to an input object
+    and returns that altered object. Provides 
+    """
+    def __init__(self,
+                 target_class=InstWindow,
+                 class_method_strs=['._preproc_example'',
+                 max_pulse_size=1,
+                 debug=False)
+
+
+class ProcWyrm(EvalWyrm):
     """
     This worm provides a pulse method that applys a series of
     class-methods that operate in-place on objects' data. Expects

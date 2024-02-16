@@ -53,6 +53,20 @@ class TraceBuff(Trace):
         :param fill_value: [None], [float], or [int]
                             fill_value to assign to all masked
                             arrays associated with this TraceBuff
+        :param method: method kwarg to pass to obspy.core.stream.Stream.merge()
+                        internal to the TraceBuff.append() method
+                        NOTE: Default here (method=1) is different from the
+                        default for Stream.merge() (method=0). This default
+                        was chosen such that overlapping data are handled
+                        with interpolation (method=1), rather than gap generation
+                        (method=0).
+        :param interpolation_samples: interpolation_samples kwarg to pass to
+                        obspy.core.stream.Stream.merge() internal to
+                        the TraceBuff.append() method.
+                        NOTE: Default here (-1) is different form Stream.merge()
+                        (0). This was chosen such that all overlapping samples
+                        are included in an interpolation in an attempt to suppress
+                        abrupt steps in traces
         """
         super(TraceBuff, self).__init__()
         # Compatability check for max_length

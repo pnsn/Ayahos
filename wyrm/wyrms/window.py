@@ -1,5 +1,8 @@
 from wyrm.wyrms._base import Wyrm
 from wyrm.structures.rtinststream import RtInstStream
+from wyrm.buffer.structures import TieredBuffer
+from wyrm.buffer.trace import TraceBuff
+
 from wyrm.structures.window import InstWindow
 import wyrm.util.seisbench_model_params as smp
 import wyrm.util.input_compatability_checks as icc
@@ -167,8 +170,7 @@ class WindowWyrm(Wyrm):
         print(self.windowing_attr['fill_value'])
 
         # Create empty/default attributes
-        # Create index for holding instrument window starttime values
-        self.window_tracker = {}
+
         # Set (non-UTCDateTime) default starttime for new windowing indexing
         self.default_starttime = None
         self.window_startindex = 0
@@ -177,8 +179,16 @@ class WindowWyrm(Wyrm):
             "next_starttime": self.default_starttime,
             "next_index": self.window_startindex,
         }
-        # Create queue for output collection
+
+        # Data Storage and I/O Type Attributes
+        # Create index for holding instrument window starttime values
+        self.window_tracker = {}
+
+        # Create queue for output collection of
         self.queue = deque([])
+
+        # Update input and output types for TubeWyrm & compatability references
+        self._update_io_types(itype=(TieredBuffer, TraceBuff), otype=(deque, RtInstStream))
 
     # ########################################### #
     # Primary windowing attributes update methods #
@@ -526,11 +536,11 @@ class WindowWyrm(Wyrm):
             "wgt_taper_type": wgt_taper_type,
         }
         # Iterate across component codes in branch
-        for _k2 in branch.keys():
-            # If _k2 is a Z component code
-            if _k2 in self.code_map["Z"]:
+        for _k1 in branch.keys():
+            # If _k1 is a Z component code
+            if _k1 in self.code_map["Z"]:
                 # Pull RtBuffTrace
-                zbuff = branch[_k2]
+                zbuff = branch[_k1]
                 # Get windowed valid fraction
                 valid_fract = zbuff.get_trimmed_valid_fraction(**vfkwargs)
                 # Check valid_fraction
@@ -546,8 +556,8 @@ class WindowWyrm(Wyrm):
                     # Append to input holder
                     window_inputs.update({"Z": _tr})
 
-            elif _k2 in self.code_map["N"]:
-                hbuff = branch[_k2]
+            elif _k1 in self.code_map["N"]:
+                hbuff = branch[_k1]
                 valid_fract = hbuff.get_trimmed_valid_fraction(**vfkwargs)
                 if valid_fract >= self.tcf["N"]:
                     # Convert a copy of the horizontal data buffer to trace
@@ -561,8 +571,8 @@ class WindowWyrm(Wyrm):
                     )
                     window_inputs.update({"N": _tr})
 
-            elif _k2 in self.code_map["E"]:
-                hbuff = branch[_k2]
+            elif _k1 in self.code_map["E"]:
+                hbuff = branch[_k1]
                 valid_fract = hbuff.get_trimmed_valid_fraction(**vfkwargs)
                 if valid_fract >= self.tcf["E"]:
                     # Convert a copy of the horizontal data buffer to trace
@@ -585,14 +595,14 @@ class WindowWyrm(Wyrm):
 
     def _process_windows(
         self,
-        rtinststream,
+        tieredbuffer,
         extra_sec=None,
         pad=True,
         wgt_taper_sec="blinding",
         wgt_taper_type="cosine",
     ):
         """
-        Iterates across all level 1 keys (_k1) of a RtInstStream object and
+        Iterates across all tier-0 keys (_k0) of a TieredBuffer object and
         assesses if each branch can produce a viable window, defined by having:
         1) Vertical component data specified by component codes in self.code_map['Z']
         2) Sufficient vertical data to satisfy the window size defined by the
@@ -634,22 +644,24 @@ class WindowWyrm(Wyrm):
                         and added to the self.queue. Used as an early
                         termination criterion in self.pulse().
         """
-        if not isinstance(rtinststream, RtInstStream):
+        if not isinstance(tieredbuffer, TieredBuffer):
             raise TypeError(
                 f"rtinststream must be type wyrm.structures.rtinststream.RtInstStream"
             )
+        elif not isinstance(tieredbuffer.buff_class, TraceBuff):
+            raise TypeError(f'TieredBuffer.buff_class must be TraceBuff. Found {tieredbuffer.buff_class}')
 
         nnew = 0
-        for _k1 in rtinststream.keys():
-            _branch = rtinststream[_k1]
+        for _k0 in tieredbuffer.keys():
+            _branch = tieredbuffer[_k0]
             # If this branch does not exist in the WindWyrm.index
-            if _k1 not in self.window_tracker.keys():
-                self.window_tracker.update({_k1: deepcopy(self._index_template)})
-                next_starttime = self.window_tracker[_k1]['next_starttime']
+            if _k0 not in self.window_tracker.keys():
+                self.window_tracker.update({_k0: deepcopy(self._index_template)})
+                next_starttime = self.window_tracker[_k0]['next_starttime']
 
             # otherwise, alias matching index entry
             else:
-                next_starttime = self.window_tracker[_k1]['next_starttime']
+                next_starttime = self.window_tracker[_k0]['next_starttime']
 
             # If this branch has data but index has the None next_starttime
             # Scrape vertical component data for a starttime
@@ -663,7 +675,7 @@ class WindowWyrm(Wyrm):
                             # use the RtBuffTrace starttime to initialize the next_starttime
                             # in this branch of self.window_tracker
                             _first_ts = _branch[_c].stats.starttime
-                            self.window_tracker[_k1].update({'next_starttime': _first_ts})
+                            self.window_tracker[_k0].update({'next_starttime': _first_ts})
                             next_starttime = _first_ts
                             # and break
                             break
@@ -679,7 +691,7 @@ class WindowWyrm(Wyrm):
                         if len(_branch[_c]) > 0:
                             _data_ts = _branch[_c].stats.starttime
                             _data_te = _branch[_c].stats.endtime
-                            _data_maxlength = _branch[_c].max_length
+                            # _data_maxlength = _branch[_c].max_length
                             break
                 # Normal operation cases (i.e., no gaps)
                 # If next_starttime falls within the data timing
@@ -725,19 +737,19 @@ class WindowWyrm(Wyrm):
                         # Get number of advances needed to account for gap, rounded down
                         gap_nadv = gap_dt//self._advance_sec
                         # update next_starttime with integer number of advances in seconds
-                        self.window_tracker[_k1]['next_starttime'] += gap_nadv*self._advance_sec
+                        self.window_tracker[_k0]['next_starttime'] += gap_nadv*self._advance_sec
                         # update next_index by integer number of advances in counts
-                        self.window_tracker[_k1]['next_index'] += gap_nadv
+                        self.window_tracker[_k0]['next_index'] += gap_nadv
                         
                 # Attempt to generate window from this branch
                 window = self._branch2instwindow(
                     _branch,
-                    self.window_tracker[_k1]['next_starttime'],
+                    self.window_tracker[_k0]['next_starttime'],
                     pad=pad,
                     extra_sec=extra_sec,
                     wgt_taper_sec=wgt_taper_sec,
                     wgt_taper_type=wgt_taper_type,
-                    index=self.window_tracker[_k1]['next_index']
+                    index=self.window_tracker[_k0]['next_index']
                 )
                 # if window is None:
                 #     breakpoint()
@@ -748,9 +760,9 @@ class WindowWyrm(Wyrm):
                     # update nnew index for iteration reporting
                     nnew += 1
                     # advance next_starttime by _advance_sec
-                    self.window_tracker[_k1]['next_starttime'] += self._advance_sec
+                    self.window_tracker[_k0]['next_starttime'] += self._advance_sec
                     # advance next_index by 1
-                    self.window_tracker[_k1]['next_index'] += 1
+                    self.window_tracker[_k0]['next_index'] += 1
 
                 # If window is not generated, go to next instrument
                 else:
@@ -797,10 +809,7 @@ class WindowWyrm(Wyrm):
                     the oldest messages can be removed with
                     the pop() method in a subsequent step
         """
-        if not isinstance(x, RtInstStream):
-            raise TypeError(
-                f"x must be type wyrm.structures.rtinststream.RtInstStream, got {type(x)}"
-            )
+        _ = self._matches_itype(x, raise_error=True)
         for _ in range(self.max_pulse_size):
             nnew = self._process_windows(x)
             if nnew == 0:

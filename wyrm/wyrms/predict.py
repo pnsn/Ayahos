@@ -137,21 +137,20 @@ class MachineWyrm(Wyrm):
     def pulse(self, x):
         """
         :: INPUTS ::
-        :param x: [deque] of InstWindow objects
+        :param x: list or deque of wyrm.buffer.prediction.PredArray objects
+                    
 
         :: OUTPUT ::
-        :return y: [RtInstStream] access to RtInstStream composed
-                of RtPredTrace objects.
+        :return y: [wyrm.buffer.structures.TieredBuffer] access to the self.buffer terminating in
+                    wyrm.buffer.prediction.PredBuff objects
         """
         # Construct prediction inputs
-        input_tensor, meta_list = self._instwindows2tensor(x)
+        # input_tensor, meta_list = self._instwindows2tensor(x)
+        
         # Preallocate numpy array for outputs
-        pred_nwlt = np.full(shape=(len(self.nwgts),
-                                   len(meta_list),
-                                   len(self.label_codes),
-                                   self.model.in_samples),
-                            fill_value=0.,
-                            dtype=np.float32)
+        npy_pred = np.full(shape=input_tensor.shape,
+                           fill_value=np.nan,
+                           dtype=np.float32)
         
         # Iterate across weights
         for _n, wname in enumerate(self.weight_names):
@@ -167,7 +166,15 @@ class MachineWyrm(Wyrm):
             # Report runtime
             if self.debug:
                 print(f'Prediction runtime ({time() - tick})')
+            for _i, meta in enumerate(meta_list)
             
+        # Distribute predictions to buffer
+        for _i, meta in enumerate(meta_list):
+            k1 = meta['inst_code']
+            k2 = wname
+            self.buffer.append(pred_nwlt
+                
+
             self._distribute_preds_to_buffer(pred_nwlt, meta_list)
             
 
@@ -179,6 +186,12 @@ class MachineWyrm(Wyrm):
         # self._sort_tree_indices()
         y = self.tree
         return y
+
+    def _split_pred_arrays(self, x):
+        """
+        Convert an iterable set of PredArray objects into
+        
+        """
 
     def _instwindows2tensor(self, x):
         """

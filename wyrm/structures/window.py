@@ -1,5 +1,6 @@
 from obspy import Trace, Stream, UTCDateTime
 from wyrm.structures.rtbufftrace import RtBuffTrace
+from wyrm.buffer.prediction import PredArray
 import wyrm.util.input_compatability_checks as icc
 import seisbench.models as sbm
 import numpy as np
@@ -855,6 +856,16 @@ class InstWindow(Stream):
         array = self.to_numpy()
         tensor = torch.Tensor(array)
         return tensor
+    
+    def to_predarray(self):
+        header = {'id': self.inst_code,
+                  't0': self._target_starttime.timestamp,
+                  'samprate': self._target_sr,
+                  'model_name': self._model_name,
+                  'label_name': self._target_order}
+        data = self.to_numpy()
+        predarray = PredArray(data=data[0,...], header=header)
+        return predarray
 
     def get_metadata(self):
         metadata = {

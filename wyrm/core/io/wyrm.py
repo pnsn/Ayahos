@@ -1,7 +1,7 @@
 import os
 from glob import glob
 from obspy import Trace
-from wyrm.wyrms._base import Wyrm
+from wyrm.core._base import Wyrm
 import wyrm.util.input_compatability_checks as icc
 from wyrm.buffer.structures import TieredBuffer
 from wyrm.buffer.trace import TraceBuff

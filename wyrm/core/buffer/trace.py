@@ -20,7 +20,7 @@ from copy import deepcopy
 import wyrm.util.input_compatability_checks as icc
 
 
-class TraceBuff(Trace):
+class TraceBuffer(Trace):
     """
     Adapted version of the obspy.realtime.rttrace.RtTrace class
     that provides handling for gappy data that is not developed
@@ -33,7 +33,6 @@ class TraceBuff(Trace):
     window production.
 
     """
-
     def __init__(
         self,
         max_length=1.0,

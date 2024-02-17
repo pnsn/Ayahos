@@ -1,4 +1,4 @@
-from wyrm.buffer.trace import TraceBuff
+from wyrm.core.buffer.trace import TraceBuffer
 import wyrm.util.input_compatability_checks as icc
 from obspy import Stream, Trace
 import inspect

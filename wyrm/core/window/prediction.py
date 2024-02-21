@@ -1,3 +1,15 @@
+"""
+:module: wyrm.core.window.prediction
+:author: Nathan T. Stevens
+:email: ntsteven (at) uw.edu
+:org: Pacific Northwest Seismic Network
+:license: AGPL-3.0
+
+:purpose: 
+    This module hosts the class definition for a PredictionWindow
+"""
+
+
 import numpy as np
 import seisbench.models as sbm
 from torch import Tensor
@@ -5,12 +17,14 @@ from obspy import UTCDateTime, Stream, Trace
 import wyrm.util.compatability as wcc
 from copy import deepcopy
 
+
 class PredictionWindow(object):
     """
     This object houses a data array and metadata attributes for documenting a pre-processed
     data window prior to ML prediction and predicted values by an ML operation. It provides
     options for converting contained (meta)data into various formats.
     """
+
     def __init__(self, model=None, data=None, id='..--.', samprate=1., t0=0., blinding=(0,0), **options):
         """
         Initialize a PredictionWindow (pwind) object

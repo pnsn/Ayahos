@@ -20,13 +20,44 @@
     in the buffer and can be used to guide subsampling of prediction time series for
     subsequent triggering analyses.
 """
+import os
 import numpy as np
+from obspy import Trace, Stream, read
 from wyrm.core.window.prediction import PredictionWindow
 import wyrm.util.compatability as wcc
 from wyrm.util.stacking import shift_trim
 from copy import deepcopy
 
 class PredictionBuffer(object):
+    """
+    Class definition for a PredictionBuffer object. 
+    
+    This class is structured loosely after an obspy.realtime.RtTrace, hosting
+    a 2-D numpy.ndarray in the self.stack attribute, rather than a data vector. 
+    The purpose of this buffer is to house l-labeled, t-time-sampled, windowed
+    predictions from machine learning models and provide methods for stacking
+    methods (i.e. overlap handling) used for these applications (i.e., max value and
+    average value) that differ from the overlap handing provided in obspy (interpolation
+    or gap generation - see obspy.core.trace.Trace.__add__).
+
+    Like the obspy.realtime.RtTrace object, all data, and most metadata are populated
+    in a PredictionBuffer object (pbuff, for short) by the first append of a
+    pwind object (wyrm.core.window.prediction.PredicitonWindow) to the buffer.
+
+    
+    In this initial version:
+     1) metadata are housed in distinct attributes, rather than an Attribute Dictionary 
+        as is the case with obspy Trace-like objects (this may change in a future version)
+     2) non-future appends (i.e., appends that back-fill data) have conditions relative to
+        buffer size and data timing for if an append is viable. 
+        APPEND RULES:
+        a) If pwind is later than the contents of pbuff (i.e. future append) - unconditional append
+        b) If pwind is earlier than the contents of pbuff - pbuff must have enough space to fit
+            the data in pwind without truncating data at the future (right) end of the buffer
+        c) If pwind is within the contents of pbuff - pbuff cannot have a data fold greater than
+            1 for all samples wher pwind overlaps pbuff.
+
+    """
     
     def __init__(self, max_length=15000, stacking_method='max'):
         """
@@ -45,6 +76,15 @@ class PredictionBuffer(object):
                         'max': maximum value at the jth overlapping sample
                         'avg': mean value at the jth overlapping sample
         
+        :: POPULATED ATTRIBUTES ::
+        :attr max_length: positive integer, see param max_length
+        :attr stacking_method: 'max', or 'avg', see stacking_method
+        :attr fold: (max_length, ) numpy.ndarray - keeps track of the number
+                        of non-blinded samplesn stacked a particular time-point
+                        in this buffer. dtype = numpy.float32
+        :attr _has_data: PRIVATE - [bool] - flag indicating if data have been
+                        appended to this pbuff via the pbuff.append() method
+                        Default = False
         """
         # max_length compat. check
         self.max_length = wcc.bounded_intlike(
@@ -67,13 +107,27 @@ class PredictionBuffer(object):
     def validate_pwind(self, pwind):
         """
         Validate that metadata attributes in this PredictionBuffer and a candidate
-        PredictionWindow. In the case where 
+        PredictionWindow. In the case where (meta) data have not been appended
+        to this pbuff, attributes are assigned from the input pwind object
+        (see :: ATTRIBUTES ::)
 
         :: INPUT ::
         :param pwind: [wyrm.core.window.prediction.PredictionWindow]
                     Candidate prediction window object
         :: OUTPUT ::
-        :param
+        :return status: [bool] is pwind compatable with this PredictionBuffer?
+
+        :: ATTRIBUTES :: - only updated if self._has_data = False
+        :attr id: [str] - instrument ID
+        :attr t0: [float] - timestamp of first sample in pwind (seconds)
+        :attr samprate: [float] - sampling rate of data in samples per second
+        :attr model_name: [str] - machine learning model architecture name associated
+                                with this pwind/pbuff
+        :attr labels: [list] of [str] - names of data/prediction labels (axis-0 in self.stack)
+        :attr stack: [numpy.ndarray] - (#labels, in_samples) array housing appended/stacked
+                    data
+        :attr blinding: [2-tuple] of [int] - number of blinding samples at either end
+                     of a pwind
         """
         attr_list = ['id','samprate','model_name','weight_name','labels','blinding']
         if self._has_data:
@@ -81,9 +135,9 @@ class PredictionBuffer(object):
             for _attr in attr_list:
                 bool_list.append(eval(f'self.{_attr} == pwind.{_attr}'))
             if all(bool_list):
-                return True
+                status = True
             else:
-                return False
+                status = False
         else:
             # Scrape metadata
             self.id = pwind.id
@@ -95,7 +149,8 @@ class PredictionBuffer(object):
             self.blinding = pwind.blinding
             # Populate stack
             self.stack = np.zeros(shape=(pwind._nl, self.max_length), dtype=np.float32)
-            return True
+            status = True
+        return status
 
     def append(self, pwind, include_blinding=False):
         # pwind compat. check
@@ -134,6 +189,24 @@ class PredictionBuffer(object):
         return self
     
     def get_stacking_indices(self, pwind, include_blinding=True):
+        """
+        Fetch the time-sample shift necessary to fit pwind into this
+        pbuff object (npts_right), the indices of data to include
+        from this pwind object [i0_p:i1_p], and the indices that the
+        data will be inserted into after the time-sample shift has
+        been applied to self.stack/.fold [i0_s:i1_s].
+
+        :: INPUTS ::
+        :param pwind: [wyrm.core.window.prediction.PredictionWindow] pwind object
+                        to append to this pbuff.
+        :param include_blinding: [bool] should the blinded samples be included
+                        when calculating the shift and indices for this proposed append?
+
+        :: OUTPUT ::
+        :return indices: [dict] dictionary containing calculated values for
+                            npts_right, i0_p, i1_p, i0_s, and i1_s as desecribed
+                            above.
+        """
 
         if include_blinding:
             indices = {'i0_p': 0, 'i1_p': None}
@@ -193,7 +266,8 @@ class PredictionBuffer(object):
         """
         Apply specified npts_right shift to self.stack and self.fold and
         then stack in pwind.data at specified indices with specified
-        stack_method
+        self.stack_method, and update self.fold. Internal shifting routine
+        is wyrm.util.stacking.shift_trim()
         
         :: INPUTS ::
         :param pwind: [wyrm.core.window.prediction.PredictionWindow] 
@@ -245,347 +319,42 @@ class PredictionBuffer(object):
         if indices['npts_right'] != 0:
             self.t0 -= indices['npts_right']/self.samprate
         
-
-
-
-
-class PredictionBuffer(object):
-
-    def __init__(self,
-                 model=sbm.EQTransformer(),
-                 weight_name='pnw',
-                 buff_samples=15000,
-                 stack_method='max',
-                 blinding_samples=(500,500)):
-        """
-        Initialize a Prediction Buffer v2 (PredBuff2) object
-
-        :: INPUTS ::
-        :param model: [seisbench.models.WaveformModel] child-class of this baseclass
-                        used to generate predictions. 
-        :param weight_name: [str] name of pretrained weights used for prediction. Must
-                        be in the list of pretrained model names
-        :param buff_samples: [int] length of this buffer in samples. Must be between
-                        2 and 100x model.in_samples
-        :param stack_method: [str] stacking method for overlapping predicted samples
-                        Supported: 'avg', 'max'
-        :param blinding_samples: [2-tuple] number of samples at the front and end of
-                        an appended PredArray object to suppres (sets to 0)
-    
-        """
-        # model compat. check
-        if not isinstance(model, sbm.WaveformModel):
-            raise TypeError('intput model must be type seisbench.models.WaveformModel')
-        else:
-            self.model_name = model.name
-            self.labels = {_l: _i for _i, _l in enumerate(model.labels)}
-            self.window_samples = model.in_samples
-
-        # weight_name compat. check
-        pt_list = model.list_pretrained()
-        if isinstance(weight_name, str):
-            if weight_name in pt_list:
-                self.weight_name 
-            else:
-                raise ValueError
-        else:
-            raise TypeError
-        
-        # buff_samples compat. check
-        self.buff_samples = icc.bounded_intlike(
-            buff_samples,
-            name='buff_samples',
-            minimum = 2*self.window_samples,
-            maximum = 100*self.window_samples,
-            inclusive=True
-        )
-
-        # stack_method compat. check
-        if not isinstance(stack_method, str):
-            raise TypeError
-        elif stack_method not in ['max', 'avg']:
-            raise ValueError
-        else:
-            self.stack_method = stack_method
-        
-
-        self.shape = (len(self.labels), self.buff_samples)
-
-        # Blinding Samples compatability check and formatting
-        if isinstance(blinding_samples, (list, tuple)):
-            if not all(isinstance(_b, (int,float)) for _b in blinding_samples):
-                raise TypeError
-            if len(blinding_samples) == 2:
-                self.blinding_samples = (int(_b) for _b in blinding_samples)
-            elif len(blinding_samples) == 1:
-                self.blinding_samples = (int(blinding_samples[0]), int(blinding_samples[0]))
-            else:
-                raise SyntaxError('blinding_samples must be a single number, or a 1-/2-tuple of int-like values')
-        elif isinstance(blinding_samples, (int, float)):
-            self.blinding_samples = (int(blinding_samples), int(blinding_samples))
-        else:
-            raise TypeError
-
-        # Initialize data and fold
-        self.stack = np.zeros(shape=self.shape, dtype=np.float32)
-        self.fold = np.zeros(shape=self.buff_samples, dtype=np.float32)
-        # Initialize blinding array 
-        self.blinding = np.ones(shape=(self.shape[1], self.shape[2]))
-        self.blinding[..., :self.blinding_samples[0]] = 0
-        self.blinding[..., -self.blinding_samples[1]:] = 0
-
-        ## PLACEHOLDERS -- POPULATED DURING FIRST APPEND ##
-        self.id = None
-        self.t0 = None
-        self.samprate = None
-        
-        # Flag for if buffer has had an append or not
-        self._has_data = False
-
+    # I/O FORMATTING METHODS #
 
     def copy(self):
+        """
+        Return a deepcopy of this PredictionBuffer
+        """
         return deepcopy(self)
-    
-    def append(self, predwind, include_blinding=False):
-        # Basic compatability checks
-        if not isinstance(predwind, PredictionWindow):
-            raise TypeError
-        if not isinstance(include_blinding, bool):
-            raise TypeError
-        
-        # Handle metadata scrape/crosscheck 
-        if self._has_data:
-            # Run validation in raise_error mode
-            _ = self.validate_prearray_metadata(predwind, raise_error=True)
-        else:
-            # Run PredArray validation
-            self.scrape_predarray_metadata(predwind)
-    
-        # Get append indexing instructions
-        indices = self.get_stacking_indices(predwind, include_blinding=include_blinding)
-        
-        # Run append with scenario-dependent safety catches.
-        # First append - unconditional stacking
-        if not self._has_data:
-            self._shift_and_stack(predwind, indices)
-            self._has_data = True
-        # Unconditionally stack future appends
-        elif indices['npts_right'] < 0:
-            self._shift_and_stack(predwind, indices)
-        # Conditionally apply past appends
-        elif indices['npts_right'] > 0:
-            # Raise error if proposed append would clip the most current predictions
-            if any(self.fold[-indices['npts_right']:] > 0):
-                raise BufferError('Proposed append would trim off most current predictions in this buffer - canceling append')
-            else:
-                self._shift_and_stack(predwind, indices)
-        else: #if indices['npts_right'] == 0:
-            # If all sample points have had more than one append, cancel
-            if all(self.fold[indices['i0_s']:indices['i1_s']] > 1):
-                raise BufferError('Proposed append would strictly stack on samples that already have 2+ predictions - canceling append')
-            else:
-                self._shift_and_stack(predwind, indices)
-        return self
-        
-    def scrape_predwind_metadata(self, predwind):
-        if not isinstance(predwind, PredictionWindow):
-            raise TypeError('predarray must be type wyrm.buffer.prediction.PredArray')
-        
-        if self._has_data:
-            raise RuntimeError('Data have already been appended to this array - will not overwrite metadata')
-        
-        if self.model_name != predarray.model_name:
-            raise ValueError('model_name for this predbuff and input predarray do not match')
-
-        self.id = predarray.id
-        self.samprate = predarray.samprate
-        self.t0 = predarray.t0
-
-    def validate_prearray_metadata(self, predarray, raise_error=False):
-        """
-        Check the compatability of metadata between this PredBuff and a
-        PredArray object. 
-        
-        Required matching attributes are:
-         @ id - Instrument Code, generally Net.Sta.Loc.BandInst (e.g., UW.GNW..BH)
-         @ samprate - sampling rate in samples per second (Hz)
-         @ model_name - name of ML model architecture
-        
-        Attributes checked for type:
-         @ t0 - timestamp for 0th sample
-         @ weight_name - 
-        
-
-        :: INPUTS ::
-        :param predarray: [wyrm.buffer.prediction.PredArray]
-                            Prediction Array object for which metadata will be compared
-        :param raise_error: [bool] 
-                            If a mismatch/error is raised internally, raise error externally?
-                            True - raise errors
-                            False - return False
-        
-        """
-        # Input compatability checks
-        if not isinstance(predarray, PredArray):
-            raise TypeError('predarray must be type wyrm.buffer.prediction.PredArray')
-        
-        if not isinstance(raise_error, bool):
-            raise TypeError('raise_error must be type bool')
-        
-        # Check ID match
-        if self.id != predarray.id:
-            if raise_error:
-                raise ValueError('id for this predbuff and predarray do not match')
-            else:
-                return False    
-            
-        # Check samprate match
-        elif self.samprate != predarray.samprate:
-            if raise_error:
-                raise ValueError('samprate for this predbuff and predarray do not match')
-            else:
-                return False
-            
-        # Check model_name match
-        elif self.model_name != predarray.model_name:
-            if raise_error: 
-                raise ValueError('model_name for this predbuff and predarray do not match')
-            else:
-                return False
-            
-        # Check t0 type
-        elif not isinstance(predarray.t0, float):
-            if raise_error:
-                raise TypeError('predarray.t0 must be type float')
-            else:
-                return False
-    
-        # Check weight_name type
-        elif not isinstance(predarray.weight_name, str):
-            if raise_error:
-                raise TypeError('predarray.weight_name must be type str')
-            else:
-                return False
-        
-        else:
-            return True
-        
-    def get_stacking_indices(self, predarray, include_blinding=True):
-        _ = self.validate_prearray_metadata(predarray, raise_error=True)
-
-        if include_blinding:
-            indices = {'i0_p': 0, 'i1_p': None}
-        else:
-            indices = {'i0_p': self.blinding_samples[0],
-                       'i1_p': -self.blinding_samples[1]}
-        
-        if not self._has_data:
-            indices.update({'npts_right': 0, 'i0_s': None})
-            if include_blinding:
-                indices.update({'i1_s': self.window_samples})
-            else:
-                indices.update({'i1_s': self.window_samples - self.blinding_samples[0] - self.blinding_samples[1]})
-        else:
-            dt = predarray.t0 - self.t0
-            i0_init = dt*self.samprate
-            # Sanity check that location is integer-valued
-            if int(i0_init) != i0_init:
-                raise ValueError('proposed new data samples are misaligned with integer sample time-indexing in this PredBuff')
-            # Otherwise, ensure i0 is type int
-            else:
-                i0_init = int(i0_init)
-            # Get index of last sample in candidate prediction window
-            i1_init = i0_init + self.window_samples
-            # If blinding samples are removed, adjust the indices
-            if not include_blinding:
-                i0_init += self.blinding_samples[0]
-                i1_init -= self.blinding_samples[1]
-                di = self.window_samples - self.blinding_samples[0] - self.blinding_samples[1]
-            else:
-                di = self.window_samples
-
-                
-            # Handle data being appended occurs before the current buffered data
-            if i0_init < 0:
-                # Instruct shift to place the start of pred at the start of the buffer
-                indices.update({'npts_right': -i0_init,
-                                     'i0_s': None,
-                                     'i1_s': di})
-
-            # If the end of pred would be after the end of the current buffer timing
-            elif i1_init > self.buff_samples:
-                # Instruct shift to place the end of pred at the end of the buffer
-                indices.update({'npts_right': self.buff_samples - i1_init,
-                                     'i0_s': -di,
-                                     'i1_s': None})
-            # If pred entirely fits into the current bounds of buffer timing
-            else:
-                # Instruct no shift and provide in-place indices for stacking pred into buffer
-                indices.update({'npts_right': 0,
-                                     'i0_s': i0_init,
-                                     'i1_s': i1_init})
-
-        return indices
-
-    def _shift_and_stack(self, predarray, indices):
-        """
-        Apply specified npts_right shift to self.stack and self.fold and
-        then stack in predarray.data at specified indices with specified
-        stack_method
-        
-        :: INPUTS ::
-        :param predarray: [wyrm.buffer.prediction.PredArray] prediction array
-                            to stack into this PredBuff
-        :param indices: [dict] - stacking index instructions from self.get_stacking_indices()
-        
-        :: OUTPUT ::
-        :return self: [wyrm.buffer.prediction.PredBuff] to enable cascading
-        """
-
-        # Shift stack along 1-axis
-        self.stack = shift_trim(
-            self.stack,
-            indices['npts_right'],
-            axis=1,
-            fill_value=0.,
-            dtype=self.stack.dtype)
-        
-        # Shift fold along 0-axis
-        self.fold = shift_trim(
-            self.fold,
-            indices['npts_right'],
-            axis=0,
-            fill_value=0.,
-            dtype=self.fold.dtype)
-        
-        # # ufunc-facilitated stacking # #
-        # Construct in-place prediction slice array
-        pred = np.zeros(self.stack.shape, dtype=self.stack.dtype)
-        pred[:, indices['i0_s']:indices['i1_s']] = predarray.data[:, indices['i0_p']:indices['i1_p']]
-        # Construct in-place fold update array
-        nfold = np.zeros(shape=self.fold.shape, dtype=self.stack.dtype)
-        nfold[indices['i0_s']:indices['i1_s']] += 1
-        # Use fmax to update
-        if self.stack_method == 'max':
-            # Get max value for each overlapping sample
-            np.fmax(self.stack, pred, out=self.stack); #<- Run quiet
-            # Update fold
-            np.add(self.fold, nfold, out=self.fold); #<- Run quiet
-        elif self.stack_method == 'avg':
-            # Add fold-scaled stack/prediction arrays
-            np.add(self.stack*self.fold, pred*nfold, out=self.stack); #<- Run quiet
-            # Update fold
-            np.add(self.fold, nfold, out=self.fold); #<- Run quiet
-            # Normalize by new fold to remove initial fold-rescaling
-            np.divide(self.stack, self.fold, out=self.stack, where=self.fold > 0); #<- Run quiet
-        
-        # If a shift was applied, update t0 <- NOTE: this was missing in version 1!
-        if indices['npts_right'] != 0:
-            self.t0 -= indices['npts_right']/self.samprate
-
-        return self
         
     def to_stream(self, min_fold=1, fill_value=None):
+        """
+        Create a representation of self.stack as a set of labeled
+        obspy.core.trace.Trace objects contained in an obspy.core.stream.Stream
+        object. Traces are the full length of self.stack[_i, :] and masked using
+        a threshold value for self.fold.
+
+        Data labels are formatted as follows
+        for _l in self.labels
+            NLSC = self.id + _l[0].upper()
+        
+        i.e., the last character in the NSLC station ID code is the first, capitalized
+              letter of the data label. 
+        e.g., for UW.GNW.--.BHZ, 
+            self.id is generally trucated by the RingWyrm or DiskWyrm data ingestion
+            to UW.GNW.--.BH
+            UW.GNW.--.BH with P-onset prediction becomes -> UW.GNW.--.BHP
+
+        The rationale of this transform is to allow user-friendly interface with the 
+        ObsPy API for tasks such as thresholded detection and I/O in standard seismic formats.
+
+        :: INPUTS ::
+        :param min_fold: [int-like] minimum fold required for a sample in stack to be unmasked
+        :param fill_value: compatable value for numpy.ma.masked_array()'s fill_value kwarg
+
+        :: OUTPUT ::
+        :return st: [obspy.core.stream.Stream]
+        """
         # Create stream
         st = Stream()
         # Compose boolean mask
@@ -595,6 +364,9 @@ class PredictionBuffer(object):
             fill_value = self.fill_value
         # Compose generic header
         n,s,l,bi = self.id.split('.')
+        # If the ID happens to be using the full 3-character SEED code, truncate
+        if len(bi) == 3:
+            bi = bi[:2]
         header = {'network': n,
                   'station': s,
                   'location': l,
@@ -607,4 +379,108 @@ class PredictionBuffer(object):
                                                 mask=mask, fill_value=fill_value),
                         header=header)
             st.append(_tr)
+        
+        # Construct fold trace
+        header.update({'channel': f'{bi}f'})
+        _tr = Trace(data=self.fold, header=header)
+        st.append(_tr)
         return st
+    
+
+    def to_mseed(self, save_dir='.', min_fold=1, fill_value=None):
+        """
+        EXAMPLE WORKFLOW
+
+        This serves as an example wrapper around to_stream() for 
+        saving outputs to miniSEED format as individual traces
+
+        :: INPUTS ::
+        :param save_dir: [str] - path to directory in which to save
+                        the output miniSEED files (exclude trailing \ or /)
+        :param min_fold: [int] - see self.to_stream()
+        :param fill_value: - see self.to_stream()
+        """
+
+        st = self.to_stream(min_fold=min_fold, fill_value=fill_value)
+        labels = ''
+        for _l in self.labels:
+            labels += f'{_l}_'
+        labels = labels[:-1]
+        of_str = '{model}_{weight}_{id}_{t0:.6f}_{labels}.mseed'.format(
+            model=self.model_name,
+            weight=self.weight_name,
+            id=self.id,
+            t0=self.t0,
+            labels=labels
+        )
+        out_fp = os.path.join(save_dir, of_str)
+        st.write(out_fp, fmt='MSEED')
+
+    def from_stream(self, st, model_name=None, weight_name=None):
+        """
+        Populate a PredictionBuffer object from a stream object 
+        """
+        # Only run "append" from stream if no data are present
+        if self._has_data:
+            raise BufferError('This PredictionBuffer already has data - cannot populate from Stream')
+
+
+    def from_mseed(self, infile ,tol=1e-5):
+        """
+        Populate this PredictionBuffer from a version saved as a MSEED file using
+        the to_mseed() method above
+        """
+        # Only run "append" from stream if no data are present
+        if self._has_data:
+            raise BufferError('This PredictionBuffer already has data - cannot populate from mSEED')
+
+        # Parse input file name for metadata
+        # Strip filename from infile
+        _, file = os.path.split(infile)
+        # Remove extension
+        file = os.path.splitext(file)[0]
+        # Split by _ delimiter
+        fparts = file.split('_')
+        if len(fparts) != 4:
+            raise SyntaxError(f'infile filename {file} does not conform with the format "model_weight_id_t0_l1-l2-l3"')
+        # Alias parts
+        model = fparts[0]
+        weight = fparts[1]
+        id = fparts[2]
+        ch = id.split('.')[-1]
+        t0 = float(fparts[3])
+        labels = fparts[4].split('-')
+        
+        # Load data
+        st = read(infile).merge()
+        # Split
+        st_stack = Stream()
+        st_fold = st.select(channel=f'{ch}f')[0].data
+        channels = [f'{ch}{_l[0].upper()}' for _l in labels]
+        
+        # Get data fold trace & assign
+        self.fold = st.select(channel=f'{ch}f')[0].data
+        # Run sanity checks
+        for _ch in channels:
+            _tr = st.select(channel=_ch)[0]
+            if np.abs(_tr.stats.starttime - t0) > tol:
+                raise ValueError('t0 mismatch')
+        
+        for _i, tr_i in enumerate(st):
+            for _j, tr_j in enumerate(st):
+                if _i < _j:
+                    if tr_i.stats.starttime != tr_j.stats.starttime:
+                        raise ValueError
+                    if tr_i.stats.npts != tr_j.stats.npts:
+                        raise ValueError
+                    
+        self.stack = np.zeros(shape=(len(st), len(st[0].stats.npts)), dtype=np.float32)
+        for _i, _tr in 
+
+
+        # Assign
+        self.model_name = model
+        self.weight_name = weight
+        self.id = id
+        self.labels = labels
+        self.t0 = t0

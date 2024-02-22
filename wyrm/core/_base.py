@@ -10,7 +10,7 @@
     other *Wyrm classes -- "Wyrm" -- and serves as a template
     for the minimum required methods of each successor class. 
 """
-import wyrm.util.input_compatability_checks as icc
+import wyrm.util.compatability as wcc
 
 
 class Wyrm(object):
@@ -51,12 +51,12 @@ class Wyrm(object):
         if max_pulse_size is None:
             self.max_pulse_size = None
         else:
-            self.max_pulse_size = icc.bounded_intlike(max_pulse_size, name='max_pulse_size', minimum=1)
+            self.max_pulse_size = wcc.bounded_intlike(max_pulse_size, name='max_pulse_size', minimum=1)
         # input and output type for pulse
         self._in_type = (int, str, float, bool, type(None), type)
         self._out_type = (int, str, float, bool, type(None), type)
 
-    def __str__(self):
+    def __repr__(self):
         """
         Provide a string representation string of essential user data for this Wyrm
         """
@@ -64,7 +64,7 @@ class Wyrm(object):
         rstr = f"Max Pulse Size: {self.max_pulse_size} | debug: {self.debug}"
         return rstr
 
-    def __repr__(self):
+    def __str__(self):
         """
         Provide a string representation of how to recreate this Wyrm
         """
@@ -104,7 +104,10 @@ class Wyrm(object):
             else:
                 return False
         else:
-            return True
+            if raise_error:
+                pass
+            else:
+                return True
     
     def _matches_otype(self, arg, raise_error=False):
         if not isinstance(arg, self._out_type):
@@ -114,16 +117,20 @@ class Wyrm(object):
             else:
                 return False
         else:
-            return True
+            if raise_error:
+                pass
+            else:
+                return True
 
 
-    def pulse(self, x=None):
+    def pulse(self, x=None, **options):
         """
         Run a pulse with input argument and return that argument
         with check that input x is the expected _in_type
         :: INPUT ::
         :param x: [type] or [NoneType] input object x
-
+        :param options: [kwargs] collector for addtional key word arguments
+                        to pass to internal processes
         :: OUTPUT ::
         :return y: [type] or [NoneType] alias of input x
         """

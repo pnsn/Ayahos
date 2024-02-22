@@ -7,12 +7,19 @@
 
 :purpose: 
     This module hosts the class definition for a PredictionWindow
+
+
+TODO: 
+    1) Remove model as input and make **options explicit
+    2) Add method to update from SeisBench
+    3) Ensure that the outputs from split_for_ml() can be used as
+        **kwarg inputs to populate a new PredictionWindow
 """
 
 
 import numpy as np
 import seisbench.models as sbm
-from torch import Tensor
+import torch
 from obspy import UTCDateTime, Stream, Trace
 import wyrm.util.compatability as wcc
 from copy import deepcopy
@@ -24,8 +31,78 @@ class PredictionWindow(object):
     data window prior to ML prediction and predicted values by an ML operation. It provides
     options for converting contained (meta)data into various formats.
     """
+    def __init__(self, data=None, id='..--.', t0=0., samprate=1., model_name=None, weight_name=None, labels=[], blinding=0):
+        if not isinstance(data, (type(None), np.ndarray)):
+            raise TypeError('data must be type numpy.ndarray or NoneType')
+        elif data is None:
+            self.data = data
+        elif data.ndim != 2:
+            raise IndexError(f'Expected a 2-dimensional array. Got {data.ndim}-d')
+        else:
+            self.data = data
 
-    def __init__(self, model=None, data=None, id='..--.', samprate=1., t0=0., blinding=(0,0), **options):
+        if not isinstance(id, (str, type(None))):
+            raise TypeError('id must be type str or NoneType')
+        elif id is None:
+            self.id = None
+        elif len(id.split('.')) == 4:
+            self.id = id
+        else:
+            raise SyntaxError('str-type id must consit of 4 "." delimited string elements to match N.S.L.C notation')
+
+        if not isinstance(t0, (int, float)):
+            raise TypeError('t0 must be type int, float, or obspy.core.utcdatetime.UTCDateTime')
+        elif isinstance(t0, UTCDateTime):
+            self.t0 = t0.timestamp
+        else:
+            self.t0 = float(t0)
+        
+        self.samprate = wcc.bounded_floatlike(
+            samprate,
+            name='samprate',
+            minimum=0,
+            maximum=None,
+            inclusive=False
+        )
+        
+        if not isinstance(model_name, (str, type(None))):
+            raise TypeError('model_name must be type str or NoneType')
+        else:
+            self.model_name = model_name
+        
+        if not isinstance(weight_name, (str, type(None))):
+            raise TypeError('weight_name must be type str or NoneType')
+        else:
+            self.weight_name = weight_name
+
+        if not isinstance(labels, (list, tuple, str)):
+            raise TypeError('labels must be type list, tuple, or str')
+        elif isinstance(labels, (tuple, str)):
+            labels = [_l for _l in labels]
+
+
+        if self.data is not None:
+            if len(labels) == self.data.shape[0]:
+                self.labels = labels
+            elif len(labels == self.data.shape[1]):
+                self.data = self.data.T
+                self.labels = labels
+            else:
+                raise IndexError(f'Number of labels ({len(labels)}) not in self.data.shape ({self.data.shape})')
+        else:
+            self.labels = labels
+        
+        self.blinding = wcc.bounded_intlike(
+            blinding,
+            name='blinding',
+            minimum=0
+            maximum=None,
+            inclusive=True
+        )
+                
+    
+        
+    def __init__(self, model=None, data=None, id='..--.', samprate=1., t0=0., blinding=0, **options):
         """
         Initialize a PredictionWindow (pwind) object
         
@@ -108,6 +185,13 @@ class PredictionWindow(object):
             maximum=None,
             inclusive=False)
         
+        self.blinding = wcc.bounded_intlike(
+            blinding,
+            name='blinding',
+            minimum=0,
+            maximum=
+        )
+
         if not isinstance(blinding, (tuple, list)):
             raise TypeError('blinding must be type tuple or list')
         elif len(blinding) != 2:

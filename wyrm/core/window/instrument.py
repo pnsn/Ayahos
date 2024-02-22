@@ -18,9 +18,7 @@ from obspy import Trace, Stream, UTCDateTime
 from wyrm.core.buffer.trace import TraceBuffer
 from wyrm.core.window.prediction import PredictionWindow
 import wyrm.util.compatability as wcc
-import seisbench.models as sbm
 import numpy as np
-import torch
 from copy import deepcopy
 
 class InstrumentWindow(Stream):
@@ -31,11 +29,11 @@ class InstrumentWindow(Stream):
             Ntr=None,
             Etr=None,
             target_starttime=None,
-            target_sr=100,
             model_name='EQTransformer',
+            component_order='ZNE',
             target_npts=6000,
-            target_order='ZNE',
-            target_blinding=(500,500),
+            target_samprate=100,
+            target_blinding=500,
             missing_component_rule='zeros',
     ):
         # Inherit from obspy.core.stream.Stream
@@ -73,17 +71,17 @@ class InstrumentWindow(Stream):
             raise TypeError('Etr must be type obspy.core.trace.Trace or wyrm.core.buffer.trace.TraceBuffer')
         # target starttime compat check
         if target_starttime is None:
-            self.t_starttime = self.traces[0].stats.starttime
+            self.target_starttime = self.traces[0].stats.starttime
         elif isinstance(target_starttime, UTCDateTime):
-            self.t_starttime = target_starttime
+            self.target_starttime = target_starttime
         elif isinstance(target_starttime, float):
-            self.t_starttime = UTCDateTime(target_starttime)
+            self.target_starttime = UTCDateTime(target_starttime)
         else:
             raise TypeError('target_starttime must be type float, UTCDateTime, or NoneType')
         # target sampling rate compat check
-        self.t_sr = wcc.bounded_floatlike(
-            target_sr,
-            name='target_sr',
+        self.target_samprate = wcc.bounded_floatlike(
+            target_samprate,
+            name='target_samprate',
             minimum=0,
             maximum=None,
             inclusive=False
@@ -94,7 +92,7 @@ class InstrumentWindow(Stream):
         else:
             self.model_name=model_name
         # target npts compat check
-        self.t_npts = wcc.bounded_intlike(
+        self.target_npts = wcc.bounded_intlike(
             target_npts,
             name='target_npts',
             minimum=0,
@@ -102,28 +100,21 @@ class InstrumentWindow(Stream):
             inclusive=False
         )
         # target order compat check
-        if not isinstance(target_order, str):
-            raise TypeError('target_order must be type str')
-        if not all((_c.upper() in 'ZNE' for _c in target_order)):
-            raise ValueError('not all characters in target_order are supported')
+        if not isinstance(component_order, str):
+            raise TypeError('component_order must be type str')
+        if not all((_c.upper() in 'ZNE' for _c in component_order)):
+            raise ValueError('not all characters in component_order are supported')
         else:
-            self.t_order = ''.join([_c.upper() for _c in target_order])
+            self.component_order = ''.join([_c.upper() for _c in component_order])
         # target blinding compat check
-        if not isinstance(target_blinding, (list, tuple)):
-            raise TypeError('target_blinding must be a list-like object')
-        elif len(target_blinding) != 2:
-            raise ValueError('target_blinding must be a 2-element list-like object')
-        else:
-            lblnd = wcc.bounded_intlike(target_blinding[0],
-                                        name='target_blinding[0]',
-                                        minimum=0,
-                                        maximum=self.t_npts/2,
-                                        inclusive=True)
-            rblnd = wcc.bounded_intlike(target_blinding[1],
-                                        name='target_blinding[1]',
-                                        minimum=0,
-                                        maximum=self.t_npts/2)
-            self.t_blinding = (lblnd, rblnd)
+        self.target_blinding = wcc.bounded_intlike(
+            target_blinding,
+            name='target_blinding',
+            minimum=0,
+            maximum=self.target_npts/2,
+            inclusive=True
+        )
+
         # missing component rule compat check
         if not isinstance(missing_component_rule, str):
             raise TypeError('missing_component_rule must be type str')
@@ -437,25 +428,25 @@ class InstrumentWindow(Stream):
             if not any(self.are_traces_masked()):
                 for _tr in self.traces:
                     # If starttimes are not on target - check if sampling is aligned with target
-                    if _tr.stats.starttime != self.t_starttime:
+                    if _tr.stats.starttime != self.target_starttime:
                         # Get trace initial starttime
                         trt0 = _tr.stats.starttime
                         # Get delta time between target starttime and current starttime
-                        dt = self.t_starttime - _tr.stats.starttime
+                        dt = self.target_starttime - _tr.stats.starttime
                         # Convert to delta samles
-                        dn = dt/self.t_sr
+                        dn = dt/self.target_samprate
                         # If samples are misaligned with target sampling - apply sync
                         if dn != int(dn):
                             # Front pad with the leading sample value
                             _tr.trim(
-                                starttime=self.t_starttime - _tr.stats.delta,
+                                starttime=self.target_starttime - _tr.stats.delta,
                                 pad=True,
                                 fill_value=_tr.data[0]
                             )
                             # Sync time using interpolate
                             _tr.interpolate(
                                 _tr.stats.sampling_rate,
-                                starttime = self.t_starttime
+                                starttime = self.target_starttime
                             )
                             # Remove any padding values
                             _tr.trim(starttime=trt0,
@@ -495,8 +486,8 @@ class InstrumentWindow(Stream):
         :return self: [InstrumentWindow] enable cascading
         """
         # Calculate window start and endtimes
-        ts = self.t_starttime
-        te = ts + (self.t_npts - 1) / self.t_sr
+        ts = self.target_starttime
+        te = ts + (self.target_npts - 1) / self.target_samprate
         # Check if any of the traces require padding/trimming
         if any(_tr.stats.starttime != ts for _tr in self.traces):
             run_trim = True
@@ -511,8 +502,8 @@ class InstrumentWindow(Stream):
                 pad=pad,
                 **options
             )
-            if any(_tr.stats.npts != self.t_npts for _tr in self.traces):
-                raise UserWarning(f'Not all trimmed traces in this InstrumentWindow meet target_npts {self.t_npts}')
+            if any(_tr.stats.npts != self.target_npts for _tr in self.traces):
+                raise UserWarning(f'Not all trimmed traces in this InstrumentWindow meet target_npts {self.target_npts}')
             self.processing.append({'trim_window': True})
         else:
             self.processing.append({'trim_window': False})
@@ -565,13 +556,59 @@ class InstrumentWindow(Stream):
     # ################### #
     # TRANSLATION METHODS #
     # ################### #
+    def copy(self):
+        """
+        return a deepcopy of this InstrumentWindow object
+        """
+        return deepcopy(self)
+    
+    def on_target(self, mode='any'):
+        index_dict = {'index': 'starttime','endtime','sampling_rate','npts','masked'}
+        bool_dict = {} 
+        # Run Checks
+        for _tr in self.traces:
+            bool_list = []
+            # All starttimes must be target starttimes
+            bool_list.append(_tr.stats.starttime == self.target_starttime)
+            bool_list.append(_tr.stats.endtime == self.target_starttime + self.target_npts/self.target_samprate)
+            bool_list.append(_tr.stats.sampling_rate == self.target_samprate)
+            bool_list.append(_tr.stats.npts == self.target_npts)
+            bool_list.append(np.ma.is_masked(_tr.data))
+            bool_dict.update({_tr.id: bool_list})    
+        if mode in ['any', 'all']:
+            slist = []
+            for _v in bool_dict.values():
+                slist += _v
+            if mode == 'any':
+                output = any(slist)
+            elif mode == 'all':
+                output = all(slist)
+        elif mode in ['cany','call']:
+            output = {}
+            for _k, _v in bool_dict.items():
+                if mode == 'cany':
+                    output.update({_k, any(_v)})
+                elif mode == 'call':
+                    output.update({_k, all(_v)})
+
+        elif mode == 'debug':
+            output = bool_dict
+            output.update(index_dict)
+    
+        else:
+            raise ValueError(f'mode {mode} not supported. See documentation')
+        
+        return output
+   
+                 
+
     def to_stream(self, ascopy=False):
         """
         Create a stream representation of this InstrumentStream with an option
         to make the view a deepcopy of the source data (default is False)
         """
         st = Stream()
-        for _c in self.t_order:
+        for _c in self.component_order:
             st.append(self.fetch_with_alias(_c, ascopy=ascopy))
         return st
     
@@ -590,29 +627,14 @@ class InstrumentWindow(Stream):
         :: OUTPUT ::
         :return data: [numpy.ndarray] data array
         """
-        # Run Checks
-        for _tr in self.traces:
-            # All starttimes must be target starttimes
-            if _tr.stats.starttime != self.t_starttime:
-                raise AttributeError('not all traces have target starttimes')
-            # All endtimes must be target endtimes
-            if _tr.stats.endtime != self.t_starttime + self.t_npts/self.t_sr:
-                raise AttributeError('not all traces have target endtimes')
-            # All sampling_rates must be targe sampling rates
-            if _tr.stats.sampling_rate != self.t_sr:
-                raise AttributeError('not all traces have target sampling_rate')
-            # All npts match target
-            if _tr.stats.npts != self.t_npts:
-                raise AttributeError('not all traces have target npts')
-            # All traces have gaps filled
-            if np.ma.is_masked(_tr.data):
-                raise AttributeError('not all traces have had their gaps filled')
+        if not self.on_target(mode='all'):
+            raise AttributeError('Not all attributes of data in traces match target values - use self.on_target(mode="debug") to diagnose')
         # Compose holder array if 
-        data = np.fill(shape=(3, self.t_npts), fill_value=np.nan, dtype=np.float32)
+        data = np.fill(shape=(3, self.target_npts), fill_value=np.nan, dtype=np.float32)
         if all(_c.upper() in 'ZNE' for _c in other_order):
             order = other_order.upper()
         else:
-            order = self.t_order
+            order = self.component_order
 
         for _i, _c in enumerate(order):
             data[_i, :] = self.fetch_with_alias(_c, ascopy=ascopy).data
@@ -638,11 +660,10 @@ class InstrumentWindow(Stream):
                   'samprate': self.Zdata.stats.samprate,
                   't0': self.Zdata.stats.starttime.timestamp,
                   'blinding': self.t_blinding,
-                  'labels': self.t_order,
-                  'in_samples': self.t_npts}
+                  'labels': self.component_order,
+                  'in_samples': self.target_npts}
         pwind = PredictionWindow(**kwargs)
         return pwind
-
 
     # ################# #
     # EXAMPLE WORKFLOW  #
@@ -667,7 +688,7 @@ class InstrumentWindow(Stream):
                 detrend('demean')
                 detrend('lienar')
             Hit target sampling
-                resample(target_sr)
+                resample(target_samprate)
             Clean up edges
                 taper(None, max_length=taper_sec, side='both')
             Clean up timing
@@ -690,24 +711,21 @@ class InstrumentWindow(Stream):
         self.detrend('demean')
         self.detrend('linaer')
         # Resample data
-        self.resample(self.t_sr)
+        self.resample(self.target_samprate)
         self.processing.append(f'obspy resample({self._tsr})')
         # Taper data
         self.taper(None, max_length=taper_sec, side="both")
         self.processing.append(f'obspy taper(None, max_length={taper_sec}, side="both")')
+        # Merge data
         self.merge_window()
+        # Sync timings
         self.sync_window_timing()
+        # Trim and pad window
         self.trim_window()
+        # Fill masked values
         self.fill_window_gaps(fill_value=0)
+        # Normalize data
         self.normalize_window()
+        # Convert to PredictionWindow object
         pwind = self.to_pwind(ascopy=ascopy)
         return pwind
-        
-
-
-
-
-
-
-
-

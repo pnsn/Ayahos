@@ -7,6 +7,7 @@ import seisbench.models as sbm
 from obspy import UTCDateTime
 from collections import deque
 from copy import deepcopy
+import numpy as np
 
 
 class WindowWyrm(Wyrm):
@@ -30,7 +31,7 @@ class WindowWyrm(Wyrm):
         target_sr=100.0,
         target_npts=6000,
         target_overlap=1800,
-        target_blinding=(500,500),
+        target_blinding=500,
         target_order="ZNE",
         max_pulse_size=20,
         debug=False,
@@ -62,10 +63,9 @@ class WindowWyrm(Wyrm):
                         Target overlap between sequential windows. Used alongside
                         target_sr and target_npts to determine window advances
                         between pulse iterations
-        :param target_blinding:  [2-tuple] of [int]
-                        left and right blinding sample amounts for stacking ML
-                        predictions. This is also used to determine trace
-                        completeness. 
+        :param target_blinding:  [int] left and right blinding sample amounts
+                        for stacking ML predictions. This is also used to determine
+                        trace completeness. 
         :param target_order: [str]
                         Target component order to pass to InstrumentWindow init
         :param max_pulse_size: [int]
@@ -106,7 +106,7 @@ class WindowWyrm(Wyrm):
             raise TypeError('model_name must be type str')
         else:
             self.model_name = model_name
-    
+        # Target sampling rate compat check
         self.target_sr = wcc.bounded_floatlike(
             target_sr,
             name='target_sr',
@@ -114,7 +114,7 @@ class WindowWyrm(Wyrm):
             maximum=None,
             inclusive=False
         )
-
+        # Target window number of samples compat check
         self.target_npts = wcc.bounded_intlike(
             target_npts,
             name='target_npts',
@@ -122,7 +122,7 @@ class WindowWyrm(Wyrm):
             maximum=None,
             inclusive=False
         )
-
+        # Target window number of sample overlap compat check
         self.target_overlap = wcc.bounded_intlike(
             target_overlap,
             name='target_overlap',
@@ -130,23 +130,15 @@ class WindowWyrm(Wyrm):
             maximum=None,
             inclusive=False
         )
-
-        if not isinstance(target_blinding, (list, tuple)):
-            raise TypeError('target_blinding must be type list or tuple')
-        elif len(target_blinding) != 2:
-            raise ValueError('target_blinding must be a 2-element list/tuple')
-        else:
-            lblnd = wcc.bounded_intlike(target_blinding[0],
-                                        name='target_blinding[0]',
-                                        minimum=0,
-                                        maximum=self.t_npts/2,
-                                        inclusive=True)
-            rblnd = wcc.bounded_intlike(target_blinding[1],
-                                        name='target_blinding[1]',
-                                        minimum=0,
-                                        maximum=self.t_npts/2)
-            self.t_blinding = (lblnd, rblnd)
-        
+        # Target (symmetrical) blinding number of samples compat check
+        self.target_blinding = wcc.bounded_intlike(
+            target_blinding,
+            name='target_blinding',
+            minimum=0,
+            maximum=self.target_npts/2
+            inclusive=True
+        )
+        # Target component order compat check
         if not isinstance(target_order, str):
             raise TypeError('target_order must be type str')
         elif not all(_c.upper() in 'ZNE' for _c in target_order):
@@ -154,18 +146,17 @@ class WindowWyrm(Wyrm):
         else:
             self.target_order = target_order.upper()
 
-        # Set (non-UTCDateTime) default starttime for new windowing indexing
-        self.default_starttime = None
-        self._index_template = {
-            "last_starttime": self.default_starttime,
-            "next_starttime": self.default_starttime,
-        }
+         # Set Defaults and Derived Attributes
+        # Calculate window length, window advance, and blinding size in seconds
+        self.window_sec = self.target_npts/self.target_sr
+        self.advance_sec = (self.target_npts - self.target_overlap)/self.target_sr
+        self.blind_sec = self.target_blinding/self.target_sr
 
-        # Data Storage and I/O Type Attributes
-        # Create index for holding instrument window starttime values
+        # Create dict for holding instrument window starttime values
+        self.default_starttime = None
         self.window_tracker = {}
 
-        # Create queue for output collection of
+        # Create queue for output collection of windows
         self.queue = deque([])
 
         # Update input and output types for TubeWyrm & compatability references
@@ -175,7 +166,7 @@ class WindowWyrm(Wyrm):
     # PULSE METHOD #
     ################
         
-    def pulse(self, x):
+    def pulse(self, x, **options):
         """
         Conduct up to the specified number of iterations of
         self._process_windows on an input RtInstStream object
@@ -185,17 +176,24 @@ class WindowWyrm(Wyrm):
         does not generate new windows.
 
         :: INPUT ::
-        :param x: [wyrm.structure.stream.RtInstStream]
+        :param x: [wyrm.core.buffer.structure.TieredBuffer] terminating
+                    with [wyrm.core.buffer.trace.TraceBuffer] objects
+        :param options: [kwargs] optional kwargs to pass to self.process_windows()
 
         :: OUTPUT ::
-        :return y: [deque] deque of InstWindow objects
-                    loaded with the appendleft() method, so
-                    the oldest messages can be removed with
-                    the pop() method in a subsequent step
+        :return y: [deque] deque of 
+                    [wyrm.core.window.instrument.InstrumentWindow' objects
+                    loaded with the appendleft() method, so the oldest messages
+                    can be removed with the pop() method in a subsequent step
         """
-        _ = self._matches_itype(x, raise_error=True)
+        # Check that x is compatable 
+        self._matches_itype(x, raise_error=True)
+        self._matches_itype(x.buff_class, raise_error=True)
+
+        # Iterate for up to self.max_pulse_size sweeps across x
         for _ in range(self.max_pulse_size):
-            nnew = self.process_windows(x)
+            nnew = self.process_windows(x, **options)
+            # Early stopping trigger - if process_windows produces no new windows
             if nnew == 0:
                 break
         # Return y as access to WindWyrm.queue attribute
@@ -206,51 +204,112 @@ class WindowWyrm(Wyrm):
     # CORE SUBROUTINES #
     # ################ #
 
-    def process_window(self, input, pad=True, wgt_taper_sec='blinding', wgt_taper_type='cosine'):
-        if not self._matches_itype(input):
-            raise TypeError(f'input must be type {self._in_type [0]} - not {type(input)}')
-        elif not self._matches_itype(input.buff_class):
-            raise TypeError(f'input.buff_class must be {self._in_type[1]} - not {type(input)}')
+    def process_windows(self, input, pad=True, extra_sec=0., wgt_taper_len='blinding', wgt_taper_type='cosine'):
+        """
+        Primary coordinating processes for WindowWyrm - conducts cross-checks with window_tracker to initialize
+        and update window start times for each branch of a TieredBuffer terminating in 
+        TraceBuffer objects and calls the subroutine "branch2iwind()", which does the instrument
+        window validation and generation.
+
+        :: INPUTS ::
+        :param input: [wyrm.core.buffer.structure.TieredBuffer] terminating in 
+                        [wyrm.core.buffer.trace.TraceBuffer] objects
+        """
+        # Run type checks for input
+        self._matches_itype(input, raise_error=True)
+        self._matches_itype(input.buff_class, raise_error=True)
+        if not isinstance(pad, bool):
+            raise TypeError('pad must be type bool')
+        if isinstance(wgt_taper_len, str):
+            if wgt_taper_len.lower() != 'blinding':
+                raise TypeError('The only supported str-type wgt_taper_len input is "blinding"')
+        elif not isinstance(wgt_taper_len, (int,float)):
+            raise TypeError('wgt_taper_len must be type int, float, or str "blinding"')
+        if not isinstance(wgt_taper_type, str):
+            raise TypeError('wgt_taper_type must be type str')
         
+        # Start number of new windows counter
         nnew = 0
-
+        # Iterate across branches
         for k0 in input.keys():
-            _branch = input[k0]
+            branch = input[k0]
+            # Initialize new tracker branch if this branch key is not in window_tracker
             if k0 not in self.window_tracker.keys():
-                self.window_tracker.update({k0: self._index_template.copy()})
-                
+                self.window_tracker.update({k0: self.default_starttime})
+            # Get next starttime
             next_ts = self.window_tracker[k0]
-
+            # If next starttime is the default value, scrape starttime from branch's Z-component
             if next_ts == self.default_starttime:
                 for _c in self.code_map['Z']:
-                    if _c in _branch.keys():
-                        if len(_branch[_c]) > 0:
-                            first_ts = _branch[_c].stats.starttime
-                            self.window_tracker[k0].update({'next_starttime': first_ts})
+                    if _c in branch.keys():
+                        if len(branch[_c]) > 0:
+                            first_ts = branch[_c].stats.starttime
+                            self.window_tracker.update({k0: first_ts})
                             next_ts = first_ts
                             break
-
+            # If a valid next starttime is present (or was scraped), proceed
             if isinstance(next_ts, UTCDateTime):
                 data_ts = None
                 data_te = None
-                for k1 in _branch.keys():
-                    if len(_branch[k1]) > 0:
-                        data_ts = _branch[k1].stats.starttime
-                        data_te = _branch[k1].stats.endtime
+                # Iterate across entries in branch
+                for k1 in branch.keys():
+                    # If a branch entry has data
+                    if len(branch[k1]) > 0:
+                        # Grab the starttime, endtime and buffer length
+                        data_ts = branch[k1].stats.starttime
+                        data_te = branch[k1].stats.endtime
+                        buff_length = branch[k1].max_length
                         break
+                # if data encompasses the next starttime, proceed
                 if data_ts <= next_ts < data_te:
                     pass
+                # if data ends before the next starttime - run safety catch if there's run-away behavior
+                # in window_tracker
                 elif next_ts > data_te:
+                    dt = next_ts - data_te
+                    if dt < 2*self.advance_sec:
+                        pass
+                    else:
+                        RuntimeError('Suspect a run-away next_starttime incremetation')
+                # If next starttime is before the data starttime, check how large the gap is
+                elif next_ts < data_ts:
+                    dt = data_ts - next_ts
+                    # If the gap is shorter than the buffer length, proceed assuming that
+                    # there may be a backfill
+                    if dt < buff_length:
+                        pass
+                    # If the gap is longer than the buffer length, assume that there was a
+                    # data outage and advance the next starttime enough to catch up
+                    else:
+                        nadv = dt//self.advance_sec
+                        self.window_tracker[k0] += nadv*self.advance_sec
+                        next_ts = self.window_tracker[k0]
+                # Run window validation/generation sub-routine
+                iwind = self.branch2iwind(
+                    branch,
+                    next_ts,
+                    pad=pad,
+                    extra_sec=extra_sec,
+                    wgt_taper_len=wgt_taper_len,
+                    wgt_taper_type=wgt_taper_type
+                    )
+                # If this produces a window, append to queu and increment nnew, and continue iterating
+                if iwind:
+                    self.queue.appendleft(iwind)
+                    nnew += 1
+                # If a window was not produced, continue iterating across branches
+                else:
+                    continue
+        return nnew
 
-    def _branch2instrumentwindow(
+    def branch2iwind(
         self,
         branch,
         next_window_starttime,
         pad=True,
         extra_sec=1.0,
-        wgt_taper_sec=0.0,
+        wgt_taper_len=0.0,
         wgt_taper_type="cosine",
-        index=None
     ):
         """
         Using a specified candidate window starttime and windowing information
@@ -272,7 +331,7 @@ class WindowWyrm(Wyrm):
                             window has been deemed to have sufficient data. They do not
                             factor into the determination of if a candidate window
                             is valid
-        :param wgt_taper_sec: [str] or [float-like] amount of seconds on each end
+        :param wgt_taper_len: [str] or [float-like] amount of seconds on each end
                             of a candidate window to downweight using a specified
                             taper function when assessing the fraction of the window
                             that contains valid data.
@@ -285,17 +344,15 @@ class WindowWyrm(Wyrm):
                                 candidate window
                             Supported string arguments:
                                 'cosine':   apply a cosine taper of length
-                                            wgt_taper_sec to each end of a
+                                            wgt_taper_len to each end of a
                                             data weighting mask
                                     aliases: 'cos', 'tukey'
-                                'step':     set weights of samples in wgt_taper_sec of each
+                                'step':     set weights of samples in wgt_taper_len of each
                                             end of a candidate window to 0, otherwise weights
                                             are 1 for unmasked values and 0 for masked values
                                     aliases: 'h', 'heaviside'
-        :param index: [int] or [None] index value to assign to this window
-                        see wyrm.structures.InstWindow
         :: OUTPUT ::
-        :return window: [wyrm.structures.InstWindow] or [None]
+        :return iwind: [wyrm.core.window.InstrumentWindow] or [None]
                         If a candidate window is valid, this method returns a populated
                         InstWindow object, otherwise, it returns None
 
@@ -316,18 +373,18 @@ class WindowWyrm(Wyrm):
             extra_sec = wcc.bounded_floatlike(
                 extra_sec, name="extra_sec", minimum=0.0, maximum=self._window_sec
             )
-        # wgt_taper_sec compatability checks
-        if isinstance(wgt_taper_sec, str):
-            if wgt_taper_sec.lower() == "blinding":
-                wgt_taper_sec = self._blinding_sec
+        # wgt_taper_len compatability checks
+        if isinstance(wgt_taper_len, str):
+            if wgt_taper_len.lower() == "blinding":
+                wgt_taper_len = self.blinding_sec
             else:
-                raise SyntaxError(f'str input for wgt_taper_sec {wgt_taper_sec} not supported. Supported: "blinding"')
+                raise SyntaxError(f'str input for wgt_taper_len {wgt_taper_len} not supported. Supported: "blinding"')
         else:
-            wgt_taper_sec = wcc.bounded_floatlike(
-                wgt_taper_sec,
-                name="wgt_taper_sec",
+            wgt_taper_len = wcc.bounded_floatlike(
+                wgt_taper_len,
+                name="wgt_taper_len",
                 minimum=0.0,
-                maximum=self._window_sec,
+                maximum=self.window_sec,
             )
         # wgt_taper_type compatability checks
         if not isinstance(wgt_taper_type, str):
@@ -339,17 +396,6 @@ class WindowWyrm(Wyrm):
                 'wgt_taper_type supported values: "cos", "cosine", "step", "heaviside", "h"'
             )
 
-        # index compatability checks
-        if index is None:
-            pass
-        else:
-            index = wcc.bounded_intlike(
-                index,
-                name='index',
-                minimum=0,
-                maximum=None,
-                inclusive=True
-            )
         # Start of processing section #
         # Create a copy of the windowing attributes to pass to InstWindow()
         window_inputs = self.windowing_attr.copy()
@@ -357,12 +403,12 @@ class WindowWyrm(Wyrm):
         window_inputs.update({"target_starttime": next_window_starttime})
 
         # Calculate the expected end of the window
-        next_window_endtime = next_window_starttime + self._window_sec
+        next_window_endtime = next_window_starttime + self.window_sec
         # Compose kwarg dictionary for RtBuffTrace.get_trimmed_valid_fract()
         vfkwargs = {
             "starttime": next_window_starttime,
             "endtime": next_window_endtime,
-            "wgt_taper_sec": wgt_taper_sec,
+            "wgt_taper_len": wgt_taper_len,
             "wgt_taper_type": wgt_taper_type,
         }
         # Iterate across component codes in branch
@@ -374,7 +420,7 @@ class WindowWyrm(Wyrm):
                 # Get windowed valid fraction
                 valid_fract = zbuff.get_trimmed_valid_fraction(**vfkwargs)
                 # Check valid_fraction
-                if valid_fract >= self.tcf["Z"]:
+                if valid_fract >= self.completeness["Z"]:
                     # If sufficient data, trim a copy of the vertical data buffer
                     _tr = zbuff.to_trace()
                     _tr.trim(
@@ -384,12 +430,12 @@ class WindowWyrm(Wyrm):
                         fill_value=None,
                     )
                     # Append to input holder
-                    window_inputs.update({"Z": _tr})
+                    window_inputs.update({"Ztr": _tr})
 
             elif _k1 in self.code_map["N"]:
                 hbuff = branch[_k1]
                 valid_fract = hbuff.get_trimmed_valid_fraction(**vfkwargs)
-                if valid_fract >= self.tcf["N"]:
+                if valid_fract >= self.completeness["N"]:
                     # Convert a copy of the horizontal data buffer to trace
                     _tr = hbuff.to_trace()
                     # Trim data with option for extra_sec
@@ -399,12 +445,12 @@ class WindowWyrm(Wyrm):
                         pad=pad,
                         fill_value=None,
                     )
-                    window_inputs.update({"N": _tr})
+                    window_inputs.update({"Ntr": _tr})
 
             elif _k1 in self.code_map["E"]:
                 hbuff = branch[_k1]
                 valid_fract = hbuff.get_trimmed_valid_fraction(**vfkwargs)
-                if valid_fract >= self.tcf["E"]:
+                if valid_fract >= self.completeness["E"]:
                     # Convert a copy of the horizontal data buffer to trace
                     _tr = hbuff.to_trace()
                     # Trim data with option for extra_sec
@@ -414,201 +460,24 @@ class WindowWyrm(Wyrm):
                         pad=pad,
                         fill_value=None,
                     )
-                    window_inputs.update({"E": _tr})
+                    window_inputs.update({"Etr": _tr})
 
-        if "Z" in window_inputs.keys():
-            output = InstrumentWindow(**window_inputs)
+        if "Ztr" in window_inputs.keys():
+            iwind = InstrumentWindow(**window_inputs)
             
         else:
-            output = None
-        return output
+            iwind = None
+        return iwind
 
-    def _process_windows(
-        self,
-        tieredbuffer,
-        extra_sec=None,
-        pad=True,
-        wgt_taper_sec="blinding",
-        wgt_taper_type="cosine",
-    ):
-        """
-        Iterates across all tier-0 keys (_k0) of a TieredBuffer object and
-        assesses if each branch can produce a viable window, defined by having:
-        1) Vertical component data specified by component codes in self.code_map['Z']
-        2) Sufficient vertical data to satisfy the window size defined by the
-            self.model.samping_rate and self.model.target_npts parameters and
-            the z_valid_fract specified when initilalizing this WindWyrm. Additional
-            settings are provide for downweighting window edge samples (see below)
+    # ############### #
+    # DISPLAY METHODS #
+    # ############### #
 
-        Additional data are ingested, if meeting comparable metrics,
-        from horizontal channels if vertical channel data satisfy the
-        requirements above.
-
-        Successfully generated windowed data are copied into MLInstWindow objects
-        and appended to this WindWyrm's queue with deque.leftappend()
-
-        This method interacts with the WindWyrm.index dictionary, generating new
-        entries for new instrument codes and initializing window starttime information
-
-        For existing entries in WindWyrm.index, this method assesses if valid windows
-        can be generated from a corresponding RtInstStream object data, generates
-        windows in the event that one can be generated, and updates the index
-        timing entry for when the next candidate window should start based on the
-        overlap and sampling_rate specified in the SeisBench model associated
-        with this WindWyrm.
-
-        :: INPUTS ::
-        :param rtinststream: [wyrm.structures.rtinststream.RtInstStream]
-                            Realtime instrument stream object containing RtBuffTrace
-                            objects
-        -- kwargs passed to _branch2instwindow() --
-            -> see its documentation for detailed descriptions of parameters
-        :param extra_sec: [None] or [float] extra padding to place around
-                            windowed data.
-        :param pad: [bool] - allow padding when trimming
-        :param wgt_taper_sec: [str] or [float] 'blinding' or float seconds
-        :param wgt_taper_type: [str] 'cosine', 'step', or aliases thereof
-
-        :: OUTPUT ::
-        :return nnew: [int] number of new windows generated by this method
-                        and added to the self.queue. Used as an early
-                        termination criterion in self.pulse().
-        """
-        if not isinstance(tieredbuffer, TieredBuffer):
-            raise TypeError(
-                f"rtinststream must be type wyrm.structures.rtinststream.RtInstStream"
-            )
-        elif not isinstance(tieredbuffer.buff_class, TraceBuff):
-            raise TypeError(f'TieredBuffer.buff_class must be TraceBuff. Found {tieredbuffer.buff_class}')
-
-        nnew = 0
-        for _k0 in tieredbuffer.keys():
-            _branch = tieredbuffer[_k0]
-            # If this branch does not exist in the WindWyrm.index
-            if _k0 not in self.window_tracker.keys():
-                self.window_tracker.update({_k0: deepcopy(self._index_template)})
-                next_starttime = self.window_tracker[_k0]['next_starttime']
-
-            # otherwise, alias matching index entry
-            else:
-                next_starttime = self.window_tracker[_k0]['next_starttime']
-
-            # If this branch has data but index has the None next_starttime
-            # Scrape vertical component data for a starttime
-            if next_starttime == self.default_starttime:
-                # Iterate across approved vertical component codes
-                for _c in self.code_map["Z"]:
-                    # If there is a match
-                    if _c in _branch.keys():
-                        # and the matching RtBuffTrace in the branch has data
-                        if len(_branch[_c]) > 0:
-                            # use the RtBuffTrace starttime to initialize the next_starttime
-                            # in this branch of self.window_tracker
-                            _first_ts = _branch[_c].stats.starttime
-                            self.window_tracker[_k0].update({'next_starttime': _first_ts})
-                            next_starttime = _first_ts
-                            # and break
-                            break
-
-            # If the index has a UTCDateTime next_starttime
-            if isinstance(next_starttime, UTCDateTime):
-                # Cross reference vertical component timing with windowing
-                _data_ts = None
-                _data_te = None
-                _data_max_length = None
-                for _c in self.code_map['Z']:
-                    if _c in _branch.keys():
-                        if len(_branch[_c]) > 0:
-                            _data_ts = _branch[_c].stats.starttime
-                            _data_te = _branch[_c].stats.endtime
-                            # _data_maxlength = _branch[_c].max_length
-                            break
-                # Normal operation cases (i.e., no gaps)
-                # If next_starttime falls within the data timing
-                if _data_ts <= next_starttime < _data_te:
-                    # Proceed as normal
-                    pass
-                # Case where data has not buffered to the point of
-                # starting to fill the next window
-                elif next_starttime > _data_te:
-                    # Calculate the size of the apparent data gap
-                    gap_dt = next_starttime - _data_te
-                    # If gap is less than two advance lengths, pass
-                    if gap_dt < 2.*self._advance_sec:
-                        # Proceed as normal
-                        pass
-                    # Otherwise trigger debugging/RuntimeError
-                    else:
-                        if self.debug:
-                            print("RuntimeError('suspect a run-away next_starttime incremetation')")
-                            breakpoint()
-                        else:
-                            RuntimeError('Suspect a run-away next_starttime incremetation - run in debug=True for diagnostics')
-
-                ## PROCESSING DECISION NOTE ##
-                # NOTE: This approach below for handling larger data gaps 
-                # seeks to preserve integer values for the expected index of 
-                # overlapping window times once a branch has been initialized. 
-                #
-                # This decision may result in some signal omission following
-                # large data gaps that should not exceed one window in length. 
-
-                # Case where RtBuffTrace may have experienced a gap large enough
-                # to re-initialize a buffer.
-                elif next_starttime < _data_ts:
-                    gap_dt = _data_ts - next_starttime
-                    # If gap_dt is less than the length of the buffer
-                    if gap_dt < _data_max_length:
-                        # Proceed as normal
-                        pass
-                    # Otherwise, determine how many integer window advances are needed
-                    # To account for the gap by advancing windowin indices
-                    else:
-                        # Get number of advances needed to account for gap, rounded down
-                        gap_nadv = gap_dt//self._advance_sec
-                        # update next_starttime with integer number of advances in seconds
-                        self.window_tracker[_k0]['next_starttime'] += gap_nadv*self._advance_sec
-                        # update next_index by integer number of advances in counts
-                        self.window_tracker[_k0]['next_index'] += gap_nadv
-                        
-                # Attempt to generate window from this branch
-                window = self._branch2instwindow(
-                    _branch,
-                    self.window_tracker[_k0]['next_starttime'],
-                    pad=pad,
-                    extra_sec=extra_sec,
-                    wgt_taper_sec=wgt_taper_sec,
-                    wgt_taper_type=wgt_taper_type,
-                    index=self.window_tracker[_k0]['next_index']
-                )
-                # if window is None:
-                #     breakpoint()
-                # If window is generated
-                if window:
-                    # Add InstWindow object to queue
-                    self.queue.appendleft(window)
-                    # update nnew index for iteration reporting
-                    nnew += 1
-                    # advance next_starttime by _advance_sec
-                    self.window_tracker[_k0]['next_starttime'] += self._advance_sec
-                    # advance next_index by 1
-                    self.window_tracker[_k0]['next_index'] += 1
-
-                # If window is not generated, go to next instrument
-                else:
-                    continue
-
-        return nnew
-
-    # ###################################### #
-    # Updated Methods from Parent Class Wyrm #
-    # ###################################### #
-
-    def __str__(self):
+    def __repr__(self):
         rstr = super().__str__()
         rstr += f" | Windows Queued: {len(self.queue)}\n"
         for _c in self.windowing_attr["target_order"]:
-            rstr += f"  {_c}: map:{self.code_map[_c]} thresh: {self.tcf[_c]}\n"
+            rstr += f"  {_c}: map:{self.code_map[_c]} thresh: {self.completeness[_c]}\n"
         rstr += "ð -- Windowing Parameters -- ð"
         for _k, _v in self.windowing_attr.items():
             if isinstance(_v, float):
@@ -617,221 +486,57 @@ class WindowWyrm(Wyrm):
                 rstr += f"\n  {_k}: {_v}"
         return rstr
 
-    def __repr__(self):
-        rstr = self.__str__()
+    def __str__(self):
+        rstr = 'wyrm.core.window.wyrm.WindowWyrm('
+        rstr += f'code_map={self.code_map}, completeness={self.completeness}, '
+        rstr += f'missing_component_rule={self.mcr}, model_name={self.model_name}, '
+        rstr += f'target_sr={self.target_sr}, target_npts={self.target_npts}, '
+        rstr += f'target_overlap={self.target_overlap}, target_blinding={self.target_blinding}, ]'
+        rstr += f'max_pulse_size={self.max_pulse_size}, debug={self.debug})'
         return rstr
 
 
-  
-    def set_windowing_attr(
-        self,
-        fill_value=False,
-        missing_component_rule=False,
-        target_norm=False,
-        target_sr=False,
-        target_npts=False,
-        target_channels=False,
-        target_order=False,
-        target_overlap=False,
-        target_blinding=False,
-        model_name=False,
-    ):
+    # ################################ #
+    # SeisBench MODEL INGESTION METHOD #
+    # ################################ #
+    def update_params_from_seisbench_model(self, model):
         """
-        Set (or update) attributes that specify the target dimensions
-        of the windows being generated by this WindowWyrm
+        Update windowing parameters for an initialized WindowWyrm using the 
+        attributies carried by child-classes of the seisbench.models.WaveformModel
+        base class (e.g., seisbench.models.EQTransformer).
+
+        :: INPUT ::
+        :param model: [seisbench.models.WaveformModel] ML model architecture object
+        
+        :: OUTPUT ::
+        :return self: [wyrm.core.window.wyrm.WindowWyrm] enable cascading
         """
-        # Compatability check for fill_value
-        if fill_value is None:
-            self.windowing_attr.update({"fill_value": None})
-        elif fill_value:
-            _val = icc.bounded_floatlike(
-                fill_value,
-                name="fill_value",
-                minimum=None,
-                maximum=None,
-                inclusive=True,
-            )
-            self.windowing_attr.update({"fill_value": _val})
-        # Compatability check for missing_component_rule
-        if not missing_component_rule:
-            pass
-        elif not isinstance(missing_component_rule, (str, type(None))):
-            raise TypeError("missing_component_rule must be type str")
-        elif isinstance(missing_component_rule, str):
-            if missing_component_rule.lower() not in ["zeros", "clonez", "clonehz"]:
-                emsg = (
-                    f'missing_component_rule "{missing_component_rule}" not supported. '
-                )
-                emsg += (
-                    f'Must be in "Zeros", "CloneZ", or "CloneHZ" (case insensitive).'
-                )
-                raise ValueError(emsg)
-            else:
-                self.windowing_attr.update(
-                    {"missing_component_rule": missing_component_rule}
-                )
-        # Compatability check for target_norm
-        if not target_norm:
-            pass
-        elif not isinstance(target_norm, (str, type(None))):
-            raise TypeError("target_norm must be type str or None")
-        elif isinstance(target_norm, str):
-            if target_norm not in ["peak", "minmax", "std"]:
-                raise ValueError(
-                    f'target_norm {target_norm} not supported. Supported values: "peak", "minmax", "std"'
-                )
-            else:
-                self.windowing_attr.update({"target_norm": target_norm})
-
-        # Compatability check for target_sr
-        if target_sr:
-            _val = icc.bounded_floatlike(
-                target_sr, name="target_sr", minimum=0, maximum=None, inclusive=False
-            )
-            self.windowing_attr.update({"target_sr": _val})
-        # Compatability check for target_npts
-        if target_npts:
-            _val = icc.bounded_intlike(
-                target_npts,
-                name="target_npts",
-                minimum=0,
-                maximum=None,
-                inclusive=False,
-            )
-            self.windowing_attr.update({"target_npts": _val})
-        # Compatability check for target_channels
-        if target_channels:
-            _val = icc.bounded_intlike(
-                target_channels,
-                name="target_channels",
-                minimum=1,
-                maximum=6,
-                inclusive=True,
-            )
-            self.windowing_attr.update({"target_channels": _val})
-        # Compatability check for target_order:
-        if not target_order:
-            pass
-        elif not isinstance(target_order, (str, type(None))):
-            raise TypeError("target_order must be type str or None")
-        elif isinstance(target_order, str):
-            if target_order.upper() == target_order:
-                if len(target_order) == self.windowing_attr["target_channels"]:
-                    self.windowing_attr.update({"target_order": target_order})
-                else:
-                    raise ValueError(
-                        "number of elements in target order must match target_channels"
-                    )
-            else:
-                raise SyntaxError("target order must be all capital characters")
-
-        # Compatability check for target_overlap_npts
-        if target_overlap:
-            _val = icc.bounded_intlike(
-                target_overlap,
-                name="target_overlap",
-                minimum=-1,
-                maximum=self.windowing_attr["target_npts"],
-                inclusive=False,
-            )
-            self.windowing_attr.update({"target_overlap": _val})
-        # Compatability check for target_blinding_npts
-        if target_blinding:
-
-            _val = icc.bounded_intlike(
-                target_blinding,
-                name="target_blinding",
-                minimum=0,
-                maximum=self.windowing_attr["target_npts"],
-                inclusive=True,
-            )
-            self.windowing_attr.update({"target_blinding": _val})
-
-        if not model_name:
-            pass
-        elif not isinstance(model_name, (str, type(None))):
-            raise TypeError("model_name must be type str or None")
-        elif isinstance(model_name, str):
-            self.windowing_attr.update({"model_name": model_name})
-
-        # UPDATE DERIVATIVE ATTRIBUTES
-        # If all inputs are not None for window length in seconds, update
-        if target_sr:
-            # if npts and sr are not None - get window_sec
-            if target_npts:
-                self._window_sec = target_npts / target_sr
-                _val = (1.0 - min(self.tcf["N"], self.tcf["E"])) * 0.5
-                _val *= self._window_sec
-                self.windowing_attr.update({"tolsec": _val})
-                # if npts, sr, and overlap are not None - get advance_sec
-                if target_overlap:
-                    adv_npts = target_npts - target_overlap
-                    self._advance_sec = adv_npts / target_sr
-            # If blinding is specified, calculated seconds equivalent
-            if target_blinding:
-                self._blinding_sec = target_blinding / target_sr
-
-        return self
-
-    def set_windowing_from_seisbench(
-        self,
-        model=sbm.EQTransformer().from_pretrained("pnw"),
-        code_remap={"Z": "3A", "N": "1B", "E": "2C"},
-    ):
-        """
-        Populate/update attributes from a seisbench.model.WaveformModel type object
-        for this WindowWyrm
-        """
-        # Run compatability checks with keys of self.code_map and self.tcf
 
         if not isinstance(model, sbm.WaveformModel):
-            raise TypeError("model must be a seisbench.models.WaveformModel")
+            raise TypeError('model must be type seisbench.models.WaveformModel')
+        # Do checks on attributes that aren't populated in sbm.WaveformModel
+        if isinstance(model.in_samples, int):
+            self.in_samples = model.in_samples
         else:
-            code_map_check = all(
-                _c in model.component_order for _c in self.code_map.keys()
-            )
-            tcf_check = all(_c in model.component_order for _c in self.tcf.keys())
-            if not code_map_check:
-                raise KeyError(
-                    f"model.component_order {model.component_order} does not match self.code_map keys"
-                )
-            if not tcf_check:
-                raise KeyError(
-                    f"model.component_order {model.component_order} does not match self.tcf keys"
-                )
+            raise AttributeError('model does not have an "in_samples" attribute populated. Likely trying to pass a WaveformModel object, rather than a child-class object')
+        
+        if isinstance(model.sampling_rate, (int, float)):
+            self.target_sr = model.sampling_rate
+        else:
+            raise AttributeError('model does not have an "sampling_rate" attribute populated. Likely trying to pass a WaveformModel object, rather than a child-class object')
+        
+        # Scrape information re. model name and channel order
+        self.model_name = model.name
+        self.target_order = model.component_order
 
-            if "norm" not in dir(model):
-                mnorm = None
-            else:
-                mnorm = model.norm
-
-            if "in_channels" not in dir(model):
-                mchan = len(model.component_order)
-            else:
-                mchan = model.in_channels
-
-            if "_annotate_args" not in dir(model):
-                mover = 0
-                mblind = 0
-            else:
-                if "overlap" in model._annotate_args.keys():
-                    mover = model._annotate_args["overlap"][-1]
-                else:
-                    mover = 0
-                if "blinding" in model._annotate_args.keys():
-                    mblind = model._annotate_args["blinding"][-1][0]
-                else:
-                    mblind = 0
-
-            # Update window attributers
-            self.set_windowing_attr(
-                target_norm=mnorm,
-                target_sr=model.sampling_rate,
-                target_npts=model.in_samples,
-                target_channels=mchan,
-                target_order=model.component_order,
-                target_overlap=mover,
-                target_blinding=mblind,
-                model_name=model.name,
-            )
+        # Scrape information from annotate_args
+        aa = model._annotate_args
+        self.target_overlap = aa['overlap'][1]
+        blinding = aa['blinding'][1]
+        # Handle difference of 2-tuple for blinding in SeisBench vs a single int in Wyrm
+        if np.mean(blinding) == blinding[0] == blinding[1]:
+            self.target_blinding = blinding[0]
+        else:
+            raise ValueError('Non-identical blinding values not supported.')
+        
         return self

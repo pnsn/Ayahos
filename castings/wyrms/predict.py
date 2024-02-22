@@ -48,7 +48,7 @@ class MachineWyrm(Wyrm):
                 stack_method='max',
                 debug=False):
         """
-        Initialize a SeisBenchWyrm object
+        Initialize a MachineWyrm object
 
         :: INPUTS ::
         :param model: [seisbench.models.WaveformModel-like] a seisbench model

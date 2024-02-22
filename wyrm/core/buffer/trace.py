@@ -1,23 +1,23 @@
 """
-:module: wyrm.buffer.trace
+:module: wyrm.core.buffer.trace
 :auth: Nathan T. Stevens
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network
 :license: AGPL-3.0
 
 :purpose:
-    This module contains the class definition for TraceBuff
+    This module contains the class definition for TraceBuffer
     which is an adaptation of the obspy.realtime.rttrace.RtTrace
     class in ObsPy that provides further development of handling
     gappy, asyncronous data packet sequencing and fault tolerance
     against station acquisition configuration changes without having
-    to re-initialize the TraceBuff object.
+    to re-initialize the TraceBuffer object.
 """
 
 from obspy import Trace, Stream
 import numpy as np
 from copy import deepcopy
-import wyrm.util.input_compatability_checks as icc
+import wyrm.util.compatability as wcc
 
 
 class TraceBuffer(Trace):
@@ -41,7 +41,7 @@ class TraceBuffer(Trace):
         interpolation_samples=-1
     ):
         """
-        Initialize an empty TraceBuff object
+        Initialize an empty TraceBuffer object
 
         :: INPUTS ::
         :param max_length: [int], [float], or [None]
@@ -51,9 +51,9 @@ class TraceBuffer(Trace):
                             max_length is not None
         :param fill_value: [None], [float], or [int]
                             fill_value to assign to all masked
-                            arrays associated with this TraceBuff
+                            arrays associated with this TraceBuffer
         :param method: method kwarg to pass to obspy.core.stream.Stream.merge()
-                        internal to the TraceBuff.append() method
+                        internal to the TraceBuffer.append() method
                         NOTE: Default here (method=1) is different from the
                         default for Stream.merge() (method=0). This default
                         was chosen such that overlapping data are handled
@@ -61,15 +61,16 @@ class TraceBuffer(Trace):
                         (method=0).
         :param interpolation_samples: interpolation_samples kwarg to pass to
                         obspy.core.stream.Stream.merge() internal to
-                        the TraceBuff.append() method.
+                        the TraceBuffer.append() method.
                         NOTE: Default here (-1) is different form Stream.merge()
                         (0). This was chosen such that all overlapping samples
                         are included in an interpolation in an attempt to suppress
                         abrupt steps in traces
         """
-        super(TraceBuff, self).__init__()
+        # Inherit from Trace
+        super().__init__()
         # Compatability check for max_length
-        self.max_length = icc.bounded_floatlike(
+        self.max_length = wcc.bounded_floatlike(
             max_length, name="max_length", minimum=0.0, maximum=None, inclusive=False
         )
 
@@ -88,7 +89,7 @@ class TraceBuffer(Trace):
             self.method = method
 
         # Compatability check for interpolation_samples:
-        self.interpolation_samples = icc.bounded_intlike(
+        self.interpolation_samples = wcc.bounded_intlike(
             interpolation_samples,
             minimum=-1,
             maximum=self.max_length * 1e6,
@@ -109,33 +110,33 @@ class TraceBuffer(Trace):
 
     def copy(self):
         """
-        Create a deepcopy of this TraceBuff
+        Create a deepcopy of this TraceBuffer
         """
         return deepcopy(self)
 
     def __eq__(self, other):
         """
-        Implement rich comparison of TraceBuff objects for "==" operator.
+        Implement rich comparison of TraceBuffer objects for "==" operator.
 
         Traces are the same if their data, stats, and mask arrays are the same
         """
-        if not isinstance(other, TraceBuff):
+        if not isinstance(other, TraceBuffer):
             return False
         else:
-            return super(TraceBuff, self).__eq__(other)
+            return super(TraceBuffer, self).__eq__(other)
 
     def to_trace(self):
         """
         Return a deepcopy obspy.core.trace.Trace representation
-        sof this TraceBuff object
+        sof this TraceBuffer object
         """
         tr = Trace(data=self.copy().data, header=self.copy().stats)
         return tr
 
     def enforce_max_length(self):
         """
-        Enforce max_length on data in this TraceBuff using
-        the endtime of the TraceBuff as the reference datum
+        Enforce max_length on data in this TraceBuffer using
+        the endtime of the TraceBuffer as the reference datum
         and trimming using _ltrim (left-trim) if the data length
         exceeds self.max_length in seconds
 
@@ -159,7 +160,7 @@ class TraceBuffer(Trace):
 
     def append(self, trace):
         """
-        Append a candidate trace to this RtTraceBuffer for a suite of scenarios:
+        Append a candidate trace to this RtTraceBufferer for a suite of scenarios:
             1) first ever append - self._first_append()
 
         IF id, stats.calib, stats.sampling_rate, data.dtype all match
@@ -264,7 +265,7 @@ class TraceBuffer(Trace):
             self.stats = tr.stats
             self.enforce_max_length()._update_buffer_stats()
         else:
-            emsg = f"TraceBuff({self.id}).append "
+            emsg = f"TraceBuffer({self.id}).append "
             emsg += f"produced {len(st)} distinct traces "
             emsg += "rather than 1 expected. Canceling append."
             print(emsg)
@@ -287,8 +288,8 @@ class TraceBuffer(Trace):
         :param trace: [obspy.core.trace.Trace] candidate trace to append
 
         :: ATTRIBUTES USED ::
-        :attrib data: TraceBuff data array
-        :attrib stats: TraceBuff metadata
+        :attrib data: TraceBuffer data array
+        :attrib stats: TraceBuffer metadata
         :attrib method: kwarg value passed to obspy.Stream.merge()
         :attrib interpolation_samples: kwarg value passed to obspy.Stream.merge
         """
@@ -313,7 +314,7 @@ class TraceBuffer(Trace):
             self.stats = tr.stats
             self.enforce_max_length()._update_buffer_stats()
         else:
-            emsg = f"TraceBuff({self.id}).append "
+            emsg = f"TraceBuffer({self.id}).append "
             emsg += f"produced {len(st)} distinct traces "
             emsg += "rather than 1 expected. Canceling append."
             print(emsg)
@@ -321,14 +322,14 @@ class TraceBuffer(Trace):
 
     def _assess_relative_timing(self, trace):
         """
-        Assesss the relative start/endtimes of TraceBuff and candidate trace
+        Assesss the relative start/endtimes of TraceBuffer and candidate trace
         :: INPUT ::
         :param trace: [obspy.core.trace.Trace] candidate trace
 
         :: OUTPUT ::
-        :return status: [str] 'leading' - trace is entirely before this TraceBuff
-                              'trailing' - trace is entirely after this TraceBuff
-                              'overlapping' - trace overlaps with this TraceBuff
+        :return status: [str] 'leading' - trace is entirely before this TraceBuffer
+                              'trailing' - trace is entirely after this TraceBuffer
+                              'overlapping' - trace overlaps with this TraceBuffer
                               None - in the case where something goes wrong with
                                     types of timing information
         :return gap_sec: [float] - in the case of 'leading' and 'trailing' this is
@@ -428,7 +429,7 @@ class TraceBuffer(Trace):
     def _update_buffer_stats(self):
         """
         Update the self.filled_fraction and self.valid_fraction
-        attributes of this TraceBuff with its current contents
+        attributes of this TraceBuffer with its current contents
         """
         self.filled_fraction = self.get_filled_fraction()
         self.valid_fraction = self.get_unmasked_fraction()
@@ -437,14 +438,14 @@ class TraceBuffer(Trace):
     def get_filled_fraction(self):
         """
         Get the fractional amount of data (masked and unmasked)
-        present in this TraceBuff relative to self.max_length
+        present in this TraceBuffer relative to self.max_length
         """
         ffnum = self.stats.endtime - self.stats.starttime
         ffden = self.max_length
         return ffnum / ffden
 
     def get_trimmed_valid_fraction(
-        self, starttime=None, endtime=None, wgt_taper_sec=0.0, wgt_taper_type="cosine"
+        self, starttime=None, endtime=None, wgt_taper_len=0.0, wgt_taper_type="cosine"
     ):
         """
         Get the valid (unmasked) fraction of data contained within a specified
@@ -454,16 +455,16 @@ class TraceBuffer(Trace):
         :: INPUTS ::
         :param starttime: [None] or [obspy.UTCDateTime] starttime to pass
                             to obspy.Trace.trim. None input uses starttime
-                            of this TraceBuff
+                            of this TraceBuffer
         :param endtime: [None] or [obspy.UTCDateTime] endtime to pass
                             to obspy.Trace.trim. None input uses endtime
-                            of this TraceBuff
+                            of this TraceBuffer
                             NOTE: trim operations are conducted on a temporary
-                            copy of this TraceBuff and the trim uses pad=True
+                            copy of this TraceBuffer and the trim uses pad=True
                             and fill_value=None to generate masked samples
                             if the specified start/endtimes lie outside the
-                            bounds of data in this TraceBuff
-        :param wgt_taper_sec: [float] non-negative, finite number of seconds
+                            bounds of data in this TraceBuffer
+        :param wgt_taper_len: [float] non-negative, finite number of seconds
                             that a specified taper function should last on
                             each end of the candidate window. Value of 0
                             results in no taper applied.
@@ -483,20 +484,20 @@ class TraceBuffer(Trace):
         tmp_copy = self.copy()
         tmp_copy.trim(starttime=starttime, endtime=endtime, pad=True, fill_value=None)
         vf = tmp_copy.get_unmasked_fraction(
-            wgt_taper_sec=wgt_taper_sec, wgt_taper_type=wgt_taper_type
+            wgt_taper_len=wgt_taper_len, wgt_taper_type=wgt_taper_type
         )
         return vf
 
-    def get_unmasked_fraction(self, wgt_taper_sec=0.0, wgt_taper_type="cosine"):
+    def get_unmasked_fraction(self, wgt_taper_len=0.0, wgt_taper_type="cosine"):
         """
         Get the fractional amount of unmasked data present in
-        this TraceBuff, or a specified time slice of the data.
+        this TraceBuffer, or a specified time slice of the data.
         Options are provided to introduce a tapered down-weighting
         of data on either end of the buffer or specified slice of
         the data
 
         :: INPUTS ::
-        :param wgt_taper_sec: [float] tapered weighting function length
+        :param wgt_taper_len: [float] tapered weighting function length
                         for each end of (subset) trace in seconds on either
                         end of the trace.
         :param wgt_taper_type: [str] type of taper to apply for data weighting.
@@ -504,7 +505,7 @@ class TraceBuffer(Trace):
                     'cosine' - cosine taper (Default)
                         aliases: 'cos', 'tukey' (case insensitive)
                     'step' - Step functions centered on the nearest sample to
-                            starttime + wgt_taper_sec and endtime - wgt_taper_sec
+                            starttime + wgt_taper_len and endtime - wgt_taper_len
                         aliases: 'heaviside', 'h' (case insensitive)
         :: OUTPUT ::
         :return valid_frac: [float] value \in [0,1] indicating the (weighted)
@@ -521,10 +522,10 @@ class TraceBuffer(Trace):
         if self.stats.npts == 0:
             valid_frac = 1.0
         else:
-            # Compatability check for wgt_taper_sec
-            wgt_taper_sec = icc.bounded_floatlike(
-                wgt_taper_sec,
-                name="wgt_taper_sec",
+            # Compatability check for wgt_taper_len
+            wgt_taper_len = wcc.bounded_floatlike(
+                wgt_taper_len,
+                name="wgt_taper_len",
                 minimum=0,
                 maximum=self.stats.endtime - self.stats.starttime,
             )
@@ -547,12 +548,12 @@ class TraceBuffer(Trace):
 
             # Taper generation section
             # Zero-length taper
-            if wgt_taper_sec == 0:
+            if wgt_taper_len == 0:
                 tsamp = 0
                 tap = 1
             # Non-zero-length taper
             else:
-                tsamp = int(wgt_taper_sec * self.stats.sampling_rate)
+                tsamp = int(wgt_taper_len * self.stats.sampling_rate)
                 # Cosine taper
                 if wgt_taper_type.lower() in ["cosine", "cos", "tukey"]:
                     tap = 0.5 * (1.0 + np.cos(np.linspace(np.pi, 2.0 * np.pi, tsamp)))
@@ -629,7 +630,7 @@ class TraceBuffer(Trace):
 
     def __repr__(self, compact=False):
         """
-        Return short summary string of the current TraceBuff
+        Return short summary string of the current TraceBuffer
         with options for displaying buffer status graphically
 
         :: INPUT ::
@@ -653,9 +654,9 @@ class TraceBuffer(Trace):
 
     def __str__(self):
         """
-        Return a repr string for this TraceBuff
+        Return a repr string for this TraceBuffer
         """
-        rstr = 'wyrm.buffer.trace.TraceBuff('
+        rstr = 'wyrm.buffer.trace.TraceBuffer('
         rstr += f'max_length={self.max_length}, fill_value={self.fill_value}, '
         rstr += f'method={self.method}, interpolation_samples={self.interpolation_samples})'
         return rstr

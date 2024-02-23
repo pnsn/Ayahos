@@ -1,5 +1,5 @@
 """
-:module: wyrm.core.wyrm
+:module: wyrm.core._base
 :auth: Nathan T. Stevens
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network
@@ -11,7 +11,7 @@
     for the minimum required methods of each successor class. 
 """
 import wyrm.util.compatability as wcc
-
+from copy import deepcopy
 
 class Wyrm(object):
     """
@@ -122,6 +122,11 @@ class Wyrm(object):
             else:
                 return True
 
+    def copy(self):
+        """
+        Return a deepcopy of this wyrm
+        """
+        return deepcopy(self)
 
     def pulse(self, x=None, **options):
         """

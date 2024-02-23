@@ -1,5 +1,5 @@
 from wyrm.core.buffer.trace import TraceBuffer
-import wyrm.util.input_compatability_checks as icc
+import wyrm.util.compatability as wcc
 from obspy import Stream, Trace
 import inspect
 import fnmatch
@@ -27,7 +27,7 @@ class TieredBuffer(dict):
     structure and can base it on the code here.
 
     """
-    def __init__(self, buff_class=TraceBuff, **buff_init_kwargs):
+    def __init__(self, buff_class=TraceBuffer, **buff_init_kwargs):
         # Inherit dict properties
         super().__init__()
         # Compatability check for buff_class input

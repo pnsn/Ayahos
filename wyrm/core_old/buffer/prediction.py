@@ -153,9 +153,31 @@ class PredictionBuffer(object):
         return status
 
     def append(self, pwind, include_blinding=False):
+        """
+        Append a PredictionWindow object to this PredictionBuffer if it passes compatability
+        checks and shift scenario checks that:
+            1) unconditionally allow appends of data that add to the right end of the buffer
+                i.e., appending future data
+            2) allows internal appends if there are some samples that have fold > 1 in the
+                merge space
+                i.e., appending to fill gaps
+            3) allows appends to left end of buffer if the corresponding sample shifts
+                would not truncate right-end samples
+                i.e. appending past data
+
+        :: INPUTS ::
+        :param pwind: [wyrm.core.window.prediction.PredicitonWindow] pwind object with
+                    compatable data/metadata with this pbuff
+        :param include_blinding: [bool] should blinded samples be included when calculating
+                    the candidate shift/stack operation?
+        
+        :: OUTPUT ::
+        :return self: [wyrm.core.buffer.prediction.PredictionBuffer] enable cascading
+        """
         # pwind compat. check
         if not isinstance(pwind, PredictionWindow):
             raise TypeError('pwind must be type wyrm.core.window.prediction.PredictionWindow')
+        # pwind validation/metadata scrape if first append
         elif not self.validate_pwind(pwind):
             raise BufferError('pwind and this PredictionBuffer are incompatable')
         
@@ -207,19 +229,20 @@ class PredictionBuffer(object):
                             npts_right, i0_p, i1_p, i0_s, and i1_s as desecribed
                             above.
         """
-
+        # Set prediction window sampling indices
         if include_blinding:
             indices = {'i0_p': 0, 'i1_p': None}
         else:
             indices = {'i0_p': self.blinding_samples[0],
                        'i1_p': -self.blinding_samples[1]}
-        
+        # If this is an initial append
         if not self._has_data:
             indices.update({'npts_right': 0, 'i0_s': None})
             if include_blinding:
                 indices.update({'i1_s': self.window_samples})
             else:
                 indices.update({'i1_s': self.window_samples - self.blinding_samples[0] - self.blinding_samples[1]})
+        # If this is for a subsequen tappend
         else:
             dt = pwind.t0 - self.t0
             i0_init = dt*self.samprate
@@ -319,7 +342,7 @@ class PredictionBuffer(object):
         if indices['npts_right'] != 0:
             self.t0 -= indices['npts_right']/self.samprate
         
-    # I/O FORMATTING METHODS #
+    # I/O AND DUPLICATION METHODS #
 
     def copy(self):
         """
@@ -416,7 +439,7 @@ class PredictionBuffer(object):
         out_fp = os.path.join(save_dir, of_str)
         st.write(out_fp, fmt='MSEED')
 
-    def from_stream(self, st, model_name=None, weight_name=None):
+    def from_stream(self, st, model_name=None, weight_name=None, tol=1e-5):
         """
         Populate a PredictionBuffer object from a stream object 
         """
@@ -424,11 +447,60 @@ class PredictionBuffer(object):
         if self._has_data:
             raise BufferError('This PredictionBuffer already has data - cannot populate from Stream')
 
+        # Convert labels into channel names
+        channels = [_tr.stats.channel for _tr in st]
+        labels = [_tr.stats.channel[-1] for _tr in st]
+        
+        # Run cross-checks on data traces and fold trace
+        for _i, tr_i in enumerate(st):
+            for _j, tr_j in enumerate(st):
+                if _i < _j:
+                    if abs(tr_i.stats.starttime - tr_j.stats.starttime) > tol:
+                        raise AttributeError(f'starttime mismatch: {tr_i.id} vs {tr_j.id}')
+                    if tr_i.stats.npts != tr_j.stats.npts:
+                        raise AttributeError(f'npts mismatch: {tr_i.id} vs {tr_j.id}')
+                    if tr_i.stats.sampling_rate != tr_j.stats.sampling_rate:
+                        raise AttributeError(f'sampling_rate mismatch: {tr_i.id} vs {tr_j.id}')
+                    if tr_i.id[-1] != tr_j.id[:-1]:
+                        raise AttributeError(f'instrument code (id[:-1]) mismatch: {tr_i.id} vs {tr_j.id}')
+                    
+        # populate attributes
+        self.t0 = st[0].stats.starttime.timestamp
+        self.labels = labels
+        self.id = st[0].id[:-1]
+        self.weight_name = weight_name
+        self.model_name = model_name
+        self._has_data = True
+
+        # populate stack
+        self.stack = np.zeros(shape=(len(labels), st[0].stats.npts), dtype=np.float32)
+        # get data
+        _i = 0
+        for _c in (channels): 
+            _tr = st.select(channel=_c)[0]
+            if _c[-1] != 'f':
+                self.stack[_i, :] = _tr.data
+                _i += 1
+            else:
+                self.fold = _tr.data
+        
+        return self
 
     def from_mseed(self, infile ,tol=1e-5):
         """
         Populate this PredictionBuffer from a version saved as a MSEED file using
-        the to_mseed() method above
+        the to_mseed() method above. This can only be executed on a pbuff object that
+        has not had data appended to it.
+
+        Wraps the PredictionBuffer.from_stream() method.
+
+        :: INPUTS ::
+        :param infile: [str] path and file name string - formatting must conform to the 
+                     format set by PredictionBuffer.to_mseed()
+        :param tol: [float] mismatch tolerance between trace starttimes in seconds
+
+        :: OUTPUT ::
+        :return self: [wyrm.core.buffer.prediction.PredictionBuffer] enable cascading
         """
         # Only run "append" from stream if no data are present
         if self._has_data:
@@ -443,44 +515,18 @@ class PredictionBuffer(object):
         fparts = file.split('_')
         if len(fparts) != 4:
             raise SyntaxError(f'infile filename {file} does not conform with the format "model_weight_id_t0_l1-l2-l3"')
-        # Alias parts
+        # Alias metadata from file name
         model = fparts[0]
         weight = fparts[1]
-        id = fparts[2]
-        ch = id.split('.')[-1]
-        t0 = float(fparts[3])
-        labels = fparts[4].split('-')
+        # id = fparts[2]
+        # ch = id.split('.')[-1]
+        # t0 = float(fparts[3])
+        # labels = fparts[4].split('-')
         
         # Load data
         st = read(infile).merge()
-        # Split
-        st_stack = Stream()
-        st_fold = st.select(channel=f'{ch}f')[0].data
-        channels = [f'{ch}{_l[0].upper()}' for _l in labels]
+        # Run data ingestion
+        self.from_stream(st, model_name=model, weight_name=weight, tol=tol)
         
-        # Get data fold trace & assign
-        self.fold = st.select(channel=f'{ch}f')[0].data
-        # Run sanity checks
-        for _ch in channels:
-            _tr = st.select(channel=_ch)[0]
-            if np.abs(_tr.stats.starttime - t0) > tol:
-                raise ValueError('t0 mismatch')
-        
-        for _i, tr_i in enumerate(st):
-            for _j, tr_j in enumerate(st):
-                if _i < _j:
-                    if tr_i.stats.starttime != tr_j.stats.starttime:
-                        raise ValueError
-                    if tr_i.stats.npts != tr_j.stats.npts:
-                        raise ValueError
-                    
-        self.stack = np.zeros(shape=(len(st), len(st[0].stats.npts)), dtype=np.float32)
-        for _i, _tr in 
 
-
-        # Assign
-        self.model_name = model
-        self.weight_name = weight
-        self.id = id
-        self.labels = labels
-        self.t0 = t0
+        return self

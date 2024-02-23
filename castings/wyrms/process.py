@@ -56,7 +56,7 @@ class EvalWyrm(Wyrm):
                  debug=False)
 
 
-class ProcWyrm(EvalWyrm):
+class ProcWyrm(Wyrm):
     """
     This worm provides a pulse method that applys a series of
     class-methods that operate in-place on objects' data. Expects

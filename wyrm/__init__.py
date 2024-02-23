@@ -1,0 +1,1 @@
+from wyrm.core._base import Wyrm

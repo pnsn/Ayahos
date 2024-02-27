@@ -916,21 +916,27 @@ class WaveformModelWyrm(Wyrm):
             batch_pred = self.run_prediction(batch_data)
             # Convert to numpy
             batch_pred_npy = self.preds_torch2npy(len(batch_meta), batch_pred)
-            del batch_pred, batch_data
+            del batch_pred #, batch_data <- No, Bad Nate, Don't delete the source data here!
 
             # Split into individual windows and reconstitute PredictionWindows
             for _i, meta in enumerate(batch_meta):
+                # Form keys (this is also included in buffer.append_pwind)
                 tk0 = '.'.join(meta['id'].split('.')[:3])
                 tk1 = meta['id'].split('.')[-1][:-1]
                 tk2 = wname
-                meta.update({'labels': self.model.labels})
+                meta.update({'labels': self.model.labels,
+                             'weight_name': wname})
                 # Reconstitute PredictionWindows
                 pwind = wcd.PredictionWindow(data=batch_pred_npy[_i,:,:], **meta)
-                self.buffer.append(pwind.copy(), TK0=tk0, TK1=tk1, TK2=tk2, **options)
-                # Cleanup
+                # Append results as copy, allowing safe deletion of intermediate data objects
+                # self.buffer.append(pwind.copy(), TK0=tk0, TK1=tk1, TK2=tk2, **options)
+                self.buffer.append_pwind(pwind.copy(), **options)
+                # Cleanup prediction windows and associated metadata between iterations
                 del pwind, meta, tk0, tk1, tk2
-            # Cleanup
+            # Cleanup prediction arrays between pulses
             del batch_pred_npy
+        # Cleanup at end of pulse
+        del batch_data, batch_meta
         
         y = self.buffer
 

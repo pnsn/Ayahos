@@ -839,11 +839,12 @@ class PredictionWindow(object):
     """
     def __init__(self,
         data=None,
+        labels=[],
+        npts=None,
         id='..--.',
         t0=0.,
         samprate=1.,
         blinding=0,
-        labels=[],
         model_name=None,
         weight_name=None
         ):
@@ -856,6 +857,9 @@ class PredictionWindow(object):
                     2-dimensional array with one axis that has the same number
                     of entries (rows or columns) as there are iterable items
                     in `labels`. This axis will be assigned as the 0-axis.
+        :param labels: [list-like] of [str] labels to associate with row vectors in data.
+                    Must match the 0-axis of self.data.
+        :param npts: [int] number of data samples in the 1-axis of self.data
         :param id: [str] instrument ID code for this window. Must conform to the
                         N.S.L.bi notation (minimally "..."), where:
                             N = network code (2 characters max)
@@ -866,8 +870,7 @@ class PredictionWindow(object):
         :param samprate: [float] sampling rate in samples per second
         :param blinding: [int] number of samples to blind on the left and right ends of this window
                             when stacking sequential prediction windows
-        :param labels: [list-like] of [str] labels to associate with row vectors in data.
-                            Must match the 0-axis of self.data.
+
         :param model_name: [str] name of the ML model this window is associated with this pwind
         :param weight_name: [str] name of the pretrained model weights associated with this pwind
         :
@@ -883,6 +886,42 @@ class PredictionWindow(object):
         else:
             self.data = data
             self._blank = False
+
+        # labels initial compat check
+        if not isinstance(labels, (list, tuple, str)):
+            raise TypeError('labels must be type list, tuple, or str')
+        elif isinstance(labels, (tuple, str)):
+            labels = [_l for _l in labels]
+
+        # npts initial compat check
+        if npts is None:
+            self.npts = None
+        else:
+            self.npts = wuc.bounded_intlike(
+                npts,
+                name='npts',
+                minimum=1,
+                maximum=None,
+                inclusive=True
+            )
+
+
+        # labels/npts/data crosschecks
+        if self.data is not None:
+            if len(labels) == self.data.shape[0]:
+                self.labels = labels
+                if self.npts != self.data.shape[1]:
+                    self.npts = self.data.shape[1]
+            elif len(labels) == self.data.shape[1]:
+                self.labels = labels
+                if self.npts != self.data.shape[0]:
+                    self.npts = self.data.shape[0]
+                self.data = self.data.T
+            else:
+                raise IndexError(f'Number of labels ({len(labels)}) not in self.data.shape ({self.data.shape})')
+        else:
+            self.labels = labels
+
         # id compat. check
         if not isinstance(id, (str, type(None))):
             raise TypeError('id must be type str or NoneType')
@@ -915,22 +954,7 @@ class PredictionWindow(object):
             maximum=None,
             inclusive=True
         )
-        # labels compat check
-        if not isinstance(labels, (list, tuple, str)):
-            raise TypeError('labels must be type list, tuple, or str')
-        elif isinstance(labels, (tuple, str)):
-            labels = [_l for _l in labels]
-        # labels/data crosschecks
-        if self.data is not None:
-            if len(labels) == self.data.shape[0]:
-                self.labels = labels
-            elif len(labels == self.data.shape[1]):
-                self.data = self.data.T
-                self.labels = labels
-            else:
-                raise IndexError(f'Number of labels ({len(labels)}) not in self.data.shape ({self.data.shape})')
-        else:
-            self.labels = labels
+        
         # model_name compat check
         if not isinstance(model_name, (str, type(None))):
             raise TypeError('model_name must be type str or NoneType')
@@ -951,18 +975,20 @@ class PredictionWindow(object):
         :return meta: [dict] metadata dictionary containing the 
             following attributes as key:value pairs (note: any of these may also have a None value)
             'id': [str] - station/instrument ID
+            'labels': [list] of [str] - string names of model/data labels
+            'npts': [int] - number of time-indexed samples in this window
             't0': [float] - starttime of windowed data (epoch seconds / timestamp)
             'samprate': [float] - sampling rate of windowed data (samples per second)
             'model_name': [str] or None - name of ML model this window corresponds to
             'weight_name': [str] or None - name of pretrained ML model weights assocaited with this window
-            'labels': [list] of [str] - string names of model/data labels
         """
         meta = {'id': self.id,
+                'labels': self.labels,
+                'npts': self.npts,
                 't0': self.t0,
                 'samprate': self.samprate,
                 'model_name': self.model_name,
                 'weight_name': self.weight_name,
-                'labels': self.labels,
                 'blinding': self.blinding}
         return meta
     
@@ -1899,7 +1925,7 @@ class PredictionBuffer(object):
         :attr blinding: [2-tuple] of [int] - number of blinding samples at either end
                      of a pwind
         """
-        attr_list = ['id','samprate','model_name','weight_name','labels','blinding']
+        attr_list = ['id','samprate','model_name','weight_name','labels','blinding', 'npts']
         if self._has_data:
             bool_list = []
             for _attr in attr_list:
@@ -1913,6 +1939,7 @@ class PredictionBuffer(object):
             self.id = pwind.id
             self.t0 = pwind.t0
             self.samprate = pwind.samprate
+            self.npts = pwind.npts
             self.model_name = pwind.model_name
             self.weight_name = pwind.weight_name
             self.labels = pwind.labels
@@ -2003,15 +2030,15 @@ class PredictionBuffer(object):
         if include_blinding:
             indices = {'i0_p': 0, 'i1_p': None}
         else:
-            indices = {'i0_p': self.blinding_samples[0],
-                       'i1_p': -self.blinding_samples[1]}
+            indices = {'i0_p': self.blinding,
+                       'i1_p': -self.blinding}
         # If this is an initial append
         if not self._has_data:
             indices.update({'npts_right': 0, 'i0_s': None})
             if include_blinding:
-                indices.update({'i1_s': self.window_samples})
+                indices.update({'i1_s': self.npts})
             else:
-                indices.update({'i1_s': self.window_samples - self.blinding_samples[0] - self.blinding_samples[1]})
+                indices.update({'i1_s': self.npts - self.blinding - self.blinding})
         # If this is for a subsequen tappend
         else:
             dt = pwind.t0 - self.t0
@@ -2023,14 +2050,14 @@ class PredictionBuffer(object):
             else:
                 i0_init = int(i0_init)
             # Get index of last sample in candidate prediction window
-            i1_init = i0_init + self.window_samples
+            i1_init = i0_init + self.npts
             # If blinding samples are removed, adjust the indices
             if not include_blinding:
-                i0_init += self.blinding_samples[0]
-                i1_init -= self.blinding_samples[1]
-                di = self.window_samples - self.blinding_samples[0] - self.blinding_samples[1]
+                i0_init += self.blinding
+                i1_init -= self.blinding
+                di = self.npts - self.blinding - self.blinding
             else:
-                di = self.window_samples
+                di = self.npts
 
             # Handle data being appended occurs before the current buffered data
             if i0_init < 0:
@@ -2059,7 +2086,7 @@ class PredictionBuffer(object):
         """
         Apply specified npts_right shift to self.stack and self.fold and
         then stack in pwind.data at specified indices with specified
-        self.stack_method, and update self.fold. Internal shifting routine
+        self.stacking_method, and update self.fold. Internal shifting routine
         is wyrm.util.stacking.shift_trim()
         
         :: INPUTS ::
@@ -2095,12 +2122,12 @@ class PredictionBuffer(object):
         nfold = np.zeros(shape=self.fold.shape, dtype=self.stack.dtype)
         nfold[indices['i0_s']:indices['i1_s']] += 1
         # Use fmax to update
-        if self.stack_method == 'max':
+        if self.stacking_method == 'max':
             # Get max value for each overlapping sample
             np.fmax(self.stack, pred, out=self.stack); #<- Run quiet
             # Update fold
             np.add(self.fold, nfold, out=self.fold); #<- Run quiet
-        elif self.stack_method == 'avg':
+        elif self.stacking_method == 'avg':
             # Add fold-scaled stack/prediction arrays
             np.add(self.stack*self.fold, pred*nfold, out=self.stack); #<- Run quiet
             # Update fold

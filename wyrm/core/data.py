@@ -339,9 +339,9 @@ class InstrumentWindow(Stream):
                 self.traces = [_trs]
             elif isinstance(_trs, Stream):
                 self.traces = _trs.traces
-            self.processing.append({'apply_missing_component_rule': ('clone', self.Z)})
+            self.processing.append({'apply_missing_component_rule': ('clonez', self.Z)})
         else:
-            self.processing.append({'apply_missing_component_rule': ('clone', False)})
+            self.processing.append({'apply_missing_component_rule': ('clonez', False)})
         return self
     
     def _apply_clonehz_mcr(self):
@@ -350,6 +350,7 @@ class InstrumentWindow(Stream):
         Lara et al., (2023) and Ni et al. (2023) wherein if one horizontal channel trace
         is missing, the other horizontal trace is cloned. However, if both are missing, the
         vertical trace data are cloned into the horizontals.
+
 
         I.e.,
         Z N E -> Z N E
@@ -361,15 +362,17 @@ class InstrumentWindow(Stream):
         if self.mcr != 'clonehz':
             raise AttributeError('This InstrumentStream has mcr {self.mcr} -- not "clonehz')
         if self.N is None and self.E is None:
+            self.mcr = 'clonez'
             self._apply_clonez_mcr()
+            self.mcr = 'clonehz'
         elif self.N is None:
             self.N = self.E
-            self.processing.append({'apply_missing_component_rule': ('clone', self.E)})
+            self.processing.append({'apply_missing_component_rule': ('clonehz', self.E)})
         elif self.E is None:
             self.E = self.N
-            self.processing.append({'apply_missing_component_rule': ('clone', self.N)})
+            self.processing.append({'apply_missing_component_rule': ('clonehz', self.N)})
         else:
-            self.processing.append({'apply_missing_component_rule': ('clone', False)})
+            self.processing.append({'apply_missing_component_rule': ('clonehz', False)})
         return self
 
     # ########################### #
@@ -628,10 +631,11 @@ class InstrumentWindow(Stream):
             bool_list = []
             # All starttimes must be target starttimes
             bool_list.append(_tr.stats.starttime == self.target_starttime)
-            bool_list.append(_tr.stats.endtime == self.target_starttime + self.target_npts/self.target_samprate)
+            endtime = self.target_starttime + (self.target_npts - 1)/self.target_samprate
+            bool_list.append(_tr.stats.endtime == endtime)
             bool_list.append(_tr.stats.sampling_rate == self.target_samprate)
             bool_list.append(_tr.stats.npts == self.target_npts)
-            bool_list.append(np.ma.is_masked(_tr.data))
+            bool_list.append(~np.ma.is_masked(_tr.data))
             bool_dict.update({_tr.id: bool_list})    
         if mode in ['any', 'all']:
             slist = []
@@ -684,9 +688,10 @@ class InstrumentWindow(Stream):
         if not self.on_target(mode='all'):
             raise AttributeError('Not all attributes of data in traces match target values - use self.on_target(mode="debug") to diagnose')
         # Compose holder array if 
-        data = np.fill(shape=(3, self.target_npts), fill_value=np.nan, dtype=np.float32)
-        if all(_c.upper() in 'ZNE' for _c in other_order):
-            order = other_order.upper()
+        data = np.full(shape=(3, self.target_npts), fill_value=np.nan, dtype=np.float32)
+        if isinstance(other_order, str):
+            if all(_c.upper() in 'ZNE' for _c in other_order):
+                order = other_order.upper()
         else:
             order = self.component_order
 
@@ -697,7 +702,7 @@ class InstrumentWindow(Stream):
     def to_pwind(self, ascopy=False):
         """
         Return processed data and metadata as a
-        wyrm.core.window.prediction.PredictionWindow object
+        wyrm.core.data.PredictionWindow object
         with the option to pass data as a copy or alias of 
         data held within this InstrumentWindow.
 
@@ -706,16 +711,15 @@ class InstrumentWindow(Stream):
                         default False
         
         :: OUTPUT ::
-        :return pwind: [wyrm.core.window.prediction.PredictionWindow]
+        :return pwind: [wyrm.core.data.PredictionWindow]
         """
-        kwargs = {'model_name': self.model_name,
-                  'data': self.to_numpy(ascopy=ascopy),
+        kwargs = {'data': self.to_numpy(ascopy=ascopy),
                   'id': self.Z[:-1],
-                  'samprate': self.Zdata.stats.samprate,
-                  't0': self.Zdata.stats.starttime.timestamp,
-                  'blinding': self.t_blinding,
+                  't0': self.Zdata().stats.starttime.timestamp,
+                  'samprate': self.Zdata().stats.sampling_rate,
+                  'blinding': self.target_blinding,
                   'labels': self.component_order,
-                  'in_samples': self.target_npts}
+                  'model_name': self.model_name}
         pwind = PredictionWindow(**kwargs)
         return pwind
 
@@ -733,7 +737,7 @@ class InstrumentWindow(Stream):
         :param ascopy: [bool] should resulting pwind be a deepcopy of the data in this InstrumentWindow?
 
         :: OUTPUT ::
-        :return pwind: [wyrm.core.window.prediction.PredictionWindow]
+        :return pwind: [wyrm.core.data.PredictionWindow]
 
         Processing Steps:
             Handle masked data
@@ -763,7 +767,7 @@ class InstrumentWindow(Stream):
             self.filter(**filter_kwargs)
         # Detrend and demean
         self.detrend('demean')
-        self.detrend('linaer')
+        self.detrend('linear')
         # Resample data
         self.resample(self.target_samprate)
         self.processing.append(f'obspy resample({self._tsr})')
@@ -784,9 +788,48 @@ class InstrumentWindow(Stream):
         pwind = self.to_pwind(ascopy=ascopy)
         return pwind
 
+    def __repr__(self):
+        """
+        User friendly string representation of this InstrumentWindow
+        """
+        keys = {"Z": self.Z, "N": self.N, "E": self.E}
+        site = '.'.join(self.Z.split(".")[:3])
+        inst = self.Z.split('.')[-1][:-1]
+        # WindowMsg parameter summary
+        rstr = f"{len(self)} trace(s) in InstrumentStream | "
+        rstr += f'Site: {site} | Instrument: {inst}\n'
+        rstr += "Target > "
+        rstr += f"model: {self.model_name} ð "
+        rstr += f"dims: ({len(self.component_order)}, {self.target_npts}) ð "
+        rstr += f"S/R: {self.target_samprate} Hz | "
+        rstr += f"missing comp. rule: {self.mcr}\n"
+        # Unique Trace List
+        for _i, _tr in enumerate(self.traces):
+            # Get alias list
+            aliases = [_o for _o in self.component_order if keys[_o] == _tr.id]
+            rstr += f"{_tr.__str__()}"
+            # Add alias information to trace line
+            if len(aliases) > 0:
+                rstr += " | ("
+                for _o in aliases:
+                    rstr += _o
+                rstr += ") alias\n"
+            else:
+                rstr += " | [UNUSED]\n"
+        rstr += f" Trim Target ð {self.target_starttime} - {self.target_starttime + self.target_npts/self.target_samprate} ð"
+        rstr += f'\n Window Processing: {self.processing}'
+        return rstr  
 
 
+    def __str__(self):
+        """
+        String representation of the arguments used to create this InstrumentWindow
+        """
 
+
+###################################################################################
+# PREDICTION WINDOW CLASS DEFINITION ##############################################
+###################################################################################
 
 class PredictionWindow(object):
     """
@@ -834,10 +877,12 @@ class PredictionWindow(object):
             raise TypeError('data must be type numpy.ndarray or NoneType')
         elif data is None:
             self.data = data
+            self._blank = True
         elif data.ndim != 2:
             raise IndexError(f'Expected a 2-dimensional array. Got {data.ndim}-d')
         else:
             self.data = data
+            self._blank = False
         # id compat. check
         if not isinstance(id, (str, type(None))):
             raise TypeError('id must be type str or NoneType')
@@ -896,6 +941,7 @@ class PredictionWindow(object):
             raise TypeError('weight_name must be type str or NoneType')
         else:
             self.weight_name = weight_name
+
 
     def get_metadata(self):
         """
@@ -958,7 +1004,10 @@ class PredictionWindow(object):
         :return meta: [dict] metadata dictionary - see self.get_metadata()
         """
         meta = self.get_metadata()
-        tensor = torch.Tensor(self.data.copy())
+        if np.ndim(self.data) == 3:
+            tensor = torch.Tensor(self.data.copy())
+        elif np.ndim(self.data) == 2:
+            tensor = torch.Tensor(self.data.copy()[np.newaxis, :, :])
         return tensor, meta
 
     def copy(self):
@@ -968,8 +1017,8 @@ class PredictionWindow(object):
         return deepcopy(self)
 
     def __repr__(self):
-        rstr =  'Prediction Window'
-        rstr += f'{self.id} | t0: {UTCDateTime(self.t0)} | S/R: {self.samprate: .3f} sps | Dims: {self.shape}\n'
+        rstr =  'Prediction Window\n'
+        rstr += f'{self.id} | t0: {UTCDateTime(self.t0)} | S/R: {self.samprate: .3f} sps | Dims: {self.data.shape}\n'
         rstr += f'Model: {self.model_name} | Weight: {self.weight_name} | Labels: {self.labels} | Blind: {self.blinding} \n'
         if self._blank:
             rstr += f'np.zeros(shape={self.shape})'
@@ -1058,9 +1107,11 @@ class PredictionWindow(object):
             # If data is None, populate
             if self.data is None:
                 self.data = np.zeros(shape=(len(dim0), dim1), dtype=np.float32)
+                self._blank = True
             else:
                 if self.data.shape != (len(dim0), dim1):
                     raise IndexError(f'proposed data array dimensions from model ({len(dim0)}, {dim1}) do not match the current data array ({self.data.shape})')
+                self._blank = False
             # Update weight_name if type str
             if isinstance(weight_name, str):
                 self.weight_name = weight_name
@@ -1276,6 +1327,27 @@ class TraceBuffer(Trace):
                 raise TypeError(
                     f'_check_overlap_status retured status of {status}: must be "leading", "lagging", or "overlapping"'
                 )
+        return self
+    
+
+
+    def __iadd__(self, other):
+        """
+        Magic method - inplace add (+=)
+
+        self += other
+
+        This iadd method wraps the TraceBuffer.append() method and accepts "other" inputs
+        obspy.core.trace.Trace and wyrm.core.dadta.TraceBuffer (a Trace child-class), treating
+        the right-hand-side as an obspy.core.trace.Trace object being appended to the left-hand-side
+        
+        """
+        if not isinstance(other, Trace):
+            raise TypeError('other must be type TraceBuffer or type obspy.core.trace.Trace')
+        elif isinstance(other, TraceBuffer):
+            self.append(other.to_trace())
+        elif isinstance(other, Trace):
+            self.append(other)
         return self
 
     # ################## #
@@ -1757,7 +1829,7 @@ class PredictionBuffer(object):
 
     """
     
-    def __init__(self, max_length=15000, stacking_method='max'):
+    def __init__(self, max_samples=15000, stacking_method='max'):
         """
         Initialize a PredictionBuffer object that has predicted value
         arrays added to it throught the append method like TraceBuffer
@@ -1767,7 +1839,7 @@ class PredictionBuffer(object):
         to accelerate stacking/buffer update operations via numpy's ufunc's
 
         :: INPUTS ::
-        :param max_length: [int] maximum number of samples the buffer can contain
+        :param max_samples: [int] maximum number of samples the buffer can contain
                         Once data are appended, this corresponds to the buffered
                         data "stack" 1-axis (or j-axis)
         :param stacking_method: [str] stacking method to apply to overlapping data
@@ -1775,20 +1847,20 @@ class PredictionBuffer(object):
                         'avg': mean value at the jth overlapping sample
         
         :: POPULATED ATTRIBUTES ::
-        :attr max_length: positive integer, see param max_length
+        :attr max_samples: positive integer, see param max_samples
         :attr stacking_method: 'max', or 'avg', see stacking_method
-        :attr fold: (max_length, ) numpy.ndarray - keeps track of the number
+        :attr fold: (max_samples, ) numpy.ndarray - keeps track of the number
                         of non-blinded samplesn stacked a particular time-point
                         in this buffer. dtype = numpy.float32
         :attr _has_data: PRIVATE - [bool] - flag indicating if data have been
                         appended to this pbuff via the pbuff.append() method
                         Default = False
         """
-        # max_length compat. check
-        self.max_length = wuc.bounded_intlike(
-            max_length,
-            name='max_length',
-            minimum=10000,
+        # max_samples compat. check
+        self.max_samples = wuc.bounded_intlike(
+            max_samples,
+            name='max_samples',
+            minimum=1,
             maximum=None,
             inclusive=True
         )
@@ -1798,7 +1870,7 @@ class PredictionBuffer(object):
         else:
             self.stacking_method = stacking_method
         # Create fold vector
-        self.fold = np.zeros(self.max_length, dtype=np.float32)
+        self.fold = np.zeros(self.max_samples, dtype=np.float32)
         # Set _has_data flag
         self._has_data = False
     
@@ -1846,7 +1918,7 @@ class PredictionBuffer(object):
             self.labels = pwind.labels
             self.blinding = pwind.blinding
             # Populate stack
-            self.stack = np.zeros(shape=(pwind._nl, self.max_length), dtype=np.float32)
+            self.stack = np.zeros(shape=(pwind._nl, self.max_samples), dtype=np.float32)
             status = True
         return status
 
@@ -1870,7 +1942,7 @@ class PredictionBuffer(object):
                     the candidate shift/stack operation?
         
         :: OUTPUT ::
-        :return self: [wyrm.core.buffer.prediction.PredictionBuffer] enable cascading
+        :return self: [wyrm.core.data.PredictionBuffer] enable cascading
         """
         # pwind compat. check
         if not isinstance(pwind, PredictionWindow):
@@ -2039,15 +2111,62 @@ class PredictionBuffer(object):
         # If a shift was applied, update t0 <- NOTE: this was missing in version 1!
         if indices['npts_right'] != 0:
             self.t0 -= indices['npts_right']/self.samprate
+
+
+    def merge(self, other):
+        if not isinstance(other, PredictionBuffer):
+            raise TypeError('other must be type wyrm.core.data.PredictionBuffer')
+
+        if self.samprate != other.samprate:
+            raise AttributeError('sampling rates mismatch between self and other')
         
+        if self.id != other.id:
+            raise AttributeError('id mismatch between self and other')
+
+        if self.model_name != other.model_name:
+            raise AttributeError('model_name mismatch')
+        
+        if self.weight_name != other.weight_name:
+            raise AttributeError('weight_name mismatch')
+        
+        if self.labels != other.labels:
+            raise AttributeError('labels mismatch')
+        
+        dt = other.t0 - self.t0
+        dn = dt/self.samprate
+        if int(dn) != dn:
+            raise ValueError('time sampling is misaligned')
+        
+
+        # if self.max_length != other.max_length:
+        #     raise AttributeError('max_length mismatch between self and others')
+
+        # if self.t0 - other.t0// self.samprate
+        # if 
+
+
+    def __iadd__(self, other):
+        if not isinstance(other, (PredictionBuffer, PredictionWindow)):
+            raise TypeError('other must be type wyrm.core.data.PredictionBuffer')
+        elif isinstance(other, PredictionWindow):
+            self.append(other)
+        elif isinstance(other, PredictionBuffer):
+            self.merge(other)
+
     # I/O AND DUPLICATION METHODS #
+
+
+        
+        return self
 
     def copy(self):
         """
         Return a deepcopy of this PredictionBuffer
         """
         return deepcopy(self)
-        
+    
+
+
     def to_stream(self, min_fold=1, fill_value=None):
         """
         Create a representation of self.stack as a set of labeled
@@ -2229,7 +2348,7 @@ class PredictionBuffer(object):
         return self
     
 
-    ###################################################################################
+###################################################################################
 # BUFFER TREE CLASS DEFINITION ####################################################
 ###################################################################################
 class BufferTree(dict):
@@ -2285,11 +2404,40 @@ class BufferTree(dict):
         self.nt1b = 0
         self.nt2b = 0
 
+    def update_counts(self):
+        self.nt0b = len(self.keys())
+        nt1b = 0
+        nt2b = 0
+        for k0 in self.keys():
+            nt1b += len(self[k0].keys())
+            for k1 in self[k0].keys():
+                nt2b += len(self[k0][k1].keys())
+        self.nt1b = nt1b
+        self.nt2b = nt2b
+
     def copy(self):
         """
         Return a deepcopy of this wyrm.buffer.structures.BufferTree
         """
-        return deepcopy(self)    
+        return deepcopy(self)
+    
+    def is_in_tree(self, tk0, tk1=None, tk2=None):
+        if tk0 in self.keys():
+            if tk1 is not None:
+                if tk1 in self[tk0].keys():
+                    if tk2 is not None:
+                        if tk2 in self[tk0][tk1].keys():
+                            return True
+                        else:
+                            return False
+                    else:
+                        return True
+                else:
+                    return False
+            else:
+                return True
+        else:
+            return False
 
     def grow_tree(self, TK0, TK1=None, TK2=None):
         """
@@ -2353,6 +2501,7 @@ class BufferTree(dict):
                         if TK2 not in self[TK0][TK1].keys():
                             self[TK0][TK1].update({TK2: self._template_buff.copy()})
                             self.nt2b += 1
+        self.update_counts()
         return self
 
     def apply_buffer_method(self, TK0='', TK1='', TK2='', method='__repr__', **inputs):
@@ -2416,6 +2565,8 @@ class BufferTree(dict):
         self.grow_tree(TK0, TK1=TK1, TK2=TK2)
         # Append obj to buffer [TK0][TK1]
         self[TK0][TK1][TK2].append(obj, **options)
+        # Update indices
+        self.update_counts()
         # Return self
         return self
     
@@ -2487,6 +2638,48 @@ class BufferTree(dict):
                 rstr += 'To see full contents, use print(BufferTree.__repr__(extended=True))'
         return rstr
 
+
+
+    def __iadd__(self, other):
+        if not isinstance(other, BufferTree):
+            raise TypeError('other must be type wyrm.core.data.BufferTree')
+        elif self.buff_class != other.buff_class:
+            raise AttributeError(f'other.buff_class must be the same as this BufferTree: type {self.buff_class}')
+        else:
+            # Iterate across other's tier-0 keys
+            for _k0 in other.keys():
+                # If limb in other DNE in self, append whole limb
+                if _k0 not in self.keys():
+                    self.update({_k0: other[_k0]})
+                    continue
+                # Otherwise cross-check branches
+                else:
+                    pass
+            
+                for _k1 in other[_k0].keys():
+                    # If branch in other DNE in self, append branch
+                    if _k1 not in self[_k0].keys():
+                        self[_k0].update({_k1: other[_k0][_k1]})
+                        continue
+                    else:
+                        pass
+                    for _k2 in other[_k0][_k1].keys():
+                        # If twig in other DNE in self, append twig
+                        if _k2 not in self[_k0][_k1].keys():
+                            self[_k0][_k1].update({_k2: other[_k0][_k1][_k2]})
+                        else:
+                            # Run iadd on buff_class to try append
+                            try:
+                                self[_k0][_k1][_k2] += other[_k0][_k1][_k2]
+                            except TypeError:
+                                pass
+            self.update_counts()
+                        # END TWIG LOOP
+                    # END BRANCH LOOP
+            # END LIMB LOOP
+                            
+            return self
+                                
     def append_stream(self, stream):
         """
         Convenience method for appending the contents of obspy.core.stream.Stream to
@@ -2515,24 +2708,28 @@ class BufferTree(dict):
         for _tr in stream:
             n,s,l,c = _tr.id.split('.')
             # Generate keys
-            TK0 = '.'.join([n,s,l])
-            TK1 = c[:-1]
-            TK2 = c[-1]
+            tk0 = '.'.join([n,s,l])
+            tk1 = c[:-1]
+            tk2 = c[-1]
             # Append to TraceBuff, generating branches as needed
-            self.append(_tr, TK0=TK0, TK1=TK1, TK2 = TK2)
+            self.append(_tr, TK0=tk0, TK1=tk1, TK2=tk2)
         return self
 
     def append_pwind(self, pwind):
         """
-        Convenience method for appending a wyrm.core.window.PredictionWindow (pwind) 
-        to this BufferTree using following key designations
-
-        TK0 = predarray.id
-        TK1 = predarray.weight_name
+        Convenience method for appending a wyrm.data.PredictionWindow (pwind) 
+        to this BufferTree using pre-defined key formulations
+            tier-0: Station Code
+            tier-1: Instrument Code (Band & Instrument from SEED channel naming conventions)
+            tier-2: Model weight
         """
         if self.buff_class != PredictionBuffer:
-            raise AttributeError('Can only use this method when buff_class is wyrm.buffer.prediction.PredBuff')
+            raise AttributeError('Can only use this method when buff_class is wyrm.data.PredictionBuffer')
         if not isinstance(pwind, PredictionWindow):
-            raise TypeError
-        tk0 = pwind.id
-        tk1 = pwind.weight_name
+            raise TypeError('pwind must be type wyrm.data.PredictionWindow')
+        n,s,l,c = pwind.id.split('.')
+        tk0 = '.'.join([n,s,l])
+        tk1 = c[:-1]
+        tk2 = pwind.weight_name
+        self.append(pwind, TK0=tk0, TK1=tk1, TK2=tk2)
+        return self

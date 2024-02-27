@@ -7,15 +7,21 @@ from wyrm.core.data import InstrumentWindow, BufferTree, TraceBuffer
 import seisbench.models as sbm
 
 print('INITIALIZING SEISBENCH WAVEFORMMODEL')
+print('Initialiing SeisBench WaveformModel')
 # Initailize model
 model = sbm.EQTransformer()
 # List desired weights
-weight_names = ['pnw','instance','stead']
+weight_names = ['pnw','instance','stead','ethz','geofon','iquique','scedc','neic']
+# weight_names = model.list_pretrained()
+# Ensure all models are loaded
+for _wn in weight_names:
+    print(f'Loading {_wn}')
+    model.from_pretrained(_wn)
+
 # Do a little updating to define windowing
 t_sr = 100.     # target samplign rate [sps]
 t_over = 1000   # target overap [samples]
 t_blind = 500   # target blinding (symmetrical) [samples]
-
 if t_over < t_blind *2:
     raise ValueError('selected target overlap and blinding will result in gaps - invalid')
 
@@ -36,9 +42,7 @@ print('CHECKING PRETRAINED MODEL WEIGHT VALIDITY')
 #     raise ValueError(f'Not all provided weight names {weight_names} are in the pretrained model weights for {model.name}: \n {pretrains}')
 
 # Load each model weight to ensure the relevant files are saved locally
-for _wn in weight_names:
-    print(f'Loading {_wn}')
-    model.from_pretrained(_wn)
+
 
 
 ####################
@@ -87,7 +91,7 @@ wfm_d = pro.WaveformModelWyrm(
     max_samples=model.in_samples*3,
     stacking_method='avg',
     max_pulse_size=1000,
-    debug=DEBUG
+    debug=True
 )
 print('WaveformModel_ð')
 # tubewyrm - tube_ð - tube_d

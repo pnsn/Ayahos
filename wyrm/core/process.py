@@ -11,13 +11,32 @@
 
     Classes:
         
-        WindowWyrm - a wyrm class for sampling a TieredBuffer terminating
-            in TraceBuffer objects for a specific window size and advancement
+        WindowWyrm - a submodule for sampling a BufferTree that buds with
+            TraceBuffer objects for a specific window size and advancement
             increment to generate InstrumentWindow objects
 
-            TieredBuffer(TraceBuffer) -> WindowWyrm -> deque(InstrumentWindow,...)
-        
-        
+            BufferTree(TraceBuffer) -> Windowyrm -> deque(InstrumentWindow)
+
+        ProcWyrm - a submodule for applying class methods to objects that
+            alter those objects' data in-place via eval() execution of
+            string-representations of class methods and their arguments.
+
+            Each class method is executed independently, using the outpu
+
+            deque(class_obj) -> ProcWyrm -> deque(class_obj)
+
+        WavePredictWyrm - a submodule for conducting predictions with machine
+            learning model architectures based on the seisbench.models.WaveformModel
+            base class, with the option to predict using a list of pretrained weights.
+            Based on methods in Yuan et al. (2023).
+
+            deque()
+
+        SembWyrm - a submodule for conducting semblance-based combinations
+            of time-series data transforms/predictions to derive concensus
+            estimates. Based on methods in Yuan et al. (2023).
+
+
 """
 import numpy as np
 import torch
@@ -50,7 +69,7 @@ class WindowWyrm(Wyrm):
         completeness={"Z": 0.95, "N": 0.8, "E": 0.8},
         missing_component_rule="zeros",
         model_name="EQTransformer",
-        target_sr=100.0,
+        target_samprate=100.0,
         target_npts=6000,
         target_overlap=1800,
         target_blinding=500,
@@ -77,13 +96,13 @@ class WindowWyrm(Wyrm):
         :param model_name: [str]
                         Model name to associate this windowing parameter set to
                         e.g., EQTransformer, PhaseNet
-        :param target_sr: [float]
-                        Target sampling_rate to pass to InsturmentWindow init
+        :param target_samprate: [float]
+                        Target sampling rate to pass to InsturmentWindow init
         :param target_npts: [int]
                         Target temporal samples to pass to InstrumentWindow init
         :param target_overlap: [int]
                         Target overlap between sequential windows. Used alongside
-                        target_sr and target_npts to determine window advances
+                        target_samprate and target_npts to determine window advances
                         between pulse iterations
         :param target_blinding:  [int] left and right blinding sample amounts
                         for stacking ML predictions. This is also used to determine
@@ -129,9 +148,9 @@ class WindowWyrm(Wyrm):
         else:
             self.model_name = model_name
         # Target sampling rate compat check
-        self.target_sr = wuc.bounded_floatlike(
-            target_sr,
-            name='target_sr',
+        self.target_samprate = wuc.bounded_floatlike(
+            target_samprate,
+            name='target_samprate',
             minimum=0,
             maximum=None,
             inclusive=False
@@ -170,9 +189,9 @@ class WindowWyrm(Wyrm):
 
          # Set Defaults and Derived Attributes
         # Calculate window length, window advance, and blinding size in seconds
-        self.window_sec = self.target_npts/self.target_sr
-        self.advance_sec = (self.target_npts - self.target_overlap)/self.target_sr
-        self.blind_sec = self.target_blinding/self.target_sr
+        self.window_sec = self.target_npts/self.target_samprate
+        self.advance_sec = (self.target_npts - self.target_overlap)/self.target_samprate
+        self.blinding_sec = self.target_blinding/self.target_samprate
 
         # Create dict for holding instrument window starttime values
         self.default_starttime = None
@@ -181,8 +200,14 @@ class WindowWyrm(Wyrm):
         # Create queue for output collection of windows
         self.queue = wcd.deque([])
 
-        # Update input and output types for TubeWyrm & compatability references
-        self._update_io_types(itype=(wcd.BufferTree, wcd.TraceBuffer), otype=(wcd.deque, wcd.InstrumentWindow))
+        # Gather general instrumentwindow creation instructions 
+        self.windowing_attr = {
+            'model_name': self.model_name,
+            'component_order': self.target_order,
+            'target_npts': self.target_npts,
+            'target_samprate': self.target_samprate,
+            'target_blinding': self.target_blinding,
+            'missing_component_rule': self.mcr}
 
     ################
     # PULSE METHOD #
@@ -208,10 +233,6 @@ class WindowWyrm(Wyrm):
                     loaded with the appendleft() method, so the oldest messages
                     can be removed with the pop() method in a subsequent step
         """
-        # Check that x is compatable 
-        self._matches_itype(x, raise_error=True)
-        self._matches_itype(x.buff_class, raise_error=True)
-
         # Iterate for up to self.max_pulse_size sweeps across x
         for _ in range(self.max_pulse_size):
             nnew = self.process_windows(x, **options)
@@ -234,14 +255,13 @@ class WindowWyrm(Wyrm):
         window validation and generation.
 
         :: INPUTS ::
-        :param input: [wyrm.core.buffer.structure.TieredBuffer] terminating in 
-                        [wyrm.core.buffer.trace.TraceBuffer] objects
+        :param input: [wyrm.core.data.BufferTree] terminating in [wyrm.core.data.TraceBuffer] objects
         """
-        # Run type checks for input
-        self._matches_itype(input, raise_error=True)
-        self._matches_itype(input.buff_class, raise_error=True)
+        # pad compat check
         if not isinstance(pad, bool):
             raise TypeError('pad must be type bool')
+        
+        # wgt_taper_len compat check
         if isinstance(wgt_taper_len, str):
             if wgt_taper_len.lower() != 'blinding':
                 raise TypeError('The only supported str-type wgt_taper_len input is "blinding"')
@@ -252,76 +272,79 @@ class WindowWyrm(Wyrm):
         
         # Start number of new windows counter
         nnew = 0
-        # Iterate across branches
+        # Iterate across limbs
         for k0 in input.keys():
-            branch = input[k0]
-            # Initialize new tracker branch if this branch key is not in window_tracker
             if k0 not in self.window_tracker.keys():
-                self.window_tracker.update({k0: self.default_starttime})
-            # Get next starttime
-            next_ts = self.window_tracker[k0]
-            # If next starttime is the default value, scrape starttime from branch's Z-component
-            if next_ts == self.default_starttime:
-                for _c in self.code_map['Z']:
-                    if _c in branch.keys():
-                        if len(branch[_c]) > 0:
-                            first_ts = branch[_c].stats.starttime
-                            self.window_tracker.update({k0: first_ts})
-                            next_ts = first_ts
+                self.window_tracker.update({k0: {}})
+            for k1 in input[k0].keys():
+                branch = input[k0][k1]
+                if k1 not in self.window_tracker[k0].keys():
+                    self.window_tracker[k0].update({k1: self.default_starttime})
+                
+                # Get next starttime
+                next_ts = self.window_tracker[k0][k1]
+                # If next starttime is the default value, scrape starttime from branch's Z-component
+                if next_ts == self.default_starttime:
+                    for _c in self.code_map['Z']:
+                        if _c in branch.keys():
+                            if len(branch[_c]) > 0:
+                                first_ts = branch[_c].stats.starttime
+                                self.window_tracker[k0].update({k1: first_ts})
+                                next_ts = first_ts
+                                break
+                # If a valid next starttime is present (or was scraped), proceed
+                if isinstance(next_ts, UTCDateTime):
+                    data_ts = None
+                    data_te = None
+                    # Iterate across entries in branch
+                    for k2 in branch.keys():
+                        # If a branch entry has data
+                        if len(branch[k2]) > 0:
+                            # Grab the starttime, endtime and buffer length
+                            data_ts = branch[k2].stats.starttime
+                            data_te = branch[k2].stats.endtime
+                            buff_length = branch[k2].max_length
                             break
-            # If a valid next starttime is present (or was scraped), proceed
-            if isinstance(next_ts, UTCDateTime):
-                data_ts = None
-                data_te = None
-                # Iterate across entries in branch
-                for k1 in branch.keys():
-                    # If a branch entry has data
-                    if len(branch[k1]) > 0:
-                        # Grab the starttime, endtime and buffer length
-                        data_ts = branch[k1].stats.starttime
-                        data_te = branch[k1].stats.endtime
-                        buff_length = branch[k1].max_length
-                        break
-                # if data encompasses the next starttime, proceed
-                if data_ts <= next_ts < data_te:
-                    pass
-                # if data ends before the next starttime - run safety catch if there's run-away behavior
-                # in window_tracker
-                elif next_ts > data_te:
-                    dt = next_ts - data_te
-                    if dt < 2*self.advance_sec:
+                    # if data encompasses the next starttime, proceed
+                    if data_ts <= next_ts < data_te:
                         pass
+                    # if data ends before the next starttime - run safety catch if there's run-away behavior
+                    # in window_tracker
+                    elif next_ts > data_te:
+                        dt = next_ts - data_te
+                        if dt < 2*self.advance_sec:
+                            pass
+                        else:
+                            RuntimeError('Suspect a run-away next_starttime incremetation')
+                    # If next starttime is before the data starttime, check how large the gap is
+                    elif next_ts < data_ts:
+                        dt = data_ts - next_ts
+                        # If the gap is shorter than the buffer length, proceed assuming that
+                        # there may be a backfill
+                        if dt < buff_length:
+                            pass
+                        # If the gap is longer than the buffer length, assume that there was a
+                        # data outage and advance the next starttime enough to catch up
+                        else:
+                            nadv = dt//self.advance_sec
+                            self.window_tracker[k0][k1] += nadv*self.advance_sec
+                            next_ts = self.window_tracker[k0][k1]
+                    # Run window validation/generation sub-routine
+                    iwind = self.branch2iwind(
+                        branch,
+                        next_ts,
+                        pad=pad,
+                        extra_sec=extra_sec,
+                        wgt_taper_len=wgt_taper_len,
+                        wgt_taper_type=wgt_taper_type
+                        )
+                    # If this produces a window, append to queu and increment nnew, and continue iterating
+                    if iwind:
+                        self.queue.append(iwind)
+                        nnew += 1
+                    # If a window was not produced, continue iterating across branches
                     else:
-                        RuntimeError('Suspect a run-away next_starttime incremetation')
-                # If next starttime is before the data starttime, check how large the gap is
-                elif next_ts < data_ts:
-                    dt = data_ts - next_ts
-                    # If the gap is shorter than the buffer length, proceed assuming that
-                    # there may be a backfill
-                    if dt < buff_length:
-                        pass
-                    # If the gap is longer than the buffer length, assume that there was a
-                    # data outage and advance the next starttime enough to catch up
-                    else:
-                        nadv = dt//self.advance_sec
-                        self.window_tracker[k0] += nadv*self.advance_sec
-                        next_ts = self.window_tracker[k0]
-                # Run window validation/generation sub-routine
-                iwind = self.branch2iwind(
-                    branch,
-                    next_ts,
-                    pad=pad,
-                    extra_sec=extra_sec,
-                    wgt_taper_len=wgt_taper_len,
-                    wgt_taper_type=wgt_taper_type
-                    )
-                # If this produces a window, append to queu and increment nnew, and continue iterating
-                if iwind:
-                    self.queue.appendleft(iwind)
-                    nnew += 1
-                # If a window was not produced, continue iterating across branches
-                else:
-                    continue
+                        continue
         return nnew
 
     def branch2iwind(
@@ -393,7 +416,7 @@ class WindowWyrm(Wyrm):
             extra_sec = 0
         else:
             extra_sec = wuc.bounded_floatlike(
-                extra_sec, name="extra_sec", minimum=0.0, maximum=self._window_sec
+                extra_sec, name="extra_sec", minimum=0.0, maximum=self.window_sec
             )
         # wgt_taper_len compatability checks
         if isinstance(wgt_taper_len, str):
@@ -426,7 +449,7 @@ class WindowWyrm(Wyrm):
 
         # Calculate the expected end of the window
         next_window_endtime = next_window_starttime + self.window_sec
-        # Compose kwarg dictionary for RtBuffTrace.get_trimmed_valid_fract()
+        # Compose kwarg dictionary for TraceBuffer.get_trimmed_valid_fract()
         vfkwargs = {
             "starttime": next_window_starttime,
             "endtime": next_window_endtime,
@@ -498,7 +521,7 @@ class WindowWyrm(Wyrm):
     def __repr__(self):
         rstr = super().__str__()
         rstr += f" | Windows Queued: {len(self.queue)}\n"
-        for _c in self.windowing_attr["target_order"]:
+        for _c in self.target_order:
             rstr += f"  {_c}: map:{self.code_map[_c]} thresh: {self.completeness[_c]}\n"
         rstr += "ð -- Windowing Parameters -- ð"
         for _k, _v in self.windowing_attr.items():
@@ -512,7 +535,7 @@ class WindowWyrm(Wyrm):
         rstr = 'wyrm.core.window.wyrm.WindowWyrm('
         rstr += f'code_map={self.code_map}, completeness={self.completeness}, '
         rstr += f'missing_component_rule={self.mcr}, model_name={self.model_name}, '
-        rstr += f'target_sr={self.target_sr}, target_npts={self.target_npts}, '
+        rstr += f'target_samprate={self.target_samprate}, target_npts={self.target_npts}, '
         rstr += f'target_overlap={self.target_overlap}, target_blinding={self.target_blinding}, ]'
         rstr += f'max_pulse_size={self.max_pulse_size}, debug={self.debug})'
         return rstr
@@ -543,7 +566,7 @@ class WindowWyrm(Wyrm):
             raise AttributeError('model does not have an "in_samples" attribute populated. Likely trying to pass a WaveformModel object, rather than a child-class object')
         
         if isinstance(model.sampling_rate, (int, float)):
-            self.target_sr = model.sampling_rate
+            self.target_samprate = model.sampling_rate
         else:
             raise AttributeError('model does not have an "sampling_rate" attribute populated. Likely trying to pass a WaveformModel object, rather than a child-class object')
         
@@ -563,107 +586,58 @@ class WindowWyrm(Wyrm):
         
         return self
 
-
-
-# PROCssing WYRM CLASS DEFINITINO
     
-class ProcWyrm(Wyrm):
-    """
-    This worm provides a pulse method that applys a series of
-    class-methods that operate in-place on objects' data. Expects
-    objects to arrive in a deque
-    """
+###################################################################################
+# PROCWYRM CLASS DEFINITION #######################################################
+###################################################################################
 
+class ProcWyrm(Wyrm):
+    
     def __init__(
         self,
-        target_class=wcd.InstrumentWindow,
-        self_eval_string_list=["._preproc_example(fill_value=0)"],
-        out_eval_string='.to_torch()',
+        class_type,
+        class_method_list=['.__repr__()'],
         max_pulse_size=10000,
-        debug=False
-    ):
-        """
-        Initialize a ProcWyrm object with specified processing targets and steps
+        debug=False):
 
-        :: INPUTS ::
-        :param target_class: [type] expected type for objects being processed
-                                    by this ProcWyrm.
-                                    E.g., obspy.Trace
-        :param self_eval_string_list: [list-like] set of strings taking the form
-                                    ".classmethod(args, kwargs)" to be applied
-                                    to expected objects.
-                                    e.g., '.resample(100, no_filter=True)'
-        :param out_eval_string: [str] string representation of a target_class
-                                    method that produces an output
-                                    e.g., '.copy()'
-                                [None] if None, the output is the altered
-                                    object itself rather than the output
-                                    of a classmethod enacted on the object
-        :param max_pulse_size: [int-like] maximum number of objects to attempt
-                                    to evaluate in a given pulse
-        :param debug: [bool] should this Wyrm be run in debug mode?
-        """
-
-        # Run super__init__ from Wyrm
         super().__init__(max_pulse_size=max_pulse_size, debug=debug)
-        # Compatability check for target_class
+
         try:
-            type(target_class)
-            self.target_class = target_class
+            type(class_type)
+            self.class_type = class_type
         except NameError:
-            raise NameError(f"{target_class} is not defined")
+            raise NameError(f'{class_type} is not a defined class')
 
-        # Compatability checks for self_eval_string_list
-        if isinstance(self_eval_string_list, str):
-            self_eval_string_list = [self_eval_string_list]
-        elif isinstance(self_eval_string_list, list):
-            if all(isinstance(_es, str) for _es in self_eval_string_list):
-                self_eval_string_list = self_eval_string_list
-            else:
-                raise TypeError("not all etries in eval_strigns are type str")
+        if isinstance(class_method_list, str):
+            class_method_list = [class_method_list]
+        elif isinstance(class_method_list, (tuple, list)):
+            if not all(isinstance(_e, str) for _e in class_method_list):
+                raise TypeError('not all etries in class_method_list are type str')
         else:
-            raise TypeError("self_eval_string_list must be type str or list of str")
-
-        # Syntax checks for all self_eval_string_list elements
+            raise TypeError('class_method_list must be type str or a list-like of str')
+    
+        # Syntax checks for all class_method_list elements
         all_bool_list = [
-            self._check_class_method_string_formatting(_e) for _e in self_eval_string_list
+            self._check_class_method_str(_e) for _e in class_method_list
         ]
         if all(all_bool_list):
-            self.self_eval_string_list = self_eval_string_list
+            self.class_method_list = class_method_list
         # Otherwise
         else:
             # Iterate across checks
-            for _i, _e in enumerate(self_eval_string_list):
+            for _i, _e in enumerate(class_method_list):
                 # Highlight specific bad eval_string entries
                 if not all_bool_list[_i]:
                     print(
-                        f'self_eval_string_list entry "{_e}" does not pass formatting checks'
+                        f'class_method_list entry "{_e}" does not pass formatting checks'
                     )
             # Then raise SyntaxError with advice on formatting
             raise SyntaxError(
-                'self_eval_string_list entries must have basic form ".classmethod()"'
-            )
-
-        # Compatabiliy checks for out_eval_string
-        # Type check
-        if out_eval_string is None:
-            self.out_eval_string = out_eval_string
-        elif not isinstance(out_eval_string, str):
-            raise TypeError("out_eval_string must be type str")
-        # Syntax check
-        if self._check_class_method_string_formatting(out_eval_string):
-            self.out_eval_string = out_eval_string
-        else:
-            raise SyntaxError(
-                '"out_eval_string" did not pass format checks - see ProcWyrm docs.'
-            )
-
-        # Initialize output double ended queue attribute
+                'class_method_list entries must have basic form ".classmethod()"'
+            )      
         self.queue = wcd.deque([])
 
-    ## Compatability checking methods ##
-
-    def _check_class_method_string_formatting(self, string):
+    def _check_class_method_str(self, string):
         """
         Check if the proposed class-method string for eval()
         execution has the fundamentally correct formatting
@@ -700,7 +674,7 @@ class ProcWyrm(Wyrm):
         # Check that splitting on ")" gives the same amount of elements as "(" split
         bool_set.append(len(string.split("(")) == len(string.split(")")))
         # Check that proposed method is in target class's class methods
-        bool_set.append(string.split("(")[0][1:] in dir(self.target_class))
+        bool_set.append(string.split("(")[0][1:] in dir(self.class_type))
         status = all(bool_set)
         return status
 
@@ -713,14 +687,14 @@ class ProcWyrm(Wyrm):
         :: OUTPUT ::
         :return [bool]: is this an instance of self.target_class? 
         """
-        if isinstance(obj, self.target_class):
+        if isinstance(obj, self.class_type):
             return True
         else:
             return False
 
-    def _run_self_eval_statements(self, obj):
+    def _run_class_method_list(self, obj):
         """
-        Run self_eval_string_list elements in sequence on target object
+        Run class_method_list elements in sequence on target object
         :: INPUT ::
         :param obj: [object] candidate object
 
@@ -728,24 +702,9 @@ class ProcWyrm(Wyrm):
         :return obj: [object] candidate object with self-altering
                               class methods applied
         """
-        for _e in self.self_eval_string_list:
-            eval(f"obj{_e}")
+        for _e in self.class_method_list:
+            obj = eval(f"obj{_e}")
         return obj
-
-    def _run_out_eval_statement(self, obj):
-        """
-        Run out_eval_string command on target object
-        :: INPUT ::
-        :param obj: [object] candidate object
-        
-        :: OUTPUT ::
-        :return out: [std_out] standard output of eval('obj.out_eval_string')
-        """
-        if self.out_eval_string is None:
-            out = obj
-        else:
-            out = eval(f"{obj}{self.out_eval_string}")
-        return out
 
     def pulse(self, x):
         """
@@ -769,72 +728,58 @@ class ProcWyrm(Wyrm):
         :: OUTPUT ::
         :return y: [deque] alias to self.queue
         """
-        nproc = 0
+
         if not isinstance(x, wcd.deque):
             raise TypeError(f'input "{x}" is not a deque')
-        elif len(x) == 0:
-            print("Empty input deque. Ending iterations.")
-            y = self.queue
-        else:
-            x_queue_length = len(x)
-        # If nonempty deque present, iterate
+        # Get initial length of input deque
+        xlen = len(x)
+        # Iterate across deque contents (includes empty deque)
         for _i in range(self.max_pulse_size):
-            # Handle iteration break if deque is now empty
+            # If deque has 0-length, early stop
             if len(x) == 0:
-                if self.debug:
-                    print(f"Input deque emptied after {_i} iterations.")
-                    print("Ending iterations.")
                 break
-            elif _i > x_queue_length:
-                if self.debug:
-                    omsg = 'All input deque entries have been assessed.'
-                    omsg += f'\nx_queue status: {len(x)}:{x_queue_length}'
-                    print(omsg)
+            # If iteration counter reaches initial deque length, stop early
+            elif _i + 1 > xlen:
                 break
-            # Otherwise keep plucking
+            # Otherwise
             else:
-                # Pop off object from head of deque
-                obj = x.pop()
-                # If object is non-compatable, replace at end of deque
-                if not self._check_obj_compat(obj):
-                    x.appendleft(obj)
-                # Otherwise, process
+                # Pop off right-most element
+                _x = x.popleft()
+                # Check if it matches class_type
+                if isinstance(_x, self.class_type):
+                    # If it matches, run class_methods
+                    _y = self._run_class_method_list(_x)
+                    # Append processed item to this wyrm's deque
+                    self.queue.append(_y)
+                    # del _x # TODO: Double check if these pop/append
+                # If the class does not match, appendleft the popped element back onto the input
                 else:
-                    # Run self_eval statements on object with catch in case of Error
-                    try:
-                        self._run_self_eval_statements(obj)
-                    except:
-                        breakpoint() # Placeholer for dev
-                        # raise ValueError.__traceback__ # Is this syntax right? - want to 
+                    x.append(_x)
 
-                    # Run output_eval statement
-                    _yi = self._run_out_eval_statement(obj)
-                    # Append output to this Wyrm's queue
-                    self.queue.appendleft(_yi)
-                    nproc += 1
+        # Provide an alias of this wyrm's queue
         y = self.queue
         return y
 
 
 
 ###################################################################################
-# PREDICTION WYRM CLASS DEFINITION ################################################
+# WaveformModel WYRM CLASS DEFINITION #############################################
 ###################################################################################
     
-class PredictionWyrm(Wyrm):
+class WaveformModelWyrm(Wyrm):
 
     def __init__(
             self,
             model,
             weight_names,
             devicetype='cpu',
-            max_samples=12000,
-            stack_method='max',
+            max_samples=15000,
+            stacking_method='max',
             max_pulse_size=1000,
             debug=False
     ):
         """
-        Initialize a MachineWyrm object
+        Initialize a WaveformModelWyrm object
 
         :: INPUS ::
         :param model: [seisbench.models.WaveformModel] model architecture defining
@@ -847,13 +792,13 @@ class PredictionWyrm(Wyrm):
         :param max_samples: [int] maximum number of samples for each PredictionBuffer
                         at the terminations of this MachineWyrm's buffer attribute
                         see wyrm.core.buffer.prediction.PredictionBuffer(max_samples)
-        :param stack_method: [str] stacking method to pass to terminating PredictionBuffer
+        :param stacking_method: [str] stacking method to pass to terminating PredictionBuffer
                         objects. See wyrm.core.buffer.prediction.PredictionBuffer(stacking_method)
         :param max_pulse_size: [int] used as a maximum batch size here for windowed data 
                         accumulation prior to prediction.
         :param debug: [bool] run in debug mode?
         """
-        super().__init(max_pulse_size=max_pulse_size, debug=debug)
+        super().__init__(max_pulse_size=max_pulse_size, debug=debug)
 
         # model compatability checks
         if not isinstance(model, sbm.WaveformModel):
@@ -904,25 +849,22 @@ class PredictionWyrm(Wyrm):
             inclusive=False
         )
 
-        # stack_method compatability checks
-        if not isinstance(stack_method, str):
-            raise TypeError('stack_method must be type str')
-        elif stack_method.lower() in ['max','maximum']:
-            self.stack_method='max'
-        elif stack_method.lower() in ['avg','mean']:
-            self.stack_method='avg'
+        # stacking_method compatability checks
+        if not isinstance(stacking_method, str):
+            raise TypeError('stacking_method must be type str')
+        elif stacking_method.lower() in ['max','maximum']:
+            self.stacking_method='max'
+        elif stacking_method.lower() in ['avg','mean','average']:
+            self.stacking_method='avg'
         else:
-            raise ValueError(f'stack_method {stack_method} not supported. Must be "max", "avg" or select aliases')
+            raise ValueError(f'stacking_method {stacking_method} not supported. Must be "max", "avg" or select aliases')
         # Initialize TieredBuffer terminating in PredBuff objects
         self.buffer = wcd.BufferTree(
             buff_class=wcd.PredictionBuffer,
-            model=self.model,
-            weight_names=self.weight_names,
             max_samples=self.max_samples,
-            stack_method=self.stack_method
+            stacking_method=self.stacking_method
             )
     
-
     def pulse(self, x, **options):
         """
         Conduct a pulsed data accumulation from an input deque of PredictionWindow objects
@@ -932,13 +874,14 @@ class PredictionWyrm(Wyrm):
         :: INPUTS ::
         :param x: [deque] of [wyrm.core.window.predicition.PredictionWindow] objects
         :param options: [kwargs] key word arguments to pass to self.buffer.append()
-                        see wyrm.core.buffer.prediction.PredictionBuffer.append()
+                        see wyrm.core.data.PredictionBuffer.append()
                             -> include_blinding=False (default)
         :: OUTPUT ::
-        :retury y: [wyrm.core.buffer.structure.TieredBuffer] terminating in 
-                    [wyrm.core.buffer.prediction.PredicitonBuffer] objects with
-                    tier keys set as TK0 = id, TK1 = weight_name.
-                        Alias to access this MachineWyrm's self.buffer attribute
+        :retury y: [wyrm.core.data.BufferTree] budding in [wyrm.core.data.PredicitonBuffer] objects
+                    with tier keys:
+                        0: Site code(e.g,. 'UW.GNW.--')
+                        1: Band / Instrument code (e.g., 'BH')
+                        2: Model Weight (e.g., 'pnw')
         """
         if not isinstance(x, wcd.deque):
             raise TypeError('input x must be type deque')
@@ -947,20 +890,23 @@ class PredictionWyrm(Wyrm):
         batch_data = []
         batch_meta = []
         for _i in range(self.max_pulse_size):
-            _x = x.pop()
-            if not isinstance(_x, wcd.PredictionWindow):
-                x.appendleft(_x)
-            else:
-                _tensor, _meta = _x.split_for_ml()
-                batch_data.append(_tensor)
-                batch_meta.append(_meta)
-                # Clean up iterated copies
-                del _tensor, _meta, _x
             # Early stopping clauses
             # if the input queue is empty or every queue element has been assessed
-            if len(x) == 0 | _i + 1 == qlen:
+            if len(x) == 0:
                 break
-    
+            elif _i == qlen:
+                break
+            else:
+                _x = x.pop()
+                if not isinstance(_x, wcd.PredictionWindow):
+                    x.appendleft(_x)
+                else:
+                    _tensor, _meta = _x.split_for_ml()
+                    batch_data.append(_tensor)
+                    batch_meta.append(_meta)
+                    # # Clean up iterated copies
+                    del _tensor, _meta, _x
+
         batch_data = torch.concat(batch_data)
 
         for wname in self.weight_names:
@@ -969,19 +915,20 @@ class PredictionWyrm(Wyrm):
             # Run Prediction
             batch_pred = self.run_prediction(batch_data)
             # Convert to numpy
-            batch_pred_npy = self.pred2npy(batch_pred, batch_data)
+            batch_pred_npy = self.preds_torch2npy(len(batch_meta), batch_pred)
             del batch_pred, batch_data
 
             # Split into individual windows and reconstitute PredictionWindows
             for _i, meta in enumerate(batch_meta):
-                tk0 = meta['inst_code']
+                tk0 = '.'.join(meta['id'].split('.')[:3])
+                tk1 = meta['id'].split('.')[-1][:-1]
+                tk2 = wname
                 meta.update({'labels': self.model.labels})
-                tk1 = wname
                 # Reconstitute PredictionWindows
                 pwind = wcd.PredictionWindow(data=batch_pred_npy[_i,:,:], **meta)
-                self.buffer.append(pwind.copy(), TK0=tk0, TK1=tk1, **options)
+                self.buffer.append(pwind.copy(), TK0=tk0, TK1=tk1, TK2=tk2, **options)
                 # Cleanup
-                del pwind, meta, tk0, tk1
+                del pwind, meta, tk0, tk1, tk2
             # Cleanup
             del batch_pred_npy
         
@@ -1034,7 +981,7 @@ class PredictionWyrm(Wyrm):
         :return preds_npy: [numpy.ndarray] (nwind, nlabel, nvalues) array
                     containing predicted values from preds
         """
-        out_shape = (nwind, len(self.model.labels), self.in_samples)
+        out_shape = (nwind, len(self.model.labels), self.model.in_samples)
         # If output is a list-like of torch.Tensors (e.g., EQTransformer raw output)
         if isinstance(preds, (tuple, list)):
             if all(isinstance(_t, torch.Tensor) for _t in preds):

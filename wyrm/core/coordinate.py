@@ -30,6 +30,10 @@
                 that facilitates communication between the Earthworm Message Transport
                 System and Python
 
+        ProcWyrm - submodule for coordinating chained class method execution on deques
+                of initialized objects. Uses eval() functions to form eval statements
+                of the form f'obj{_method_str}' where _method_str has the minimum
+                form '.method(args)'.
 
 TODO:
     - Update HeartWyrm with wcc
@@ -113,9 +117,9 @@ class TubeWyrm(Wyrm):
         for _w in self.wyrm_dict.values():
             _w.debug = self.debug
         
-        # Get input and output types from wyrm_dict
-        self._in_type = self.wyrm_dict[self.names[0]]._in_type
-        self._out_type = self.wyrm_dict[self.names[0]]._out_type
+        # # Get input and output types from wyrm_dict
+        # self._in_type = self.wyrm_dict[self.names[0]]._in_type
+        # self._out_type = self.wyrm_dict[self.names[0]]._out_type
 
     def update(self, new_dict):
         """
@@ -241,10 +245,10 @@ class TubeWyrm(Wyrm):
         :: OUTPUT ::
         :param y: Output `y` from the last Wyrm object in wyrm_dict
         """
-        for _i, _wyrm in enumerate(self.wyrm_list):
+        for _i, _wyrm in enumerate(self.wyrm_dict.values()):
             x = _wyrm.pulse(x)
             # if not last step, wait specified wait_sec
-            if _i + 1 < len(self.wyrm_list):
+            if _i + 1 < len(self.wyrm_dict):
                 sleep(self.wait_sec)
         y = x
         return y
@@ -264,90 +268,48 @@ class CanWyrm(TubeWyrm):
     def __init__(self,
                  wyrm_dict={},
                  wait_sec=0.,
-                 method='append',
                  max_pulse_size=1,
                  debug=False):
         """
         
         """
+        # Handle some basic indexing/formatting
+        if not isinstance(wyrm_dict, dict):
+            if isinstance(wyrm_dict, (list, tuple)):
+                wyrm_dict = dict(zip(range(len(wyrm_dict)), wyrm_dict))
+            elif isinstance(wyrm_dict, Wyrm):
+                wyrm_dict = {0: wyrm_dict}
+            else:
+                raise TypeError('wyrm_dict must be type dict, list, tuple, or Wyrm')
+        
         # Initialize from Wyrm inheritance
         super().__init__(wyrm_dict=wyrm_dict, wait_sec=wait_sec, debug=debug, max_pulse_size=max_pulse_size)
 
-        
-
-        # method compat. checks
-        for _v in self.wyrm_dict.values():
-            if 
+        self.dict = {_k: None for _k in self.names}
 
 
-        self.names = list(self.wyrm_dict.keys())
-        self.buffer = {_k: None for _k in self.names}
-
-
-    def __str__(self, view='all', **options):
-        rstr = super().__repr__()
-        rstr += f'\nWyrms in sequence: {len(self.names)}'
-        if view in ['all', 'buffer']:
-            rstr += '\n--- BUFFER ---'
-            for _i, _n in enumerate(self.names):
-                rstr += f'\n<{_i}>==v^v====v^v----*\n{self.buffer[_n].__str__(**options)}'
-            rstr += '\n... BUFFER ...'
-        elif view in ['all', 'wyrms']:
-            rstr += '\n--- WYRMS ---'
-            for _i, _n in enumerate(self.names):
-                rstr += f'\n<{_i}>==v^v====v^v----*\n{self.wyrm_dict[_n].__str__()}'
-            rstr += '\n... WYRMS ...'
-        return rstr
-    
-    def __repr__(self):
-        rstr = 'wyrm.wyrms.coordinate.CanWyrm('
-        rstr += f'wyrm_dict={self.wyrm_dict}, '
-        rstr += f'wait_sec={self.wait_sec}, '
-        rstr += f'max_pulse_size={self.max_pulse_size}, '
-        rstr += f'debug={self.debug})'
-        return rstr
-
-    def pulse(self, x):
-        
-        for _ in range(self.max_pulse_size):
-            for _n in self.names:
-                y = self.wyrm_dict[_n].pulse(x)
-                # If empty buffer element
-                if self.buffer[_n] is None:
-                    # Use dict.update class method to create initial population
-                    self.buffer.update({_n: y})
-                # Otherwise
-                else:
-                    # Use the append class method
-                    eval_str = f'self.buffer[_n].{self.method}(y)'
-                    eval(eval_str)
-        y = self.buffer
-        return y
-
-
-    def pulse(self, x):
+    def pulse(self, x, **options):
         """
-        Iterate across wyrms in wyrm_queue that all feed
-        from the same input variable x and gather each
-        iteration's output y in a deque assembled with an
-        appendleft() at the end of each iteration
+        Triggers the wyrm.pulse(x) method for each wyrm in wyrm_dict, sharing
+        the same inputs, and writing outputs to self.dict[wyrmname] via the __iadd__
+        method. I.e.,
 
-        :: INPUT ::
-        :param x: [variable] Single variable that every
-                    Wyrm (or the head-wyrm in a tubewyrm)
-                    in the wyrm_queue can accept as a
-                    pulse(x) input.
+            self.dict[wyrmname] += wyrm.pulse(x, **options)
+
+        :: INPUTS ::
+        :param x: [object] common input for all wyrms in wyrm_dict
+        :param options: [kwargs] key word arguments passed to each wyrm's
+                    wyrm.pulse(x, **options) method
 
         :: OUTPUT ::
-        :return y: [deque] or [self.output_method]
-                    Serially assembled outputs of each Wyrm
-                    (or the tail-wyrm in a tubewyrm)
+        :return y: [dict] access to self.dict
         """
-        y = self.output_type()
-        for _wyrm in self.wyrm_queue:
-            _y = _wyrm.pulse(x)
-            eval(f'y.{self.concat_method}(_y)')
-            sleep(self.wait_sec)
+        for _k, _v in self.wyrm_dict.items():
+            _y = _v.pulse(x, **options)
+            # If this wyrm output has not been mapped to self.dict
+            if self.dict[_k] is None:
+                self.dict.update({_k: _y})
+        y = self.dict
         return y
 
 class HeartWyrm(TubeWyrm):
@@ -369,7 +331,7 @@ class HeartWyrm(TubeWyrm):
         MOD_ID,
         INST_ID,
         HB_PERIOD,
-        wyrm_list=[],
+        wyrm_list={},
         debug=False
     ):
         """
@@ -596,3 +558,5 @@ class HeartWyrm(TubeWyrm):
         # Polite shut-down of module
         self.module.goodbye()
         print("Exiting HeartWyrm Instance")
+
+

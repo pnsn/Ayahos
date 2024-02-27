@@ -46,7 +46,7 @@ for _wn in weight_names:
 ####################
 print('INITIALIZING WYRMS')
 DEBUG = False
-
+live = True
 # windowwyrm - window_ð - wind_d
 wind_d = pro.WindowWyrm(
     code_map={'Z': 'Z3', 'N': 'N1', 'E': 'E2'},
@@ -57,7 +57,7 @@ wind_d = pro.WindowWyrm(
     target_overlap=t_over,
     target_blinding=t_blind,
     target_order=model.component_order,
-    max_pulse_size=1,
+    max_pulse_size=5,
     debug = DEBUG
 )
 print('Window_ð')
@@ -125,15 +125,21 @@ print('loading example data from M4.3 near Port Townsend, WA')
 st = read('../../example/uw61965081/bulk.mseed')
 # Initialize BufferTree
 tree = BufferTree(buff_class=TraceBuffer, max_length=180)
-# Append stream to buffer tree
+# Append a chunk of stream to buffer tree
 tree.append_stream(st[:60])
 
-x = wind_d.pulse(tree)
-y = proc_d.pulse(x)
-z = wfm_d.pulse(y)
-# # RUN PULSE
-# y = pulse_tubewyrm(tree)
-
-# # Show status after
-# print(wfml_d.__repr__())
-
+# DISSECTED TUBEWYRM VERSION
+if not live:
+    print('starting dissected version')
+    x = wind_d.pulse(tree)
+    print('windoing done')
+    y = proc_d.pulse(x.copy())
+    print('processing done')
+    z = wfm_d.pulse(y.copy())
+    print('prediciton done')
+    print('DISSECTED VERSION COMPLETE')
+else:
+    print('STARTING LIVE TUBEWYRM VERSION')
+    # LIVING TUBEWYRM VERSION
+    tube_out = pulse_tubewyrm(tree)
+    print("LIVE VERSION COMPLETE")

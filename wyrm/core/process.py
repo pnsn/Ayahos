@@ -341,7 +341,10 @@ class WindowWyrm(Wyrm):
                     # If this produces a window, append to queu and increment nnew, and continue iterating
                     if iwind:
                         self.queue.append(iwind)
+                        # Increment number of new windows produced
                         nnew += 1
+                        # Increment window index in window_tracker
+                        self.window_tracker[k0][k1] += self.advance_sec
                     # If a window was not produced, continue iterating across branches
                     else:
                         continue

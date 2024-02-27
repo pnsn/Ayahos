@@ -1918,7 +1918,7 @@ class PredictionBuffer(object):
             self.labels = pwind.labels
             self.blinding = pwind.blinding
             # Populate stack
-            self.stack = np.zeros(shape=(pwind._nl, self.max_samples), dtype=np.float32)
+            self.stack = np.zeros(shape=(len(pwind.labels), self.max_samples), dtype=np.float32)
             status = True
         return status
 

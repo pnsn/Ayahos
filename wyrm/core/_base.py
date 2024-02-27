@@ -12,6 +12,7 @@
 """
 import wyrm.util.compatability as wcc
 from copy import deepcopy
+from time import time
 
 class Wyrm(object):
     """
@@ -122,6 +123,14 @@ class Wyrm(object):
         Return a deepcopy of this wyrm
         """
         return deepcopy(self)
+
+    def timecheck(self, fmt=float):
+        if not isinstance(fmt, type):
+            raise TypeError('fmt must be type "type"')
+        try:
+            return fmt(time())
+        except TypeError:
+            raise TypeError(f'fmt {fmt} must be compatable with a single float argument input')
 
     def pulse(self, x=None, **options):
         """

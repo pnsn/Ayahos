@@ -46,7 +46,6 @@ import wyrm.core.data as wcd
 from obspy import UTCDateTime
 from wyrm.core._base import Wyrm
 
-
 ###################################################################################
 # WINDOW WYRM CLASS DEFINITION ####################################################
 ###################################################################################
@@ -911,8 +910,11 @@ class WaveformModelWyrm(Wyrm):
                     del _tensor, _meta, _x
 
         batch_data = torch.concat(batch_data)
-
+        if self.debug:
+            print(f'({self.timecheck(fmt=UTCDateTime)} - WFM-ð Processing {len(batch_meta)} windows')
         for wname in self.weight_names:
+            if self.debug:
+                print(f'({self.timecheck(fmt=UTCDateTime)}) - Weight {wname}')
             # Load model weights
             self.model = self.model.from_pretrained(wname)
             # Run Prediction

@@ -1803,12 +1803,12 @@ class TraceBuffer(Trace):
             # Start Trace-inherited __str__ 
             rstr = f"{super().__str__()}"
             # Add buffer, mask, and max length metrics in pretty formatting
-            rstr += f" | buffer {100.*(self.filled_fraction):.0f}%"
-            rstr += f" | masked {100.*(1. - self.valid_fraction):.0f}%"
-            rstr += f" | max {self.max_length} sec"
+            rstr += f" | buffer {100.*(self.filled_fraction):.1f}%"
+            rstr += f" | masked {100.*(1. - self.valid_fraction):.1f}%"
+            rstr += f" | max {self.max_length:.1f} sec"
         # If compact representation (used with BufferTree)
         else:
-            rstr = f"B:{self.filled_fraction: .1f}|M:{(1. - self.valid_fraction):.1f}"
+            rstr = f"B:{self.filled_fraction:.1f}|M:{(1. - self.valid_fraction):.1f}"
         return rstr
 
     def __str__(self):
@@ -2067,9 +2067,9 @@ class PredictionBuffer(object):
                                      'i1_s': di})
 
             # If the end of pred would be after the end of the current buffer timing
-            elif i1_init > self.buff_samples:
+            elif i1_init > self.max_samples:
                 # Instruct shift to place the end of pred at the end of the buffer
-                indices.update({'npts_right': self.buff_samples - i1_init,
+                indices.update({'npts_right': self.max_samples - i1_init,
                                      'i0_s': -di,
                                      'i1_s': None})
             # If pred entirely fits into the current bounds of buffer timing
@@ -2373,7 +2373,52 @@ class PredictionBuffer(object):
         self.from_stream(st, model_name=model, weight_name=weight, tol=tol)
         
         return self
+
+    def __repr__(self, compact=False):
+        """
+        Return a short summary string of the current PredictionBuffer
+        status with options for one-line compact representation in
+        BufferTree.__repr__()
+        
+        :: INPUT ::
+        :param compact: [bool] should the PredictionBuffer be
+        """
+        # If running as compact - show fraction of data fold
+        if compact:
+            try: 
+                # Get Condensed Fold Brackets
+                ffold0 = sum(self.fold == 0)/self.max_samples
+                ffold1 = sum(self.fold == 1)/self.max_samples
+                rstr = f'PBfold|0: {ffold0:.2f}|1: {ffold1:.2f}|'
+                # Get greater than 1 fold fraction if max fold exceeds 1
+                if self.fold.max() > 1:
+                    ffoldn = 1 - ffold0 - ffold1
+                    rstr += f'2+: {ffoldn:.2f}|'
+            except AttributeError:
+                rstr = f'PB | init | Max: {self.max_samples} | Stack: {self.stacking_method}'
+        else:
+            try:
+                rstr = f'PredictionBuffer | Model: {self.model_name} | Weight: {self.weight_name} | Stacking: {self.stacking_method}\n'
+                rstr += f'{self.id:16} | {UTCDateTime(self.t0)} - {UTCDateTime(self.t0 + self.max_samples/self.samprate)}\n'
+                rstr += f'Labels: {", ".join(self.labels)} | Window: {self.npts} | Buffer: {self.max_samples} | S/R: {self.samprate} Hz\n'
+                rstr += 'Stack Fold'
+                for _f in range(int(self.fold.max())+1):
+                    pfold = 100*sum(self.fold == _f)/self.max_samples
+                    rstr += f' -> {int(_f)}: {pfold:.2f}%'
+                rstr += f' | dtype: {self.stack.dtype}'
+            except AttributeError:
+                rstr = f'Prediction Buffer | initialized | Buffer: {self.max_samples} | Stacking: {self.stacking_method}'
+        return rstr
     
+    def __str__(self):
+        rstr = f'wyrm.core.data.PredictionBuffer(max_samples={self.max_samples}, stacking_method="{self.stacking_method}")'
+        try:
+            xstr = f'.append(<PredictionWindow({self.id}, {self.model_name}, {self.weight_name})>)'
+        except AttributeError:
+            xstr = ''
+        rstr += xstr
+        return rstr
+
 
 ###################################################################################
 # BUFFER TREE CLASS DEFINITION ####################################################
@@ -2754,9 +2799,9 @@ class BufferTree(dict):
             raise AttributeError('Can only use this method when buff_class is wyrm.data.PredictionBuffer')
         if not isinstance(pwind, PredictionWindow):
             raise TypeError('pwind must be type wyrm.data.PredictionWindow')
-        n,s,l,c = pwind.id.split('.')
+        n,s,l,inst = pwind.id.split('.')
         tk0 = '.'.join([n,s,l])
-        tk1 = c[:-1]
+        tk1 = inst
         tk2 = pwind.weight_name
         self.append(pwind, TK0=tk0, TK1=tk1, TK2=tk2)
         return self

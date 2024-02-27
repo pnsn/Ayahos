@@ -27,13 +27,14 @@
                                  \InstN-{Z: TraceBuffer, 1: TraceBuffer, 2: Tracebuffer}|
                                 ^^ TieredBuffer ^^
 """
+import os
 import re
 import wyrm.util.compatability as wcc
 #import PyEW
-from obspy import Trace
+from obspy import Stream, read
 from wyrm.core._base import Wyrm
 from wyrm.util.pyew_translate import is_wave_msg, wave2trace, trace2wave
-from wyrm.core.buffer import TieredBuffer, TraceBuffer
+from wyrm.core.data import BufferTree, TraceBuffer
 
 
 class RingWyrm(Wyrm):
@@ -89,8 +90,8 @@ class RingWyrm(Wyrm):
         # In the case of get/put_wave, default to msg_type=19 (tracebuff2)
         else:
             self.msg_type=19
-        # Update _in_types and _out_types private attributes for this Wyrm's pulse method
-        self._update_io_types(itype=(Trace, str, bytes), otype=(dict, bool, type(None)))
+        # # Update _in_types and _out_types private attributes for this Wyrm's pulse method
+        # self._update_io_types(itype=(Trace, str, bytes), otype=(dict, bool, type(None)))
 
     def pulse(self, x):
         """
@@ -215,13 +216,13 @@ class EarWyrm(RingWyrm):
             debug=debug
             )
         # Let TieredBuffer handle the compatability check for max_length
-        self.buffer = TieredBuffer(
+        self.tree = BufferTree(
             buff_class=TraceBuffer,
             max_length=max_length,
             **options
             )
         self.options = options
-        self._update_io_types(itype=(str, type(None)), otype=TieredBuffer)
+        # self._update_io_types(itype=(str, type(None)), otype=BufferTree)
 
     def pulse(self, x=None):
         """
@@ -265,9 +266,6 @@ class EarWyrm(RingWyrm):
                                    'E': TraceBuff()}}
 
         """
-        # Run type-check on x inherited from Wyrm
-        self._matches_itype(x, raise_error=True)
-
         # Start iterations that pull single wave object
         for _ in range(self.max_pulse_size):
             # Run the pulse method from RingWyrm for single wave pull
@@ -284,16 +282,16 @@ class EarWyrm(RingWyrm):
                 if x == '*' or x is None:
                     key0 = trace.id[:-1]
                     key1 = trace.id[-1]
-                    self.buffer.append(trace, key0, key1)
+                    self.tree.append(trace, key0, key1)
                 # otherwise use true-ness of re.search result to filter
                 elif re.search(x, trace.id):
                     # Use N.S.L.BandInst for key0
                     key0 = trace.id[:-1]
                     # Use Component Character for key1
                     key1 = trace.id[-1]
-                    self.buffer.append(trace, key0, key1)
-        # Present buffer object as output for sequencing
-        y = self.buffer
+                    self.tree.append(trace, key0, key1)
+        # Present tree object as output for sequencing
+        y = self.tree
         return y
         
     def __str__(self, extended=False):
@@ -308,7 +306,7 @@ class EarWyrm(RingWyrm):
         # Populate information from RingWyrm.__str__
         rstr = super().__str__()
         # Add __str__ from TieredBuffer
-        rstr += f'\n{self.buffer.__str(extended=extended)}'
+        rstr += f'\n{self.tree.__str(extended=extended)}'
         return rstr
 
     def __repr__(self):
@@ -316,9 +314,97 @@ class EarWyrm(RingWyrm):
         Return descriptive string of how this EarWyrm was initialized
         """
         rstr = f'wyrm.wyrms.io.EarWyrm(module={self.module}, '
-        rstr += f'conn_id={self.conn_id}, max_length={self.buffer._template_buff.max_length}, '
+        rstr += f'conn_id={self.conn_id}, max_length={self.tree._template_buff.max_length}, '
         rstr += f'max_pulse_size={self.max_pulse_size}, debug={self.debug}'
         for _k, _v in self.options.items():
             rstr += f', {_k}={_v}'
         rstr += ')'
         return rstr
+
+
+class DiskWyrm(Wyrm):
+
+    def __init__(self, event_files, max_length=300, max_pulse_size=1, debug=False):
+
+        super().__init__(max_pulse_size=max_pulse_size, debug=debug)
+        
+        # Compose file_collections from input
+        self.file_collections = {}
+        if isinstance(event_files, str):
+            self.file_collections.update({'tmp': [event_files]})
+        elif isinstance(event_files, (list, tuple)):
+            if all(isinstance(_e, str) for _e in event_files):
+                self.file_collections = dict(zip(range(len(event_files)), event_files))
+            else:
+                raise TypeError('all elements of event_files in a list-like must be type str')
+        elif isinstance(event_files, dict):
+            for _k, _v in event_files.items():
+                if isinstance(_v, (list, tuple)):
+                    if not all(isinstance(_e, str) for _e in _v):
+                        raise TypeError(f'all elements of event_files[{_k}] must be type str')
+                    else:
+                        self.file_collections.update({_k: list(_v)})
+                elif isinstance(_v, str):
+                    self.file_collections.update({_k: [_v]})     
+        else:
+            raise TypeError(f'event_files type {type(event_files)} not supported')
+        
+        self.max_length = wcc.bounded_intlike(
+            max_length,
+            name='max_length',
+            minimum=0,
+            maximum=None,
+            inclusive=False
+        )
+
+        self.tree = BufferTree(buff_class=TraceBuffer, max_length=self.max_length)
+        self.used_file_collections = {}
+
+    def pulse(self, x=True, **options):
+        """
+        Conduct a pulse that loads max_pulse_size keyed file lists from self.file_collections
+        and append those data to a BufferTree with TraceBuffer buds. Input x is a bool
+        switch that indicates whether the BufferTree (self.tree) should be re-initialized
+        (i.e., delete all data) at the start of this pulse
+        
+        :: INPUTS ::
+        :param x: [bool] - should self.tree be re-initialized?
+                    True = DELETE ALL BUFFERED DATA
+                    False = Preserve all buffered data and attempt appending the next
+                            set of load files to matching station ID's
+                            NOTE: This comes with it's own
+
+        """
+        # Check if BufferTree should be re-initialized
+        if x:
+            self.tree = BufferTree(buff_class=TraceBuffer, max_length=self.max_length)
+
+        # Get initial length of file_collections
+        fclen = len(self.file_collections)
+        # Pose max_pulse_size as a for-loop, in the event multiple loads are specified
+        for _i in range(self.max_pulse_size):
+            # Early stopping clause
+            if fclen == 0:
+                break
+            # Early stopping clause
+            elif _i + 1 > fclen:
+                break
+            # Core process
+            else:
+                # form stream
+                st = Stream()
+                _k, _v = self.file_collections.popitem()
+                for _f in _v:
+                    st += read(_f)
+                # Append stream to tree
+                self.tree.append_stream(st, **options)
+                # Shift file list to used 
+                self.used_file_collections.update({_k: _v})
+        
+        y = self.tree
+
+        return y
+        
+
+
+        

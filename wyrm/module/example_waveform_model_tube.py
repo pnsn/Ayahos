@@ -1,29 +1,55 @@
-import os
-import sys
+import os, sys, logging
+import seisbench.models as sbm
+
 sys.path.append(os.path.join('..','..'))
 import wyrm.core.coordinate as coo
 import wyrm.core.process as pro
 from wyrm.core.data import InstrumentWindow, BufferTree, TraceBuffer
-import seisbench.models as sbm
 
-print('INITIALIZING SEISBENCH WAVEFORMMODEL')
-print('Initialiing SeisBench WaveformModel')
+
+## MORE OR LESS DIRECTLY FROM THE PYTHON 3.12 LOGGING COOKBOOK ##
+# Initialize Logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+# Create file handler for detailed debugging information
+fh = logging.FileHandler('waveform_model_tube.log')
+# Create console handler for error and higher priority messages
+ch = logging.StreamHandler()
+ch.setLevel(logging.ERROR)
+# Create formatter and add to handlers
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+ch.setFormatter(formatter)
+# add handlers to logger
+logger.addHandler(fh)
+logger.addHandler(ch)
+
+
 # Initailize model
 model = sbm.EQTransformer()
+logger.info(f'created sbm.{model.name} object')
 # List desired weights
 weight_names = ['pnw','instance','stead','ethz','geofon','iquique','scedc','neic']
 # weight_names = model.list_pretrained()
 # Ensure all models are loaded
+passed_wn = []
 for _wn in weight_names:
-    print(f'Loading {_wn}')
-    model.from_pretrained(_wn)
+    logger.debug(f'attempting to load model weight {_wn}')
+    try:
+        model.from_pretrained(_wn)
+        passed_wn.append(_wn)
+        logger.debug('successful weight load')
+    except ValueError:
+        logger.warning(f'model weight {_wn} not available')
 
 # Do a little updating to define windowing
 t_sr = 100.     # target samplign rate [sps]
 t_over = 1000   # target overap [samples]
 t_blind = 500   # target blinding (symmetrical) [samples]
+
 if t_over < t_blind *2:
-    raise ValueError('selected target overlap and blinding will result in gaps - invalid')
+    logger.warning('selected target overlap and blinding will result in gaps')
+    # raise ValueError('selected target overlap and blinding will result in gaps - invalid')
 
 nblind = model._annotate_args['blinding'][1]
 if nblind != (t_blind, t_blind):
@@ -35,20 +61,12 @@ if model._annotate_args['overlap'][1] != t_over:
 if model.sampling_rate != t_sr:
     model.samping_rate = t_sr
 
-print('CHECKING PRETRAINED MODEL WEIGHT VALIDITY')
-# Get pretrained model names for cross reference (the list_pretrained() method takes a bit of time)
-# pretrains = model.list_pretrained()
-# if not all(_wn in pretrains for _wn in weight_names):
-#     raise ValueError(f'Not all provided weight names {weight_names} are in the pretrained model weights for {model.name}: \n {pretrains}')
-
-# Load each model weight to ensure the relevant files are saved locally
-
-
 
 ####################
 # Initialize Wyrms #
 ####################
-print('INITIALIZING WYRMS')
+# print('INITIALIZING WYRMS')
+logging.info('initializing component wyrms')
 DEBUG = False
 live = True
 # windowwyrm - window_ð - wind_d
@@ -64,7 +82,7 @@ wind_d = pro.WindowWyrm(
     max_pulse_size=5,
     debug = DEBUG
 )
-print('Window_ð')
+logging.info(f'WindowWyrm initialized with debugging set as {wind_d.debug}')
 
 # procwyrm - proc_ð - wind_d
 proc_d = pro.ProcWyrm(
@@ -82,7 +100,9 @@ proc_d = pro.ProcWyrm(
     max_pulse_size=10000,
     debug=DEBUG
 )
-print('Processing_ð')
+
+logging.info(f'ProcWyrm initialized with debugging set as {proc_d.debug}')
+
 # wfpredictionwyrm - wfml_ð - wfml_d
 wfm_d = pro.WaveformModelWyrm(
     model=model,
@@ -91,9 +111,11 @@ wfm_d = pro.WaveformModelWyrm(
     max_samples=model.in_samples*3,
     stacking_method='avg',
     max_pulse_size=1000,
-    debug=True
+    debug=DEBUG
 )
-print('WaveformModel_ð')
+logging.info(f'ProcWyrm initialized with debugging set as {wfm_d.debug}')
+
+# print('WaveformModel_ð')
 # tubewyrm - tube_ð - tube_d
 tube_d = coo.TubeWyrm(
     {'window': wind_d,

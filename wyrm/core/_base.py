@@ -13,8 +13,11 @@
 import wyrm.util.compatability as wcc
 from copy import deepcopy
 from time import time
+import logging
 
-class Wyrm(object):
+logger = logging.getLogger(__name__)
+
+class Wyrm:
     """
     Fundamental Base Class for all *Wyrm classes in this module that are
     defined by having the y = *wyrm.pulse(x) class method.
@@ -37,6 +40,8 @@ class Wyrm(object):
         """
         Initialize a Wyrm object
         """
+        self.logger = logging.getLogger(__name__)
+        self.logger.info('creating an instance of Wyrm')
         # Compatability check for debug
         if not isinstance(debug, bool):
             raise TypeError("debug must be type bool")
@@ -48,9 +53,6 @@ class Wyrm(object):
             self.max_pulse_size = None
         else:
             self.max_pulse_size = wcc.bounded_intlike(max_pulse_size, name='max_pulse_size', minimum=1)
-        # # input and output type for pulse
-        # self._in_type = (int, str, float, bool, type(None), type)
-        # self._out_type = (int, str, float, bool, type(None), type)
 
     def __repr__(self):
         """
@@ -66,57 +68,6 @@ class Wyrm(object):
         """
         rstr = f'wyrm.wyrms.base.Wyrm(max_pulse_size={self.max_pulse_size}, debug={self.debug})'
         return rstr
-    
-    # def _update_io_types(self, itype=None, otype=None):
-    #     """
-    #     --- PRIVATE METHOD ---
-    #     Update the reference type(s) for the input and output of self.pulse()
-
-    #     :: INPUTS ::
-    #     :param itype: [type], [NoneType], or [tuple] thereof
-    #                     None input results in no change to _in_type
-    #     :param otype: [type], [NoneType], or [tuple] thereof
-    #                     None input results in no change to _out_type
-    #     :: OUTPUT ::
-    #     :return self: [Wyrm] return self to enable cascading
-    #     """
-    #     if itype is not None and isinstance(itype, type):
-    #         self._in_type = itype
-    #     elif isinstance(itype, tuple):
-    #         if all(isinstance(_it, (type, type(None))) for _it in itype):
-    #             self._in_type = itype
-    #     if otype is not None and isinstance(otype, type):
-    #         self._out_type = otype
-    #     elif isinstance(otype, tuple):
-    #         if all(isinstance(_it, (type, type(None))) for _it in otype):
-    #             self._out_type = otype
-    #     return self
-
-    # def _matches_itype(self, arg, raise_error=False):
-    #     if not isinstance(arg, self._in_type):
-    #         if raise_error:
-    #             emsg = f'arg type {type(arg)} does not match expected type(s): {self._in_type}'
-    #             raise TypeError(emsg)
-    #         else:
-    #             return False
-    #     else:
-    #         if raise_error:
-    #             pass
-    #         else:
-    #             return True
-    
-    # def _matches_otype(self, arg, raise_error=False):
-    #     if not isinstance(arg, self._out_type):
-    #         if raise_error:
-    #             emsg = f'arg type {type(arg)} does not match expected type(s): {self._out_type}'
-    #             raise TypeError(emsg)
-    #         else:
-    #             return False
-    #     else:
-    #         if raise_error:
-    #             pass
-    #         else:
-    #             return True
 
     def copy(self):
         """
@@ -132,7 +83,7 @@ class Wyrm(object):
         except TypeError:
             raise TypeError(f'fmt {fmt} must be compatable with a single float argument input')
 
-    def pulse(self, x=None, **options):
+    def pulse(self, x=None):
         """
         Run a pulse with input argument and return that argument
         with check that input x is the expected _in_type
@@ -143,7 +94,7 @@ class Wyrm(object):
         :: OUTPUT ::
         :return y: [type] or [NoneType] alias of input x
         """
-        self._matches_itype(x)
+        self.logger.debug('pulse initiated')
         y = x
-        self._matches_otype(y)
+        self.logger.debug('pulse concluded')
         return y

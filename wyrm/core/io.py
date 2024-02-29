@@ -33,7 +33,7 @@ import wyrm.util.compatability as wcc
 #import PyEW
 from obspy import Stream, read
 from wyrm.core._base import Wyrm
-from wyrm.util.pyew_translate import is_wave_msg, wave2trace, trace2wave
+from wyrm.util.pyew import is_wave_msg, wave2trace, trace2wave
 from wyrm.core.data import BufferTree, TraceBuffer
 
 
@@ -324,7 +324,7 @@ class EarWyrm(RingWyrm):
 
 class DiskWyrm(Wyrm):
 
-    def __init__(self, event_files, max_length=300, max_pulse_size=1, debug=False):
+    def __init__(self, event_files, max_length=300, reinit_period=1, max_pulse_size=1, debug=False):
 
         super().__init__(max_pulse_size=max_pulse_size, debug=debug)
         
@@ -360,7 +360,7 @@ class DiskWyrm(Wyrm):
         self.tree = BufferTree(buff_class=TraceBuffer, max_length=self.max_length)
         self.used_file_collections = {}
 
-    def pulse(self, x=True, **options):
+    def pulse(self, x=None, **options):
         """
         Conduct a pulse that loads max_pulse_size keyed file lists from self.file_collections
         and append those data to a BufferTree with TraceBuffer buds. Input x is a bool
@@ -375,8 +375,7 @@ class DiskWyrm(Wyrm):
                             NOTE: This comes with it's own
 
         """
-        # Check if BufferTree should be re-initialized
-        if x:
+        if len(self.used_file_collections) % self.reinit_period == 0:
             self.tree = BufferTree(buff_class=TraceBuffer, max_length=self.max_length)
 
         # Get initial length of file_collections

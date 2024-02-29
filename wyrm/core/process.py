@@ -1009,3 +1009,4 @@ class WaveformModelWyrm(Wyrm):
         else:
             preds_npy = preds.detach().numpy()
         return preds_npy
+    

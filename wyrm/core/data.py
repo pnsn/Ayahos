@@ -54,6 +54,7 @@ import fnmatch
 import inspect
 import torch
 import numpy as np
+import pandas as pd
 import seisbench.models as sbm
 import wyrm.util.compatability as wuc
 from wyrm.util.stacking import shift_trim
@@ -2805,3 +2806,6 @@ class BufferTree(dict):
         tk2 = pwind.weight_name
         self.append(pwind, TK0=tk0, TK1=tk1, TK2=tk2)
         return self
+    
+
+

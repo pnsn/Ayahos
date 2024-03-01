@@ -362,13 +362,36 @@ class DictStream(Stream):
         self._update_siteinst_index()
         # If one site only
         if self.nsite == 1:
+            pass
+        else:
+            raise ValueError('Fill rule can only be applied to a single station')
             # If one instrument only
-            if self.ninst == 1:
-                # If the reference component is present
-                if any(_tr.stats.component in comp_map[ref_comp] for _tr in self.list_traces()):
-                    
-                    cidx = self.get_trace_completeness()
-
+        if self.ninst == 1:
+            pass
+        else:
+            raise ValueError('Fill rule can only be applied to a single instrument')
+        
+        ref_code = None
+        for _l, _tr in self.items():
+            if _tr.stats.component in comp_map[ref_comp]:
+                ref_code = _l
+        if ref_code is not None:
+            pass
+        else:
+            raise ValueError('Fill rule can only be applied if the reference trace/component is present')
+        
+        cidx = self.get_trace_completeness()
+        if cidx[ref_code] >= ref_comp_thresh:
+            pass
+        else:
+            raise ValueError('Insufficient unmasked data to accept the reference trace')
+        
+        if all(_cv >= other_comp_thresh for _cv in cidx.values) and len(self.traces) == 3:
+            self.stats.processing.append('Wyrm 0.0.0: apply_fill_rule - 3-C data present')
+            return self
+        else:
+            if rule == 'zeros':
+                
 
 
 

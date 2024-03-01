@@ -7,6 +7,7 @@ from copy import deepcopy
 from obspy import Stream, UTCDateTime
 from obspy.core.trace import Trace, Stats
 from obspy.core.util.attribdict import AttribDict
+from tqdm import tqdm
 
 class DictStreamHeader(AttribDict):
     defaults = {
@@ -180,7 +181,10 @@ class DictStream(Stream):
         dst.stats.processing.append(f'Wyrm 0.0.0: fnselect(fnstr="{fnstr}")')
         return dst
     
-
+    def sort_labels(self, reverse=True):
+        self.traces = dict(sorted(self.items(), reverse=reverse))
+        return self
+    
     def values(self):
         return self.traces.values()
 
@@ -190,7 +194,6 @@ class DictStream(Stream):
         """
         return list(self.values())
 
-
     def labels(self):
         return self.traces.keys()
     
@@ -199,7 +202,13 @@ class DictStream(Stream):
         Return a list-formattted view of the labels (keys) in this MLStream.traces
         """
         return list(self.labels())
-    
+
+    def rerun_labeling(self):
+        for _l, _tr in self.items():
+            if _l != _tr.id:
+                _ = self.pop(_l)
+                self.traces.update({_tr.id: _tr})
+
     def items(self):
         return self.traces.items()
 
@@ -323,29 +332,67 @@ class DictStream(Stream):
         self.stats.processing.append(f'Wyrm 0.0.0: apply_trace_method("{method_name}",{args}, {kwargs})')
         return self
 
-
-    def split_by_site(self):
+    def split_by_site(self, **options):
         site_dict_streams = {}
-        for _site in self.siteinst_index.keys():
-            _dst = self.fnselect(_site+'.*')
-            site_dict_streams.update({_site:_dst})
+        for _tr in self.values():
+            site_code = f'{_tr.stats.network}.{_tr.stats.station}.{_tr.stats.location}'
+            if site_code not in site_dict_streams.keys():
+                site_dict_streams.update({site_code: DictStream(traces=_tr)})
+                site_dict_streams[site_code].stats.common_id=f'{site_code}.*'
+            else:
+                site_dict_streams[site_code].__add__(_tr, **options)
+        for _idst in site_dict_streams.values():
+            _idst._update_siteinst_index()
         return site_dict_streams
     
-    def split_by_instrument(self, heirarchical=False):
+    def split_by_instrument(self, heirarchical=False, **options):
         instrument_dict_streams = {}
-        for _site, _insts in self.siteinst_index.items():
-            for _inst in _insts:
-                instcode = f'{_site}.{_inst}'
-                _dst = self.fnselect(f'{_site}.{_inst}*')
-                if heirarchical:
-                    if _site not in instrument_dict_streams.keys():
-                        instrument_dict_streams.update({_site:{_inst: _dst}})
-                    elif _inst not in instrument_dict_streams[_site]:
-                        instrument_dict_streams[_site].update({_inst: _dst})
+        for _tr in self.values():
+            site_code = f'{_tr.stats.network}.{_tr.stats.station}.{_tr.stats.location}'
+            inst_str =_tr.stats.channel[:-1]
+            inst_code = f'{site_code}.{inst_str}'
+            if heirarchical:
+                if site_code not in instrument_dict_streams.keys():
+                    instrument_dict_streams.update({site_code:{inst_str: DictStream(traces=_tr)}})
+                    instrument_dict_streams[site_code][inst_str].stats.common_id = inst_code
+                elif inst_str not in instrument_dict_streams[site_code].keys():
+                    instrument_dict_streams[site_code].update({inst_str: DictStream(traces=_tr)})
+                    instrument_dict_streams[site_code][inst_str].stats.common_id = inst_code
                 else:
-                    if instcode not in instrument_dict_streams.keys():
-                        instrument_dict_streams.update({instcode: _dst})
+                    instrument_dict_streams[site_code][inst_str].__add__(_tr, **options)
+
+            else:
+                if inst_code not in instrument_dict_streams.keys():
+                    instrument_dict_streams.update({inst_code: DictStream(traces=_tr)})
+                    instrument_dict_streams[inst_code].stats.common_id = inst_code
+                else:
+                    instrument_dict_streams[inst_code].__add__(_tr, **options)
+        
+        
+        for _k0 in instrument_dict_streams.keys():
+            if heirarchical:
+                for _k1 in instrument_dict_streams[_k0].keys():
+                    instrument_dict_streams[_k0][_k1]._update_siteinst_index()
+            else:
+                instrument_dict_streams[_k0]._update_siteinst_index()
         return instrument_dict_streams
+
+
+
+
+        # for _site, _insts in self.siteinst_index.items():
+        #     for _inst in _insts:
+        #         instcode = f'{_site}.{_inst}'
+        #         _dst = self.fnselect(f'{_site}.{_inst}*')
+        #         if heirarchical:
+        #             if _site not in instrument_dict_streams.keys():
+        #                 instrument_dict_streams.update({_site:{_inst: _dst}})
+        #             elif _inst not in instrument_dict_streams[_site]:
+        #                 instrument_dict_streams[_site].update({_inst: _dst})
+        #         else:
+        #             if instcode not in instrument_dict_streams.keys():
+        #                 instrument_dict_streams.update({instcode: _dst})
+        # return instrument_dict_streams
 
     def get_trace_completeness(self, starttime=None, endtime=None, pad=True, **options):
         completeness_index = {}
@@ -358,39 +405,39 @@ class DictStream(Stream):
                 completeness_index.update({_l: completeness})
         return completeness_index
 
-    def apply_fill_rule(self, ref_comp='Z', rule='zeros', ref_comp_thresh=0.95, other_comp_thresh=0.95, comp_map={'Z': 'Z3','N': 'N1', 'E': 'E2'}):
-        self._update_siteinst_index()
-        # If one site only
-        if self.nsite == 1:
-            pass
-        else:
-            raise ValueError('Fill rule can only be applied to a single station')
-            # If one instrument only
-        if self.ninst == 1:
-            pass
-        else:
-            raise ValueError('Fill rule can only be applied to a single instrument')
+    # def apply_fill_rule(self, ref_comp='Z', rule='zeros', ref_comp_thresh=0.95, other_comp_thresh=0.95, comp_map={'Z': 'Z3','N': 'N1', 'E': 'E2'}):
+    #     self._update_siteinst_index()
+    #     # If one site only
+    #     if self.nsite == 1:
+    #         pass
+    #     else:
+    #         raise ValueError('Fill rule can only be applied to a single station')
+    #         # If one instrument only
+    #     if self.ninst == 1:
+    #         pass
+    #     else:
+    #         raise ValueError('Fill rule can only be applied to a single instrument')
         
-        ref_code = None
-        for _l, _tr in self.items():
-            if _tr.stats.component in comp_map[ref_comp]:
-                ref_code = _l
-        if ref_code is not None:
-            pass
-        else:
-            raise ValueError('Fill rule can only be applied if the reference trace/component is present')
+    #     ref_code = None
+    #     for _l, _tr in self.items():
+    #         if _tr.stats.component in comp_map[ref_comp]:
+    #             ref_code = _l
+    #     if ref_code is not None:
+    #         pass
+    #     else:
+    #         raise ValueError('Fill rule can only be applied if the reference trace/component is present')
         
-        cidx = self.get_trace_completeness()
-        if cidx[ref_code] >= ref_comp_thresh:
-            pass
-        else:
-            raise ValueError('Insufficient unmasked data to accept the reference trace')
+    #     cidx = self.get_trace_completeness()
+    #     if cidx[ref_code] >= ref_comp_thresh:
+    #         pass
+    #     else:
+    #         raise ValueError('Insufficient unmasked data to accept the reference trace')
         
-        if all(_cv >= other_comp_thresh for _cv in cidx.values) and len(self.traces) == 3:
-            self.stats.processing.append('Wyrm 0.0.0: apply_fill_rule - 3-C data present')
-            return self
-        else:
-            if rule == 'zeros':
+    #     if all(_cv >= other_comp_thresh for _cv in cidx.values) and len(self.traces) == 3:
+    #         self.stats.processing.append('Wyrm 0.0.0: apply_fill_rule - 3-C data present')
+    #         return self
+    #     else:
+    #         if rule == 'zeros':
                 
 
 

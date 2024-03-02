@@ -1,11 +1,11 @@
-import fnmatch, inspect
+import os, inspect
 import numpy as np
-import pandas as pd
 import wyrm.util.compatability as wuc
 from decorator import decorator
 from copy import deepcopy
-from obspy import Stream, UTCDateTime
+from obspy import Stream, UTCDateTime, read
 from obspy.core.trace import Trace, Stats
+
 
 
 class MLTraceStats(Stats):
@@ -21,7 +21,7 @@ class MLTraceStats(Stats):
         'calib': 1.0,
         'network': '',
         'station': '',
-        'location': '',
+        'location': '--',
         'channel': '',
         'model': '',
         'weight': ''
@@ -92,7 +92,12 @@ class MLTrace(Trace):
     and provides additional options for how overlapping MLTrace objects are merged
     to conduct stacking of prediction time-series on the back-end of 
     """
-    def __init__(self, data=None, header=None):
+    def __init__(
+            self,
+            data=np.array([], dtype=np.float32),
+            fold=np.array([], dtype=np.float32),
+            default_add_method='merge',
+            header=None):
         super().__init__(data=data)
         if header is None:
             header = {}
@@ -100,22 +105,14 @@ class MLTrace(Trace):
         header.setdefault('npts', len(data))
         self.stats = MLTraceStats(header)
         super(MLTrace, self).__setattr__('data', data)
-        # if self.data is not None:
-        #     self.fold = np.ones(shape=self.data.shape, dtype=self.data.dtype)
-        # else:
-        #     self.fold = None
-    
-    # def __add__(self, trace, method='merge', **options)
-    #     if method == 'merge':
-    #         self._merge(self, trace, **options)
-    #     elif method == 'stack':
-    #         self._stack(trace, **options)
-    #     else:
-    #         raise ValueError(f'method {method} not supported. Only "merge" and "stack"')
+        if self.data.shape != fold.shape or self.data.dtype != fold.dtype:
+            self.fold = np.ones(shape=self.data.shape, dtype=self.data.dtype)
+        if default_add_method not in ['merge','stack']:
+            raise ValueError(f'default_add_method {default_add_method} not supported. Supported: "merge", "stack"')
 
-    def _merge(self, trace, method=1, interpolation_sampeles=-1, fill_value=)
-
-
+    ###############################
+    # Property-supporting methods #
+    ############################### 
     def get_ml_id(self):
         id_str = super().get_id()
         if self.stats.model is not None:
@@ -132,11 +129,56 @@ class MLTrace(Trace):
         return super().get_id()
 
     def get_instrument_code(self):
-        inst_code = self.stats.channel[:-1]
+        """
+        Return instrument code
+        Location.BandInst
+
+        e.g. for UW.GNW.--.BHZ.EqT.pnw
+        return '--.BH'
+        """
+        inst_code = f'{self.stats.location}.{self.stats.channel[:-1]}'
         return inst_code
+
+    def get_site_code(self):
+        """
+        Retrun site code:
+        Network.Station
+
+        e.g., for UW.GNW.--.BHZ.EqT.pnw
+        return 'UW.GNW'
+        """
+        site_code = f'{self.stats.network}.{self.stats.station}'
+        return site_code
     
+    def get_model_code(self):
+        """
+        Retrun model code:
+        Model.Weight
+
+        e.g., for UW.GNW.--.BHZ.EqT.pnw
+        return 'EqT.pnw'
+        """
+        model_code = f'{self.stats.model}.{self.stats.weight}'
+        return model_code
+    
+    # Set properties for convenient access
+    trace_id = property(get_id)
+    id = property(get_ml_id)
+    site = property(get_site_code)
+    inst = property(get_instrument_code)
+    mod = property(get_model_code)
+
+    # Change the component code in self.stats
     @_add_processing_info
     def set_component(self, new_label):
+        """
+        Change the component character in self.stats.channel
+        to new_label
+
+        e.g., self.set_component(new_label = 'Detection')
+              self.stats.channel
+                'BHD'
+        """
         if isinstance(new_label, str):
             if len(new_label) == 1:
                 self.stats.channel = self.instrument + new_label
@@ -152,70 +194,443 @@ class MLTrace(Trace):
         else:
             raise TypeError('new_label must be type str or int')
 
-    trace_id = property(get_id)
-    id = property(get_ml_id)
-    instrument= property(get_instrument_code)
+    ################
+    # I/O Routines #
+    ################
+    
+    def to_trace(self, fold_threshold=0, output_mod=False):
+        """
+        Convert this MLTrace into an obspy.core.trace.Trace,
+        masking values that have fold less than fold_threshold
 
+        :: INPUTS ::
+        :param fold_threshold: [int-like] threshold value, below which
+                        samples are masked
+        :param output_mod: [bool] should the model and weight strings
+                        be included in the output?
 
-    def treat_gaps(
-            self,
-            merge_kwargs={},
-            detrend_kwargs={'type': 'linear'},
-            filter_kwargs=False,
-            taper_kwargs={'max_percentage': None, 'max_length': 0.06, 'side':'both'}
-            ):
-        self.stats.processing.append('vvv Wyrm 0.0.0: treat_gaps vvv')
-        if np.ma.is_masked(self.data):
-            self = self.split()
-            if detrend_kwargs:
-                self.detrend(**detrend_kwargs)
-            if filter_kwargs:
-                self.filter(**filter_kwargs)
-            if taper_kwargs:
-                self.taper(**taper_kwargs)
-            self.merge(**merge_kwargs)
-            if isinstance(self, Stream):
-                self = self[0]
+        :: OUTPUT ::
+        :return tr: [obspy.core.trace.Trace] trace copy with fold_threshold 
+                        applied for masking
+        :return model: [str] (if output_mod == True) model name
+        :return weight: [str] (if output_mod == True) weight name
+        """
+        tr = Trace()
+        for _k in tr.stats.keys():
+            if _k not in tr.stats.readonly:
+                tr.stats.update({_k: self.stats[_k]})
+        data = self.data
+        mask = self.fold < fold_threshold
+        if any(mask):
+            data = np.ma.masked_array(data=data,
+                                      mask=mask)
+        tr.data = data
+        if output_mod:
+            return tr, self.stats.model, self.stats.weight
         else:
-            if detrend_kwargs:
-                self.detrend(**detrend_kwargs)
-            if filter_kwargs:
-                self.filter(**filter_kwargs)
-            if taper_kwargs:
-                self.taper(**taper_kwargs)
-        self.stats.processing.append('^^^ Wyrm 0.0.0: treat_gaps ^^^')
+            return tr
+        
+
+    def write(self, filename, **kwargs):
+        """
+        Wrapper around the root obspy.core.trace.Trace.write class
+        method that appends the model and/or weight names to
+        the end of the file name if they are not empty strings
+        (i.e., default values '').
+
+        This allows for preservation of model/weight information
+        without having to 
+
+        E.g., 
+        mltr
+            UW.GNW.--.BHP.EqT.pnw | 2023-10-09T02:20:15.42000Z - 2023-10-09T02:22:5.41000Z | 100.Hz, 15000 samples
+        
+        mltr.write('./myfile.mseed')
+        ls
+            myfile.EqT.pnw.mseed
+        """
+        fp, ext = os.path.splitext(filename)
+        if self.stats.model != '':        
+            fp += f'.{self.stats.model}'
+        if self.stats.weight != '':
+            fp += f'.{self.stats.weight}'
+        filename = fp + ext
+        st = Stream()
+        st += self.to_trace()
+        st += self.get_fold_trace()
+        st.write(filename, format='MSEED', **kwargs)
+    
+    def get_fold_trace(self):
+        """
+        Conver the fold array attribute into a trace with component
+        code 'F'
+        """
+        ftr = self.copy().to_trace(fold_threshold=0)
+        ftr.stats.channel = ftr.stats.channel[:-1] + 'F'
+        ftr.data = self.fold.copy()
+        return ftr
+
+    def from_trace(self, trace, fold_trace=None, model=None, weight=None, blinding=0):
+
+        if not isinstance(trace, Trace):
+            raise TypeError('trace must be an obspy.core.trace.Trace')
+        
+        self.data = trace.data
+        for _k, _v in trace.stats.items():
+            if _k == 'location' and _v == '':
+                _v = '--'
+            self.stats.update({_k: _v})
+        if fold_trace is None:
+            self.fold = np.ones(shape=self.data.shape, dtype=self.data.dtype)
+            self.apply_blinding(int(blinding))
+        
+        elif isinstance(fold_trace, Trace):
+            if trace.stats.starttime != fold_trace.stats.starttime:
+                raise ValueError
+            if trace.stats.sampling_rate != fold_trace.stats.sampling_rate:
+                raise ValueError
+            if trace.stats.npts != fold_trace.stats.npts:
+                raise ValueError
+            self.fold = fold_trace.data
+
+        if model is not None:
+            if not isinstance(model, str):
+                raise TypeError('model must be type str or NoneType')
+            else:
+                self.stats.model = model
+        
+        if weight is not None:
+            if not isinstance(weight, str):
+                raise TypeError('weight must be type str or NoneType')
+            else:
+                self.stats.weight = weight
+
+        return self 
+
+    def from_file(self, filename, model=None, weight=None):
+        st = read(filename)
+        holder = {}
+        if len(st) != 2:
+            raise TypeError('this file does not contain the right number of traces (2)')
+        for _tr in st:
+            if _tr.stats.component == 'F':
+                holder.update({'fold': _tr})
+            else:
+                holder.update({'data': _tr})
+        if 'fold' not in holder.keys():
+            raise TypeError('this file does not contain a fold trace')
+        else:
+            self.from_trace(holder['data'], fold_trace=holder['fold'], model=model, weight=weight)
         return self
 
-    def treat_gappy_trace(
-            self,
-            label,
-            merge_kwargs={},
-            detrend_kwargs=False,
-            filter_kwargs=False,
-            taper_kwargs=False
-            ):
-
-        _x = self.traces[label].copy()
-        if np.ma.is_masked(_x.data):
-            _x = _x.split()
-            if detrend_kwargs:
-                _x.detrend(**detrend_kwargs)
-            if filter_kwargs:
-                _x.filter(**filter_kwargs)
-            if taper_kwargs:
-                _x.taper(**taper_kwargs)
-            _x.merge(**merge_kwargs)
-            if isinstance(_x, Stream):
-                _x = _x[0]
+    def apply_blinding(self, npts_blinding):
+        """
+        Apply blinding (i.e., set fold to 0) to samples
+        on either end of the contents of this MLTrace
+        
+        :: INPUT ::
+        :param npts_blinding: [int] non-negative 
+        """
+        if self.stats.npts//2 > npts_blinding > 0:
+            self.fold[:npts_blinding] = 0
+            self.fold[-npts_blinding:] = 0
+        elif npts_blinding == 0:
+            pass
         else:
-            if detrend_kwargs:
-                _x.detrend(**detrend_kwargs)
-            if filter_kwargs:
-                _x.filter(**filter_kwargs)
-            if taper_kwargs:
-                _x.taper(**taper_kwargs)
-        self.traces.update({label: _x})
+            raise ValueError('npts_blinding must be an integer in [0, self.stats.npts//2)')
         return self
+    
+
+
+
+    def __add__(self, trace, method='merge', **options):
+        if 'method' in options.keys():
+            method = options['method']
+        else:
+            method = self.default_add_method
+        if method == 'merge':
+            self._merge(trace, **options)
+        elif method == 'stack':
+            self._stack(trace, **options)
+        else:
+            raise ValueError(f'method {method} not supported. Only "merge" and "stack"')
+
+    def _assess_relative_timing(self, other):
+        """
+        Assess the relative timing and sampling alignment of this MLTrace
+        and another Trace-type object with the same sampling_rate
+
+        keys in output `status` should be read as:
+            self {key_string} other
+            e.g,. self 'starts_before' other : True/False
+        and delta npts values are calculated as:
+            (self - other)*sampling_rate
+        """
+
+        if not isinstance(other, Trace):
+            raise TypeError('trace must be type obspy.core.trace.Trace')
+        if self.stats.sampling_rate != other.stats.sampling_rate:
+            raise TypeError('other sampling_rate does not match this trace\'s sampling_rate')
+        self_ts = self.stats.starttime
+        other_ts = other.stats.starttime
+        self_te = self.stats.endtime
+        other_te = other.stats.endtime
+        delta_ts = self_ts - other_ts
+        delta_te = self_te - other_te
+        dnpts_ts = delta_ts*self.stats.sampling_rate
+        dnpts_te = delta_te*self.stats.sampling_rate
+        # overlap_status = any(self_ts <= other_ts <= self_te,
+        #                       self_ts <= other_te <= self_te)
+        # # gap_status
+        #                   'overlaps': overlap_status,
+        #           'creates_gap': gap_status,
+
+        status = {'starts_before': self_ts < other_ts,
+                  'dnpts_starttime': dnpts_ts,
+                  'ends_before': self_te < other_te,
+                  'dnpts_endtime': dnpts_te,
+                  'sampling_aligns': int(dnpts_ts) == dnpts_ts}
+        return status
+    
+    def get_relative_indexing(self, other):
+        if not isinstance(other, MLTrace):
+            raise TypeError
+        if self.stats.sampling_rate != other.stats.sampling_rate:
+            raise AttributeError('sampling_rate mismatches between this trace and "other"')
+        self_t0 = self.stats.starttime
+        self_t1 = self.stats.endtime
+        other_t0 = other.stats.starttime
+        other_t1 = other.stats.endtime
+        sr = self.stats.sampling_rate
+        if self_t0 <= other_t0:
+            t0_ref = self_t0
+        else:
+            t0_ref = other_t0
+
+        self_n0 = int((self_t0 - t0_ref)*sr)
+        self_n1 = int((self_t1 - t0_ref)*sr) + 1
+        other_n0 = int((other_t0 - t0_ref)*sr)
+        other_n1 = int((other_t1 - t0_ref)*sr) + 1
+        
+        return [self_n0, self_n1, other_n0, other_n1]
+
+
+    def _merge(self, trace, method=1, fill_value=None, interpolation_samples=-1, sanity_checks=True):
+        """
+        Wrapper around obspy.core.trace.Trace.__add__()
+        """
+        super().__add__(
+            trace,
+            method=method,
+            fill_value=fill_value,
+            interpolation_samples=interpolation_samples,
+            sanity_checks=sanity_checks)
+        
+
+
+    def _stack(self, trace, trace_blinding=0, method='avg', fill_value=0., sanity_checks=True):
+        """
+        Conduct a "max" or "avg" stacking of a new trace into this MLTrace object under the
+        following assumptions
+            1) Both self and trace represent prediction traces output by the same continuous 
+                predicting model with the same pretrained weights. 
+                i.e., stats.model and stats.weight are not the default value and they match.
+            2) The the prediction window inserted into this trace when it was initialized
+                also had blinding applied to it
+        
+        :: INPUTS ::
+        :param trace: [wyrm.core.trace.MLTrace] trace to append to this MLTrace
+        :param trace_blinding: [int] number of samples to blind on either side of `trace`
+                        prior to stacking
+        :param method: [str] stacking method flag
+                        'avg' - (recursive) average stacking
+                            new_data[t] = (self.data[t]*self.fold[t] + trace.data[t]*trace.fold[t])/
+                                            (self.fold[t] + trace.fold[t])
+                        'max' - maximum value stacking
+                            new_data[t] = max([self.data[t], trace.data[t]])
+                        for time-indexed sample "t"
+        :param fill_value: [None] or [float-like] - fill_value to assign to a
+                        numpy.ma.masked_array in the event that the stacking
+                        operation produces a gap
+        :param sanity_checks: [bool] should sanity checks be run on self and trace?
+        
+        """
+        if sanity_checks:
+            if not isinstance(trace, MLTrace):
+                raise TypeError
+            if self.id != trace.id:
+                raise TypeError(f'MLTrace ID differs: {self.id} vs {trace.id}')
+            if self.stats.sampling_rate != trace.stats.sampling_rate:
+                raise TypeError(f'Sampling rate differs: {self.stats.sampling_rate} vs {trace.stats.sampling_rate}')
+            if self.stats.calib != trace.stats.calib:
+                raise TypeError
+            if self.data.dtype != trace.data.dtype:
+                raise TypeError
+            if self.stats.model == '' or self.stats.weight == '':
+                raise AttributeError('Stacking should only be applied to prediction-containing MLTrace objects')
+            if np.ma.is_masked(self.data) or np.ma.is_masked(trace.data):
+                raise TypeError('Can only stack on unmasked data')
+        # Get relative timing status
+        # rt_status = self._assess_relative_timing(trace)
+        stack_indices = self.get_relative_indexing(trace)
+        tmp_data_array = np.full(shape=(max(stack_indices) + 1, 2),
+                                 fill_value=np.nan,
+                                 dtype=self.data.dtype)
+        tmp_fold_array = np.zeros(shape=(max(stack_indices) + 1, 2),
+                                 dtype = self.fold.dtype)
+        tmp_data_array[stack_indices[0]:stack_indices[1]+1, 0] = self.data
+        tmp_fold_array[stack_indices[0]:stack_indices[1]+1, 0] = self.fold
+        tmp_data_array[stack_indices[2]+trace_blinding:stack_indices[3]-trace_blinding, 1] = trace.data[trace_blinding:-trace_blinding]
+        tmp_fold_array[stack_indices[2]+trace_blinding:stack_indices[3]-trace_blinding, 1] = trace.fold[trace_blinding:-trace_blinding]
+
+        tmp_fold = np.nansum(tmp_fold_array, axis=1)
+        if method == 'max':
+            tmp_data = np.nanmax(tmp_data_array, axis=1)
+        
+        elif method == 'avg':
+            tmp_data = np.nansum(tmp_data_array*tmp_fold_array, axis=1)
+            idx = tmp_fold > 0
+            tmp_data[idx] /= tmp_fold[idx]
+        # If not all data are finite
+        if not np.isfinite(tmp_data).all():
+            mask = ~np.isfinite(tmp_data)
+            tmp_data = np.ma.masked_array(data=tmp_data,
+                                          mask=mask,
+                                          fill_value=fill_value)
+        
+        new_t0 = self.stats.starttime + stack_indices[0]/self.stats.sampling_rate
+        self.stats.starttime = new_t0
+        self.data = tmp_data
+        self.fold = tmp_fold
+
+
+
+       
+
+
+
+
+
+class MLTraceBuffer(MLTrace):
+
+    def __init__(self, max_length=1., add_method='merge', restrict_add_past=True, **options):
+        # Inherit from MLTrace
+        super().__init__()
+        self.max_length = wuc.bounded_floatlike(
+            max_length,
+            name='max_length',
+            minimum=0.0,
+            maximum=None,
+            inclusive=False
+        )
+        if not isinstance(add_method, str):
+            raise TypeError
+        elif add_method not in ['merge', 'stack']:
+            raise ValueError('add_method {add_method} not supported. Supported values: "merge", "stack"')
+        else:
+            add_kwargs = {}
+            if add_method == 'merge':
+                merge_kwarg_keys = ['method', 'interpolation_samples','fill_value','sanity_checks']
+                for _mkk in merge_kwarg_keys:
+                    if _mkk in options.keys():
+                        add_kwargs.update({_mkk: options[_mkk]})
+            elif add_method == 'stack':
+                raise NotImplementedError
+
+            self.add_kwargs = add_kwargs
+
+        if not isinstance(restrict_add_past, bool):
+            raise TypeError('restrict_add_past must be type bool')
+        else:
+            self.restrict_add_past = restrict_add_past
+
+    
+    # def append
+
+
+    def trim(self, starttime=None, endtime=None, pad=True, fill_value=None, nearest_sample=True):
+        """
+        Produce a MLTrace object that is a copy of data trimmed out of this MLTraceBuffer
+        using the MLTrace.trim() method - this trims both the self.data and self.fold arrays
+        """
+        out = MLTrace(data = self.data, fold=self.fold, header=self.stats)
+        out.trim(
+            starttime=starttime,
+            endtime=endtime,
+            pad=pad,
+            fill_value=fill_value,
+            nearest_sample=nearest_sample)
+        return out
+    
+    def enforce_max_length(self, **options):
+        if self.stats.endtime - self.stats.starttime > self.max_length:
+            self._ltrim(starttime=self.stats.endtime - self.max_length, **options)
+        else:
+            pass
+        return self
+
+    # def append(self, trace, )
+        
+
+    # def treat_gaps(
+    #         self,
+    #         merge_kwargs={},
+    #         detrend_kwargs={'type': 'linear'},
+    #         filter_kwargs=False,
+    #         taper_kwargs={'max_percentage': None, 'max_length': 0.06, 'side':'both'}
+    #         ):
+    #     self.stats.processing.append('vvv Wyrm 0.0.0: treat_gaps vvv')
+    #     if np.ma.is_masked(self.data):
+    #         self = self.split()
+    #         if detrend_kwargs:
+    #             self.detrend(**detrend_kwargs)
+    #         if filter_kwargs:
+    #             self.filter(**filter_kwargs)
+    #         if taper_kwargs:
+    #             self.taper(**taper_kwargs)
+    #         self.merge(**merge_kwargs)
+    #         if isinstance(self, Stream):
+    #             self = self[0]
+    #     else:
+    #         if detrend_kwargs:
+    #             self.detrend(**detrend_kwargs)
+    #         if filter_kwargs:
+    #             self.filter(**filter_kwargs)
+    #         if taper_kwargs:
+    #             self.taper(**taper_kwargs)
+    #     self.stats.processing.append('^^^ Wyrm 0.0.0: treat_gaps ^^^')
+    #     return self
+
+    # def treat_gappy_trace(
+    #         self,
+    #         label,
+    #         merge_kwargs={},
+    #         detrend_kwargs=False,
+    #         filter_kwargs=False,
+    #         taper_kwargs=False
+    #         ):
+
+    #     _x = self.traces[label].copy()
+    #     if np.ma.is_masked(_x.data):
+    #         _x = _x.split()
+    #         if detrend_kwargs:
+    #             _x.detrend(**detrend_kwargs)
+    #         if filter_kwargs:
+    #             _x.filter(**filter_kwargs)
+    #         if taper_kwargs:
+    #             _x.taper(**taper_kwargs)
+    #         _x.merge(**merge_kwargs)
+    #         if isinstance(_x, Stream):
+    #             _x = _x[0]
+    #     else:
+    #         if detrend_kwargs:
+    #             _x.detrend(**detrend_kwargs)
+    #         if filter_kwargs:
+    #             _x.filter(**filter_kwargs)
+    #         if taper_kwargs:
+    #             _x.taper(**taper_kwargs)
+    #     self.traces.update({label: _x})
+    #     return self
 
 
 

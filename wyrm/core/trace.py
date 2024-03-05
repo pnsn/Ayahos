@@ -104,7 +104,7 @@ class MLTrace(Trace):
         header = deepcopy(header)
         header.setdefault('npts', len(data))
         self.stats = MLTraceStats(header)
-        super(MLTrace, self).__setattr__('data', data)
+        # super(MLTrace, self).__setattr__('data', data)
         if self.data.shape != fold.shape or self.data.dtype != fold.dtype:
             self.fold = np.ones(shape=self.data.shape, dtype=self.data.dtype)
         if default_add_method not in ['merge','stack']:
@@ -167,6 +167,11 @@ class MLTrace(Trace):
     site = property(get_site_code)
     inst = property(get_instrument_code)
     mod = property(get_model_code)
+
+    def why(self):
+        print('True love is the greatest thing on Earth - except for an MLT...\n   - Miracle Max')
+
+    why = property(why)
 
     # Change the component code in self.stats
     @_add_processing_info
@@ -323,6 +328,7 @@ class MLTrace(Trace):
             self.from_trace(holder['data'], fold_trace=holder['fold'], model=model, weight=weight)
         return self
 
+    @_add_processing_info
     def apply_blinding(self, npts_blinding):
         """
         Apply blinding (i.e., set fold to 0) to samples
@@ -340,9 +346,7 @@ class MLTrace(Trace):
             raise ValueError('npts_blinding must be an integer in [0, self.stats.npts//2)')
         return self
     
-
-
-
+    @_add_processing_info
     def __add__(self, trace, method='merge', **options):
         if 'method' in options.keys():
             method = options['method']
@@ -504,8 +508,6 @@ class MLTrace(Trace):
         self.fold = tmp_fold
 
 
-
-       
 
 
 

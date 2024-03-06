@@ -1021,6 +1021,16 @@ class PredictionWindow(object):
             st += tr
         return st
 
+    def to_npy(self, dir, fstr='{site}_{inst}_{mod}_{t0:016.6f}_{sr:05.2f}Hz.npy'):
+        site = '.'.join(self.id.split('.')[:2])
+        inst = '.'.join(self.id.split('.')[2:])
+        mod = '.'.join([self.model_name, self.weight_name])
+        t0 = self.t0
+        sr = self.samprate
+        fname = fstr.format(site=site, inst=inst, mod=mod, t0=t0, sr=sr)
+        pfout = os.path.join(dir,fname)
+        np.save(pfout, self.stack)
+
     def split_for_ml(self):
         """
         Convenience method for splitting the data and metadata in this PredictionWindow into

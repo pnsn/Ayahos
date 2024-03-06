@@ -1,0 +1,85 @@
+2024-03-05 11:03:24,619 - __main__ - INFO - created sbm.EQTransformer object
+2024-03-05 11:03:24,619 - __main__ - DEBUG - attempting to load model weight pnw
+2024-03-05 11:03:24,631 - __main__ - DEBUG - successful weight load
+2024-03-05 11:03:24,631 - __main__ - DEBUG - attempting to load model weight instance
+2024-03-05 11:03:24,642 - __main__ - DEBUG - successful weight load
+2024-03-05 11:03:24,642 - __main__ - DEBUG - attempting to load model weight stead
+2024-03-05 11:03:24,652 - __main__ - DEBUG - successful weight load
+2024-03-05 11:03:24,652 - __main__ - DEBUG - attempting to load model weight ethz
+2024-03-05 11:03:24,663 - __main__ - DEBUG - successful weight load
+2024-03-05 11:03:24,663 - __main__ - DEBUG - attempting to load model weight geofon
+2024-03-05 11:03:24,673 - __main__ - DEBUG - successful weight load
+2024-03-05 11:03:24,673 - __main__ - DEBUG - attempting to load model weight iquique
+2024-03-05 11:03:24,684 - __main__ - DEBUG - successful weight load
+2024-03-05 11:03:24,684 - __main__ - DEBUG - attempting to load model weight scedc
+2024-03-05 11:03:24,694 - __main__ - DEBUG - successful weight load
+2024-03-05 11:03:24,694 - __main__ - DEBUG - attempting to load model weight neic
+2024-03-05 11:03:24,704 - __main__ - DEBUG - successful weight load
+2024-03-05 12:55:02,217 - __main__ - INFO - created sbm.EQTransformer object
+2024-03-05 12:55:02,217 - __main__ - DEBUG - attempting to load model weight pnw
+2024-03-05 12:55:02,228 - __main__ - DEBUG - successful weight load
+2024-03-05 12:55:02,228 - __main__ - DEBUG - attempting to load model weight instance
+2024-03-05 12:55:02,237 - __main__ - DEBUG - successful weight load
+2024-03-05 12:55:02,237 - __main__ - DEBUG - attempting to load model weight stead
+2024-03-05 12:55:02,245 - __main__ - DEBUG - successful weight load
+2024-03-05 12:55:02,245 - __main__ - DEBUG - attempting to load model weight ethz
+2024-03-05 12:55:02,253 - __main__ - DEBUG - successful weight load
+2024-03-05 12:55:02,253 - __main__ - DEBUG - attempting to load model weight geofon
+2024-03-05 12:55:02,262 - __main__ - DEBUG - successful weight load
+2024-03-05 12:55:02,262 - __main__ - DEBUG - attempting to load model weight iquique
+2024-03-05 12:55:02,270 - __main__ - DEBUG - successful weight load
+2024-03-05 12:55:02,270 - __main__ - DEBUG - attempting to load model weight scedc
+2024-03-05 12:55:02,279 - __main__ - DEBUG - successful weight load
+2024-03-05 12:55:02,279 - __main__ - DEBUG - attempting to load model weight neic
+2024-03-05 12:55:02,287 - __main__ - DEBUG - successful weight load
+2024-03-05 13:05:18,121 - __main__ - INFO - created sbm.EQTransformer object
+2024-03-05 13:05:18,121 - __main__ - DEBUG - attempting to load model weight pnw
+2024-03-05 13:05:18,130 - __main__ - DEBUG - successful weight load
+2024-03-05 13:05:18,130 - __main__ - DEBUG - attempting to load model weight instance
+2024-03-05 13:05:18,139 - __main__ - DEBUG - successful weight load
+2024-03-05 13:05:18,139 - __main__ - DEBUG - attempting to load model weight stead
+2024-03-05 13:05:18,147 - __main__ - DEBUG - successful weight load
+2024-03-05 13:05:18,147 - __main__ - DEBUG - attempting to load model weight ethz
+2024-03-05 13:05:18,155 - __main__ - DEBUG - successful weight load
+2024-03-05 13:05:18,155 - __main__ - DEBUG - attempting to load model weight geofon
+2024-03-05 13:05:18,164 - __main__ - DEBUG - successful weight load
+2024-03-05 13:05:18,164 - __main__ - DEBUG - attempting to load model weight iquique
+2024-03-05 13:05:18,172 - __main__ - DEBUG - successful weight load
+2024-03-05 13:05:18,172 - __main__ - DEBUG - attempting to load model weight scedc
+2024-03-05 13:05:18,181 - __main__ - DEBUG - successful weight load
+2024-03-05 13:05:18,181 - __main__ - DEBUG - attempting to load model weight neic
+2024-03-05 13:05:18,189 - __main__ - DEBUG - successful weight load
+2024-03-05 13:10:52,478 - __main__ - INFO - created sbm.EQTransformer object
+2024-03-05 13:10:52,478 - __main__ - INFO - created sbm.EQTransformer object
+2024-03-05 13:10:52,478 - __main__ - DEBUG - attempting to load model weight pnw
+2024-03-05 13:10:52,478 - __main__ - DEBUG - attempting to load model weight pnw
+2024-03-05 13:10:52,493 - __main__ - DEBUG - successful weight load
+2024-03-05 13:10:52,493 - __main__ - DEBUG - successful weight load
+2024-03-05 13:10:52,493 - __main__ - DEBUG - attempting to load model weight instance
+2024-03-05 13:10:52,493 - __main__ - DEBUG - attempting to load model weight instance
+2024-03-05 13:10:52,505 - __main__ - DEBUG - successful weight load
+2024-03-05 13:10:52,505 - __main__ - DEBUG - successful weight load
+2024-03-05 13:10:52,505 - __main__ - DEBUG - attempting to load model weight stead
+2024-03-05 13:10:52,505 - __main__ - DEBUG - attempting to load model weight stead
+2024-03-05 13:10:52,516 - __main__ - DEBUG - successful weight load
+2024-03-05 13:10:52,516 - __main__ - DEBUG - successful weight load
+2024-03-05 13:10:52,516 - __main__ - DEBUG - attempting to load model weight ethz
+2024-03-05 13:10:52,516 - __main__ - DEBUG - attempting to load model weight ethz
+2024-03-05 13:10:52,637 - __main__ - DEBUG - successful weight load
+2024-03-05 13:10:52,637 - __main__ - DEBUG - successful weight load
+2024-03-05 13:10:52,638 - __main__ - DEBUG - attempting to load model weight geofon
+2024-03-05 13:10:52,638 - __main__ - DEBUG - attempting to load model weight geofon
+2024-03-05 13:10:52,646 - __main__ - DEBUG - successful weight load
+2024-03-05 13:10:52,646 - __main__ - DEBUG - successful weight load
+2024-03-05 13:10:52,646 - __main__ - DEBUG - attempting to load model weight iquique
+2024-03-05 13:10:52,646 - __main__ - DEBUG - attempting to load model weight iquique
+2024-03-05 13:10:52,655 - __main__ - DEBUG - successful weight load
+2024-03-05 13:10:52,655 - __main__ - DEBUG - successful weight load
+2024-03-05 13:10:52,655 - __main__ - DEBUG - attempting to load model weight scedc
+2024-03-05 13:10:52,655 - __main__ - DEBUG - attempting to load model weight scedc
+2024-03-05 13:10:52,663 - __main__ - DEBUG - successful weight load
+2024-03-05 13:10:52,663 - __main__ - DEBUG - successful weight load
+2024-03-05 13:10:52,663 - __main__ - DEBUG - attempting to load model weight neic
+2024-03-05 13:10:52,663 - __main__ - DEBUG - attempting to load model weight neic
+2024-03-05 13:10:52,671 - __main__ - DEBUG - successful weight load
+2024-03-05 13:10:52,671 - __main__ - DEBUG - successful weight load

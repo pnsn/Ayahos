@@ -43,6 +43,7 @@ import torch
 import seisbench.models as sbm
 import wyrm.util.compatability as wuc
 import wyrm.core.data as wcd
+from collections import deque
 from obspy import UTCDateTime
 from wyrm.core._base import Wyrm
 
@@ -861,11 +862,13 @@ class WaveformModelWyrm(Wyrm):
         else:
             raise ValueError(f'stacking_method {stacking_method} not supported. Must be "max", "avg" or select aliases')
         # Initialize TieredBuffer terminating in PredBuff objects
-        self.buffer = wcd.BufferTree(
-            buff_class=wcd.PredictionBuffer,
-            max_samples=self.max_samples,
-            stacking_method=self.stacking_method
-            )
+        # self.buffer = wcd.BufferTree(
+        #     buff_class=wcd.PredictionBuffer,
+        #     max_samples=self.max_samples,
+        #     stacking_method=self.stacking_method
+        #     )
+        self.queue = deque()
+        
     
     def pulse(self, x, **options):
         """
@@ -934,8 +937,9 @@ class WaveformModelWyrm(Wyrm):
                 # Reconstitute PredictionWindows
                 pwind = wcd.PredictionWindow(data=batch_pred_npy[_i,:,:], **meta)
                 # Append results as copy, allowing safe deletion of intermediate data objects
+                self.queue.append(pwind)
                 # self.buffer.append(pwind.copy(), TK0=tk0, TK1=tk1, TK2=tk2, **options)
-                self.buffer.append_pwind(pwind.copy(), **options)
+                # self.buffer.append_pwind(pwind.copy(), **options)
                 # Cleanup prediction windows and associated metadata between iterations
                 del pwind, meta, tk0, tk1, tk2
             # Cleanup prediction arrays between pulses
@@ -943,7 +947,7 @@ class WaveformModelWyrm(Wyrm):
         # Cleanup at end of pulse
         del batch_data, batch_meta
         
-        y = self.buffer
+        y = self.queue
 
         return y
     

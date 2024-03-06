@@ -4,9 +4,9 @@ import seisbench.models as sbm
 import numpy as np
 from collections import deque
 from obspy import UTCDateTime, Trace
-from wyrm.core.trace import MLTrace, MLTraceBuffer
+from wyrm.dev.trace import MLTrace, MLTraceBuffer
 from wyrm.core._base import Wyrm
-from wyrm.core.dictstream import DictStream
+from wyrm.dev.dictstream import DictStream
 
 
 class WindowWyrm(Wyrm):
@@ -260,8 +260,58 @@ class WindowWyrm(Wyrm):
             self.model_name = model.name
         else:
             raise TypeError('seisbench.models.WaveformModel base class does not provide the necessary update information')
+
+
+
+class PreProcessWyrm(Wyrm):
+    
+    def __init__(
+        self,
+        channel_fill_rule='zeros',
+        completeness_threshold=0.8,
+        comp_map = {'Z': 'Z3', 'N': 'N1', 'E': 'E2'}
+        ref_comp = 'Z'
+        order='ZNE',
+        gap_filling_kwargs={},
+        norm_type='max',
+        max_pulse_size=10000,
+        debug=False
+    ):
+        super().__init__(max_pulse_size=max_pulse_size, debug=debug)
+
+        if norm_type not in ['max','std']:
+            raise ValueError
+        else:
+            self.norm_type = norm_type
+
+    def pulse(self, x):
+        if not isinstance(x, deque):
+            raise TypeError
+        qlen = len(x)
+        for _i in range(self.max_pulse_size):
+            if qlen == 0:
+                break
+            elif _i + 1 > qlen:
+                break
+            else:
+                _x = x.popleft()
+
+            if not isinstance(_x, DictStream):
+                x.append(_x)
+            else:
+                _x.
+            
         
 
+
+    def apply_fill_rule(self, dictstream):
+        dictstream.apply_fill_rule(ref_code=self.ref_comp, )
+
+
+
+        elif self.channel_fill_rule == 'clonez':
+            self._apply_clonez()
+        elif self.channel_fill_rule == 'c'
 
 
 class PredictionWyrm(Wyrm):
@@ -330,8 +380,7 @@ class PredictionWyrm(Wyrm):
                 raise RuntimeError(f'device type {devicetype} is unavailable on this installation')
             self.device = device
 
-        self.dsbuffer = DictStream(header={'ref_model': self.model.name,
-                                           'ref_})
+        self.queue()
 
 
     def pulse(self, x):
@@ -370,6 +419,7 @@ class PredictionWyrm(Wyrm):
             batch_pred = self.run_prediction(batch_data, batch_meta)
             self.batch2queue(batch_pred, batch_meta, wname)
             del batch_pred
+        del batch_data
         y = self.queue
         return y
 
@@ -411,7 +461,7 @@ class PredictionWyrm(Wyrm):
 
         return batch_preds
 
-    def batch2buffer(self, batch_preds, batch_meta, weight_name):
+    def batch2queue(self, batch_preds, batch_meta, weight_name):
         # Detach prediction array and convert to numpy
         if batch_preds.device.type != 'cpu':
             batch_preds = batch_preds.detach().cpu().numpy()
@@ -428,11 +478,8 @@ class PredictionWyrm(Wyrm):
                 # Update weight name in mltrace header
                 _mlt.stats.weight = weight_name
                 # Add mltrace to dsbuffer (subsequent buffering to happen in the next step)
-                self.dsbuffer._stack(
-                    _mlt,
-                    method=self.stacking_method,
-                    trace_blinding=self.blinding)
-                
+                self.queue.append(_mlt)
+
 
 
 

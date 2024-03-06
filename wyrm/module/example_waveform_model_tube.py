@@ -152,7 +152,7 @@ st = read('../../example/uw61965081/bulk.mseed')
 # Initialize BufferTree
 tree = BufferTree(buff_class=TraceBuffer, max_length=180)
 # Append a chunk of stream to buffer tree
-tree.append_stream(st[:60])
+tree.append_stream(st)
 
 # DISSECTED TUBEWYRM VERSION
 if not live:

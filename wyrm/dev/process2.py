@@ -4,7 +4,7 @@ import seisbench.models as sbm
 import numpy as np
 from collections import deque
 from obspy import UTCDateTime, Trace
-from wyrm.dev.trace import MLTrace, MLTraceBuffer
+from wyrm.core.trace import MLTrace, MLTraceBuffer
 from wyrm.core._base import Wyrm
 from wyrm.dev.dictstream import DictStream
 

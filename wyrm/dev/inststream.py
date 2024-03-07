@@ -1,5 +1,5 @@
 from wyrm.dev.dictstream import DictStream, DictStreamHeader
-from wyrm.dev.trace import MLTrace
+from wyrm.core.trace import MLTrace
 
 class WindowStreamHeader(DictStreamHeader):
     
@@ -24,7 +24,7 @@ class WindowStream(DictStream):
         for _l, _tr in self.items():
             if not isinstance(_tr, MLTrace):
                 _tr = MLTrace().from_trace(_tr)
-                
+
 
 
     # # INSTRUMENT LEVEL METHODS #

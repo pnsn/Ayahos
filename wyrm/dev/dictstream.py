@@ -85,12 +85,7 @@ def _add_processing_info(func, *args, **kwargs):
 
 class DictStream(Stream):
 
-    def __init__(
-            self,
-            traces=None,
-            header={},
-            **options
-    ):
+    def __init__(self, traces=None, header={}, **options):
         """
         Initialize a DictStream object
 

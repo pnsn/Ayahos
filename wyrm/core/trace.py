@@ -84,10 +84,10 @@ class MLStats(Stats):
         """
         Return better readable string representation of Stats object.
         """
-        priorized_keys = ['model','weight','station','channel', 'location', 'network',
+        prioritized_keys = ['model','weight','station','channel', 'location', 'network',
                           'starttime', 'endtime', 'sampling_rate', 'delta',
                           'npts', 'calib']
-        return self._pretty_str(priorized_keys)
+        return self._pretty_str(prioritized_keys)
     
 ###################################################################################
 # REVISED _add_processing_info DECORATOR DEFINITION ###############################
@@ -276,6 +276,53 @@ class MLTrace(Trace):
                 self.fold[:blinding] = 0
                 self.fold[-blinding:] = 0
         return self
+    
+    @_add_processing_info
+    def to_zero(self, method='both'):
+        """
+        Convert this MLTrace IN-PLACE to a 0-valued vector for self.data and self.fold
+        with the same shape and dtype
+        """
+        if method not in ['both','data','fold']:
+            raise ValueError(f'method {method} not supported. Supported: "both", "data", "fold"')
+
+        shape = self.data.shape
+        dtype = self.data.dtype
+        v0 = np.zeros(shape=shape, dtype=dtype)
+        if method in ['both','data']:
+            self.data = v0
+        if method in ['both','fold']:
+            self.fold = v0
+        return self
+
+    def enforce_zero_mask(self, **options):
+        """
+        Enforce equivalence of masking in data and 0-values in fold
+
+        e.g., 
+
+        data ->   1, 3, 4, 5, 2, 6, 7      --, 3, 4,--, 2, 6, 7
+        mask ->   F, F, F, T, F, F, F  ==>  T, F, F, T, F, F, F
+        fold ->   0, 1, 1, 1, 1, 1, 1       0, 1, 1, 0, 1, 1, 1
+        changes:  *        *               *        *
+        :: INPUTS ::
+        :param **options: [kwargs] optional inputs to pass to np.ma.masked_array
+                        in the event that the input data is not masked, but the
+                        input fold has 0-valued elements.
+        """
+        # Update any places with 0 fold to masked values
+        if any(self.fold == 0):
+            # If not already a masked array, convert and update
+            if not isinstance(self.data, np.ma.masked_array):
+                self.data = np.ma.masked_array(data=self.data, mask=self.fold == 0, **options)
+            # Otherwise ensure all fold=0 values are True in mask
+            else:
+                self.data.mask = self.fold==0
+        # Update any places with masked values to 0 fold
+        if isinstance(self.data, np.ma.MaskedArray):
+            if np.ma.is_masked(self.data):
+                self.fold[self.data.mask] = 0
+        return self
 
     ###############################################################################
     # UPDATED MAGIC METHODS #######################################################
@@ -308,6 +355,7 @@ class MLTrace(Trace):
             self.fold = old_fold[:self.stats.npts]
         else:
             self.fold = self.fold.astype(self.data.dtype)
+        self.enforce_zero_mask()
         return self
 
     def _rtrim(self, endtime, pad=False, nearest_sample=True, fill_value=None):
@@ -326,7 +374,7 @@ class MLTrace(Trace):
             self.fold = old_fold[:self.stats.npts]
         else:
             self.fold = self.fold.astype(self.data.dtype)
-
+        self.enforce_zero_mask()
         return self
 
     @_add_processing_info
@@ -459,8 +507,11 @@ class MLTrace(Trace):
                                       
         # (2) Use maximum value of overlapping elements(max stacking)
         elif method in ['max', 'maximum', 2]:
+            # Create masking to NaN any 0 fold data (safety catch if enforce_zero_mask is somehow missed...)
+            tmp_fold_mask = np.full(shape=tmp_data_array.shape, fill_value=np.nan, dtype=tmp_data_array.dtype)
+            tmp_fold_mask[tmp_fold_array > 0] = 1
+            tmp_data = np.nanmax(tmp_data_array*tmp_fold_mask, axis=0)
             tmp_fold = np.nansum(tmp_fold_array, axis=0)
-            tmp_data = np.nanmax(tmp_data_array, axis=0)
 
         # (3) Use fold-weighted average of overlapping elements (average stacking)
         elif method in ['avg', 'average', 'mean', 3]:
@@ -487,6 +538,7 @@ class MLTrace(Trace):
         if tmp_fold.dtype != self.data.dtype:
             tmp_fold = tmp_fold.astype(self.data.dtype)
         self.fold = tmp_fold
+        self.enforce_zero_mask()
         return self
     
     def why(self):
@@ -714,6 +766,8 @@ class MLTrace(Trace):
         self.fold = tmp_fold
         return self        
 
+
+
     ###############################################################################
     # I/O METHODS #################################################################
     ###############################################################################
@@ -881,6 +935,13 @@ class MLTrace(Trace):
 
     id = property(get_id)
 
+    def get_valid_fraction(self, thresh=1):
+        npts = self.stats.npts
+        nv = np.sum(self.fold >= thresh)
+        return nv/npts
+    
+    fvalid = property(get_valid_fraction)
+
 ###################################################################################
 # Machine Learning Trace Buffer Class Definition ##################################
 ###################################################################################
@@ -1017,12 +1078,7 @@ class MLTraceBuffer(MLTrace):
         out.trim(starttime=starttime, endtime=endtime, **options)
         return out
     
-    def get_valid_fraction(self, thresh=1):
-        npts = self.stats.npts
-        nv = np.sum(self.fold >= thresh)
-        return nv/npts
-    
-    fvalid = property(get_valid_fraction)
+
         
 # JUNKYARD ########################################################################
 

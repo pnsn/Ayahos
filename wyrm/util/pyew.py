@@ -11,6 +11,7 @@
 """
 import numpy as np
 from obspy import UTCDateTime, Trace
+from wyrm.core.trace import MLTrace
 
 
 def npy2strdtype(dtype):
@@ -147,6 +148,29 @@ def wave2trace(wave):
     # Initialize trace
     trace = Trace(data=_data, header=_header)
     return trace
+
+def wave2mltrace(wave):
+    """
+    Convert a PyEW wave dictionary message into
+    a wyrm.core.trace.MLTrace object
+    """
+    status = is_wave_msg(wave)
+    if isinstance(status, str):
+        raise SyntaxError(status)
+    header = {}
+    for _k, _v in wave.items():
+        if _k in ['station','network','channel','location']:
+            header.update({_k:_v})
+        elif _k == 'samprate':
+            header.update({'sampling_rate': _v})
+        elif _k == 'data':
+            data = _v
+        elif _k == 'startt':
+            header.update({'starttime': UTCDateTime(_v)})
+        elif _k == 'datatype':
+            dtype = _v
+    mlt = MLTrace(data=data.astype(dtype), header=header)
+    return mlt
 
 
 def trace2wave(trace, dtype=None):

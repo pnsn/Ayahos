@@ -1,4 +1,4 @@
-import fnmatch, inspect
+import fnmatch, inspect, time
 import numpy as np
 import pandas as pd
 import wyrm.util.compatability as wuc
@@ -9,35 +9,7 @@ from obspy.core.trace import Trace, Stats
 from obspy.core.compatibility import round_away
 from obspy.core.util.attribdict import AttribDict
 from tqdm import tqdm
-from wyrm.dev.trace import MLTrace
-
-@decorator
-def _add_processing_info(func, *args, **kwargs):
-    """
-    This is a decorator that attaches information about a processing call as a string
-    to the DictStream.stats.processing lists
-
-    Attribution: Directly adapted from the obspy.core.trace function of the same name.
-    """
-    callargs = inspect.getcallargs(func, *args, **kwargs)
-    callargs.pop("self")
-    kwargs_ = callargs.pop("kwargs", {})
-    info = "Wyrm 0.0.0: {function}(%s)".format(function=func.__name__)
-    arguments = []
-    arguments += \
-        ["%s=%s" % (k, repr(v)) if not isinstance(v, str) else
-         "%s='%s'" % (k, v) for k, v in callargs.items()]
-    arguments += \
-        ["%s=%s" % (k, repr(v)) if not isinstance(v, str) else
-         "%s='%s'" % (k, v) for k, v in kwargs_.items()]
-    arguments.sort()
-    info = info % "::".join(arguments)
-    self = args[0]
-    result = func(*args, **kwargs)
-    # Attach after executing the function to avoid having it attached
-    # while the operation failed.
-    self._internal_add_processing_info(info)
-    return result
+from wyrm.core.trace import MLTrace
 
 class DictStreamHeader(AttribDict):
     defaults = {
@@ -81,6 +53,34 @@ class DictStreamHeader(AttribDict):
             self.min_endtime = trace.stats.endtime
         if self.max_endtime is None or self.max_endtime < trace.stats.endtime:
             self.max_endtime = trace.stats.endtime
+
+@decorator
+def _add_processing_info(func, *args, **kwargs):
+    """
+    This is a decorator that attaches information about a processing call as a string
+    to the DictStream.stats.processing lists
+
+    Attribution: Directly adapted from the obspy.core.trace function of the same name.
+    """
+    callargs = inspect.getcallargs(func, *args, **kwargs)
+    callargs.pop("self")
+    kwargs_ = callargs.pop("kwargs", {})
+    info = [time.time(), "Wyrm 0.0.0:","{function}".format(function=func.__name__), "(%s)"]
+    arguments = []
+    arguments += \
+        ["%s=%s" % (k, repr(v)) if not isinstance(v, str) else
+         "%s='%s'" % (k, v) for k, v in callargs.items()]
+    arguments += \
+        ["%s=%s" % (k, repr(v)) if not isinstance(v, str) else
+         "%s='%s'" % (k, v) for k, v in kwargs_.items()]
+    arguments.sort()
+    info[-1] = info[-1] % "::".join(arguments)
+    self = args[0]
+    result = func(*args, **kwargs)
+    # Attach after executing the function to avoid having it attached
+    # while the operation failed.
+    self._internal_add_processing_info(info)
+    return result
 
 
 class DictStream(Stream):

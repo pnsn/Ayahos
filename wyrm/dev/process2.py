@@ -25,7 +25,7 @@ class WindowWyrm(Wyrm):
     def __init__(
         self,
         ref_comp='Z',
-        code_map={"Z": "Z3", "N": "N1", "E": "E2"},
+        component_aliases={"Z": "Z3", "N": "N1", "E": "E2"},
         ref_comp_thresh=0.95,
         model_name="EQTransformer",
         target_sampling_rate=100.0,
@@ -36,18 +36,18 @@ class WindowWyrm(Wyrm):
     ):
         super().__init__(max_pulse_size=max_pulse_size, debug=debug)
 
-        if not isinstance(code_map, dict):
-            raise TypeError('code_map must be type dict')
-        elif not all(_c in 'ZNE' for _c in code_map.keys()):
-            raise KeyError('code_map keys must comprise "Z", "N", "E"')
-        elif not all(isinstance(_v, str) and _k in _v for _k, _v in code_map.items()):
-            raise SyntaxError('code_map values must be type str and include the key value')
+        if not isinstance(component_aliases, dict):
+            raise TypeError('component_aliases must be type dict')
+        # elif not all(_c in 'ZNE' for _c in component_aliases.keys()):
+        #     raise KeyError('component_aliases keys must comprise "Z", "N", "E"')
+        elif not all(isinstance(_v, str) and _k in _v for _k, _v in component_aliases.items()):
+            raise SyntaxError('component_aliases values must be type str and include the key value')
         else:
-            self.code_map = code_map
+            self.component_aliases = component_aliases
 
         if not isinstance(ref_comp, str):
             raise TypeError
-        elif ref_comp not in self.code_map.keys():
+        elif ref_comp not in self.component_aliases.keys():
             raise KeyError
         else:
             self.ref_comp = ref_comp
@@ -114,6 +114,35 @@ class WindowWyrm(Wyrm):
         y = self.queue
         return y
 
+    def update_window_tracker(self, dst):
+        # Split by site
+        dict_x_site = dst.split_on_key(key='site')
+        # Iterate across site holdings
+        for site, dst_site in dict_x_site.keys():
+            # if site is not in window_tracker, get max_starttime from a ref_comp DictStream
+            if site not in self.window_tracker.keys():
+                dst_ref = dst_site.fnselect(f'*.*.*.*[{self.component_aliases[self.ref_comp]}].*.*')
+                if len(dst_ref) > 0:
+                    init_t0 = dst_ref.stats.max_starttime
+                    self.window_tracker.update({site: {'init t0': init_t0}})
+            else:
+                init_t0 = self.window_tracker[site]['init t0']
+            # Iterate across instruments at site
+            dst_site_dict_x_inst = dst_site.split_on_key(key='inst')
+            for inst, dst_inst in dst_site_dict_x_inst.keys():
+                # If instrument is not in window_tracker, get init_t0 for starttime + windowing instructions
+                if inst not in self.window_tracker[site].keys():
+                    # If init_t0 is in the window, use init_t0 as the window reference time
+                    if dst_inst.max_starttime < init_t0 < dst_inst.min_endtime:
+                        self.window_tracker[site].update({inst: init_t0})
+                    # If init_t0 is before the start of the window, increment up
+                    elif dst_inst.
+
+        
+
+
+
+
     def update_window_tracker(self, x):
         """
         Iterate across sites/instruments in DictStream "x" and
@@ -130,7 +159,7 @@ class WindowWyrm(Wyrm):
             if site not in self.window_tracker.keys():
                 self.window_tracker.update({site: {}})
                 # Filter down to reference trace(s)
-                _xsite = x.fnselect(f'{site}.??.??{self.code_map[self.ref_comp]}*')
+                _xsite = x.fnselect(f'{site}.??.??{self.component_aliases[self.ref_comp]}*')
                 # Iterate across instruments at this site and add them to the list
                 for inst in _xsite.site_inst_index[site].keys():
                     # Use DictStream header attribute 'max_starttime' to get starttime for windowing
@@ -147,7 +176,7 @@ class WindowWyrm(Wyrm):
                         # Get the initiation time
                         init_t0 = self.window_tracker[site]['init t0']
                         # Get instrument slice of the DictStream
-                        _xinst = x.fnselect(f'{site}.{inst}{self.code_map[self.ref_comp]}*')
+                        _xinst = x.fnselect(f'{site}.{inst}{self.component_aliases[self.ref_comp]}*')
                         # Increment up window 
                         dt_adv = _xinst.min_starttime - init_t0
                         nadv = dt_adv // self.advance_sec

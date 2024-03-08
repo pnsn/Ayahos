@@ -29,12 +29,13 @@
 """
 import os
 import re
-import wyrm.util.compatability as wcc
 #import PyEW
 from obspy import Stream, read
 from wyrm.core._base import Wyrm
-from wyrm.util.pyew import is_wave_msg, wave2trace, trace2wave
-from wyrm.core.data import BufferTree, TraceBuffer
+from wyrm.util.pyew import is_wave_msg, wave2mltrace
+from wyrm.util.compatability import bounded_floatlike, bounded_intlike
+from wyrm.core.trace import MLTrace, MLTraceBuffer
+from wyrm.core.dictstream import DictStream
 
 
 class RingWyrm(Wyrm):
@@ -80,7 +81,7 @@ class RingWyrm(Wyrm):
         
         # Compatability checks for msg_type
         if self.pulse_method in ['get_msg','put_msg','get_bytes','put_bytes']:
-            self.msg_type = wcc.bounded_intlike(
+            self.msg_type = bounded_intlike(
                 msg_type,
                 name='msg_type',
                 minimum=0,
@@ -177,8 +178,7 @@ class RingWyrm(Wyrm):
 class EarWyrm(RingWyrm):
     """
     Wrapper child-class of RingWyrm specific to listening to an Earthworm
-    WAVE Ring and populating a TieredBuffer object for subsequent sampling
-    by Wyrm sequences
+    WAVE Ring and populating MLTraceBuffers housed in a DictStream
     """
 
     def __init__(
@@ -186,9 +186,9 @@ class EarWyrm(RingWyrm):
         module=None,
         conn_id=0,
         max_length=150,
+        restrict_past_append=True,
         max_pulse_size=12000,
         debug=False,
-        **options
     ):
         """
         Initialize a EarWyrm object with a TieredBuffer + TraceBuff.
@@ -197,14 +197,12 @@ class EarWyrm(RingWyrm):
         :: INPUTS ::
         :param module: [PyEW.EWModule] active PyEarthworm module object
         :param conn_id: [int] index number for active PyEarthworm ring connection
-        :param max_length: [float] maximum TraceBuff length in seconds
-                        (passed to TieredBuffer for subsequent buffer element initialization)
+        :param max_length: [float] maximum MLTraceBuffer length in seconds
         :param max_pulse_size: [int] maximum number of get_wave() actions to execute per
                         pulse of this RingWyrm
         :param debug: [bool] should this RingWyrm be run in debug mode?
-        :param **options: [kwargs] additional kwargs to pass to TieredBuff as
-                    part of **buff_init_kwargs
-                    see wyrm.buffer.structures.TieredBuffer
+        :param **options: [kwargs] additional kwargs to pass to MLTraceBuffer objects'
+                            __add__() method.
         """
         # Inherit from RingWyrm
         super().__init__(
@@ -216,13 +214,51 @@ class EarWyrm(RingWyrm):
             debug=debug
             )
         # Let TieredBuffer handle the compatability check for max_length
-        self.tree = BufferTree(
-            buff_class=TraceBuffer,
-            max_length=max_length,
-            **options
-            )
-        self.options = options
+        # self.tree = BufferTree(
+        #     buff_class=TraceBuffer,
+        #     max_length=max_length,
+        #     **options
+        #     )
+        self.max_length = bounded_floatlike(
+            max_length,
+            name='max_length',
+            minimum=0,
+            maximum=None,
+            inclusive=False
+        )
+        self.stream = DictStream()
+
+        self.options={}
+        for _k, _v in options.items():
+            if _k in dir(MLTraceBuffer):
+                self.options.update({_k: _v})
         # self._update_io_types(itype=(str, type(None)), otype=BufferTree)
+
+    def pulse(self, x=None, **options):
+        # Iterate up to max_pulse_size
+        for _i in range(self.max_pulse_size):
+            # Run pulse method from get_wave() formatted RingWyrm to get single wave
+            _wave = super().pulse()
+            # Early stopping if RingWyrm.pulse() returns False
+            if not _wave:
+                break
+            # Otherwise
+            else:
+                # Convert wave to MLTrace
+                mlt = wave2mltrace(_wave)
+                # If MLTrace id is not in the dictstream keys
+                if mlt.id not in self.stream.keys():
+                    # Initialize a MLTraceBuffer
+                    mltb = MLTraceBuffer(
+                        max_length=self.max_length,
+                        restrict_past_append=self.restrict_past_append)
+                    # Append 
+                    mltb.__add__(mlt)
+                    self.stream.__add__(mlt, key_attr='id', **options)
+                else:
+                    self.stream.__add__(mlt, key_attr='id', **options)
+                
+
 
     def pulse(self, x=None):
         """

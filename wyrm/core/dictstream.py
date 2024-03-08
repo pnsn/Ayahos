@@ -8,10 +8,17 @@ from obspy.core import compatibility
 from wyrm.core.trace import MLTrace, MLTraceBuffer
 from wyrm.util.pyew import wave2mltrace
 ###################################################################################
-# Dictionary Stream Header Class Definition #######################################
+# Dictionary Stream Stats Class Definition ########################################
 ###################################################################################
 
-class DictStreamHeader(AttribDict):
+class DictStreamStats(AttribDict):
+    """
+    A class to contain metadata for a wyrm.core.dictstream.DictStream object
+    of the based on the ObsPy AttribDict (Attribute Dictionary) class. 
+
+    This operates very similarly to obspy.core.trace.Trace objects' Stats object
+    (a sibling class)
+    """
     defaults = {
         'reference_id': '*',
         'min_starttime': None,
@@ -22,9 +29,21 @@ class DictStreamHeader(AttribDict):
     }
 
     def __init__(self, header={}):
-        super(DictStreamHeader, self).__init__(header)
+        """
+        Initialize a DictStreamStats object
+
+        :: INPUT ::
+        :param header: [dict] (optional)
+                    Dictionary defining attributes (keys) and 
+                    values (values) to assign to the DictStreamStats
+                    object
+        """
+        super(DictStreamStats, self).__init__(header)
     
     def __repr__(self):
+        """
+        Provide a user-friendly string representation of the contents of this DictStreamStats object
+        """
         rstr = '----Stats----'
         for _k, _v in self.items():
             if _v is not None:
@@ -42,8 +61,16 @@ class DictStreamHeader(AttribDict):
                     rstr += f'\n{_k:>18}: {_v}'
         return rstr
 
-    
     def update_time_range(self, trace):
+        """
+        Update the minimum and maximum starttime and endtime attributes of this
+        DictStreamStats object using timing information from an obspy Trace-like
+        object.
+
+        :: INPUT ::
+        :param trace: [obspy.core.trace.Trace] or child classes from which to 
+                    query starttime and endtime information
+        """
         if self.min_starttime is None or self.min_starttime > trace.stats.starttime:
             self.min_starttime = trace.stats.starttime
         if self.max_starttime is None or self.max_starttime < trace.stats.starttime:
@@ -106,13 +133,13 @@ class DictStream(Stream):
                         that are added to the self.traces attribute via
                         the __add__ method.
         :param header: [dict] dict stream header information
-                        see wyrm.core.dictstream.DictStreamHeader
+                        see wyrm.core.dictstream.DictStreamStats
         :param options: [kwargs] collector for kwargs to pass to DictStream.__add__
         """
         # initialize as empty stream
         super().__init__()
-        # Create stats attribute with DictStreamHeader
-        self.stats = DictStreamHeader(header=header)
+        # Create stats attribute with DictStreamStats
+        self.stats = DictStreamStats(header=header)
         # Redefine self.traces as dict
         self.traces = {}
         if traces is not None:
@@ -123,7 +150,7 @@ class DictStream(Stream):
     def _internal_add_processing_info(self, info):
         """
         Add the given informational string to the `processing` field in the
-        trace's :class:`~obspy.core.trace.Stats` object.
+        DictStream's :class:`wyrm.core.dictstream.DictStreamStats` object.
         """
         proc = self.stats.setdefault('processing', [])
         if len(proc) == self._max_processing_info-1:
@@ -221,6 +248,9 @@ class DictStream(Stream):
 
 
     def __add__(self, other, key_attr='id', **options):
+        """
+        Wrapper method for the _add_trace() method
+        """
         if isinstance(other, Trace):
             self._add_trace(other, key_attr=key_attr, **options)
         elif isinstance(other, Stream):
@@ -234,6 +264,24 @@ class DictStream(Stream):
             raise TypeError(f'other type "{type(other)}" not supported.')
 
     def _add_trace(self, other, key_attr='id', **options):
+        """
+        Add a trace-like object `other` to this DictStream using elements from
+        the trace's id as the dictionary key in the DictStream.traces dictionary
+
+        :: INPUTS ::
+        :param other: [obspy.core.trace.Trace] or child-class
+                        Trace to append
+        :param key_attr: [str] name of the attribute to use as a key.
+                        Supported Values:
+                            'id' - full N.S.L.C(.M.W) code
+                            'site' - Net + Station
+                            'inst' - Location + Band & Instrument codes from Channel
+                            'instrument'- 'site' + 'inst'
+                            'mod' - Model + Weight codes
+                            'component' - component code from Channel
+        :param **options: [kwargs] key-word argument gatherer to pass to the 
+                        MLTrace.__add__() or MLTraceBuffer.__add__() method
+        """
         # If potentially appending a wave
         if isinstance(other, dict):
             try:
@@ -266,6 +314,17 @@ class DictStream(Stream):
             self.stats.reference_id = self.get_reference_id()
 
     def _add_stream(self, stream, **options):
+        """
+        Supporting method to iterate across a stream-like object
+        and apply the _add_trace() DictStream class method
+
+        :: INPUTS ::
+        :param stream: [obspy.core.stream.Stream] or similar
+                        an iterable object that returns individual
+                        obspy Trace-like objects as iterants
+        :param **options: [kwargs] optional key-word argument gatherer
+                        to pass kwargs to the DictStream._add_trace method
+        """
         for _tr in stream:
             self._add_trace(_tr, **options)
 
@@ -300,6 +359,22 @@ class DictStream(Stream):
     ###############################################################################
     
     def fnselect(self, fnstr, ascopy=False):
+        """
+        Find DictStream.traces.keys() strings that match the
+        input `fnstr` string using the fnmatch.filter() method
+        and compose a view (or copy) of the subset DictStream
+
+        :: INPUTS ::
+        :param fnstr: [str] Unix wildcard compliant string to 
+                        use for searching for matching keys
+        :param ascopy: [bool] should the returned DictStream
+                        be a view (i.e., accessing the same memory blocks)
+                        or a copy of the traces contained within?
+
+        :: OUTPUT ::
+        :return out: [wyrm.core.dictstream.DictStream] containing
+                        subset traces that match the specified `fnstr`
+        """
         matches = fnmatch.filter(self.traces.keys(), fnstr)
         out = self.__class__(header=self.stats.copy())
         for _m in matches:
@@ -312,6 +387,16 @@ class DictStream(Stream):
         return out
 
     def get_unique_id_elements(self):
+        """
+        Compose a dictionary containing lists of
+        unique id elements: Network, Station, Location,
+        Channel, Model, Weight in this DictStream
+
+        :: OUTPUT ::
+        :return out: [dict] output dictionary keyed
+                by the above elements and valued
+                as lists of strings
+        """
         N, S, L, C, M, W = [], [], [], [], [], []
         for _tr in self:
             hdr = _tr.stats
@@ -332,6 +417,17 @@ class DictStream(Stream):
         return out
     
     def get_reference_id_elements(self):
+        """
+        Return a dictionary of strings that are 
+        UNIX wild-card representations of a common
+        id for all traces in this DictStream. I.e.,
+            ? = single character wildcard
+            * = unbounded character count widlcard
+
+        :: OUTPUT ::
+        :return out: [dict] dictionary of elements keyed
+                    with the ID element name
+        """
         ele = self.get_unique_id_elements()
         out = {}
         for _k, _v in ele.items():
@@ -367,11 +463,33 @@ class DictStream(Stream):
         return out
 
     def get_reference_id(self):
+        """
+        Get the UNIX wildcard formatted common reference_id string
+        for all traces in this DictStream
+
+        :: OUTPUT ::
+        :return out: [str] output stream
+        """
         ele = self.get_reference_id_elements()
         out = '.'.join(ele.values())
         return out                
     
     def split_on_key(self, key='instrument', **options):
+        """
+        Split this DictStream into a dictionary of DictStream
+        objects based on a given element or elements of the
+        constituient traces' ids.
+
+        :: INPUTS ::
+        :param key: [str] name of the attribute to split on
+                    Supported:
+                        'id', 'site','inst','instrument','mod','component',
+                        'network','station','location','channel','model','weight'
+        :param **options: [kwargs] key word argument gatherer to pass
+                        kwargs to DictStream.__add__()
+        :: OUTPUT ::
+        :return out: [dict] of [DictStream] objects
+        """
         if key not in MLTrace().key_opts.keys():
             raise ValueError(f'key {key} not supported.')
         out = {}
@@ -385,6 +503,10 @@ class DictStream(Stream):
         return out
     
     def to_component_streams(self, component_aliases={'Z': 'Z3', 'N': 'N1', 'E': 'E2'}, ascopy=False, **options):
+        """
+        Split this DictStream by instrument codes (Net.Sta.Loc.BandInst)
+        """
+        
         # Split by instrument_id
         if ascopy:
             out = self.copy().split_on_key(key='instrument', **options)
@@ -541,7 +663,7 @@ class DictStream(Stream):
 # Window Stream Header Class Definition
 ###############################################################################
 
-class ComponentStreamHeader(DictStreamHeader):
+class ComponentStreamHeader(DictStreamStats):
 
     def __init__(self, header={}):
         super(ComponentStreamHeader, self).__init__(header=header)
@@ -599,6 +721,28 @@ class ComponentStream(DictStream):
     # def __add__(self, other, key_attr='component', **options):
     #     super().__add__(other, key_attr=key_attr, **options)
 
+    def __repr__(self, extended=False):
+        rstr = self.stats.__repr__()
+        if len(self.traces) > 0:
+            id_length = max(len(_tr.id) for _tr in self.traces.values())
+        else:
+            id_length=0
+        if len(self.traces) > 0:
+            rstr += f'\n{len(self.traces)} {type(self[0]).__name__}(s) in {type(self).__name__}\n'
+        else:
+            rstr += f'\nNothing in {type(self).__name__}\n'
+        if len(self.traces) <= 20 or extended is True:
+            for _l, _tr in self.traces.items():
+                rstr += f'{_l:} : {_tr.__str__(id_length)}\n'
+        else:
+            _l0, _tr0 = list(self.traces.items())[0]
+            _lf, _trf = list(self.traces.items())[-1]
+            rstr += f'{_l0:} : {_tr0.__repr__(id_length=id_length)}\n'
+            rstr += f'...\n({len(self.traces) - 2} other traces)\n...\n'
+            rstr += f'{_lf:} : {_trf.__repr__(id_length=id_length)}\n'
+            rstr += f'[Use "print({type(self).__name__}.__repr__(extended=True))" to print all labels and MLTraces]'
+        return rstr
+
     def _add_trace(self, other, **options):
         # If potentially appending a wave
         if isinstance(other, dict):
@@ -617,6 +761,9 @@ class ComponentStream(DictStream):
         if isinstance(other, MLTrace):
             # Get other's component code
             comp = other.comp
+            # Get other's model code
+            mod = other.mod
+            key = f'{comp}.{mod}'
             # If the component code is not in alias keys
             if comp not in dict(self.stats.aliases).keys():
                 # Iterate across alias keys and aliases
@@ -740,13 +887,13 @@ class ComponentStream(DictStream):
             trC = ref_tr.copy().to_zero(method='fold').set_comp(_k)
             self.traces.update({_k: trC})
 
-    # @_add_processing_info    
-    # def _apply_clone_other(self, ref_component, thresh_dict):
-    #     # If it is only the reference component present, run _apply_clone_ref() instaed
-    #     if list(self.traces.keys()) == [ref_component]:
-    #         self._apply_clone_ref(ref_component, thresh_dict)
-    #     else:
-    #         pass_dict = {_k: None for _k in self.traces.keys()}
-    #         for _k, _tr for self.traces.items():
-    #             pass_dict.update{_k: _tr.fvalid >= thresh_dict[_k]}
+    @_add_processing_info    
+    def _apply_clone_other(self, ref_component, thresh_dict):
+        # If it is only the reference component present, run _apply_clone_ref() instaed
+        if list(self.traces.keys()) == [ref_component]:
+            self._apply_clone_ref(ref_component, thresh_dict)
+        else:
+            pass_dict = {_k: None for _k in self.traces.keys()}
+            for _k, _tr in self.traces.items():
+                pass_dict.update{_k: _tr.fvalid >= thresh_dict[_k]}
             

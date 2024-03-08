@@ -189,9 +189,14 @@ class MLTrace(Trace):
                     when conducting stacking (method = 2 or 3)
         :attr stats: obspy.core.trace.Stats child-class MLStats object
         """
+        # If a trace is passed as data, do super().__init__ with it's data & header
+        if type(data) == Trace:
+            trace = data
+            data = trace.data
+            header = trace.stats
+        
         # Initialize Trace inheritance
         super().__init__(data=data, header=None)
-
         if header is None:
             header = {}
         header.setdefault('npts', len(data))
@@ -212,7 +217,6 @@ class MLTrace(Trace):
                 raise ValueError
         else:
             raise TypeError
-        
         # Handle case where data are masked - set mask values to 0 fold
         if isinstance(self.data, np.ma.masked_array):
             if np.ma.is_masked(self.data):
@@ -232,7 +236,7 @@ class MLTrace(Trace):
         for _k in header.defaults.keys():
             header.update({_k: deepcopy(self.stats[_k])})
         ft = Trace(data=self.fold, header=header)
-        ft.stats.channel = ft.stats.channel[:-1] + 'f'        
+        ft.stats.channel += 'f'        
         return ft
 
     @_add_processing_info
@@ -328,12 +332,22 @@ class MLTrace(Trace):
     # UPDATED MAGIC METHODS #######################################################
     ###############################################################################
 
-    def __add__(self, method=1, fill_value=None, sanity_checks=True):
+    def __add__(self, other, method=1, fill_value=None, sanity_checks=True):
         """
         Alias to MLTrace.merge
         """
-        self.merge(method=method, fill_value=fill_value, sanity_checks=sanity_checks)
+        self.merge(other, method=method, fill_value=fill_value, sanity_checks=sanity_checks)
         return self
+    
+    def __repr__(self, id_length=None):
+        rstr = super().__str__(id_length=id_length)
+        if self.stats.npts > 0:
+            rstr += f' | Fold:'
+            for _i in range(self.fold.max() + 1):
+                ff = sum(self.fold == _i)/self.stats.npts
+                if ff > 0:
+                    rstr += f' [{_i}] {ff:.2f}'
+        return rstr
     
     ###############################################################################
     # UPDATED TRIMMING METHODS ####################################################
@@ -377,7 +391,7 @@ class MLTrace(Trace):
         self.enforce_zero_mask()
         return self
 
-    @_add_processing_info
+    # @_add_processing_info
     def merge(self, trace, method='avg', fill_value=None, sanity_checks=True):
         """
         Conduct a "max" or "avg" stacking of a new trace into this MLTrace object under the
@@ -407,7 +421,7 @@ class MLTrace(Trace):
         
         """
         if sanity_checks:
-            if not isinstance(trace, Trace):
+            if isinstance(trace, Trace):
                 if not isinstance(trace, MLTrace):
                     trace = MLTrace(data=trace.data, header=trace.stats)
                 else:
@@ -899,14 +913,20 @@ class MLTrace(Trace):
 
     def get_inst(self):
         hdr = self.stats
-        inst = f'{hdr.location}.{hdr.channel[:-1]}'
+        if len(hdr.channel) > 0:
+            inst = f'{hdr.location}.{hdr.channel[:-1]}'
+        else:
+            inst = f'{hdr.location}.{hdr.channel}'
         return inst
     
     inst = property(get_inst)
 
     def get_comp(self):
         hdr = self.stats
-        comp = hdr.channel[-1]
+        if len(hdr.channel) > 0:
+            comp = hdr.channel[-1]
+        else:
+            comp = ''
         return comp
     
     def set_comp(self, other):
@@ -929,11 +949,16 @@ class MLTrace(Trace):
     mod = property(get_mod)
 
     def get_id(self):
-        hdr = self.stats
         id = f'{self.site}.{self.inst}{self.comp}.{self.mod}'
         return id
 
     id = property(get_id)
+
+    def get_instrument_id(self):
+        id = f'{self.site}.{self.inst}'
+        return id
+    
+    instrument = property(get_instrument_id)
 
     def get_valid_fraction(self, thresh=1):
         npts = self.stats.npts
@@ -941,6 +966,19 @@ class MLTrace(Trace):
         return nv/npts
     
     fvalid = property(get_valid_fraction)
+
+    def get_id_element_dict(self):
+        id = self.id
+        site = self.site
+        inst = self.inst
+        instrument = self.instrument
+        mod = self.mod
+        comp = self.comp
+        key_opts = dict(zip(['id','site','inst','instrument','mod','component'], [id, site, inst, instrument, mod, comp]))
+        # If id is not in traces.keys() - use dict.update
+        return key_opts
+    
+    key_opts = property(get_id_element_dict)
 
 ###################################################################################
 # Machine Learning Trace Buffer Class Definition ##################################
@@ -975,13 +1013,17 @@ class MLTraceBuffer(MLTrace):
             self.RPA = restrict_past_append
 
         # Compatability checks for default merge(**kwargs)
-        self.merge_kwargs = {}
-        for _k, _v in inspect.signature(super().merge).items():
-            if _k in merge_kwargs.keys():
-                self.merge_kwargs.update({_k: merge_kwargs[_k]})
-            elif _v.default != inspect._empty:
-                self.merge_kwargs.update({_k: _v.default})
-        self._has_data = False
+        if merge_kwargs:
+            self.merge_kwargs = merge_kwargs
+        else:
+            self.merge_kwargs = {}
+        # breakpoint()
+        # for _k, _v in inspect.signature(super().merge).items():
+        #     if _k in merge_kwargs.keys():
+        #         self.merge_kwargs.update({_k: merge_kwargs[_k]})
+        #     elif _v.default != inspect._empty:
+        #         self.merge_kwargs.update({_k: _v.default})
+        # self._has_data = False
 
     def __add__(self, other):
         self.append(other)

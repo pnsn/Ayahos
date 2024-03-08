@@ -1,7 +1,8 @@
 import fnmatch, inspect, time, warnings
 import numpy as np
 from decorator import decorator
-from obspy import Trace, Stream, UTCDateTime
+from obspy.core.stream import Stream, read
+from obspy.core.trace import Trace, Stats
 from obspy.core.util.attribdict import AttribDict
 from obspy.core import compatibility
 from wyrm.core.trace import MLTrace, MLTraceBuffer
@@ -27,17 +28,16 @@ class DictStreamHeader(AttribDict):
         rstr = '----Stats----'
         for _k, _v in self.items():
             if _v is not None:
-                if _k == 'sync_status':
-                    rstr += f'\n{_k:>18}: '
-                    for _k2, _v2 in _v.items():
-                        rstr += f'\n{_k2:>26}: {_v2}'
-                elif 'starttime' in _k:
+                if self.min_starttime != self.max_starttime or self.min_endtime != self.max_endtime:
+                    if 'min_' in _k:
+                        if _k == 'min_starttime':
+                            rstr += f'\n{"min time range":>18}: {self.min_starttime} - {self.min_endtime}'
+                    elif 'max_' in _k:
+                        if _k == 'max_starttime':
+                            rstr += f'\n{"max time range":>18}: {self.max_starttime} - {self.max_endtime}'
+                elif 'time' in _k:
                     if _k == 'min_starttime':
-                        rstr += f'\n{"starttime range":>18}: {self[_k]} - {self.max_starttime}'
-                    
-                elif 'endtime' in _k:
-                    if _k == 'min_endtime':
-                        rstr += f'\n{"endtime range":>18}: {self[_k]} - {self.max_endtime}'
+                        rstr += f'\n{"uniform range":>18}: {self.min_starttime} - {self.min_endtime}'
                 else:
                     rstr += f'\n{_k:>18}: {_v}'
         return rstr
@@ -117,6 +117,7 @@ class DictStream(Stream):
         self.traces = {}
         if traces is not None:
             self.__add__(traces, **options)
+            self.stats.reference_id = self.get_reference_id()
 
 
     def _internal_add_processing_info(self, info):
@@ -232,7 +233,7 @@ class DictStream(Stream):
         else:
             raise TypeError(f'other type "{type(other)}" not supported.')
 
-    def _add_trace(self, other, key_attr='component', **options):
+    def _add_trace(self, other, key_attr='id', **options):
         # If potentially appending a wave
         if isinstance(other, dict):
             try:
@@ -252,12 +253,7 @@ class DictStream(Stream):
         
         if isinstance(other, MLTrace):
             # Get id of MLTrace "other"
-            id = other.id
-            site = other.site
-            inst = other.inst
-            mod = other.mod
-            comp = other.comp
-            key_opts = dict(zip(['id','site','instrument','mod','component'], [id, site, inst, mod, comp]))
+            key_opts = other.key_opts
             # If id is not in traces.keys() - use dict.update
             key = key_opts[key_attr]
             # If new key
@@ -266,6 +262,8 @@ class DictStream(Stream):
             # If key is in traces.keys() - use __add__
             else:
                 self.traces[key].__add__(other, **options)
+            self.stats.update_time_range(other)
+            self.stats.reference_id = self.get_reference_id()
 
     def _add_stream(self, stream, **options):
         for _tr in stream:
@@ -281,34 +279,139 @@ class DictStream(Stream):
             id_length = max(len(_tr.id) for _tr in self.traces.values())
         else:
             id_length=0
-        rstr += f'\n{len(self.traces)} MLTrace(s) in DictStream\n'
+        if len(self.traces) > 0:
+            rstr += f'\n{len(self.traces)} {type(self[0]).__name__}(s) in {type(self).__name__}\n'
+        else:
+            rstr += f'\nNothing in {type(self).__name__}\n'
         if len(self.traces) <= 20 or extended is True:
             for _l, _tr in self.traces.items():
                 rstr += f'{_l:} : {_tr.__str__(id_length)}\n'
         else:
             _l0, _tr0 = list(self.traces.items())[0]
             _lf, _trf = list(self.traces.items())[-1]
-            rstr += f'{_l0:} : {_tr0.__str__(id_length)}\n'
+            rstr += f'{_l0:} : {_tr0.__repr__(id_length=id_length)}\n'
             rstr += f'...\n({len(self.traces) - 2} other traces)\n...\n'
-            rstr += f'{_lf:} : {_trf.__str__(id_length)}\n'
-            rstr += f'[Use "print(DictStream.__repr__(extended=True))" to print all labels and MLTraces]'
+            rstr += f'{_lf:} : {_trf.__repr__(id_length=id_length)}\n'
+            rstr += f'[Use "print({type(self).__name__}.__repr__(extended=True))" to print all labels and MLTraces]'
         return rstr
 
     ###############################################################################
-    # SEARCH METHOD ###############################################################
+    # SEARCH METHODS ##############################################################
     ###############################################################################
-            
+    
     def fnselect(self, fnstr, ascopy=False):
         matches = fnmatch.filter(self.traces.keys(), fnstr)
-        dst = DictStream(header=self.stats.copy())
+        out = self.__class__(header=self.stats.copy())
         for _m in matches:
             if ascopy:
                 _tr = self.traces[_m].copy()
             else:
                 _tr = self.traces[_m]
-            dst.traces.update({_m: _tr})
-        dst.stats.reference_id = fnstr
-        return dst
+            out.traces.update({_m: _tr})
+        out.stats.reference_id = out.get_reference_id()
+        return out
+
+    def get_unique_id_elements(self):
+        N, S, L, C, M, W = [], [], [], [], [], []
+        for _tr in self:
+            hdr = _tr.stats
+            if hdr.network not in N:
+                N.append(hdr.network)
+            if hdr.station not in S:
+                S.append(hdr.station)
+            if hdr.location not in L:
+                L.append(hdr.location)
+            if hdr.channel not in C:
+                C.append(hdr.channel)
+            if hdr.model not in M:
+                M.append(hdr.model)
+            if hdr.weight not in W:
+                W.append(hdr.weight)
+        out = dict(zip(['network','station','location','channel','model','weight'],
+                       [N, S, L, C, M, W]))
+        return out
+    
+    def get_reference_id_elements(self):
+        ele = self.get_unique_id_elements()
+        out = {}
+        for _k, _v in ele.items():
+            if len(_v) == 0:
+                out.update({_k:'*'})
+            elif len(_v) == 1:
+                out.update({_k: _v[0]})
+            else:
+                minlen = 999
+                maxlen = 0
+                for _ve in _v:
+                    if len(_ve) < minlen:
+                        minlen = len(_ve)
+                    if len(_ve) > maxlen:
+                        maxlen = len(_ve)
+                _cs = []
+                for _i in range(minlen):
+                    _cc = _v[0][_i]
+                    for _ve in _v:
+                        if _ve[_i] == _cc:
+                            pass
+                        else:
+                            _cc = '?'
+                            break
+                    _cs.append(_cc)
+                if all(_c == '?' for _c in _cs):
+                    _cs = '*'
+                else:
+                    if minlen != maxlen:
+                        _cs.append('*')
+                    _cs = ''.join(_cs)
+                out.update({_k: _cs})
+        return out
+
+    def get_reference_id(self):
+        ele = self.get_reference_id_elements()
+        out = '.'.join(ele.values())
+        return out                
+    
+    def split_on_key(self, key='instrument', **options):
+        if key not in MLTrace().key_opts.keys():
+            raise ValueError(f'key {key} not supported.')
+        out = {}
+        for _tr in self:
+            key_opts = _tr.key_opts
+            _k = key_opts[key]
+            if _k not in out.keys():
+                out.update({_k: self.__class__(traces=_tr)})
+            else:
+                out[_k].__add__(_tr, **options)
+        return out
+    
+    def to_component_streams(self, component_aliases={'Z': 'Z3', 'N': 'N1', 'E': 'E2'}, ascopy=False, **options):
+        # Split by instrument_id
+        if ascopy:
+            out = self.copy().split_on_key(key='instrument', **options)
+        else:
+            out = self.split_on_key(key='instrument', **options)
+        # Iterate and update
+        for _k, _v in out.items():
+            out.update({_k: ComponentStream(traces=_v, component_aliases=component_aliases)})
+        return out
+    
+
+    # def split(self, keys=('site', 'instrument'), flat=True, **options):
+    #     if isinstance(keys, str):
+    #         keys = (keys)
+    #     if not all(_k in MLTrace().key_opts.keys() for _k in keys):
+    #         raise ValueError
+        
+    #     out = {}
+    #     for _tr in self:    
+    #         _kl = []
+    #         for _k in keys:
+    #             _kl.append(_k)
+    #         if flat:
+    #             _out_key = '_'.join(_kl)
+    #         else:
+    #             for _k in _kl[::-1]:
+    #                 _x
 
     ###############################################################################
     # UPDATED METHODS FROM OBSPY STREAM ###########################################
@@ -369,6 +472,70 @@ class DictStream(Stream):
             self.traces = {_k: _v for _k, _v in self.traces.items() if _v.stats.npts}
             self.stats.update_time_range(trace)
         return self
+    
+    ###############
+    # I/O METHODS - TODO - GO THROUGH SAC TO APPEND MOD TO CHANNEL #
+    ###############
+
+#     def write(self, dirname, **options):
+#         # Create a stream to use ObsPy's I/O routines for saving to a directory name
+        
+#         stream = Stream()
+#         for _tr in self:
+#             if _tr.mod != '.':
+#                 mod = f'{_tr.stats.model}.{_tr.stats.weight}'
+#             else:
+#                 mod = ''
+#             data = _tr.data
+#             tr_fold = _tr.get_fold_trace()
+#             # Tack model information into Network metadata
+#             tr_fold.stats.network += f'_{mod}'
+
+
+#             hdr = _tr.stats
+#             header = Stats()
+#             for _k in header.defaults.keys():
+#                 header.update({_k: self.stats[_k]})
+#             tr_data = Trace(data=data, header=header)
+#             tr_data.stats.network += f'_{mod}'
+            
+#             stream += tr_fold
+#             stream += tr_data
+
+#         out = stream.write(filename, format='MSEED', **options)
+#         return out
+
+# def read_from_sac(filenames, **options):
+#     st = Stream()
+
+#     st = read(filename, fmt='MSEED', **options)
+#     dst = DictStream()
+#     holder = {}
+#     for tr in st:
+#         if '_' in tr.stats.network:
+#             net, mod, wgt = tr.stats.network.split('_')
+#         else:
+#             net, mod, wgt, = tr.stats.network, '', ''
+#         hdr = tr.stats
+#         hdr.update({'network': net, 'model': mod, 'weight': wgt})
+#         instrument_id = f'{hdr.network}.{hdr.station}.{hdr.location}.{hdr.channel[:-1]}?.{hdr.model}.{hdr.weight}'
+#         if instrument_id in holder.keys():
+#             if component != 'f':
+
+        
+#         component = hdr.component
+#         if component == 'f':
+
+
+#         if instrument_id in holder.keys():
+#             holder[instrument_id].update({component: bundle})
+#         else:
+#             holder.update({instrument_id: {component: bundle}})
+
+        
+#         bundle = {'data': tr.data, ''}
+#         mltr = MLTrace(data=tr.data, header=hdr)
+
 
 ###############################################################################
 # Window Stream Header Class Definition
@@ -376,8 +543,9 @@ class DictStream(Stream):
 
 class ComponentStreamHeader(DictStreamHeader):
 
-    defaults = DictStreamHeader.defaults
-    defaults.update({'aliases': dict({}),
+    def __init__(self, header={}):
+        super(ComponentStreamHeader, self).__init__(header=header)
+        self.defaults.update({'aliases': dict({}),
                      'reference_starttime': None,
                      'reference_sampling_rate': None,
                      'reference_npts': None,
@@ -386,10 +554,6 @@ class ComponentStreamHeader(DictStreamHeader):
                      'min_endtime': None,
                      'max_endtime': None,
                      })
-
-    def __init__(self, header={}):
-        super(ComponentStreamHeader, self).__init__(header=header)
-
     def __str__(self):
         prioritized_keys = ['reference_id',
                             'reference_starttime',
@@ -432,14 +596,13 @@ class ComponentStream(DictStream):
             # Add traces using the DictStream __add__ method that converts non MLTrace objects into MLTrace objects
             self.__add__(traces, key_attr='component', **options)
 
+    # def __add__(self, other, key_attr='component', **options):
+    #     super().__add__(other, key_attr=key_attr, **options)
 
     def _add_trace(self, other, **options):
         # If potentially appending a wave
         if isinstance(other, dict):
-            try:
-                other = wave2mltrace(other)
-            except SyntaxError:
-                pass
+            other = wave2mltrace(other)
         # If appending a trace-type object
         elif isinstance(other, Trace):
             # If it isn't an MLTrace, __init__ one from data & header
@@ -498,7 +661,7 @@ class ComponentStream(DictStream):
             traces = [traces]
         # if there is already a non-default reference_id, use that as reference
         if self.stats.reference_id != self.stats.defaults['reference_id']:
-            ref = [self.stats.reference_id]
+            ref = self.stats.reference_id
         # Otherwise use the first trace in traces as the template
         else:
             tr0 = traces[0]

@@ -968,13 +968,19 @@ class MLTrace(Trace):
     fvalid = property(get_valid_fraction)
 
     def get_id_element_dict(self):
-        id = self.id
-        site = self.site
-        inst = self.inst
-        instrument = self.instrument
-        mod = self.mod
-        comp = self.comp
-        key_opts = dict(zip(['id','site','inst','instrument','mod','component'], [id, site, inst, instrument, mod, comp]))
+        key_opts = {'id': self.id,
+                    'instrument': self.instrument,
+                    'site': self.site,
+                    'inst': self.inst,
+                    'component': self.comp,
+                    'mod': self.mod,
+                    'network': self.stats.network,
+                    'station': self.stats.station,
+                    'location': self.stats.location,
+                    'channel': self.stats.channel,
+                    'model': self.stats.model,
+                    'weight': self.stats.weight
+                    }
         # If id is not in traces.keys() - use dict.update
         return key_opts
     

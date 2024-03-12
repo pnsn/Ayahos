@@ -1,5 +1,5 @@
 from wyrm.dev.dictstream import DictStream, DictStreamHeader
-from wyrm.core.trace import MLTrace
+from wyrm.data.mltrace import MLTrace
 
 class WindowStreamHeader(DictStreamHeader):
     

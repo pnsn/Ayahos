@@ -9,7 +9,7 @@ from obspy.core.trace import Trace, Stats
 from obspy.core.compatibility import round_away
 from obspy.core.util.attribdict import AttribDict
 from tqdm import tqdm
-from wyrm.core.trace import MLTrace
+from wyrm.data.mltrace import MLTrace
 
 class DictStreamHeader(AttribDict):
     defaults = {

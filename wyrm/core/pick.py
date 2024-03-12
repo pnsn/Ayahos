@@ -1,5 +1,6 @@
 from wyrm.core.process import WindowWyrm
-from wyrm.core.data import BufferTree, PredictionBuffer
+from wyrm.data.dictstream import DictStream
+from wyrm.data.mltrace import MLTrace, MLTraceBuffer
 from wyrm.util.stacking import semblance
 
 class SemblanceWyrm(WindowWyrm):
@@ -24,5 +25,3 @@ class SemblanceWyrm(WindowWyrm):
                  label_aliases={'P': ['P'], 'S': ['S'], 'D': ['Detection']},
     ):
 
-
-        self.buffer = wcd.

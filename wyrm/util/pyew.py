@@ -11,7 +11,7 @@
 """
 import numpy as np
 from obspy import UTCDateTime, Trace
-from wyrm.core.trace import MLTrace
+from wyrm.data.mltrace import MLTrace
 
 
 def npy2strdtype(dtype):

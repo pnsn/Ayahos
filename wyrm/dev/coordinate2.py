@@ -1,6 +1,6 @@
 from collections import deque
 from wyrm.core._base import Wyrm
-from wyrm.core.trace import MLTrace, MLTraceBuffer
+from wyrm.data.mltrace import MLTrace, MLTraceBuffer
 from wyrm.dev.dictstream import DictStream
 import wyrm.util.compatability as wuc
 

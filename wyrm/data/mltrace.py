@@ -394,6 +394,33 @@ class MLTrace(Trace):
     # @_add_processing_info
     def merge(self, trace, method='avg', fill_value=None, sanity_checks=True):
         """
+        Join a (compatable) Trace-type object to this MLTrace-type object using a specified method
+
+        method 0 - conforms to obspy.core.trace.Trace.__add__(method=0) behavior
+                    where overlapping samples are rejected from both traces and
+                    gaps are filled according to behaviors tied to fill_value
+                    Aliases: method = 'dis', 'discard'
+        method 1 - conforms to obspy.core.trace.Trace.__add__(method=1, interpolation_samples=-1)
+                    behviors where overlapping samples are replaced by a linear interpolation
+                    between overlap-bounding values
+                    Aliases: method = 'int', 'interpolate'
+        method 2 - stacking using the 'max' rule wherein the maximum value at a given
+                    overlapping sample is assigned to that sample point
+        method 3 - stacking using the 'avg' rule wherein the value of an overlapping point
+                    is calculated as the fold-weighted mean of input values
+
+        In all cases, overlapping samples resulting in a new sample are assigned a fold equal
+        to the sum of the contributing samples' fold, and eliminated samples are assigned
+        a fold of 0.
+
+        :: INPUTS ::
+        :param trace: [obspy.core.trace.Trace] or child-class object to add to this MLTrace
+        :param method: [str] or [int] see above
+        :param fill_value: [int], [float], [None] - gap filling behavior.
+                        (default) None value produces masked, 0-fold values in gaps
+                        also see obspy.core.trace.Trace.__add__
+        :param sanity_checks: [bool] - run sanity checks on metadata before attempting to merge data?
+
         Conduct a "max" or "avg" stacking of a new trace into this MLTrace object under the
         following assumptions
             1) Both self and trace represent prediction traces output by the same continuous 
@@ -1120,7 +1147,6 @@ class MLTraceBuffer(MLTrace):
             te = ts + max_samp/sr
         self.trim(starttime=ts, endtime=te, pad=True, fill_value=None, nearest_sample=True)
 
-    @_add_processing_info
     def trim_copy(self, starttime=None, endtime=None, **options):
         out = MLTrace(data=deepcopy(self.data), fold=deepcopy(self.fold), header=deepcopy(self.header))
         out.trim(starttime=starttime, endtime=endtime, **options)

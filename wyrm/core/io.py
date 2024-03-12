@@ -33,8 +33,8 @@ from obspy import Stream, read
 from wyrm.core._base import Wyrm
 from wyrm.util.pyew import is_wave_msg, wave2mltrace
 from wyrm.util.compatability import bounded_floatlike, bounded_intlike
-from wyrm.core.trace import MLTrace, MLTraceBuffer
-from wyrm.core.dictstream import DictStream
+from wyrm.data.mltrace import MLTrace, MLTraceBuffer
+from wyrm.data.dictstream import DictStream
 
 
 class RingWyrm(Wyrm):

@@ -301,27 +301,34 @@ class MLTrace(Trace):
 
     def enforce_zero_mask(self, **options):
         """
-        Enforce equivalence of masking in data and 0-values in fold
+        Enforce equivalence of masking in data to 0-values in fold
+        
+                    BUT
+
+        Do not enforce the reciprocal
+            This would result in cloned/filled traces associated
+            with ComponentStream objects to become fully masked
 
         e.g., 
 
         data ->   1, 3, 4, 5, 2, 6, 7      --, 3, 4,--, 2, 6, 7
-        mask ->   F, F, F, T, F, F, F  ==>  T, F, F, T, F, F, F
+        mask ->   F, F, F, T, F, F, F  ==>  F, F, F, T, F, F, F
         fold ->   0, 1, 1, 1, 1, 1, 1       0, 1, 1, 0, 1, 1, 1
-        changes:  *        *               *        *
+        notice:   *        *                *        *
+                                        no change   change
         :: INPUTS ::
         :param **options: [kwargs] optional inputs to pass to np.ma.masked_array
                         in the event that the input data is not masked, but the
                         input fold has 0-valued elements.
         """
-        # Update any places with 0 fold to masked values
-        if any(self.fold == 0):
-            # If not already a masked array, convert and update
-            if not isinstance(self.data, np.ma.masked_array):
-                self.data = np.ma.masked_array(data=self.data, mask=self.fold == 0, **options)
-            # Otherwise ensure all fold=0 values are True in mask
-            else:
-                self.data.mask = self.fold==0
+        # # Update any places with 0 fold to masked values
+        # if any(self.fold == 0):
+        #     # If not already a masked array, convert and update
+        #     if not isinstance(self.data, np.ma.masked_array):
+        #         self.data = np.ma.masked_array(data=self.data, mask=self.fold == 0, **options)
+        #     # Otherwise ensure all fold=0 values are True in mask
+        #     else:
+        #         self.data.mask = self.fold==0
         # Update any places with masked values to 0 fold
         if isinstance(self.data, np.ma.MaskedArray):
             if np.ma.is_masked(self.data):
@@ -343,7 +350,7 @@ class MLTrace(Trace):
         rstr = super().__str__(id_length=id_length)
         if self.stats.npts > 0:
             rstr += f' | Fold:'
-            for _i in range(self.fold.max() + 1):
+            for _i in range(int(self.fold.max()) + 1):
                 ff = sum(self.fold == _i)/self.stats.npts
                 if ff > 0:
                     rstr += f' [{_i}] {ff:.2f}'
@@ -392,7 +399,7 @@ class MLTrace(Trace):
         return self
 
     # @_add_processing_info
-    def merge(self, trace, method='avg', fill_value=None, sanity_checks=True):
+    def merge(self, trace, method='avg', fill_value=None, sanity_checks=True, dtype=np.float32):
         """
         Join a (compatable) Trace-type object to this MLTrace-type object using a specified method
 
@@ -445,6 +452,12 @@ class MLTrace(Trace):
                         numpy.ma.masked_array in the event that the stacking
                         operation produces a gap
         :param sanity_checks: [bool] should sanity checks be run on self and trace?
+        :param dtype: [type] data type to use as the default for all data/fold in this
+                    operation
+                      None - use the native data formats
+                        DEFAULT: numpy.float32 allows use of NaN values
+                    NOTE: use of 'int' datatypes converts NaN values used in the merging
+                        methods into 0's, which creates a bug.
         
         """
         if sanity_checks:
@@ -452,7 +465,7 @@ class MLTrace(Trace):
                 if not isinstance(trace, MLTrace):
                     trace = MLTrace(data=trace.data, header=trace.stats)
                 else:
-                    raise TypeError
+                    pass
             # NOTE: If model/weight are specified in self.stats, 
             # the update above will raise the error below
             if self.id != trace.id:
@@ -463,11 +476,19 @@ class MLTrace(Trace):
                 raise TypeError
             if self.data.dtype != trace.data.dtype:
                 raise TypeError
-        # Ensure fold matches data dtype
-        if self.fold.dtype != self.data.dtype:
-            self.fold = self.fold.astype(self.data.dtype)
-        if trace.fold.dtype != trace.data.dtype:
-            trace.fold = trace.fold.astype(trace.data.dtype)
+            
+        if dtype is None:
+            # Ensure fold matches data dtype
+            if self.fold.dtype != self.data.dtype:
+                self.fold = self.fold.astype(self.data.dtype)
+            if trace.fold.dtype != trace.data.dtype:
+                trace.fold = trace.fold.astype(trace.data.dtype)
+        else:
+            original_dtypes={'self': self.data.dtype, 'other': trace.data.dtype}
+            self.data = self.data.astype(dtype)
+            self.fold = self.fold.astype(dtype)
+            trace.data = trace.data.astype(dtype)
+            trace.fold = trace.fold.astype(dtype)
 
         # Get data and fold vectors
         sdata = self.data
@@ -494,35 +515,33 @@ class MLTrace(Trace):
         idx = self._relative_indexing(trace)
 
         # Create temporary data array
-        tmp_data_array = np.full(shape=(2, max(idx) + 1),
+        tmp_data_array = np.full(shape=(2, max(idx)),
                                  fill_value=np.nan,
                                  dtype=self.data.dtype)
         # Create temporary fold array for 
-        tmp_fold_array = np.zeros(shape=(2, max(idx) + 1),
+        tmp_fold_array = np.zeros(shape=(2, max(idx)),
                                  dtype = self.fold.dtype)
-
         # Place self data into joined indexing positions (data being appended to)
-        tmp_data_array[0, idx[0]:idx[1]+1] = self.data
-        tmp_fold_array[0, idx[0]:idx[1]+1] = self.fold
+        tmp_data_array[0, idx[0]:idx[1]] = self.data
+        tmp_fold_array[0, idx[0]:idx[1]] = self.fold
         # Place trace data into joined indexing positions (data to be appended)
         tmp_data_array[1, idx[2]:idx[3]] = trace.data
         tmp_fold_array[1, idx[2]:idx[3]] = trace.fold
 
+        # Get positions where gaps and overlaps exist
+        gap_mask = ~np.isfinite(tmp_data_array).any(axis=0)
+        overlap_mask = np.isfinite(tmp_data_array).all(axis=0)
+        # Discard Method (effectively obspy.core.trace.Trace.__add__(method=0))
         if method in ['discard', 'dis', 0]:
-            overlap_mask = np.isfinite(np.sum(tmp_data_array, axis=0))
-            tmp_data = np.nansum(tmp_data_array, axis=0)
-            tmp_fold = np.nansum(tmp_fold_array, axis=0)
-            if overlap_mask.any():
-                tmp_data[overlap_mask] = np.nan
-                # Set eliminated sample fold to 0
-                tmp_fold[overlap_mask] = 0
-
+            # Take the "sum" (NaN -> 0 + value) at all non gap/overlap spots
+            tmp_data = np.where(gap_mask | overlap_mask,
+                                np.nan, np.nansum(tmp_data_array, axis=0))
+            # 0-value fold in gaps and overlaps (that are now gaps)
+            tmp_fold = np.where(gap_mask | overlap_mask,
+                                0, np.nansum(tmp_fold_array, axis=0))
         # Interpolation method (effectively the same as obspy.core.trace.Trace.__add__(method=1))
         elif method in ['int', 'interpolate', 1]:
-            # NaNsum folds for each element
-            tmp_fold = np.nansum(tmp_fold_array, axis=0)
-            # Check if there are overlaps using NaN padding to mask non-overlaps as False
-            overlap_mask = np.isfinite(np.sum(tmp_data_array, axis=0))
+            # If any overlaps
             if overlap_mask.any():
                 # self leading trace
                 if idx[0] < idx[2] < idx[1] < idx[3]:
@@ -530,45 +549,52 @@ class MLTrace(Trace):
                     rs = tmp_data_array[1, idx[1]]
                     ds = idx[1] - idx[2]
                     tmp_data_array[:,idx[2]:idx[1]] = np.linspace(ls, rs, ds)
-                    tmp_data = np.nansum(tmp_data_array, axis=0)
+
                 # trace leading self
                 elif idx[2] < idx[0] < idx[3] < idx[1]:
                     ls = tmp_data_array[1, idx[1]]
                     rs = tmp_data_array[0, idx[3]]
                     ds = idx[3] - idx[0]
                     tmp_data_array[:, idx[0]:idx[3]] = np.linspace(ls, rs, ds)
-                    tmp_data = np.nansum(tmp_data_array, axis=0)
 
-                # trace in self
+                # trace in self - reset other contributions to fill values
                 else:
-                    tmp_data = tmp_data_array[0, :]
+                    tmp_data_array[1, :] = np.nan
+                    tmp_fold_array[1, :] = 0
+
+            # For gaps, pad as np.nan, otherwise take nanmax for data
+            tmp_data = np.where(~gap_mask, np.nanmax(tmp_data_array, axis=0), np.nan);
+            # ...and nansum for fold
+            tmp_fold = np.where(~gap_mask,np.nansum(tmp_fold_array, axis=0), 0)
             # For gaps or contiguous, use nansum to get 
-            else:
-                tmp_data = np.nansum(tmp_data_array, axis=0)
-                                      
+            
         # (2) Use maximum value of overlapping elements(max stacking)
         elif method in ['max', 'maximum', 2]:
-            # Create masking to NaN any 0 fold data (safety catch if enforce_zero_mask is somehow missed...)
-            tmp_fold_mask = np.full(shape=tmp_data_array.shape, fill_value=np.nan, dtype=tmp_data_array.dtype)
-            tmp_fold_mask[tmp_fold_array > 0] = 1
-            tmp_data = np.nanmax(tmp_data_array*tmp_fold_mask, axis=0)
-            tmp_fold = np.nansum(tmp_fold_array, axis=0)
+            # Where there are gaps, fill with nan, otherwise, take nanmax
+            tmp_data = np.where(gap_mask, np.nan, np.nanmax(tmp_data_array, axis=0));
+            # ..for fold, fill gaps with 0, otherwise take nansum
+            tmp_fold = np.where(gap_mask, 0, np.nansum(tmp_fold_array, axis=0))
 
         # (3) Use fold-weighted average of overlapping elements (average stacking)
         elif method in ['avg', 'average', 'mean', 3]:
-            tmp_fold = np.nansum(tmp_fold_array, axis=0)
-            tmp_data = np.nansum(tmp_data_array*tmp_fold_array, axis=0)
-            idx = tmp_fold > 0
-            tmp_data[idx] /= tmp_fold[idx]
-
+            # Get new sum array
+            tmp_fold = np.where(gap_mask, 0, np.nansum(tmp_fold_array, axis=0))
+            # Where there there are some data, get weighted average, otherwise set to np.nan
+            tmp_data = np.where(tmp_fold > 0, np.nansum(tmp_data_array*tmp_fold_array, axis=0)/tmp_fold, np.nan);
+        
         # If not all data are finite (i.e., gaps exist)
         if not np.isfinite(tmp_data).all():
             # Convert tmp_data into a masked array
             mask = ~np.isfinite(tmp_data)
-            tmp_data = np.ma.masked_array(data=tmp_data,
-                                          mask=mask,
-                                          fill_value=fill_value)
+            if fill_value is None:
+                tmp_data = np.ma.masked_array(data=tmp_data,
+                                            mask=mask,
+                                            fill_value=fill_value)
+            else:
+                tmp_data[mask] = fill_value
             tmp_fold[mask] = 0
+
+        # CLEANUP SECTION
         # Update starttime
         new_t0 = self.stats.starttime + idx[0]/self.stats.sampling_rate
         # Overwrite starttime
@@ -613,14 +639,15 @@ class MLTrace(Trace):
         other_t1 = other.stats.endtime
         sr = self.stats.sampling_rate
         if self_t0 <= other_t0:
-            t0_ref = self_t0
+            self_n0 = 0
+            self_n1 = self.stats.npts
+            other_n0 = int((other_t0 - self_t0)*sr) + 1
+            other_n1 = other_n0 + other.stats.npts
         else:
-            t0_ref = other_t0
-
-        self_n0 = int((self_t0 - t0_ref)*sr)
-        self_n1 = int((self_t1 - t0_ref)*sr) + 1
-        other_n0 = int((other_t0 - t0_ref)*sr)
-        other_n1 = int((other_t1 - t0_ref)*sr) + 1
+            other_n0 = 0
+            other_n1 = other.stats.npts
+            self_n0 = int((self_t0 - other_t0)*sr) + 1
+            self_n1 = self_n0 + self.stats.npts
         
         index = [self_n0, self_n1, other_n0, other_n1]
         return index
@@ -656,6 +683,78 @@ class MLTrace(Trace):
             trace_list.append(tr)
         return Stream(trace_list)
     
+    ########################################################
+    # COMPOSITE METHODS FOR M/L DATA SIGNAL PRE-PROCESSING #
+    ########################################################
+
+    def treat_gaps(self,
+                   filterkw=False,
+                   detrendkw={'type': 'linear'},
+                   resample_method=False,
+                   resamplekw={},
+                   taperkw={'max_percentage':None, 'max_length': 0.06},
+                   mergekw={'method': 1, 'fill_value':0},
+                   trimkw=False
+                   ):
+        """
+        Conduct a self-contained processing pipeline to treat gappy data with the
+        following structure comprising required (req.) and optioanl (opt.) steps:
+
+        split -> filter -> detrend -> resample -> taper -> merge -> trim/pad
+        (req.)   (opt.)    (opt.)     (opt.)      (opt.)   (req.)   (opt.)
+
+        The minimum processing could be accomplished using a method that wraps
+        Numpy's np.ma.MaskedArray.filled() method (e.g., MLTrace.trim()), however
+        the optional steps between split() and merge() represent typical steps
+        for data pre-processing prior to forming tensor for M/L prediction.
+
+        :: INPUTS ::
+        :param filterkw: [False] - disable filtering
+                         [dict] - keyword arguments to pass to (ML)Trace.filter()
+                                  that differ from default argument(s)
+        :param detrendkw: [False] - disable detrending
+                         [dict] - keyword arguments to pass to (ML)Trace.detrend()
+                                  that differ from default argument(s)
+        :param resample_method: [False] - disable resampling
+                              [str] name of resampling method to use
+                                    'resample'
+                                    'interpolate'
+                                    'decimate'
+        :param resamplekw: [dict] - keyword arguments to pass to 
+                            getattr((ML)Trace, resample_method)(**resamplekw)
+        :param taperkw: [False] - disable tapering
+                        [dict] - keyword arguments to pass to (ML)Trace.taper()
+                                that differ from default arguemnts(s)
+        :param mergekw: [dict] - keyword arguments to pass to (ML)Trace.merge()
+                                that differ from default argument(s)
+        :param trimkw: [False] - disable trim
+                        [dict] - keyword arguments to pass to (ML)Trace.trim()
+                                that differ from default argument(s)
+        """
+        st = self.split()
+        for _i, tr in enumerate(st):
+            if filterkw:
+                tr.filter(**filterkw)
+            if detrendkw:
+                tr.detrend(**detrendkw)
+            if resample_method:
+                if resample_method in [func for func in dir(tr) if callable(getattr(tr, func))]:
+                    getattr(tr,resample_method)(**resamplekw)
+                else:
+                    raise TypeError(f'resample_method "{resample_method}" is not supported by {self.__class__}')
+            if taperkw:
+                tr.taper(**taperkw)
+            if _i == 0:
+                self.data = tr.data
+                self.fold = tr.fold
+                self.stats = tr.stats
+            else:
+                self.merge(trace=tr, **mergekw)
+        if trimkw:
+            self.trim(**trimkw)
+        return self
+        
+        
     ###############################################################################
     # WRAPPED RESAMPLING METHODS ##################################################
     ###############################################################################

@@ -1,12 +1,11 @@
-import fnmatch, inspect, time, warnings, torch
-import numpy as np
-import seisbench.models as sbm
+import fnmatch, inspect, time, warnings
 from decorator import decorator
+from obspy.core.utcdatetime import UTCDateTime
 from obspy.core.stream import Stream, read
-from obspy.core.trace import Trace, Stats
+from obspy.core.trace import Trace
 from obspy.core.util.attribdict import AttribDict
 from obspy.core import compatibility
-from wyrm.data.mltrace import MLTrace, MLTraceBuffer
+from wyrm.data.mltrace import MLTrace
 from wyrm.util.pyew import wave2mltrace
 ###################################################################################
 # Dictionary Stream Stats Class Definition ########################################
@@ -29,6 +28,12 @@ class DictStreamStats(AttribDict):
         'processing': []
     }
 
+    _types = {'reference_id': str,
+              'min_starttime': (type(None), UTCDateTime),
+              'max_starttime': (type(None), UTCDateTime),
+              'min_endtime': (type(None), UTCDateTime),
+              'max_endtime': (type(None), UTCDateTime)}
+
     def __init__(self, header={}):
         """
         Initialize a DictStreamStats object
@@ -39,28 +44,76 @@ class DictStreamStats(AttribDict):
                     values (values) to assign to the DictStreamStats
                     object
         """
-        super(DictStreamStats, self).__init__(header)
+        super(DictStreamStats, self).__init__()
+        self.update(header)
     
-    def __repr__(self):
+    def _pretty_str(self, priorized_keys=[], hidden_keys=[], min_label_length=16):
         """
-        Provide a user-friendly string representation of the contents of this DictStreamStats object
+        Return better readable string representation of AttribDict object.
+
+        NOTE: Slight adaptation of the obspy.core.util.attribdict.AttribDict
+                _pretty_str method, adding a hidden_keys argument
+
+        :type priorized_keys: list[str], optional
+        :param priorized_keys: Keywords of current AttribDict which will be
+            shown before all other keywords. Those keywords must exists
+            otherwise an exception will be raised. Defaults to empty list.
+        :param hidden_keys: [list] of [str]
+                        Keywords of current AttribDict that will be hidden
+                        NOTE: does not supercede items in prioritized_keys
+        :type min_label_length: int, optional
+        :param min_label_length: Minimum label length for keywords. Defaults
+            to ``16``.
+        :return: String representation of current AttribDict object.
         """
-        rstr = '----Stats----'
-        for _k, _v in self.items():
-            if _v is not None:
-                if self.min_starttime != self.max_starttime or self.min_endtime != self.max_endtime:
-                    if 'min_' in _k:
-                        if _k == 'min_starttime':
-                            rstr += f'\n{"min time range":>18}: {self.min_starttime} - {self.min_endtime}'
-                    elif 'max_' in _k:
-                        if _k == 'max_starttime':
-                            rstr += f'\n{"max time range":>18}: {self.max_starttime} - {self.max_endtime}'
-                elif 'time' in _k:
-                    if _k == 'min_starttime':
-                        rstr += f'\n{"uniform range":>18}: {self.min_starttime} - {self.min_endtime}'
-                else:
-                    rstr += f'\n{_k:>18}: {_v}'
-        return rstr
+        keys = list(self.keys())
+        # determine longest key name for alignment of all items
+        try:
+            i = max(max([len(k) for k in keys]), min_label_length)
+        except ValueError:
+            # no keys
+            return ""
+        pattern = "%%%ds: %%s" % (i)
+        # check if keys exist
+        other_keys = [k for k in keys if k not in priorized_keys and k not in hidden_keys]
+        # priorized keys first + all other keys
+        keys = priorized_keys + sorted(other_keys)
+        head = [pattern % (k, self.__dict__[k]) for k in keys]
+        return "\n".join(head)
+
+
+    def __str__(self):
+        prioritized_keys = ['reference_id',
+                            'min_starttime',
+                            'max_starttime',
+                            'min_endtime',
+                            'max_endtime',
+                            'processing']
+        return self._pretty_str(prioritized_keys)
+
+    def _repr_pretty_(self, p, cycle):
+        p.text(str(self))
+
+    # def __repr__(self):
+    #     """
+    #     Provide a user-friendly string representation of the contents of this DictStreamStats object
+    #     """
+    #     rstr = '----Stats----'
+    #     for _k, _v in self.items():
+    #         if _v is not None:
+    #             if self.min_starttime != self.max_starttime or self.min_endtime != self.max_endtime:
+    #                 if 'min_' in _k:
+    #                     if _k == 'min_starttime':
+    #                         rstr += f'\n{"min time range":>18}: {self.min_starttime} - {self.min_endtime}'
+    #                 elif 'max_' in _k:
+    #                     if _k == 'max_starttime':
+    #                         rstr += f'\n{"max time range":>18}: {self.max_starttime} - {self.max_endtime}'
+    #             elif 'time' in _k:
+    #                 if _k == 'min_starttime':
+    #                     rstr += f'\n{"uniform range":>18}: {self.min_starttime} - {self.min_endtime}'
+    #             else:
+    #                 rstr += f'\n{_k:>18}: {_v}'
+    #     return rstr
 
     def update_time_range(self, trace):
         """
@@ -334,7 +387,7 @@ class DictStream(Stream):
         return rstr
 
     def __repr__(self, extended=False):
-        rstr = self.stats.__repr__()
+        rstr = f'--Stats--\n{self.stats.__str__()}\n-------'
         if len(self.traces) > 0:
             id_length = max(len(_tr.id) for _tr in self.traces.values())
         else:
@@ -660,447 +713,7 @@ class DictStream(Stream):
 #         mltr = MLTrace(data=tr.data, header=hdr)
 
 
-###############################################################################
-# Window Stream Header Class Definition
-###############################################################################
 
-class ComponentStreamHeader(DictStreamStats):
-
-    def __init__(self, header={}):
-        super(ComponentStreamHeader, self).__init__(header=header)
-        self.defaults.update({'aliases': dict({}),
-                     'reference_starttime': None,
-                     'reference_sampling_rate': None,
-                     'reference_npts': None,
-                     })
-    def __str__(self):
-        prioritized_keys = ['reference_id',
-                            'reference_starttime',
-                            'reference_sampling_rate',
-                            'reference_npts',
-                            'starttime range',
-                            'endtime range',
-                            'aliases']
-        return self._pretty_str(prioritized_keys)
-    
-
-class ComponentStream(DictStream):
-
-    def __init__(self, traces=None, header={}, component_aliases={'Z':'Z3', 'N':'N1', 'E':'E2'}, **options):
-        """
-        Initialize a wyrm.core.dictstream.ComponentStream object
-
-        :: INPUTS ::
-        :param traces: [obspy.core.trace.Trace] or [list]/[Stream] thereof
-                        trace-type object(s) to append to this ComponentStream, if they pass validation cross
-                        checks with the component_aliases' contents
-        :param header: [dict] inputs to pass to ComponentStreamHeader.__init__
-        :param component_aliases: [dict] mapping between aliases (keys) and native component codes (characters in each value)
-                        that are mapped to those aliases
-        :param **options: [kwargs] collector for key-word arguments to pass to the ComponentStream.__add__ method
-                        inherited from DictStream when 
-        """
-        super().__init__()
-        self.stats = ComponentStreamHeader(header=header)
-
-        # component_aliases compatability checks
-        if isinstance(component_aliases, dict):
-            if all(isinstance(_k, str) and len(_k) == 1 and isinstance(_v, str) for _k, _v in component_aliases.items()):
-                self.stats.aliases = component_aliases
-            else:
-                raise TypeError('component_aliases keys and values must be type str')
-        else:
-            raise TypeError('component aliases must be type dict')
-
-        if traces is not None:
-            if isinstance(traces, Trace):
-                traces = [traces]
-            elif isinstance(traces, (Stream, list)):
-                ref_type = type(traces[0])
-                if not all(isinstance(_tr, ref_type) for _tr in traces):
-                    raise TypeError('all input traces must be of the same type')
-                else:
-                    self.ref_type = ref_type
-            else:
-                raise TypeError("input 'traces' must be Trace-like, Stream-like, or list-like")
-            # Run validate_ids and continue if error isn't kicked
-            self.validate_ids(traces)
-            # Add traces using the DictStream __add__ method that converts non MLTrace objects into MLTrace objects
-            self.__add__(traces, key_attr='component', **options)
-
-    def __add__(self, other, **options):
-        """
-        Wrapper around the inherited DictStream.__add__ method that fixes
-        the key_attr to 'component'
-
-        also see wyrm.core.dictstream.DictStream.__add__()
-        """
-        super().__add__(other, key_attr='component', **options)
-
-    def __repr__(self, extended=False):
-        """
-        Provide a user-friendly string representation of the contents and key parameters of this
-        ComponentStream object. 
-
-        :: INPUTS ::
-        :param extended: [bool] - option to show an extended form of the ComponentStream should 
-                            there be a large number of unique component codes (an uncommon use case)
-        """
-        rstr = self.stats.__repr__()
-        if len(self.traces) > 0:
-            id_length = max(len(_tr.id) for _tr in self.traces.values())
-        else:
-            id_length=0
-        if len(self.traces) > 0:
-            rstr += f'\n{len(self.traces)} {type(self[0]).__name__}(s) in {type(self).__name__}\n'
-        else:
-            rstr += f'\nNothing in {type(self).__name__}\n'
-        if len(self.traces) <= 20 or extended is True:
-            for _l, _tr in self.traces.items():
-                rstr += f'{_l:} : {_tr.__str__(id_length)}\n'
-        else:
-            _l0, _tr0 = list(self.traces.items())[0]
-            _lf, _trf = list(self.traces.items())[-1]
-            rstr += f'{_l0:} : {_tr0.__repr__(id_length=id_length)}\n'
-            rstr += f'...\n({len(self.traces) - 2} other traces)\n...\n'
-            rstr += f'{_lf:} : {_trf.__repr__(id_length=id_length)}\n'
-            rstr += f'[Use "print({type(self).__name__}.__repr__(extended=True))" to print all labels and MLTraces]'
-        return rstr
-
-    def _add_trace(self, other, **options):
-        # If potentially appending a wave
-        if isinstance(other, dict):
-            other = wave2mltrace(other)
-        # If appending a trace-type object
-        elif isinstance(other, Trace):
-            # If it isn't an MLTrace, __init__ one from data & header
-            if not isinstance(other, MLTrace):
-                other = MLTrace(data=other.data, header=other.stats)
-            else:
-                pass
-        # Otherwise
-        else:
-            raise TypeError(f'other {type(other)} not supported.')
-        # Ensure that the trace is converted to MLTrace
-        if isinstance(other, MLTrace):
-            # Get other's component code
-            comp = other.comp
-            # Get other's model code
-            mod = other.mod
-            key = f'{comp}.{mod}'
-            # If the component code is not in alias keys
-            if comp not in dict(self.stats.aliases).keys():
-                # Iterate across alias keys and aliases
-                for _k, _v in dict(self.stats.aliases).items():
-                    # If a match is found
-                    if comp in _v:
-                        # And the alias is not in self.traces.keys() - use update
-                        if _k not in self.traces.keys():
-                            self.traces.update({_k: other})
-                        # Otherwise try to add traces together - allowing MLTrace.__add__ to handle the error raising
-                        else:
-                            self.traces[_k].__add__(other, **options)
-                        self.stats.update_time_range(other)
-            else:
-                if comp not in self.traces.keys():
-                    self.traces.update({comp: other})
-                else:
-                    self.traces[comp].__add__(other, **options)
-                self.stats.update_time_range(other)
-
-    def enforce_alias_keys(self):
-        """
-        Enforce aliases
-        """
-        for _k in self.traces.keys():
-            if _k not in self.stats.aliases.keys():
-                for _l, _w in self.stats.aliases.items():
-                    if _k in _w:
-                        _tr = self.traces.pop(_k)
-                        self.traces.update({_l: _tr})
-
-    def validate_ids(self, traces):
-        """
-        Check id strings for traces against WindowStream.stats.reference_id
-        :: INPUTS ::
-        :param traces: [list-like] of [obspy.core.trace.Trace-like] or individual
-                        objects thereof
-        """
-        # Handle case where a single trace-type object is passed to validate_ids
-        if isinstance(traces, Trace):
-            traces = [traces]
-        # if there is already a non-default reference_id, use that as reference
-        if self.stats.reference_id != self.stats.defaults['reference_id']:
-            ref = self.stats.reference_id
-        # Otherwise use the first trace in traces as the template
-        else:
-            tr0 = traces[0]
-            # If using obspy.core.trace.Trace objects, use id with "?" for component char
-            if self.ref_type == Trace:
-                ref = tr0.id[:-1]+'?'
-            # If using wyrm.core.trace.MLTrace(Buffer) objects, as above with the 'mod' extension
-            elif self.ref_type in [MLTrace, MLTraceBuffer]:
-                ref = f'{tr0.site}.{tr0.inst}?.{tr0.mod}'
-        # Run match on all trace ids
-        matches = fnmatch.filter([_tr.id for _tr in traces], ref)
-        # If all traces conform to ref
-        if all(_tr.id in matches for _tr in traces):
-            # If reference_id 
-            if self.stats.reference_id == self.stats.defaults['reference_id']:
-                self.stats.reference_id = ref
-        
-        else:
-            raise KeyError('Trace id(s) do not conform to reference_id: "{self.stats.reference_id}"')
-
-    ###############################################################################
-    # FILL RULE METHODS ###########################################################
-    ###############################################################################
-    @_add_processing_info
-    def apply_fill_rule(self, rule='zeros', ref_component='Z', other_components='NE', ref_thresh=0.9, other_thresh=0.8):
-        if ref_component not in self.traces.keys():
-            raise KeyError('reference component {ref_component} is not present in traces')
-        else:
-            thresh_dict = {ref_component: ref_thresh}
-            thresh_dict.update({_c: other_thresh for _c in other_components})
-        # Check if data meet requirements before triggering fill rule
-        checks = []
-        # Check if all components are present in traces
-        checks.append(self.traces.keys() == thresh_dict.keys())
-        # Check if all valid data fractions meet/exceed thresholds
-        checks.append(all(self[_k].fvalid >= thresh_dict[_k] for _k in self.trace.keys()))
-        if all(checks):
-            pass
-        elif rule == 'zeros_wipe':
-            self._apply_zeros(ref_component, thresh_dict, method='wipe')
-        elif rule == 'zeros_fill':
-            self._apply_zeros(ref_component, thresh_dict, method='fill')
-        elif rule == 'clone_ref':
-            self._apply_clone_ref(ref_component, thresh_dict)
-        elif rule == 'clone_other':
-            self._apply_clone_other(ref_component, thresh_dict)
-        else:
-            raise ValueError(f'rule {rule} not supported. Supported values: "zeros", "clone_ref", "clone_other"')
-
-    @_add_processing_info
-    def _apply_zeros(self, ref_component, thresh_dict, method='fill'):
-        """
-        Apply the channel filling rule "zero" (e.g., Retailleau et al., 2022)
-        where both "other" (horzontal) components are set as zero-valued traces
-        if one or both are missing/overly gappy.
-
-        0-valued traces are assigned fold values of 0 to reflect the absence of
-        added information.
-
-        :: INPUTS ::
-        :param ref_component: [str] single character string corresponding to
-                        the KEYED (aliased) component code of the reference trace
-        :param thresh_dict: [dir] directory with keys matching keys in 
-                        self.traces.keys() (i.e., alised component characters)
-                        and values \in [0, 1] representing fractional completeness
-                        thresholds below which the associated component is rejected
-        """
-        ref_tr = self[ref_component]
-        if ref_tr.fvalid < thresh_dict[ref_component]:
-            raise ValueError('insufficient valid data in reference trace')
-        else:
-            pass
-        for _k in thresh_dict.keys():
-            if method == 'wipe':
-                tr0 = ref_tr.copy().to_zero(method='both').set_comp(_k)
-                self.traces.update({_k: tr0})
-            elif method == 'fill':
-                if _k in self.traces.keys():
-                    if self.traces[_k].fvalid < thresh_dict[_k]:
-                        tr0 = ref_tr.copy().to_zero(method='both').set_comp(_k)
-                        self.traces.update({_k: tr0})
-
-
-    @_add_processing_info
-    def _apply_clone_ref(self, ref_component, thresh_dict):
-        """
-        Apply the channel filling rule "clone reference" (e.g., Ni et al., 2023)
-        where the reference channel (vertical component) is cloned onto both
-        horizontal components if one or both horizontal (other) component data
-        are missing or are sufficiently gappy. 
-        
-        Cloned traces are assigned fold values of 0 to reflect the absence of
-        additional information contributed by this trace.
-
-        :: INPUTS ::
-        :param ref_component: [str] single character string corresponding to
-                        the KEYED (aliased) component code of the reference trace
-        :param thresh_dict: [dir] directory with keys matching keys in 
-                        self.traces.keys() (i.e., alised component characters)
-                        and values \in [0, 1] representing fractional completeness
-                        thresholds below which the associated component is rejected
-        """
-        ref_tr = self[ref_component]
-        if ref_tr.fvalid < thresh_dict[ref_component]:
-            raise ValueError('insufficient valid data in reference trace')
-        else:
-            pass
-        for _k in thresh_dict.keys():
-            trC = ref_tr.copy().to_zero(method='fold').set_comp(_k)
-            self.traces.update({_k: trC})
-
-
-    @_add_processing_info    
-    def _apply_clone_other(self, ref_component, thresh_dict):
-        """
-        Apply the channel filling rule "clone other" (e.g., Lara et al., 2023)
-        where the reference channel (vertical component) is cloned onto both
-        horizontal components if both "other" component traces (horizontal components)
-        are missing or are sufficiently gappy, but if one "other" component is present
-        and valid, clone that to the missing/overly-gappy other "other" component.
-        
-        Cloned traces are assigned fold values of 0 to reflect the absence of
-        additional information contributed by this trace.
-
-        :: INPUTS ::
-        :param ref_component: [str] single character string corresponding to
-                        the KEYED (aliased) component code of the reference trace
-        :param thresh_dict: [dir] directory with keys matching keys in 
-                        self.traces.keys() (i.e., alised component characters)
-                        and values \in [0, 1] representing fractional completeness
-                        thresholds below which the associated component is rejected
-        """
-        # Run through each component and see if it passes thresholds
-        pass_dict = {}
-        for _k, _tr in self.traces.items():
-            pass_dict.update({_k: _tr.fvalid >= thresh_dict[_k]})
-
-        # If the reference component is present but fails to pass, kick error
-        if ref_component in pass_dict.keys():
-            if not pass_dict[ref_component]:
-                raise ValueError('insufficient valid data in reference trace')
-            else:
-                pass
-        # If the reference component is absent, kick error
-        else:
-            raise KeyError("reference component is not in this ComponentStream's keys")
-        
-        # If all expected components are present
-        if pass_dict.keys() == thresh_dict.keys():
-            # If all components pass thresholds
-            if all(pass_dict.values()):
-                # Do nothing
-                pass
-
-            # If at least one "other" component passed checks
-            elif any(_v for _k, _v in pass_dict.items() if _k != ref_component):
-                # Iterate across components in 
-                for _k, _v in pass_dict.items():
-                    # If not the reference component and did not pass
-                    if _k != ref_component and not _v:
-                        # Grab component code that will be cloned over
-                        cc = _k
-                    # If not the reference component and did pass
-                    if _k != ref_component and _v:
-                        # Create a clone of the passing "other" component
-                        trC = _v.copy()
-                # Zero out the fold of the cloned component and overwrite it's component code
-                trC.to_zero(method='fold').set_comp(cc)
-                # Write cloned, relabeled "other" trace to the failing trace's position
-                self.traces.update({cc: trC})
-
-            # If only the reference trace passed, run _apply_clone_ref() method instead
-            else:
-                self._apply_clone_ref(ref_component, thresh_dict)
-
-        # If at least one "other" component is present
-        elif ref_component in pass_dict.keys():
-            # If both ref and at "other" pass, create clone of "other"
-            if all(pass_dict.items()):
-                for _c in thresh_dict.keys():
-                    if _c not in pass_dict.keys():
-                        cc = _c
-                    elif _c != ref_component:
-                        trC = self[_c].copy()
-                trC.to_zero(method='fold').set_comp(cc)
-                self.traces.update({cc: trC})
-            # If the single "other" trace does not pass, use _apply_clone_ref method
-            else:
-                self._apply_clone_ref(ref_component, thresh_dict)
-        # If only the reference component is present & passing
-        else:
-            self._apply_clone_ref(ref_component, thresh_dict)
-
-    ###############################################################################
-    # ComponentStream to Tensor Methods ###########################################
-    ###############################################################################
-            
-    def ready_to_burn(self, model):
-        """
-        Assess if the data contents of this ComponentStream are ready
-        to convert into a torch.Tensor given a particular seisbench model
-
-        NOTE: This inspects that the dimensionality, timing, sampling, completeness,
-             and component aliasing of the contents of this ComponentStream are
-             compliant with reference values in the metadata and in the input `model`'s
-             metadata
-              
-             It does not check if the data have been processed: filtering, tapering, 
-                normalization, etc. 
-
-        :: INPUT ::
-        :param model: [seisbench.models.WaveformModel] initialized model
-                        object that prediction will be run on 
-                        NOTE: This is really a child-class of sbm.WaveformModel
-        :: OUTPUT ::
-        :return status: [bool] - is this ComponentStream ready for conversion
-                                using ComponentStream.to_torch(model)?
-        """
-        # model compatability check
-        if not isinstance(model, sbm.WaveformModel):
-            raise TypeError
-        elif model.name == 'WaveformModel':
-            raise ValueError('WaveformModel baseclass objects do not provide a viable prediciton method - use a child class thereof')
-        
-        # Check that data are not masked
-        if any(isinstance(_tr.data, np.ma.MaskedArray) for _tr in self):
-            status = False
-        # Check starttime sync
-        elif not all(_tr.stats.starttime == self.stats.reference_starttime for _tr in self):
-            status = False
-        # Check npts is consistent
-        elif not all(_tr.stats.npts == model.in_samples for _tr in self):
-            status = False
-        # Check that all components needed in model are represented in the aliases
-        elif not all(_k in model.component_order for _k in self.keys()):
-            status = False
-        # Check that sampling rate is sync'd
-        elif not all(_tr.stats.sampling_rate == self.stats.reference_sampling_rate for _tr in self):
-            status = False
-        # Passing (or really failing) all of the above
-        else:
-            status = True
-        return status
-    
-    def to_tensor(self, model):
-        """
-        Convert the data contents of this ComponentStream into a numpy array that
-        conforms to the component ordering required by a seisbench WaveformModel
-        object
-        :: INPUT ::
-        :param model: []
-        """
-        if not self.ready_to_burn(model):
-            raise ValueError('This ComponentStream is not ready for conversion to a torch.Tensor')
-        
-        npy_array = np.c_[[self[_c].data for _c in model.component_order]]
-        tensor = torch.Tensor(npy_array)
-        return tensor
-
-    def collapse_fold(self):
-        """
-        Collapse fold vectors into a single vector by addition, if all traces have equal npts
-        """
-        npts = self[0].stats.npts
-        if all(_tr.stats.npts == npts for _tr in self):
-            addfold = np.sum(np.c_[[_tr.fold for _tr in self]], axis=0)
-            return addfold
-        else:
-            raise ValueError('not all traces in this ComponentStream have matching npts')
     
 
 

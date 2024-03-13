@@ -762,6 +762,8 @@ class PredictionWyrm(Wyrm):
             batch_preds = batch_preds.detach().numpy()
         # Iterate across metadata dictionaries
         for _i, _meta in batch_meta:
+            # Create a dictstream for this paritcular window
+            
             # Iterate across prediction labels
             for _j, label in enumerate(self.model.labels):
                 # Compose output trace from prediction values, input data fold, and header data
@@ -770,6 +772,7 @@ class PredictionWyrm(Wyrm):
                 _mlt.set_component(new_label=label)
                 # Update weight name in mltrace header
                 _mlt.stats.weight = weight_name
+                _
                 # Add mltrace to dsbuffer (subsequent buffering to happen in the next step)
-                self.queue.append(_mlt)
+            self.queue.append(_dst)
 

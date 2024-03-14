@@ -34,14 +34,66 @@
                 to capture information on data packets' processing times
 """
 
-import inspect, time ,os
+import inspect, time ,os, copy
 import numpy as np
+import pandas as pd
 from decorator import decorator
-from copy import deepcopy
 from obspy import Stream, read, UTCDateTime
 from obspy.core.trace import Trace, Stats
 from obspy.core.util.misc import flat_not_masked_contiguous
 from wyrm.util.compatability import bounded_floatlike
+
+
+
+
+def read_from_mseed(filename, sanity_checks=True, stamp_load=False, **kwargs):
+    pfn, ext = os.path.splitext(filename)
+    path, fn = os.path.split(pfn)
+    ID, t0, _ = fn.split('_')
+    t0 = UTCDateTime(float(t0))
+    n,s,l,c,m,w = ID.split('.')
+    st = read(filename)
+    # Merge segments of 
+    data_tr = st.select(network=n, station=s, location=l, channel=c)
+    if isinstance(data_tr, Stream):
+        if len(data_tr) > 1:
+            data_tr.merge(**kwargs)
+        elif len(data_tr) == 1:
+            data_tr = data_tr[0]
+    fold_tr = st.select(network='FO',location='LD')[0]
+    if isinstance(fold_tr, Stream):
+        if len(fold_tr) > 1:
+            fold_tr.merge(**kwargs)
+        elif len(fold_tr) == 1:
+            fold_tr = fold_tr[0]
+
+
+    if sanity_checks:
+        if n != data_tr.stats.network:
+            raise ValueError
+        if s != data_tr.stats.station:
+            raise ValueError
+        if l != data_tr.stats.location:
+            raise ValueError
+        if c != data_tr.stats.channel:
+            raise ValueError
+        if fold_tr.stats.station not in m:
+            raise ValueError
+        if fold_tr.stats.channel not in w:
+            raise ValueError
+    
+    header = data_tr.stats
+    header.update({'model': m, 'weight': w})
+    breakpoint()
+    if os.path.isfile(f'{pfn}.csv'):
+        dfp =pd.read_csv(f'{pfn}.csv')
+        processing = [list(dfp.loc[_i].values) for _i in dfp.index]
+        header.update({'processing': processing})
+
+    mlt = MLTrace(data=data_tr.data, fold=fold_tr.data, header=header)
+    if stamp_load:
+        mlt.stats.processing.append([time.time(), 'Wyrm 0.0.0', 'read_from_mseed', f'(filename={filename}, sanity_checks={sanity_checks}, kwargs={kwargs})'])
+    return mlt
 
 ###################################################################################
 # Machine Learning Stats Class Definition #########################################
@@ -58,16 +110,16 @@ class MLStats(Stats):
     # set of read only attrs
     readonly = ['endtime']
     # add additional default values to obspy.core.trace.Stats's defaults
-    defaults = Stats.defaults
+    defaults = copy.deepcopy(Stats.defaults)
     defaults.update({
         'location': '--',
         'model': '',
-        'weight': ''
+        'weight': '',
+        'processing': []
     })
-    # keys which need to refresh derived values
-    _refresh_keys = {'delta', 'sampling_rate', 'starttime', 'npts'}
+
     # dict of required types for certain attrs
-    _types = Stats._types
+    _types = copy.deepcopy(Stats._types)
     _types.update({
         'model': str,
         'weight': str
@@ -88,7 +140,7 @@ class MLStats(Stats):
                           'starttime', 'endtime', 'sampling_rate', 'delta',
                           'npts', 'calib']
         return self._pretty_str(prioritized_keys)
-    
+
 ###################################################################################
 # REVISED _add_processing_info DECORATOR DEFINITION ###############################
 ###################################################################################
@@ -170,7 +222,6 @@ class MLTrace(Trace):
     .mod    - "MODEL.WEIGHT"
     """
 
-    @_add_processing_info
     def __init__(self, data=np.array([], dtype=np.float32), fold=None, header=None):
         """
         Initialize an MLTrace object
@@ -234,7 +285,7 @@ class MLTrace(Trace):
         """
         header = Stats()
         for _k in header.defaults.keys():
-            header.update({_k: deepcopy(self.stats[_k])})
+            header.update({_k: copy.deepcopy(self.stats[_k])})
         ft = Trace(data=self.fold, header=header)
         ft.stats.channel += 'f'        
         return ft
@@ -912,7 +963,7 @@ class MLTrace(Trace):
     # I/O METHODS #################################################################
     ###############################################################################
     
-    def to_trace(self, fold_threshold=0, output_mod=False):
+    def to_trace(self, fold_threshold=0, attach_mod_to_chan=True):
         """
         Convert this MLTrace into an obspy.core.trace.Trace,
         masking values that have fold less than fold_threshold
@@ -933,18 +984,19 @@ class MLTrace(Trace):
         for _k in tr.stats.keys():
             if _k not in tr.stats.readonly:
                 tr.stats.update({_k: self.stats[_k]})
+        if attach_mod_to_chan:
+            tr.stats.channel = f'{tr.stats.channel}.{self.stats.model}'
+            tr.stats.channel = f'{tr.stats.channel}.{self.stats.model}'
+
         data = self.data
         mask = self.fold < fold_threshold
         if any(mask):
             data = np.ma.masked_array(data=data,
                                       mask=mask)
         tr.data = data
-        if output_mod:
-            return tr, self.stats.model, self.stats.weight
-        else:
-            return tr
+        return tr
         
-    def write(self, filename, **kwargs):
+    def write_to_sac(self, savepath, **kwargs):
         """
         Wrapper around the root obspy.core.trace.Trace.write class
         method that appends the model and/or weight names to
@@ -958,21 +1010,108 @@ class MLTrace(Trace):
         mltr
             UW.GNW.--.BHP.EqT.pnw | 2023-10-09T02:20:15.42000Z - 2023-10-09T02:22:5.41000Z | 100.Hz, 15000 samples
         
-        mltr.write('./myfile.mseed')
+        mltr.write('./')
         ls
-            myfile.EqT.pnw.mseed
+            DATA_UW.GNW.--.BHP.EQTransformer.pnw_1696818015.420000_100.00sps.sac
+            FOLD_UW.GNW.--.BHP.EQTransformer.pnw_1696818015.420000_100.00sps.sac
+            LOG_UW.GNW.--.BHP.EQTransformer.pnw_1696818015.420000_100.00sps.csv
         """
-        fp, ext = os.path.splitext(filename)
-        if self.stats.model != '':        
-            fp += f'.{self.stats.model}'
-        if self.stats.weight != '':
-            fp += f'.{self.stats.weight}'
-        filename = fp + ext
-        st = Stream()
-        st += self.to_trace()
-        st += self.get_fold_trace()
-        st.write(filename, format='MSEED', **kwargs)
+        fmt_str = '{ITYPE}_{ID}_{t0:.6f}_{SR:.2f}sps.{EXT}'
+        data_trace = self.to_trace(**kwargs)
+        data_name = fmt_str.format(
+            ITYPE='DATA',
+            ID=self.id,
+            t0=self.stats.starttime.timestamp,
+            SR=self.stats.sampling_rate,
+            EXT='sac')
+        data_trace.write(os.path.join(savepath, data_name), format='SAC')
+        fold_trace = data_trace.copy()
+        fold_trace.data = self.fold
+        fold_name = fmt_str.format(
+            ITYPE='FOLD',
+            ID=self.id,
+            t0=self.stats.starttime.timestamp,
+            SR=self.stats.sampling_rate,
+            EXT='sac')
+        fold_trace.write(os.path.join(savepath, fold_name), format='SAC')
+        df = pd.DataFrame(self.stats.processing, columns=['Timestamp','Program','Method','Arguments'])
+        csv_name = fmt_str.format(
+            ITYPE='LOG',
+            ID=self.id,
+            t0=self.stats.starttime.timestamp,
+            SR=self.stats.sampling_rate,
+            EXT='csv')
+        df.to_csv(os.path.join(savepath, csv_name), header=True, index=False)
 
+    def _prepare_stream_for_write_to_mseed(self, savepath, save_fold=True, save_processing=True, **kwargs):
+        fmt_str = '{ID}_{t0:.6f}_{SR:.2f}sps.{EXT}'
+        # Convert data to trace and trim off MOD
+        data_trace = self.to_trace(attach_mod_to_chan=False)
+        st = Stream([data_trace])
+        # Create fold trace 
+        if save_fold:
+            fold_trace = data_trace.copy()
+            fold_trace.data = self.fold
+            fold_trace.stats.network='FO'
+            fold_trace.stats.location='LD'
+            # Update Fold trace header to contain (parts) of Model and Weight strings
+            if len(self.stats.model) <= 5:
+                fold_trace.stats.station=self.stats.model
+            else:
+                fold_trace.stats.station=self.stats.model[:5]
+            if len(self.stats.weight) <= 3:
+                fold_trace.stats.channel=self.stats.weight
+            else:
+                fold_trace.stats.channel=self.stats.weight[:3]
+            st += fold_trace
+
+        # Compose save path/name for data/fold
+        st_savename = fmt_str.format(
+            ID=self.id,
+            t0=self.stats.starttime.timestamp,
+            SR=self.stats.sampling_rate,
+            EXT='mseed'
+        )
+        kwargs.update({'filename': os.path.join(savepath, st_savename), 'fmt': 'MSEED'})
+        outputs = {'stream': {'obj': st,
+                              'method': 'write',
+                              'kwargs': kwargs}}
+        
+        # If saving processing
+        if save_processing:
+            # Compose savename
+            csv_savename = fmt_str.format(
+                ID=self.id,
+                t0=self.stats.starttime.timestamp,
+                SR=self.stats.sampling_rate,
+                EXT='csv'
+            )
+            # Create dataframe
+            df = pd.DataFrame(self.stats.processing, columns=['Timestamp','Program','Method','Arguments'])
+            # Use pandas I/O to write CSV
+            pout = {'dataframe': {'obj': df,
+                                  'method': 'to_csv',
+                                  'kwargs': {'path_or_buf': os.path.join(savepath, csv_savename),
+                                             'header': True,
+                                             'index': False}}}
+            outputs.update(pout)
+        return outputs
+    
+    def write_to_mseed(self, savepath, save_fold=True, save_processing=True, **kwargs):
+        outputs = self._prepare_stream_for_write_to_mseed(savepath, save_fold=save_fold, save_processing=save_processing, **kwargs)
+        for _v in outputs.values():
+            getattr(_v['obj'], _v['method'])(**_v['kwargs'])
+        return outputs
+            
+        #     # WRITE TO DISK
+        # st.write(os.path.join(savepath, st_savename), fmt='MSEED', **kwargs)
+        
+        #     df.to_csv(os.path.join(savepath, csv_savename), header=True, index=False)
+        #     # Output st and dataframe
+        #     return st, df
+        # else:
+        #     # Otherwise output stream only
+        #     return st
 
     def from_trace(self, trace, fold_trace=None, model=None, weight=None, blinding=0):
 
@@ -1247,7 +1386,7 @@ class MLTraceBuffer(MLTrace):
         self.trim(starttime=ts, endtime=te, pad=True, fill_value=None, nearest_sample=True)
 
     def trim_copy(self, starttime=None, endtime=None, **options):
-        out = MLTrace(data=deepcopy(self.data), fold=deepcopy(self.fold), header=deepcopy(self.header))
+        out = MLTrace(data=copy.deepcopy(self.data), fold=copy.deepcopy(self.fold), header=copy.deepcopy(self.header))
         out.trim(starttime=starttime, endtime=endtime, **options)
         return out
     
@@ -1274,7 +1413,7 @@ class MLTraceBuffer(MLTrace):
 #         super().__init__(data=data)
 #         if header is None:
 #             header = {}
-#         header = deepcopy(header)
+#         header = copy.deepcopy(header)
 #         header.setdefault('npts', len(data))
 #         self.stats = MLStats(header)
 #         # super(MLTrace, self).__setattr__('data', data)

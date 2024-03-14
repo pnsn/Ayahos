@@ -675,13 +675,17 @@ class PredictionWyrm(Wyrm):
                     raise ValueError('ComponentStream is not sufficiently preprocessed - suspect an error earlier in the tube')
         # Concatenate batch_data tensor list into a single tensor
         batch_data = torch.concat(batch_data)
+        batch_dst_dict = {_i: DictStream() for _i in range(len(batch_meta))}
         # Iterate across preloaded (and precompiled) models
         for wname, model in self.cmods.items():
             # Run batch prediction for a given model weight
             batch_pred = self.run_prediction(model, batch_data, batch_meta)
             # Reassociate window metadata to predicted values and send MLTraces to queue
-            self.batch2queue(model, wname, batch_pred, batch_fold, batch_meta)
+            self.batch2dst_dict(model, wname, batch_pred, batch_fold, batch_meta, batch_dst_dict)
         # Provide access to queue as pulse output
+        for _v in batch_dst_dict.values():
+            self.queue.append(_v)
+
         y = self.queue
         return y
 
@@ -727,7 +731,7 @@ class PredictionWyrm(Wyrm):
 
         return batch_preds
 
-    def batch2queue(self, weight_name, batch_preds, batch_fold, batch_meta):
+    def batch2dst_dict(self, weight_name, batch_preds, batch_fold, batch_meta, dst_dict):
         """
         Reassociated batched predictions, batched metadata, and model metadata to generate MLTrace objects
         that are appended to the output deque (self.queue). The following MLTrace ID elements are updated
@@ -745,6 +749,7 @@ class PredictionWyrm(Wyrm):
         :param batch_fold: [list] of [numpy.ndarray] vectors of summed input data fold for each input window
         :param batch_meta: [list] of [wyrm.core.dictstream.ComponentStreamStats] objects corresponding to
                                 input data for each prediction window
+        :param dst_dict
         
         :: OUTPUT ::
         None
@@ -772,7 +777,10 @@ class PredictionWyrm(Wyrm):
                 _mlt.set_component(new_label=label)
                 # Update weight name in mltrace header
                 _mlt.stats.weight = weight_name
-                _
+                # Append to window-indexed dictionary of DictStream objects
+                if _i not in dst_dict.keys():
+                    dst_dict.update({_i, DictStream()})
+                dst_dict[_i].__add__(_mlt, key_attr='id')
                 # Add mltrace to dsbuffer (subsequent buffering to happen in the next step)
-            self.queue.append(_dst)
+                
 

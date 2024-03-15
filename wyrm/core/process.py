@@ -31,7 +31,8 @@ from collections import deque
 from obspy import UTCDateTime
 from wyrm.data.mltrace import MLTrace, MLTraceBuffer
 from wyrm.core._base import Wyrm
-from wyrm.data.dictstream import DictStream, ComponentStream
+from wyrm.data.dictstream import DictStream
+from wyrm.data.componentstream import ComponentStream
 from wyrm.util.compatability import bounded_floatlike, bounded_intlike
 
 
@@ -179,7 +180,29 @@ class WindowWyrm(Wyrm):
                 break
         y = self.queue
         return y
-
+    
+    def reset(self, attr: str ='window_tracker', safety_catch: bool =True) -> None:
+        if safety_catch:
+            if attr in ['window_tracker','queue']:
+                answer = input(f'About to delete contents of WindowWyrm.{attr} | Proceed? [Y]/[n]')
+            elif attr == 'both':
+                answer = input('About to delete contents of WindowWyrm.window_tracker and WindowWyrm.queue | Proceed? [Y]/[n]')
+            if answer == 'Y':
+                proceed = True
+            else:
+                proceed = False
+        else:
+            proceed = True
+        if proceed:
+            if attr in ['window_tracker', 'both']:
+                self.window_tracker = {}
+                if safety_catch:
+                    print('WindowWyrm.window_tracker reset to empty dictionary')
+            if attr in ['queue','both']:
+                self.queue = deque()
+                if safety_catch:
+                    print('WindowWyrm.queue reset to empty deque')
+        
     def update_window_tracker(self, dst):
         """
         Iterate across a site-level view of an input dictstream `dst` and add new entries
@@ -212,7 +235,7 @@ class WindowWyrm(Wyrm):
         # Split by site
         dict_x_site = dst.split_on_key(key='site')
         # Iterate across site holdings
-        for site, dst_site in dict_x_site.keys():
+        for site, dst_site in dict_x_site.items():
             # FIRST: if site is not in window_tracker, get max_starttime from a ref_comp DictStream
             if site not in self.window_tracker.keys():
                 # Generate a sub-view on reference trace(s)
@@ -249,7 +272,7 @@ class WindowWyrm(Wyrm):
                     # GET REFERENCE COMPONENT NATIVE COMPONENT CODE
                     # Get native component code for alias
                     _irc = False
-                    native_components = [_tr.component for _tr in dst_inst]
+                    native_components = [_tr.comp for _tr in dst_inst]
                     if self.ref['component'] not in native_components:
                         for _c in self.aliases[self.ref['component']]:
                             if _c in native_components:
@@ -279,16 +302,23 @@ class WindowWyrm(Wyrm):
         split_dict = x.split_on_key(key='instrument')
         for site, subdict in self.window_tracker.items():
             for inst, metadata in subdict.items():
-                wts = metadata['t0i']
-                nrc = metadata['nrc']
-                # Skip init_t0
+                # Skip inst = init_t0
                 if f'{site}.{inst}' in split_dict.keys():
+                    wts = metadata['t0i']
+                    nrc = metadata['nrc']
                     _dst = split_dict[f'{site}.{inst}']
                     _rdst = _dst.split_on_key(key='component')[nrc]
                     # If the reference component is present
                     if len(_rdst) == 1:
                         # If the reference component valid fraction is at/above the threshold
                         if _rdst[0].fvalid >= self.ref['threshold']:
+                            # Create a copied dictstream
+                            _dst_ct = _dst.copy().trim(starttime=wts,
+                                                       endtime=wts + self.window_sec,
+                                                       **self.options)
+                            for _tr in _dst_ct:
+                                if isinstance(_tr, MLTraceBuffer):
+                                    _tr.to_mltrace()
                             # Create trimmed copies of the MLTraceBuffer data
                             traces = []
                             # Iterate across mltracebuffer objects to sample traces and stamp ID with model name
@@ -302,6 +332,12 @@ class WindowWyrm(Wyrm):
                                     _mlt.stats.model = self.model_name
                                     # Append to trace list
                                     traces.append(_mlt)
+                                elif isinstance(_mltb, MLTrace):
+                                    _mlt = _mltb.copy().trim(starttime=wts,
+                                                             endtime=wts + self.window_sec,
+                                                             **self.options)
+                                    _mlt.stats.model = self.model_name
+                                    traces.append(_mlt)
                                 else:
                                     raise TypeError(f'WindowWyrm expects to sample from MLTraceBuffer type objects. Not {type(_mltb)}')
                             # Compose ComponentStream header items
@@ -310,6 +346,7 @@ class WindowWyrm(Wyrm):
                                            'reference_sampling_rate': self.ref['sampling_rate'],
                                            'reference_npts': self.ref['npts']})
                             # initialize ComponentStream
+                            breakpoint()
                             cst = ComponentStream(traces=traces, header=header, component_aliases=self.aliases)
                             # append to queue
                             self.queue.append(cst)
@@ -385,11 +422,14 @@ class WindowWyrm(Wyrm):
                 types.update({type(_x).__name__: 1})
             else:
                 types[type(_x).__name__] += 1
-        rstr += f' {_ni} instruments {_ni}'
+        rstr += f' {_ni} instruments'
         rstr += '\nQueue: '
         for _k, _v in types.items():
             rstr += f'{_v} {_k}(s) | '
-        rstr = rstr[:-3]
+        if len(types) > 0:
+            rstr = rstr[:-3]
+        else:
+            rstr += 'Nothing'
             
         return rstr
     

@@ -84,7 +84,6 @@ def read_from_mseed(filename, sanity_checks=True, stamp_load=False, **kwargs):
     
     header = data_tr.stats
     header.update({'model': m, 'weight': w})
-    breakpoint()
     if os.path.isfile(f'{pfn}.csv'):
         dfp =pd.read_csv(f'{pfn}.csv')
         processing = [list(dfp.loc[_i].values) for _i in dfp.index]
@@ -407,6 +406,38 @@ class MLTrace(Trace):
                     rstr += f' [{_i}] {ff:.2f}'
         return rstr
     
+    def __eq__(self, other):
+        """
+        Check the match between this MLTrace object and another
+        potential MLTrace object
+
+        This implementation checks the following fields in each
+        MLTrace's header:
+            via self.id:    network, station, location, channel, model, weight
+            via self.stats: starttime, sampling_rate, npts, calib
+        And assesses matches between self.data and self.fold and these
+        attributes in other
+        """
+        if not isinstance(other, MLTrace):
+            return False
+
+        if self.id != other.id:
+            return False
+        if self.stats.starttime != other.stats.starttime:
+            return False
+        if self.stats.npts != other.stats.npts:
+            return False
+        if self.stats.sampling_rate != other.stats.sampling_rate:
+            return False
+        if self.stats.calib != other.stats.calib:
+            return False
+        if not np.array_equal(self.data, other.data):
+            return False
+        if not np.array_equal(self.fold, other.fold):
+            return False
+        
+        
+        return True
     ###############################################################################
     # UPDATED TRIMMING METHODS ####################################################
     ###############################################################################
@@ -790,7 +821,8 @@ class MLTrace(Trace):
                 tr.detrend(**detrendkw)
             if resample_method:
                 if resample_method in [func for func in dir(tr) if callable(getattr(tr, func))]:
-                    getattr(tr,resample_method)(**resamplekw)
+                    if self.stats.sampling_rate != resamplekw['sampling_rate']:
+                        getattr(tr,resample_method)(**resamplekw)
                 else:
                     raise TypeError(f'resample_method "{resample_method}" is not supported by {self.__class__}')
             if taperkw:
@@ -1294,14 +1326,14 @@ class MLTraceBuffer(MLTrace):
         #         self.merge_kwargs.update({_k: merge_kwargs[_k]})
         #     elif _v.default != inspect._empty:
         #         self.merge_kwargs.update({_k: _v.default})
-        # self._has_data = False
+        self._has_data = False
 
     def __add__(self, other):
         self.append(other)
         return self
 
     def append(self, other):
-        if not isinstance(other, MLTrace):
+        if not isinstance(other, Trace):
             raise NotImplementedError
         
         # Apply blinding (if specified) to incoming trace
@@ -1366,6 +1398,8 @@ class MLTraceBuffer(MLTrace):
         if not self._has_data:
             self.stats = other.stats.copy()
             self.data = other.data
+            if 'fold' in dir(other):
+                self.fold = other.fold
             self.enforce_max_length(reference='starttime')
             self._has_data = True
         else:
@@ -1385,10 +1419,21 @@ class MLTraceBuffer(MLTrace):
             te = ts + max_samp/sr
         self.trim(starttime=ts, endtime=te, pad=True, fill_value=None, nearest_sample=True)
 
-    def trim_copy(self, starttime=None, endtime=None, **options):
-        out = MLTrace(data=copy.deepcopy(self.data), fold=copy.deepcopy(self.fold), header=copy.deepcopy(self.header))
-        out.trim(starttime=starttime, endtime=endtime, **options)
-        return out
+    def to_mltrace(self):
+        self = MLTrace(data=self.data, header=self.stats, fold=self.fold)
+        return self
+
+    # def copy(self, asbuffer=True):
+    #     if asbuffer:
+    #         out = copy.deepcopy(self)
+    #     else:
+    #         out = MLTrace(data=copy.deepcopy(self.data), fold=copy.deepcopy(self.fold), header=copy.deepcopy(self.header))
+    #     return out
+
+    # def trim_copy(self, starttime=None, endtime=None, **options):
+    #     out = MLTrace(data=copy.deepcopy(self.data), fold=copy.deepcopy(self.fold), header=copy.deepcopy(self.header))
+    #     out.trim(starttime=starttime, endtime=endtime, **options)
+    #     return out
     
 
         

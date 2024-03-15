@@ -6,6 +6,7 @@ from obspy.core.trace import Trace
 from obspy.core.util.attribdict import AttribDict
 from obspy.core import compatibility
 from wyrm.data.mltrace import MLTrace
+from wyrm.data.componentstream import ComponentStream
 from wyrm.util.pyew import wave2mltrace
 ###################################################################################
 # Dictionary Stream Stats Class Definition ########################################

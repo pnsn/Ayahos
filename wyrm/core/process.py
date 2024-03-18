@@ -24,7 +24,7 @@
                             input: deque of preprocessed ComponentStream objects
                             output: deque of MLTrace objects
 """
-import torch
+import torch, time, copy
 import seisbench.models as sbm
 import numpy as np
 from collections import deque
@@ -157,7 +157,7 @@ class WindowWyrm(Wyrm):
         self.ref = {'sampling_rate': refsr, 'overlap': refo, 'npts': refn, 'component': refc, 'threshold': reft}
          # Set Defaults and Derived Attributes
         # Calculate window length, window advance, and blinding size in seconds
-        self.window_sec = self.ref['npts']/self.ref['sampling_rate']
+        self.window_sec = (self.ref['npts'] - 1)/self.ref['sampling_rate']
         self.advance_sec = (self.ref['npts'] - self.ref['overlap'])/self.ref['sampling_rate']
 
         self.options = options
@@ -229,8 +229,10 @@ class WindowWyrm(Wyrm):
                 the starttime of data in '--.EN', which may not match the next starttime to be used for '--.HH'
 
                     window_tracker = {'UW.GNW': {'init_t0': <t0>,
-                                                 '--.HH': <t0> + n*<dt>,
-                                                 '--.EN': <t0> + m*<dt>}}
+                                                 '--.HH': {'t0i': <t0> + nw*<dt>, 'nrc': 'Z', 'nwp': 2},
+                                                 '--.EN': {'t0i': <t0> + nw*<dt>, 'nrc': 'Z', 'nwp': 2}
+                                                }
+                                      }
         """
         # Split by site
         dict_x_site = dst.split_on_key(key='site')
@@ -281,7 +283,7 @@ class WindowWyrm(Wyrm):
                         _irc = self.ref['component']
                     # If the reference component is present, update window_tracker with new site information
                     if _irc:
-                        self.window_tracker[site].update({inst: {'t0i':first_t0, 'nrc': _irc}})
+                        self.window_tracker[site].update({inst: {'t0i':first_t0, 'nrc': _irc, 'nwp': 0}})
                                                          
                 # If the instrument IS in window_tracker
                 if inst in self.window_tracker[site].keys():
@@ -310,8 +312,13 @@ class WindowWyrm(Wyrm):
                     _rdst = _dst.split_on_key(key='component')[nrc]
                     # If the reference component is present
                     if len(_rdst) == 1:
+                        #Create a copied, trimmed reference trace (component), padded with masked values as needed
+                        _rmlt = _rdst[0].copy().trim(starttime=wts,
+                                                      endtime = wts + self.window_sec,
+                                                      pad=True,
+                                                      fill_value=None)
                         # If the reference component valid fraction is at/above the threshold
-                        if _rdst[0].fvalid >= self.ref['threshold']:
+                        if _rmlt.fvalid >= self.ref['threshold']:
                             # Create a copied dictstream
                             _dst_ct = _dst.copy().trim(starttime=wts,
                                                        endtime=wts + self.window_sec,
@@ -342,16 +349,18 @@ class WindowWyrm(Wyrm):
                                     raise TypeError(f'WindowWyrm expects to sample from MLTraceBuffer type objects. Not {type(_mltb)}')
                             # Compose ComponentStream header items
                             header = _dst.stats.copy()
-                            header.update({'reference_starttime': wts,
+                            header.update({'reference_id': header.defaults['reference_id'],
+                                           'reference_starttime': wts,
                                            'reference_sampling_rate': self.ref['sampling_rate'],
                                            'reference_npts': self.ref['npts']})
                             # initialize ComponentStream
-                            breakpoint()
                             cst = ComponentStream(traces=traces, header=header, component_aliases=self.aliases)
+                            cst.stats.processing.append([time.time(), 'Wyrm 0.0.0', 'WindowWyrm', 'trim', f'(starttime={wts}, endtime={wts + self.window_sec}, options={self.options})'])
                             # append to queue
                             self.queue.append(cst)
                             # update this site-inst's window starttime
-                            self.window_tracker[site][inst] += self.advance_sec
+                            self.window_tracker[site][inst]['t0i'] += self.advance_sec
+                            self.window_tracker[site][inst]['nwp'] += 1
                             # update the number of new windows index for this call
                             nnew += 1
                         else:
@@ -504,8 +513,8 @@ class MethodWyrm(Wyrm):
         else:
             self.pclass = pclass
         # pmethod compatability checks
-        if pmethod not in [func for func in dir(self.mclass) if callable(getattr(self.mclass, func))]:
-            raise ValueError(f'pmethod "{pmethod}" is not defined in {self.mclass} properties or methods')
+        if pmethod not in [func for func in dir(self.pclass) if callable(getattr(self.pclass, func))]:
+            raise ValueError(f'pmethod "{pmethod}" is not defined in {self.pclass} properties or methods')
         else:
             self.pmethod = pmethod
         # pkwargs compatability checks
@@ -548,6 +557,15 @@ class MethodWyrm(Wyrm):
                 x.append(_x)
             else:
                 getattr(_x, self.pmethod)(**self.pkwargs);
+                # For objects with a stats.processing attribute, append processing info
+                if 'stats' in dir(_x):
+                    if 'processing' in dir(_x.stats):
+                        _x.stats.processing.append(
+                            [time.time(),
+                             'Wyrm 0.0.0',
+                             'MethodWyrm',
+                             self.pmethod,
+                             f'({self.pkwargs})'])
                 self.queue.append(_x)
         y = self.queue
         return y
@@ -619,16 +637,16 @@ class PredictionWyrm(Wyrm):
             self.model = model
         
         # Model weight_names compatability checks
-        pretrained_list = model.list_pretrained()
+        # pretrained_list = model.list_pretrained() # This error catch is now handled with the preload/precopile setp
         if isinstance(weight_names, str):
             weight_names = [weight_names]
         elif isinstance(weight_names, (list, tuple)):
             if not all(isinstance(_n, str) for _n in weight_names):
                 raise TypeError('not all listed weight_names are type str')
-        else:
-            for _n in weight_names:
-                if _n not in pretrained_list:
-                    raise ValueError(f'weight_name {_n} is not a valid pretrained model weight_name for {model}')
+        # else:
+        #     for _n in weight_names:
+        #         if _n not in pretrained_list:
+        #             raise ValueError(f'weight_name {_n} is not a valid pretrained model weight_name for {model}')
         self.weight_names = weight_names
 
         # device compatability checks
@@ -660,7 +678,8 @@ class PredictionWyrm(Wyrm):
                 if self.debug:
                     print(f'...pre compiling model on device type "{self.device.type}"')
                 cmod = torch.compile(cmod.to(self.device))
-
+            else:
+                cmod = cmod.to(self.device)
             self.cmods.update({wname: cmod})
         # Initialize output deque
         self.queue = deque()
@@ -699,44 +718,57 @@ class PredictionWyrm(Wyrm):
                 if not(isinstance(_x, ComponentStream)):
                     x.append(_x)
                 # Check that ComponentStream is ready to split out, copy, and be eliminated
-                if _x.ready_to_burn(model):
+                if _x.ready_to_burn(self.model):
                     # Part out copied data, metadata, and fold objects
-                    _data = _x.to_torch(model).copy()
+                    _data = _x.to_npy_tensor(self.model).copy()
                     _fold = _x.collapse_fold().copy() 
                     _meta = _x.stats.copy()
+                    # Attach processing information for split
+                    _meta.processing.append([time.time(),
+                                             'Wyrm 0.0.0',
+                                             'PredictionWyrm',
+                                             'split_for_ml',
+                                             '<internal>'])
                     # Delete source ComponentStream object to clean up memory
                     del _x
                     # Append copied (meta)data to collectors
-                    batch_data.append(torch.Tensor(_data))
+                    batch_data.append(_data)
                     batch_fold.append(_fold)
                     batch_meta.append(_meta)
                 # TODO: If not ready to burn, kick error
                 else:
+                    breakpoint()
                     raise ValueError('ComponentStream is not sufficiently preprocessed - suspect an error earlier in the tube')
-        # Concatenate batch_data tensor list into a single tensor
-        batch_data = torch.concat(batch_data)
-        batch_dst_dict = {_i: DictStream() for _i in range(len(batch_meta))}
-        # Iterate across preloaded (and precompiled) models
-        for wname, model in self.cmods.items():
-            # Run batch prediction for a given model weight
-            batch_pred = self.run_prediction(model, batch_data, batch_meta)
-            # Reassociate window metadata to predicted values and send MLTraces to queue
-            self.batch2dst_dict(model, wname, batch_pred, batch_fold, batch_meta, batch_dst_dict)
-        # Provide access to queue as pulse output
-        for _v in batch_dst_dict.values():
-            self.queue.append(_v)
+       
+        # IF there are windows to process
+        if len(batch_meta) > 0:
+            # Concatenate batch_data tensor list into a single tensor
+            batch_data = torch.Tensor(np.array(batch_data))
+            batch_dst_dict = {_i: DictStream() for _i in range(len(batch_meta))}
+            # Iterate across preloaded (and precompiled) models
+            for wname, weighted_model in self.cmods.items():
+                # Run batch prediction for a given weighted_model weight
+                if batch_data.ndim != 3:
+                    breakpoint()
+                batch_pred = self.run_prediction(weighted_model, batch_data, batch_meta)
+                # Reassociate window metadata to predicted values and send MLTraces to queue
+                self.batch2dst_dict(wname, batch_pred, batch_fold, batch_meta, batch_dst_dict)
+            # Provide access to queue as pulse output
+            for _v in batch_dst_dict.values():
+                self.queue.append(_v)
 
+        # alias self.queue to output
         y = self.queue
         return y
 
-    def run_prediction(self, model, batch_data, reshape_output=True):
+    def run_prediction(self, weighted_model, batch_data, reshape_output=True):
         """
         Run a prediction on an input batch of windowed data using a specified model on
         self.device. Provides checks that batch_data is on self.device and an option to
         enforce a uniform shape of batch_preds and batch_data.
 
         :: INPUT ::
-        :param model: [seisbench.models.WaveformModel] initialized model object with
+        :param weighted_model: [seisbench.models.WaveformModel] initialized model object with
                         pretrained weights loaded (and potentialy precompiled) with
                         which this prediction will be conducted
         :param batch_data: [numpy.ndarray] or [torch.Tensor] data array with scaling
@@ -754,9 +786,9 @@ class PredictionWyrm(Wyrm):
 
         # RUN PREDICTION, ensuring data is on self.device
         if batch_data.device.type != self.device.type:
-            batch_preds = model(batch_data.to(self.device))
+            batch_preds = weighted_model(batch_data.to(self.device))
         else:
-            batch_preds = model(batch_data)
+            batch_preds = weighted_model(batch_data)
         
         # Check if output predictions are presented as some list-like of torch.Tensors
         if isinstance(batch_preds, (tuple, list)):
@@ -767,7 +799,7 @@ class PredictionWyrm(Wyrm):
                 raise TypeError('not all elements of preds is type torch.Tensor')
         # If reshaping to batch_data.shape is desired, check if it is required.
         if reshape_output and batch_preds.shape != batch_data.shape:
-            batch_preds.reshape(batch_data.shape)
+            batch_preds = batch_preds.reshape(batch_data.shape)
 
         return batch_preds
 
@@ -805,18 +837,40 @@ class PredictionWyrm(Wyrm):
             batch_preds = batch_preds.detach().cpu().numpy()
         else:
             batch_preds = batch_preds.detach().numpy()
+        
+        # Reshape sanity check
+        if batch_preds.ndim != 3:
+            if batch_preds.shape[0] != len(batch_meta):
+                batch_preds = batch_preds.reshape((len(batch_meta), -1, self.model.in_samples))
+
+        # TODO - change metadata propagation to take procesing from component stream, but still keep
+        # timing and whatnot from reference_streams
         # Iterate across metadata dictionaries
-        for _i, _meta in batch_meta:
-            # Create a dictstream for this paritcular window
-            
+        for _i, _meta in enumerate(batch_meta):
+            # Split reference code into components
+            n,s,l,c,m,w = _meta.reference_id.split('.')
+            # Generate new MLTrace header for this set of predictions
+            _header = {'starttime': _meta.reference_starttime,
+                      'sampling_rate': _meta.reference_sampling_rate,
+                      'network': n,
+                      'station': s,
+                      'location': l,
+                      'channel': c,
+                      'model': m,
+                      'weight': weight_name,
+                      'processing': copy.deepcopy(_meta.processing)}
+            # Update processing information to timestamp completion of batch prediction
+            _header['processing'].append([time.time(),
+                                          'Wyrm 0.0.0',
+                                          'PredictionWyrm',
+                                          'batch2dst_dict',
+                                          '<internal>'])
             # Iterate across prediction labels
             for _j, label in enumerate(self.model.labels):
                 # Compose output trace from prediction values, input data fold, and header data
-                _mlt = MLTrace(data = batch_preds[_i, _j, :], fold=batch_fold[_i, :], header=_meta)
+                _mlt = MLTrace(data = batch_preds[_i, _j, :], fold=batch_fold[_i], header=_header)
                 # Update component labeling
-                _mlt.set_component(new_label=label)
-                # Update weight name in mltrace header
-                _mlt.stats.weight = weight_name
+                _mlt.set_comp(label)
                 # Append to window-indexed dictionary of DictStream objects
                 if _i not in dst_dict.keys():
                     dst_dict.update({_i, DictStream()})

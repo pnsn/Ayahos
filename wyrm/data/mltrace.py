@@ -693,7 +693,6 @@ class MLTrace(Trace):
     def why(self):
         print('True love is the greatest thing on Earth - except for an MLT...')
 
-    why = property(why)
 
     def _relative_indexing(self, other):
         """
@@ -765,6 +764,35 @@ class MLTrace(Trace):
             trace_list.append(tr)
         return Stream(trace_list)
     
+    def normalize(self, norm_type:str='max'):
+        """
+        Extension of the obspy.core.trace.Trace.normalize method
+        where norm_type dictates what scalar is calculated for:
+        [ML](Trace)
+            super().normalize(norm=scalar)
+
+        This produces documentation of the normalization factor
+        in the stats.processing line via inherited decorator calls
+
+        :: INPUT ::
+        :param norm_type: [str] - normalization method
+                    Supported:
+                        'max': maximum absolute value of trace data
+                            aliases: 'minmax','peak'
+                        'std': standard deviation of trace data
+                            aliases: 'standard'
+        
+        :: OUTPUT ::
+        :return self: [wyrm.data.mltrace.MLTrace] enable cascading.
+        """
+        if norm_type.lower() in ['max','minmax','peak']:
+            scalar = np.nanmax(np.abs(self.data))
+            super().normalize(norm=scalar)
+        elif norm_type.lower() in ['std','standard']:
+            scalar = np.nanstd(self.data)
+            super().normalize(norm=scalar)
+        return self
+
     ########################################################
     # COMPOSITE METHODS FOR M/L DATA SIGNAL PRE-PROCESSING #
     ########################################################
@@ -836,7 +864,9 @@ class MLTrace(Trace):
         if trimkw:
             self.trim(**trimkw)
         return self
-        
+    
+
+
         
     ###############################################################################
     # WRAPPED RESAMPLING METHODS ##################################################
@@ -919,10 +949,29 @@ class MLTrace(Trace):
         self.fold = tmp_fold
         return self
         
-    def sync_to_window(self, starttime=None, endtime=None, fill_value=None, **kwargs):
+    def sync_to_window(self, starttime=None, endtime=None, fill_value=None, pad_after=True, **kwargs):
         """
-        Syncyronize the time sampling index
-        """
+        Syncyronize the time sampling index of this trace to a specified
+        starttime and/or endtime using a combination of the (ML)Trace.trim()
+        and (ML)Trace.interpolate() methods.
+
+        Interpolation is triggered only if the specified starttime / endtime
+        is not aligned with the temporal sampling of this trace.
+
+        :: INPUTS ::
+        :param starttime:   [None] - no reference starttime, fits to nearest
+                             starttime that is consistent with MLTrace data
+                             and specified endtime
+                            [UTCDateTime] - reference starttime for trim and interpolate
+        :param endtime:     [None] - no reference endtime
+                            [UTCDateTime] - reference endtime
+        :param fill_value:  [None], [int], [float] - value passed to (ML)Trace.trim()
+        :param **kwargs:    [kwargs] key word argument collector passed
+                            to (ML)Trace.interpolate()
+
+        :: OUTPUT ::
+        :return self: [wyrm.data.mltrace.MLTrace] - enables cascading
+        """                 
         if starttime is not None:
             try:
                 starttime = UTCDateTime(starttime)
@@ -945,10 +994,10 @@ class MLTrace(Trace):
             starttime = endtime - dn*self.stats.delta
         else:
             dn = (self.stats.starttime - starttime)*self.stats.sampling_rate
-
-        # Sampling points align, use MLTrace.trim() to pad to requisite size
+        # Sampling points align, use MLTrace.trim() to pad to requisite size if pad_after is True
         if int(dn) == dn:
-            self.trim(starttime=starttime,endtime=endtime,pad=True, nearest_sample=True, fill_value=fill_value)
+            if self.stats.starttime != starttime or self.stats.endtime != endtime:
+                self.trim(starttime=starttime,endtime=endtime, pad=pad_after, nearest_sample=True, fill_value=fill_value)
         # If samplign points don't align use MLTRace.interpolate() and .trim() to re-index and trim to size
         else:
             # If starttime is inside this MLTrace
@@ -963,12 +1012,19 @@ class MLTrace(Trace):
                 # Interpolate on that sample
                 self.interpolate(sampling_rate=self.stats.sampling_rate,
                                  starttime=istart,**kwargs)
-            
-            # If endtime is specified
-            if endtime is not None:
-                # If interpoalted data don't match the endtime, get there with trim()
-                if self.stats.endtime != endtime:
-                    self.trim(starttime=starttime,endtime=endtime, pad=True, nearest_sample=True,fill_value=fill_value)
+            # If after padding is enabled
+            if pad_after:
+                if self.stats.starttime != starttime or self.stats.endtime != endtime:
+                    self.trim(starttime=starttime, endtime=endtime, pad=pad_after, nearest_sample=True, fill_value=fill_value)
+            # if self.stats.starttime != starttime and pad_after:
+            #     # If endtime is specified
+            #     if endtime is not None:
+            #         # If interpoalted data don't match the endtime, get there with trim()
+            #         if self.stats.endtime != endtime:
+            #         self.trim(starttime=starttime,endtime=endtime, pad=True, nearest_sample=True,fill_value=fill_value)
+            #     # If endtime is not specified
+                        
+
         return self
 
     def decimate(self, factor, no_filter=False, strict_length=False):

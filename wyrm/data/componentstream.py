@@ -188,7 +188,7 @@ class ComponentStream(DictStream):
 
     def validate_ids(self, traces):
         """
-        Check id strings for traces against WindowStream.stats.reference_id
+        Check id strings for traces against ComponentStream.stats.reference_id
         :: INPUTS ::
         :param traces: [list-like] of [obspy.core.trace.Trace-like] or individual
                         objects thereof
@@ -222,7 +222,7 @@ class ComponentStream(DictStream):
     ###############################################################################
     # FILL RULE METHODS ###########################################################
     ###############################################################################
-    @_add_processing_info
+    # @_add_processing_info
     def apply_fill_rule(self, rule='zeros', ref_component='Z', other_components='NE', ref_thresh=0.9, other_thresh=0.8):
         if ref_component not in self.traces.keys():
             raise KeyError('reference component {ref_component} is not present in traces')
@@ -234,7 +234,7 @@ class ComponentStream(DictStream):
         # Check if all components are present in traces
         checks.append(self.traces.keys() == thresh_dict.keys())
         # Check if all valid data fractions meet/exceed thresholds
-        checks.append(all(self[_k].fvalid >= thresh_dict[_k] for _k in self.trace.keys()))
+        checks.append(all(self[_k].fvalid >= thresh_dict[_k] for _k in self.traces.keys()))
         if all(checks):
             pass
         elif rule == 'zeros_wipe':
@@ -248,8 +248,8 @@ class ComponentStream(DictStream):
         else:
             raise ValueError(f'rule {rule} not supported. Supported values: "zeros", "clone_ref", "clone_other"')
 
-    @_add_processing_info
-    def _apply_zeros(self, ref_component, thresh_dict, method='fill'):
+    # @_add_processing_info
+    def _apply_zeros(self, ref_component, thresh_dict): #, method='fill'):
         """
         Apply the channel filling rule "zero" (e.g., Retailleau et al., 2022)
         where both "other" (horzontal) components are set as zero-valued traces
@@ -265,24 +265,49 @@ class ComponentStream(DictStream):
                         self.traces.keys() (i.e., alised component characters)
                         and values \in [0, 1] representing fractional completeness
                         thresholds below which the associated component is rejected
+
+        (OBSOLITED)
+        # :param method: [str] method for filling behavior
+        #             Supported:
+        #                 'wipe' - without exception, convert all "other" component
+        #                         traces into 0-data 0-fold MLTrace objects
+        #                 'fill' - if a given existing "other" trace falls below
+        #                             the threshold, convert it into a 0-data 0-fold
+        #                             MLTrace object
         """
+        # Get reference trace
         ref_tr = self[ref_component]
+        # Safety catch that at least the reference component does have enough data
         if ref_tr.fvalid < thresh_dict[ref_component]:
             raise ValueError('insufficient valid data in reference trace')
         else:
             pass
+        # Iterate across entries in the threshold dictionary
         for _k in thresh_dict.keys():
-            if method == 'wipe':
-                tr0 = ref_tr.copy().to_zero(method='both').set_comp(_k)
+            # For "other" components
+            if _k != ref_component:
+                # # If using 'wipe' method
+                # if method == 'wipe':
+                # Create copy of reference trace
+                tr0 = ref_tr.copy()
+                # Relabel
+                tr0.set_comp(_k)
+                # Set data and fold to zero
+                tr0.to_zero(method='both')
+                # Update 
                 self.traces.update({_k: tr0})
-            elif method == 'fill':
-                if _k in self.traces.keys():
-                    if self.traces[_k].fvalid < thresh_dict[_k]:
-                        tr0 = ref_tr.copy().to_zero(method='both').set_comp(_k)
-                        self.traces.update({_k: tr0})
+
+                # # If using 'fill' method
+                # elif method == 'fill':
+                #     if _k in self.traces.keys():
+                #         if self.traces[_k].fvalid < thresh_dict[_k]:
+                #             tr0 = ref_tr.copy()
+                #             tr0.set_comp(_k)
+                #             tr0.to_zero(method='both')
+                #             self.traces.update({_k: tr0})
 
 
-    @_add_processing_info
+    # @_add_processing_info
     def _apply_clone_ref(self, ref_component, thresh_dict):
         """
         Apply the channel filling rule "clone reference" (e.g., Ni et al., 2023)
@@ -301,17 +326,26 @@ class ComponentStream(DictStream):
                         and values \in [0, 1] representing fractional completeness
                         thresholds below which the associated component is rejected
         """
+        # Get reference trace
         ref_tr = self[ref_component]
+        # Get 
         if ref_tr.fvalid < thresh_dict[ref_component]:
             raise ValueError('insufficient valid data in reference trace')
         else:
             pass
         for _k in thresh_dict.keys():
-            trC = ref_tr.copy().to_zero(method='fold').set_comp(_k)
-            self.traces.update({_k: trC})
+            if _k != ref_component:
+                # Create copy of reference trace
+                trC = ref_tr.copy()
+                # Relabel component
+                trC.set_comp(_k)
+                # Zero-out fold on copies
+                trC.to_zero(method='fold')
+                # Update zero-fold copies as new "other" component(s)
+                self.traces.update({_k: trC})
 
 
-    @_add_processing_info    
+    # @_add_processing_info    
     def _apply_clone_other(self, ref_component, thresh_dict):
         """
         Apply the channel filling rule "clone other" (e.g., Lara et al., 2023)
@@ -374,16 +408,25 @@ class ComponentStream(DictStream):
             else:
                 self._apply_clone_ref(ref_component, thresh_dict)
 
-        # If at least one "other" component is present
+        # If ref and one "other" component are present
         elif ref_component in pass_dict.keys():
-            # If both ref and at "other" pass, create clone of "other"
+            # ..and they both pass checks
             if all(pass_dict.items()):
+                # Iterate across all expected components
                 for _c in thresh_dict.keys():
+                    # to find the missing component 
+                    # (case where all components are present & passing is handled above) 
+                    # catch the missing component code
                     if _c not in pass_dict.keys():
                         cc = _c
+                    # and use the present "other" as a clone template
                     elif _c != ref_component:
                         trC = self[_c].copy()
-                trC.to_zero(method='fold').set_comp(cc)
+                # Stitch results from the iteration loop together
+                trC.set_comp(cc)
+                # Zero out fold
+                trC.to_zero(method='fold')
+                # And update traces with clone
                 self.traces.update({cc: trC})
             # If the single "other" trace does not pass, use _apply_clone_ref method
             else:
@@ -458,19 +501,19 @@ class ComponentStream(DictStream):
             line = []
             for _k, _v in ref.items():
                 line.append(getattr(_tr.stats,_k) == _v)
-            line.append(np.ma.is_masked(_tr.data))
+            line.append(not np.ma.is_masked(_tr.data))
             holder.append(line)
         
         bool_array = np.array(holder)
         if mode == 'summary':
             status=bool_array.all()
         elif mode == 'attribute':
-            status = dict(zip(list(ref.keys()) + ['masked'], bool_array.all(axis=0)))
+            status = dict(zip(list(ref.keys()) + ['mask_free'], bool_array.all(axis=0)))
         elif mode == 'trace':
             status = dict(zip(self.traces.keys(), bool_array.all(axis=1)))
         elif mode == 'full':
             status = pd.DataFrame(bool_array,
-                                  columns=list(ref.keys()) + ['masked'],
+                                  columns=list(ref.keys()) + ['mask_free'],
                                   index=self.traces.keys()).T
         return status
 
@@ -499,15 +542,31 @@ class ComponentStream(DictStream):
                           mergekw=mergekw,
                           trimkw=trimkw)
         return self
-            
-
-    # def treat_gaps(self):
-    #     return None
     
-    # def sync_sampling(self,
-    #                   resampling_method='resample',
-    #                   resampling_kw={},
-    #                   )
+    def sync_to_reference(self, fill_value=0., **kwargs):
+        starttime = self.stats.reference_starttime
+        if starttime is None:
+            raise ValueError('reference_starttime must be specified in this ComponentStream\'s `stats`')
+        npts = self.stats.reference_npts
+        if npts is None:
+            raise ValueError('reference_npts must be specified in this ComponentStream\'s `stats`')
+        sampling_rate = self.stats.reference_sampling_rate
+        if sampling_rate is None:
+            raise ValueError('reference_sampling_rate must be specified in this ComponentStream\'s `stats`')
+
+        endtime = starttime + (npts-1)/sampling_rate
+
+        # If any checks against windowing references fail, proceed with interpolation/padding
+        if not self.check_windowing_status(mode='summary'):
+            for _tr in self:
+                _tr.sync_to_window(starttime=starttime, endtime=endtime, fill_value=fill_value, **kwargs)
+
+        # Extra sanity check
+        if not self.check_windowing_status(mode='summary'):
+            breakpoint()
+
+        return self
+
 
     ###############################################################################
     # ComponentStream to Tensor Methods ###########################################
@@ -539,7 +598,8 @@ class ComponentStream(DictStream):
             raise TypeError
         elif model.name == 'WaveformModel':
             raise ValueError('WaveformModel baseclass objects do not provide a viable prediciton method - use a child class thereof')
-        
+        if any(_tr is None for _tr in self):
+            breakpoint()
         # Check that data are not masked
         if any(isinstance(_tr.data, np.ma.MaskedArray) for _tr in self):
             status = False
@@ -550,7 +610,7 @@ class ComponentStream(DictStream):
         elif not all(_tr.stats.npts == model.in_samples for _tr in self):
             status = False
         # Check that all components needed in model are represented in the aliases
-        elif not all(_k in model.component_order for _k in self.keys()):
+        elif not all(_k in model.component_order for _k in self.traces.keys()):
             status = False
         # Check that sampling rate is sync'd
         elif not all(_tr.stats.sampling_rate == self.stats.reference_sampling_rate for _tr in self):
@@ -560,7 +620,7 @@ class ComponentStream(DictStream):
             status = True
         return status
     
-    def to_tensor(self, model):
+    def to_npy_tensor(self, model):
         """
         Convert the data contents of this ComponentStream into a numpy array that
         conforms to the component ordering required by a seisbench WaveformModel
@@ -572,8 +632,9 @@ class ComponentStream(DictStream):
             raise ValueError('This ComponentStream is not ready for conversion to a torch.Tensor')
         
         npy_array = np.c_[[self[_c].data for _c in model.component_order]]
-        tensor = torch.Tensor(npy_array)
-        return tensor
+        return npy_array
+        # tensor = torch.Tensor(npy_array)
+        # return tensor
 
     def collapse_fold(self):
         """

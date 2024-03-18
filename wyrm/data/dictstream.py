@@ -1,4 +1,5 @@
 import fnmatch, inspect, time, warnings
+import numpy as np
 from decorator import decorator
 from obspy.core.utcdatetime import UTCDateTime
 from obspy.core.stream import Stream, read
@@ -6,7 +7,6 @@ from obspy.core.trace import Trace
 from obspy.core.util.attribdict import AttribDict
 from obspy.core import compatibility
 from wyrm.data.mltrace import MLTrace
-from wyrm.data.componentstream import ComponentStream
 from wyrm.util.pyew import wave2mltrace
 ###################################################################################
 # Dictionary Stream Stats Class Definition ########################################
@@ -146,7 +146,7 @@ def _add_processing_info(func, *args, **kwargs):
     callargs = inspect.getcallargs(func, *args, **kwargs)
     callargs.pop("self")
     kwargs_ = callargs.pop("kwargs", {})
-    info = [time.time(), "Wyrm 0.0.0:","{function}".format(function=func.__name__), "(%s)"]
+    info = [time.time(), "Wyrm 0.0.0","{function}".format(function=func.__name__), "(%s)"]
     arguments = []
     arguments += \
         ["%s=%s" % (k, repr(v)) if not isinstance(v, str) else
@@ -561,7 +561,7 @@ class DictStream(Stream):
         """
         Split this DictStream by instrument codes (Net.Sta.Loc.BandInst)
         """
-        
+        from wyrm.data.componentstream import ComponentStream
         # Split by instrument_id
         if ascopy:
             out = self.copy().split_on_key(key='instrument', **options)
@@ -593,8 +593,14 @@ class DictStream(Stream):
     ###############################################################################
     # UPDATED METHODS FROM OBSPY STREAM ###########################################
     ###############################################################################
-    @_add_processing_info
-    def trim(self, starttime=None, endtime=None, pad=True, keep_empty_traces=True, nearest_sample=True, fill_value=None):
+    # @_add_processing_info
+    def trim(self,
+             starttime=None,
+             endtime=None,
+             pad=True,
+             keep_empty_traces=True,
+             nearest_sample=True,
+             fill_value=None):
         """
         Slight adaptation of obspy.core.stream.Stream.trim() to facilitate the dict-type self.traces
         attribute syntax.
@@ -649,6 +655,14 @@ class DictStream(Stream):
             self.traces = {_k: _v for _k, _v in self.traces.items() if _v.stats.npts}
             self.stats.update_time_range(trace)
         return self
+    
+    def normalize_traces(self, norm_type:str ='peak'):
+        for tr in self:
+            tr.normalize(norm_type=norm_type)
+    
+        
+
+                    
     
     ###############
     # I/O METHODS - TODO - GO THROUGH SAC TO APPEND MOD TO CHANNEL #

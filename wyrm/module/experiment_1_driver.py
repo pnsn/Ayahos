@@ -1,10 +1,10 @@
 import glob, obspy, os, sys
 import seisbench.models as sbm
-from wyrm.data.dictstream import DictStream
-from wyrm.data.componentstream import ComponentStream
-from wyrm.data.mltrace import MLTrace, MLTraceBuffer
-from wyrm.core.coordinate import TubeWyrm, CanWyrm
-from wyrm.core.process import MethodWyrm, WindowWyrm, PredictionWyrm
+import wyrm.data.dictstream as ds
+import wyrm.data.componentstream as cs
+import wyrm.data.mltrace as mt
+import wyrm.core.coordinate as coor
+import wyrm.core.process as proc 
 
 common_pt = ['stead','instance','iquique','lendb']
 EQT = sbm.EQTransformer()
@@ -30,60 +30,88 @@ RCOMP = 'Z'
 # Initialize Standard Processing Elements
 treat_gap_kwargs = {} # see ComponentStream.treat_gaps() and MLTrace.treat_gaps() for defaults
                       # Essentially, filter 1-45 Hz, linear detrend, resample to 100 sps
-# Initialize MethodWyrm cross-applicable 
-mwyrm_gaps = MethodWyrm(
-    pclass=ComponentStream,
+# Initialize main pre-processing MethodWyrm objects (these can be cloned for multiple tubes)
+
+# For treating gappy data
+mwyrm_gaps = proc.MethodWyrm(
+    pclass=cs.ComponentStream,
     pmethod='treat_gaps',
     pkwargs={})
 
-# TODO: wyrm.data.ComponentStream.sync_to_reference()
-mwyrm_sync = MethodWyrm(
-    pclass=ComponentStream,
+# For synchronizing temporal sampling and windowing
+mwyrm_sync = proc.MethodWyrm(
+    pclass=cs.ComponentStream,
     pmethod='sync_to_reference',
     pkwargs={})
 
-
-mwyrm_fill = MethodWyrm(
-    pclass=ComponentStream,
+# For filling data out to 3-C from non-3-C data (either missing channels, or 1C instruments)
+mwyrm_fill = proc.MethodWyrm(
+    pclass=cs.ComponentStream,
     pmethod='apply_fill_rule',
     pkwargs={'rule': RCFR, 'ref_component': RCOMP})
 
+# Initialize model specific normalization MethodWyrms
+mwyrm_normEQT = proc.MethodWyrm(
+    pclass=cs.ComponentStream,
+    pmethod='normalize_traces',
+    pkwargs={'norm_type': 'peak'}
+)
+
+mwyrm_normPN = proc.MethodWyrm(
+    pclass=cs.ComponentStream,
+    pmethod='normalize_traces',
+    pkwargs={'norm_type': 'std'}
+)
 
 # Initialize WindowWyrm elements
-windwyrmEQT = wcp.WindowWyrm(component_aliases=EQT_aliases,model_name='EQTransformer',reference_sampling_rate=RSR,reference_npts=6000,reference_overlap=1800,max_pulse_size=5)
+windwyrmEQT = proc.WindowWyrm(
+    component_aliases=EQT_aliases,
+    model_name='EQTransformer',
+    reference_sampling_rate=RSR,
+    reference_npts=6000,
+    reference_overlap=1800,max_pulse_size=5)
 
-windwyrmPN = WindowWyrm(component_aliases=PN_aliases,
-                         model_name='PhaseNet',
-                         reference_sampling_rate=100.,
-                         reference_npts=3001,
-                         reference_overlap=900,
-                         max_pulse_size=10)
+windwyrmPN = proc.WindowWyrm(
+    component_aliases=PN_aliases,
+    model_name='PhaseNet',
+    reference_sampling_rate=100.,
+    reference_npts=3001,
+    reference_overlap=900,
+    max_pulse_size=10)
 
 # Initialize PredictionWyrm elements
-predwyrmEQT = PredictionWyrm(model=EQT,
-                       weight_names=EQT_list,
-                       devicetype='mps',
-                       compiled=True,
-                       max_pulse_size=10000,
-                       debug=False)
+predwyrmEQT = proc.PredictionWyrm(
+    model=EQT,
+    weight_names=EQT_list,
+    devicetype='mps',
+    compiled=True,
+    max_pulse_size=10000,
+    debug=True)
 
-predwyrmPN = PredictionWyrm(model=PN,
-                            weight_names=PN_list,
-                            devicetype='mps',
-                            compiled=True,
-                            max_pulse_size=10000,
-                            debug=False)
+# predwyrmPN = proc.PredictionWyrm(
+#     model=PN,
+#     weight_names=PN_list,
+#     devicetype='mps',
+#     compiled=True,
+#     max_pulse_size=10000,
+#     debug=True)
+
 # Compose EQT processing TubeWyrm
-tubewyrmEQT = TubeWyrm(wyrm_dict={'window': windwyrmEQT,
-                                  'gaps': mwyrm_gaps.copy(),
-                                  'sync': mwyrm_sync.copy(),
-                                  'fill': mwyrm_fill.copy(),
-                                  'predict': predwyrmEQT})
+tubewyrmEQT = coor.TubeWyrm(
+    wyrm_dict= {'window': windwyrmEQT,
+                'gaps': mwyrm_gaps.copy(),
+                'sync': mwyrm_sync.copy(),
+                'norm': mwyrm_normEQT,
+                'fill': mwyrm_fill.copy(),
+                'predict': predwyrmEQT})
+
 # Copy/Update to create PhaseNet processing TubeWyrm
-tubewyrmPN = tubewyrmEQT.copy().update({'window': windwyrmPN,'predict': predwyrmPN})
+tubewyrmPN = tubewyrmEQT.copy().update({'window': windwyrmPN,
+                                        'norm': mwyrm_normPN,
+                                        'predict': predwyrmPN})
 
 # Compose CanWyrm to host multiple processing lines
-canwyrm = CanWyrm(wyrm_dict={'EQTransformer': tubewyrmEQT,
+canwyrm = coor.CanWyrm(wyrm_dict={'EQTransformer': tubewyrmEQT,
                              'PhaseNet': tubewyrmPN},
                   wait_sec=0,
                   max_pulse_size=1,

@@ -238,12 +238,23 @@ class TubeWyrm(Wyrm):
         :: OUTPUT ::
         :param y: Output `y` from the last Wyrm object in wyrm_dict
         """
-        for _i, _wyrm in enumerate(self.wyrm_dict.values()):
-            x = _wyrm.pulse(x)
-            # if not last step, wait specified wait_sec
-            if _i + 1 < len(self.wyrm_dict):
-                time.sleep(self.wait_sec)
-        y = x
+        if self.debug:
+            start = time.time()
+        for _i in range(self.max_pulse_size):
+            if self.debug:
+                print(f'TubeWyrm pulse {_i} - {time.time() - start}')
+            for _j, _wyrm in enumerate(self.wyrm_dict.values()):
+                if self.debug:
+                    print(f'...{_wyrm} pulse firing - {time.time() - start}')
+                # For first stage of pulse, pass output to `y`
+                if _j == 0:
+                    y = _wyrm.pulse(x)
+                # For all subsequent pulses, update `y`
+                else:
+                    y = _wyrm.pulse(y)
+                # if not last step, wait specified wait_sec
+                if _j + 1 < len(self.wyrm_dict):
+                    time.sleep(self.wait_sec)
         return y
 
 

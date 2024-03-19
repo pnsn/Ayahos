@@ -8,14 +8,27 @@ import wyrm.data.dictstream as ds
 import wyrm.data.componentstream as cs
 import wyrm.core.coordinate as coor
 import wyrm.core.process as proc 
+from wyrm.util.time import unix_to_UTCDateTime
+from collections import deque
 import matplotlib.pyplot as plt
 
 quicklog.update({'import': time.time()})
-
+ROOT = os.path.join('..','..','example')
 # Load Waveform Data
-st = obspy.read(os.path.join('..','..','example','uw61965081','bulk.mseed'))
+evid = 61965081
+st = obspy.read(os.path.join(ROOT,f'uw{evid}','bulk.mseed'))
+# Use Analyst picks to reduce number of assessed
+pick_df = pandas.read_csv(os.path.join(ROOT,'AQMS_event_mag_phase_query_output.csv'))
+pick_df = pick_df[pick_df.evid == evid][['evid','orid','arid','net','sta','arrdatetime','iphase','timeres','qual','arrquality']]
+# Convert UNIX times, correcting for leap seconds
+pick_df.arrdatetime = pick_df.arrdatetime.apply(lambda x :unix_to_UTCDateTime(x))
+picked_netsta = list(pick_df[['net','sta']].value_counts().index)
+ist = obspy.Stream()
+for tr in st:
+    if (tr.stats.network, tr.stats.station) in picked_netsta:
+        ist += tr
 # Convert into dst
-dst = ds.DictStream(traces=st)
+dst = ds.DictStream(traces=ist)
 
 quicklog.update({'mseed load': time.time()})
 
@@ -98,6 +111,14 @@ predwyrmEQT = proc.PredictionWyrm(
 
 quicklog.update({'compose prediction wyrm': time.time()})
 
+# Initialize MethodWyrm - write
+
+# mwyrm_write = proc.MethodWyrm(
+#     pclass=ds.DictStream,
+#     pmethod='write',
+#     pkwargs={'save_path': os.path.join(ROOT,'tube_test'),
+#              'fmt': 'MSEED'})
+
 # Compose EQT processing TubeWyrm
 tubewyrmEQT = coor.TubeWyrm(
     wyrm_dict= {'window': windwyrmEQT,
@@ -150,6 +171,30 @@ quicklog.update({'compose tubewyrm': time.time()})
 quicklog.update({'processing initializing': time.time()})
 # Execute a single pulse
 tube_wyrm_out = tubewyrmEQT.pulse(dst)
+
+
+# Merge pick times with windows of outputs
+holder = deque()
+for _dst in tube_wyrm_out:
+    net = _dst[0].stats.network
+    sta = _dst[0].stats.station
+    t0 = _dst.stats.min_starttime
+    t1 = _dst.stats.max_endtime
+    dt = _dst[0].stats.delta
+    _idf = pick_df[(pick_df.net==net) &
+                   (pick_df.sta==sta) &
+                   (pick_df.arrdatetime > t0) &
+                   (pick_df.arrdatetime < t1)]
+    if len(_idf) > 0:
+        pick_samples = []
+        for _i in range(len(_idf)):
+            pick_time = _idf.arrdatetime.values[_i]
+            pick_sample = int((pick_time - t0)//dt)
+            pick_samples.append(pick_sample)
+        _idf = pandas.concat([_idf, pandas.DataFrame(pick_samples, index=_idf.index, columns=['pick_sample'])], ignore_index=False, axis=1)
+        holder.append({'dictstream': _dst, 'picks': _idf})
+
+
 
 quicklog.update({'processing complete': time.time()})
 

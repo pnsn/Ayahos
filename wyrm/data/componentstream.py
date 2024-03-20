@@ -237,10 +237,8 @@ class ComponentStream(DictStream):
         checks.append(all(self[_k].fvalid >= thresh_dict[_k] for _k in self.traces.keys()))
         if all(checks):
             pass
-        elif rule == 'zeros_wipe':
-            self._apply_zeros(ref_component, thresh_dict, method='wipe')
-        elif rule == 'zeros_fill':
-            self._apply_zeros(ref_component, thresh_dict, method='fill')
+        elif rule == 'zeros':
+            self._apply_zeros(ref_component, thresh_dict)
         elif rule == 'clone_ref':
             self._apply_clone_ref(ref_component, thresh_dict)
         elif rule == 'clone_other':

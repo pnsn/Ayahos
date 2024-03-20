@@ -308,11 +308,16 @@ class CanWyrm(TubeWyrm):
         :: OUTPUT ::
         :return y: [dict] access to self.dict
         """
-        for _k, _v in self.wyrm_dict.items():
-            _y = _v.pulse(x, **options)
-            # If this wyrm output has not been mapped to self.dict
-            if self.dict[_k] is None:
-                self.dict.update({_k: _y})
+        for _i in range(self.max_pulse_size):
+            for _k, _v in self.wyrm_dict.items():
+                _y = _v.pulse(x, **options)
+                # If this wyrm output has not been mapped to self.dict
+                if self.dict[_k] is None:
+                    self.dict.update({_k: _y})
+            if self.debug:
+                print(f'CanWyrm pulse {_i + 1}')
+                for _l, _w in self.dict.items():
+                    print(f'    {_l} - {len(_w)}')
         y = self.dict
         return y
 
@@ -574,7 +579,7 @@ class BufferWyrm(Wyrm):
     Class for buffering/stacking MLTrace objects into a DictStream of MLTraceBuffer objects with
     self-contained settings and sanity checks for changing the MLTraceBuffer.__add__ method options.
     """
-    def __init__(self, max_length=300., add_style='stack', restrict_add_past=True, max_pulse_size=10000, debug=False, **add_kwargs):
+    def __init__(self, max_length=300., add_method=3, restrict_past_append=True, blinding=(0,0), max_pulse_size=10000, debug=False, **add_kwargs):
         """
         Initialize a BufferWyrm object
 
@@ -606,21 +611,37 @@ class BufferWyrm(Wyrm):
 
         super().__init__(max_pulse_size=max_pulse_size, debug=debug)
 
-        if add_style not in ['stack','merge']:
-            raise ValueError(f'add_style "{add_style}" not supported. "stack" and "merge" only')
+        if add_method in [0,'dis','discard',
+                          1,'int','interpolate',
+                          2,'max','maximum',
+                          3,'avg','average']:
+            self.add_method = add_method
         else:
-            self.add_style=add_style
+            raise ValueError(f'add_method {add_method} not supported. See wyrm.data.mltrace.MLTrace.__add__()')
         
+        if not isinstance(restrict_past_append, bool):
+            raise TypeError('restrict_past_append must be type bool')
+        else:
+            self.restrict_past_append = restrict_past_append
 
-        _stack_kwargs = {'blinding_samples': int,'method': str,'fill_value': (type(None), int, float),'sanity_checks': bool}
-        _merge_kwargs = {'interpolation_samples': int,'method': str,'fill_value': (type(None), int, float),'sanity_checks': bool}
-        _kwarg_checks = {'stack': _stack_kwargs, 'merge': _merge_kwargs}
+        if not isinstance(blinding, (type(None), bool, tuple)):
+            raise TypeError
+        else:
+            self.blinding = blinding
 
-        for _k, _v in add_kwargs.items():
-            if _k not in _kwarg_checks[self.add_style].keys():
-                raise KeyError(f'kwarg {_k} is not supported for add_style "{self.add_style}"')
-            elif not isinstance(_v, _kwarg_checks[self.add_style][_k]):
-                raise TypeError(f'kwarg {_k} type "{type(_v)}" not supported for add_style "{self.add_style}')
+   
+        
+            
+
+        # _stack_kwargs = {'blinding_samples': int,'method': str,'fill_value': (type(None), int, float),'sanity_checks': bool}
+        # _merge_kwargs = {'interpolation_samples': int,'method': str,'fill_value': (type(None), int, float),'sanity_checks': bool}
+        # _kwarg_checks = {'stack': _stack_kwargs, 'merge': _merge_kwargs}
+
+        # for _k, _v in add_kwargs.items():
+        #     if _k not in _kwarg_checks[self.add_style].keys():
+        #         raise KeyError(f'kwarg {_k} is not supported for add_style "{self.add_style}"')
+        #     elif not isinstance(_v, _kwarg_checks[self.add_style][_k]):
+        #         raise TypeError(f'kwarg {_k} type "{type(_v)}" not supported for add_style "{self.add_style}')
         self.add_kwargs = add_kwargs
             
         if not isinstance(restrict_add_past, bool):

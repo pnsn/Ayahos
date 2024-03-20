@@ -1596,12 +1596,25 @@ class MLTraceBuffer(MLTrace):
             inclusive=False
         )
         # Blinding compatability
-        if blinding is None:
+        if blinding is None or not blinding:
             self.blinding = False
-        elif isinstance(blinding, (int, float, list, tuple)):
-            self.blinding = blinding
+        elif isinstance(blinding, (list, tuple)):
+            if len(blinding) == 2:
+                if all(int(_b) >= 0 for _b in blinding):
+                    self.blinding = (int(blinding[0]), int(blinding[1]))
+                else:
+                    raise ValueError
+            elif len(blinding) == 1:
+                if int(blinding[0]) >= 0:
+                    self.blinding = (int(blinding[0]), int(blinding[0]))
+        elif isinstance(blinding, (int, float)):
+            if int(blinding) >= 0:
+                self.blinding = (int(blinding), int(blinding))
+            else:
+                raise ValueError
         else:
             raise TypeError
+         
 
         # Compatability check for restrict past appends
         if not isinstance(restrict_past_append, bool):
@@ -1614,12 +1627,7 @@ class MLTraceBuffer(MLTrace):
             self.merge_kwargs = merge_kwargs
         else:
             self.merge_kwargs = {}
-        # breakpoint()
-        # for _k, _v in inspect.signature(super().merge).items():
-        #     if _k in merge_kwargs.keys():
-        #         self.merge_kwargs.update({_k: merge_kwargs[_k]})
-        #     elif _v.default != inspect._empty:
-        #         self.merge_kwargs.update({_k: _v.default})
+        # Initialize _has_data private flag attribute
         self._has_data = False
 
     def __add__(self, other):

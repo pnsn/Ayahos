@@ -1,4 +1,4 @@
-import time
+import time, tqdm
 quicklog = {'start': time.time()}
 import numpy as np
 import obspy, os, sys, pandas
@@ -28,7 +28,8 @@ for tr in st:
     if (tr.stats.network, tr.stats.station) in picked_netsta:
         ist += tr
 # Convert into dst
-dst = ds.DictStream(traces=ist)
+dst = ds.DictStream(traces=st)#[:60])
+# dst.traces = dict(reversed(list(dst.traces.items())))
 
 quicklog.update({'mseed load': time.time()})
 
@@ -55,7 +56,7 @@ PN_list = common_pt + ['diting']
 # reference_sampling_rate 
 RSR = 100.
 #reference_channel_fill_rule
-RCFR= 'clone_ref'
+RCFR= 'zeros'
 # Reference component
 RCOMP = 'Z'
 
@@ -121,84 +122,87 @@ quicklog.update({'compose prediction wyrm': time.time()})
 
 # Compose EQT processing TubeWyrm
 tubewyrmEQT = coor.TubeWyrm(
+    max_pulse_size=1,
+    debug=True,
     wyrm_dict= {'window': windwyrmEQT,
                 'gaps': mwyrm_gaps.copy(),
                 'sync': mwyrm_sync.copy(),
                 'norm': mwyrm_normEQT,
                 'fill': mwyrm_fill.copy(),
-                'predict': predwyrmEQT},
-    max_pulse_size=5,
-    debug=True)
-
+                'predict': predwyrmEQT})
+    
 quicklog.update({'compose tubewyrm': time.time()})
 
-# windwyrmPN = proc.WindowWyrm(
-#     component_aliases=PN_aliases,
-#     model_name='PhaseNet',
-#     reference_sampling_rate=100.,
-#     reference_npts=3001,
-#     reference_overlap=900,
-#     max_pulse_size=10)
+windwyrmPN = proc.WindowWyrm(
+    component_aliases=PN_aliases,
+    model_name='PhaseNet',
+    reference_sampling_rate=100.,
+    reference_npts=3001,
+    reference_overlap=900,
+    max_pulse_size=1)
 
 
-# mwyrm_normPN = proc.MethodWyrm(
-#     pclass=cs.ComponentStream,
-#     pmethod='normalize_traces',
-#     pkwargs={'norm_type': 'std'}
-# )
+mwyrm_normPN = proc.MethodWyrm(
+    pclass=cs.ComponentStream,
+    pmethod='normalize_traces',
+    pkwargs={'norm_type': 'std'}
+)
 
 
-# predwyrmPN = proc.PredictionWyrm(
-#     model=PN,
-#     weight_names=PN_list,
-#     devicetype='mps',
-#     compiled=True,
-#     max_pulse_size=10000,
-#     debug=True)
+predwyrmPN = proc.PredictionWyrm(
+    model=PN,
+    weight_names=PN_list,
+    devicetype='mps',
+    compiled=False,
+    max_pulse_size=10000,
+    debug=True)
 
-# # Copy/Update to create PhaseNet processing TubeWyrm
-# tubewyrmPN = tubewyrmEQT.copy().update({'window': windwyrmPN,
-#                                         'norm': mwyrm_normPN,
-#                                         'predict': predwyrmPN})
+# Copy/Update to create PhaseNet processing TubeWyrm
+tubewyrmPN = tubewyrmEQT.copy().update({'window': windwyrmPN,
+                                        'norm': mwyrm_normPN,
+                                        'predict': predwyrmPN})
+tubewyrmPN.max_pulse_size=10
 
 # # Compose CanWyrm to host multiple processing lines
-# canwyrm = coor.CanWyrm(wyrm_dict={'EQTransformer': tubewyrmEQT,
-#                              'PhaseNet': tubewyrmPN},
-#                   wait_sec=0,
-#                   max_pulse_size=1,
-#                   debug=False)
+canwyrm = coor.CanWyrm(wyrm_dict={'EQTransformer': tubewyrmEQT,
+                             'PhaseNet': tubewyrmPN},
+                  wait_sec=0,
+                  max_pulse_size=10,
+                  debug=True)
 
 quicklog.update({'processing initializing': time.time()})
 # Execute a single pulse
-tube_wyrm_out = tubewyrmEQT.pulse(dst)
+tube_wyrm_out = tubewyrmPN.pulse(dst)
+# can_wyrm_out = canwyrm.pulse(dst)
 
 
-# Merge pick times with windows of outputs
-holder = deque()
-for _dst in tube_wyrm_out:
-    net = _dst[0].stats.network
-    sta = _dst[0].stats.station
-    t0 = _dst.stats.min_starttime
-    t1 = _dst.stats.max_endtime
-    dt = _dst[0].stats.delta
-    _idf = pick_df[(pick_df.net==net) &
-                   (pick_df.sta==sta) &
-                   (pick_df.arrdatetime > t0) &
-                   (pick_df.arrdatetime < t1)]
-    if len(_idf) > 0:
-        pick_samples = []
-        for _i in range(len(_idf)):
-            pick_time = _idf.arrdatetime.values[_i]
-            pick_sample = int((pick_time - t0)//dt)
-            pick_samples.append(pick_sample)
-        _idf = pandas.concat([_idf, pandas.DataFrame(pick_samples, index=_idf.index, columns=['pick_sample'])], ignore_index=False, axis=1)
-        holder.append({'dictstream': _dst, 'picks': _idf})
-
-
+# # # breakpoint()
+# # Merge pick times with windows of outputs
+# holder = deque()
+# for _dst in tube_wyrm_out:
+#     net = _dst[0].stats.network
+#     sta = _dst[0].stats.station
+#     t0 = _dst.stats.min_starttime
+#     t1 = _dst.stats.max_endtime
+#     dt = _dst[0].stats.delta
+#     _idf = pick_df[(pick_df.net==net) &
+#                    (pick_df.sta==sta) &
+#                    (pick_df.arrdatetime > t0) &
+#                    (pick_df.arrdatetime < t1)]
+#     if len(_idf) > 0:
+#         pick_samples = []
+#         for _i in range(len(_idf)):
+#             pick_time = _idf.arrdatetime.values[_i]
+#             pick_sample = int((pick_time - t0)//dt)
+#             pick_samples.append(pick_sample)
+#         _idf = pandas.concat([_idf, pandas.DataFrame(pick_samples, index=_idf.index, columns=['pick_sample'])], ignore_index=False, axis=1)
+#         holder.append({'dictstream': _dst, 'picks': _idf})
 
 quicklog.update({'processing complete': time.time()})
 
-# Extract packet processing information from output MLTrace windows
+data_frames = {}
+# for _k, tube_wyrm_out in can_wyrm_out.items():
+# Extract Data Window processing information from output MLTrace windows
 holder_incremental = []
 holder_elapsed = []
 # Iterate across windows
@@ -210,12 +214,12 @@ for _y in tube_wyrm_out:
             line = [_tr.id, _tr.stats.starttime.timestamp]
             # Get first timestamp and method info
             line += [_tr.stats.processing[_i][2],
-                     _tr.stats.processing[_i][3],
-                     _tr.stats.processing[_i][0]]
+                    _tr.stats.processing[_i][3],
+                    _tr.stats.processing[_i][0]]
             # Get second timestamp and method info
             line += [_tr.stats.processing[_i + 1][2],
-                     _tr.stats.processing[_i + 1][3],
-                     _tr.stats.processing[_i + 1][0]]
+                    _tr.stats.processing[_i + 1][3],
+                    _tr.stats.processing[_i + 1][0]]
             line += [_tr.stats.processing[_i + 1][0] - _tr.stats.processing[_i][0]]
             holder_incremental.append(line)
         line = [_tr.id, _tr.stats.starttime.timestamp]
@@ -225,47 +229,68 @@ for _y in tube_wyrm_out:
 cols = ['ID','t0','module1','method1','stamp1','module2','method2','stamp2','dt21']
 df_inc = pandas.DataFrame(holder_incremental, columns=cols)
 df_tot = pandas.DataFrame(holder_elapsed, columns=['ID','t0','stamp1','stamp2','dt21'])
+# data_frames.update({_k: {'incremental': df_inc, 'total': df_tot}})
 
 plt.figure()
 plt.subplot(221)
 plt.semilogy(df_inc['stamp1'] - df_inc['stamp1'].min(), df_inc['dt21'],'.')
+# plt.title(f'Model: {_k}')
+
 # ref_str = '.'.join(df_inc.ID.values[0].split('.')[:-1])
 # IDX = df_inc.ID.str.contains(ref_str)
 # df_ref = df_inc[IDX].sort_values(by='t0')
 # plt.semilogy(df_ref['stamp1'] - df_inc['stamp1'].min(), df_ref['dt21'],'r:')
 plt.xlabel('Runtime from TubeWyrm.pulse(x) execution (sec)')
-plt.ylabel('Incremental Processing Time for Packets (sec)')
+plt.ylabel('Incremental Processing Time for Data Windows (sec)')
 plt.subplot(222)
 _i = 0
 x_array = []; y_array = []
 for _y in tube_wyrm_out:
     for _tr in _y:
-         x_vals = [_p[0] - _tr.stats.processing[0][0] for _p in _tr.stats.processing]
-         y_vals = [_i for _i in range(len(_tr.stats.processing))]
-         x_array.append(x_vals)
-         y_array.append(y_vals)
-         
-         plt.step(x_vals,y_vals,'k-', where='post',alpha=0.005)
-         if _i == 0:
-             labels = [_p[3] for _p in _tr.stats.processing]
-             for _i, _l in enumerate(labels):
-                 plt.text(x_vals[_i], y_vals[_i], _l, ha='right', color='red')
+        x_vals = [_p[0] - _tr.stats.processing[0][0] for _p in _tr.stats.processing]
+        y_vals = [_i for _i in range(len(_tr.stats.processing))]
+        x_array.append(x_vals)
+        y_array.append(y_vals)
+        
+        plt.step(x_vals,y_vals,'k-', where='post',alpha=0.005)
+        if _i == 0:
+            labels = [_p[3] for _p in _tr.stats.processing]
+            for _i, _l in enumerate(labels):
+                plt.text(x_vals[_i], y_vals[_i], _l, ha='right', color='red')
 
 x_array = np.array(x_array)
 y_array = np.array(y_array)
 
-plt.xlabel('Packet Processing Time\nRelative to Trim from Buffer (sec)')
-plt.ylabel('Packet Processing Step Index (#)')
+plt.xlabel('Data Window Processing Time\nRelative to Trim from Buffer (sec)')
+plt.ylabel('Data Window Processing Step Index (#)')
 
 plt.subplot(223)
 plt.hist(x_array[:, 1:] - x_array[:, :-1], 30, label=labels[1:])
 plt.xlabel('Incremental Processing Time Distribution (sec)')
-plt.ylabel('Packet Counts')
+plt.ylabel('Data Window Counts')
 
 plt.subplot(224)
 plt.hist(x_array[:,-1] - x_array[:,0], 100);
-plt.xlabel('Packet residence time (sec)\n[Total time spent in pipeline]')
-plt.ylabel('Packet Counts')
+plt.xlabel('Data Window Residence Time (sec)\n[Total time spent in pipeline]')
+plt.ylabel('Data Window Counts')
+
+
+plt.show()
+# plt.show()
+
+# DST_PN = ds.DictStream()
+# DST_EQT = ds.DictStream()
+# for _k, _v in can_wyrm_out.items():
+#     print(_k)
+#     for _dst in tqdm.tqdm(_v):
+#         for _tr in _dst:
+#             if _k == 'PhaseNet':
+#                 DST_PN.__add__(_tr.apply_blinding(blinding=(100,100)), key_attr='id', method=3)
+#             elif _k == 'EQTransformer':
+#                 DST_EQT.__add__(_tr.apply_blinding(blinding=(500,500)), key_attr='id', method=3)
+
+# plt.show()
+
 # for _i in range(len(df_inc)):
 #     ser = df_inc.loc[_i, :]
 #     plt.text(ser['stamp1'] - df_inc['stamp1'].min(), ser['dt21'],

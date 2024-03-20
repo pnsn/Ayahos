@@ -789,19 +789,38 @@ class PredictionWyrm(Wyrm):
             batch_preds = weighted_model(batch_data.to(self.device))
         else:
             batch_preds = weighted_model(batch_data)
-        
-        # Check if output predictions are presented as some list-like of torch.Tensors
-        if isinstance(batch_preds, (tuple, list)):
-            # If so, convert into a torch.Tensor
-            if all(isinstance(_p, torch.Tensor) for _p in batch_preds):
-                batch_preds = torch.concat(batch_preds)
-            else:
-                raise TypeError('not all elements of preds is type torch.Tensor')
-        # If reshaping to batch_data.shape is desired, check if it is required.
-        if reshape_output and batch_preds.shape != batch_data.shape:
-            batch_preds = batch_preds.reshape(batch_data.shape)
 
-        return batch_preds
+        # If operating on EQTransformer
+        nwind = batch_data.shape[0]
+        nlbl = len(self.model.labels)
+        nsmp = self.model.in_samples
+        if self.model.name == 'EQTransformer':
+            detached_batch_preds= np.full(shape=(nwind, nlbl, nsmp), fill_value=np.nan, dtype=np.float32)
+            for _l, _p in enumerate(batch_preds):
+                if _p.device.type != 'cpu': 
+                    detached_batch_preds[:, _l, :] = _p.detach().cpu().numpy()
+                else:
+                    detached_batch_preds[:, _l, :] = _p.detach().numpy()
+        elif self.model.name == 'PhaseNet':
+            if batch_preds.device.type != 'cpu':
+                detached_batch_preds = batch_preds.detach().cpu().numpy() 
+            else:
+                detached_batch_preds = batch_preds.detach().numpy()
+        else:
+            raise NotImplementedError(f'model "{self.model.name}" prediction initial unpacking not yet implemented')
+        # breakpoint()
+        # # Check if output predictions are presented as some list-like of torch.Tensors
+        # if isinstance(batch_preds, (tuple, list)):
+        #     # If so, convert into a torch.Tensor
+        #     if all(isinstance(_p, torch.Tensor) for _p in batch_preds):
+        #         batch_preds = torch.concat(batch_preds)
+        #     else:
+        #         raise TypeError('not all elements of preds is type torch.Tensor')
+        # # # If reshaping to batch_data.shape is desired, check if it is required.
+        # # if reshape_output and batch_preds.shape != batch_data.shape:
+        # #     batch_preds = batch_preds.reshape(batch_data.shape)
+
+        return detached_batch_preds
 
     def batch2dst_dict(self, weight_name, batch_preds, batch_fold, batch_meta, dst_dict):
         """
@@ -832,11 +851,12 @@ class PredictionWyrm(Wyrm):
                        mlt = MLTrace(data=batch_pred[_i, _j, :], fold = batch_fold[_i, :], header=batch_meta[_i])
 
         """
-        # Detach prediction array and convert to numpy
-        if batch_preds.device.type != 'cpu':
-            batch_preds = batch_preds.detach().cpu().numpy()
-        else:
-            batch_preds = batch_preds.detach().numpy()
+
+        # # Detach prediction array and convert to numpy
+        # if batch_preds.device.type != 'cpu':
+        #     batch_preds = batch_preds.detach().cpu().numpy()
+        # else:
+        #     batch_preds = batch_preds.detach().numpy()
         
         # Reshape sanity check
         if batch_preds.ndim != 3:
@@ -866,7 +886,7 @@ class PredictionWyrm(Wyrm):
                                           'batch2dst_dict',
                                           '<internal>'])
             # Iterate across prediction labels
-            for _j, label in enumerate(self.model.labels):
+            for _j, label in enumerate(self.cmods[weight_name].labels):
                 # Compose output trace from prediction values, input data fold, and header data
                 _mlt = MLTrace(data = batch_preds[_i, _j, :], fold=batch_fold[_i], header=_header)
                 # Update component labeling

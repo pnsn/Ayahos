@@ -4,7 +4,7 @@ import pandas as pd
 import seisbench.models as sbm
 from obspy import Trace, Stream, UTCDateTime
 from wyrm.data.dictstream import DictStream, DictStreamStats, _add_processing_info
-from wyrm.data.mltrace import MLTrace, MLTraceBuffer
+from wyrm.data.mltrace import MLTrace
 from wyrm.util.pyew import wave2mltrace
 
 ###############################################################################
@@ -644,3 +644,6 @@ class ComponentStream(DictStream):
             return addfold
         else:
             raise ValueError('not all traces in this ComponentStream have matching npts')
+        
+
+    ## I/O ROUTINES ##

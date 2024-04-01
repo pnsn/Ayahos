@@ -29,7 +29,8 @@ import seisbench.models as sbm
 import numpy as np
 from collections import deque
 from obspy import UTCDateTime
-from wyrm.data.mltrace import MLTrace, MLTraceBuffer
+from wyrm.data.mltrace import MLTrace
+from wyrm.data.mltracebuffer import MLTraceBuffer
 from wyrm.core._base import Wyrm
 from wyrm.data.dictstream import DictStream
 from wyrm.data.componentstream import ComponentStream
@@ -158,6 +159,7 @@ class WindowWyrm(Wyrm):
          # Set Defaults and Derived Attributes
         # Calculate window length, window advance, and blinding size in seconds
         self.window_sec = (self.ref['npts'] - 1)/self.ref['sampling_rate']
+        self.advance_npts = self.ref['npts'] - self.ref['overlap']
         self.advance_sec = (self.ref['npts'] - self.ref['overlap'])/self.ref['sampling_rate']
 
         self.options = options

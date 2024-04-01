@@ -44,7 +44,8 @@ import pandas as pd
 from collections import deque
 from wyrm.core._base import Wyrm
 from wyrm.util.compatability import bounded_intlike, bounded_floatlike
-from wyrm.data.mltrace import MLTrace, MLTraceBuffer
+from wyrm.data.mltrace import MLTrace
+from wyrm.data.mltracebuffer import MLTraceBuffer
 from wyrm.data.dictstream import DictStream
 
 class TubeWyrm(Wyrm):

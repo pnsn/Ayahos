@@ -46,6 +46,18 @@ def read_mltraces(data_files, obspy_read_kwargs={}, add_options={}):
         dst.__add__(mlt, **add_options)
     return dst
 
+def read_from_numpy(file_list, dst_options={}, read_options={}):
+    if isinstance(file_list, str):
+        file_list = [file_list]
+    mltr_list = []
+    for _f in file_list:
+        _fn, _ext = os.path.splitext(_f)
+        mltr_list.append(MLTrace.read_from_numpy_hdr(_fn, **read_options))
+    dst = DictStream(traces=mltr_list, **dst_options)
+    return dst
+        
+
+
 # def read_from_tiered_directory(root_path, common_string, key_attr='id', **options):
     
 #     glob_DATA = os.path.join(root_path, 'DATA', f'{common_string}_DATA.*')
@@ -525,26 +537,87 @@ class DictStream(Stream):
     #     return split_outs
 
 
-    def write(
-            self,
-            save_path='.',
-            fmt='sac',
-            save_fold=True,
-            save_processing=True,
-            filename_format='{ID}_{starttime}_{sampling_rate:.3f}sps',
-            **obspy_write_options):
+    # def write(
+    #         self,
+    #         save_path='.',
+    #         fmt='sac',
+    #         save_fold=True,
+    #         save_processing=True,
+    #         filename_format='{ID}_{starttime}_{sampling_rate:.3f}sps',
+    #         **obspy_write_options):
+    #     """
+    #     Wrapper around the wyrm.data.mltrace.MLTrace.write() method
+    #     that saves data as 
+        
+    #     """
+    #     for _mlt in self.traces.values():
+    #         _mlt.write(save_path=save_path,
+    #                    fmt=fmt,
+    #                    save_fold=save_fold,
+    #                    save_processing=save_processing,
+    #                    filename_format=filename_format,
+    #                    **obspy_write_options)
+    def write(self, base_path='.', path_structure='mltraces', name_structure='{wfid}_{iso_start}', **options):
         """
-        Wrapper around the wyrm.data.mltrace.MLTrace.write() method
+        Write a DictStream object to disk as a series of MSEED files using the MLTrace.write() method/file formatting
+        in a prescribed directory structure
+
+        :: INPUTS ::
+        :param base_path: [str] path to the directory that will contain the save file structure. If it does
+                    not exist, a directory (structure) will be created
+        :param path_structure: [None] - no intermediate path structure
+                                [str] - format string based on the metadata of individual MLTrace objects contained
+                                        in this DictStream. In addition to standard kwargs in the MLTrace.stats
+                                        that can be used as elements of this format string, additional options are
+                                        provided for datetime information:
+                                            epoch_start - starttimes converted into a timestamp
+                                            epoch_end - endtimes converted into timestamps
+                                            iso_start - starttimes converted into isoformat strings
+                                            iso_ends - endtimes converted into isoformat strings
+                                            wfid - waveform ID (Net.Sta.Loc.Chan.Mod.Wgt)
+                                            site - Net.Sta code string
+                                            inst - Loc.Chan (minus the component character) code string
+                                            mod - Mod.Wgt code string
+                                            instrument - site.inst (as defined above) code string
+        :param name_structure: [str] - format string with the opions as described for path_structure
+        :param **options: [kwargs] optional key word argument collector for 
+
+        :ATTRIBUTION: Based on path sturcturing and syntax from the ObsPlus WaveBank class
         
         """
-        for _mlt in self.traces.values():
-            _mlt.write(save_path=save_path,
-                       fmt=fmt,
-                       save_fold=save_fold,
-                       save_processing=save_processing,
-                       filename_format=filename_format,
-                       **obspy_write_options)
+        # # Ensure OS-appropriate path formatting
+        # base_parts = os.path.split(base_path)
+        # base_path = os.path.join(base_parts)
 
+        # Get elements of the save directory structure as an OS-agnostic list of directory names
+        if path_structure is None:
+            path_parts = [base_path]
+        else:
+            path_parts = [base_path] + path_structure.split('/')
+        # Iterate across traces in this DictStream
+        for tr in self.traces.values():
+            # Ge the formatting dictionary 
+            fmt_dict = {'wfid': tr.id,
+                        'epoch_start': tr.stats.starttime.timestamp,
+                        'iso_start': tr.stats.starttime.isoformat(),
+                        'epoch_end': tr.stats.endtime.timestamp,
+                        'iso_end': tr.stats.endtime.isoformat()}
+            fmt_dict.update(tr.stats)
+            if isinstance(tr, MLTrace):
+                fmt_dict.update({'component': tr.comp,
+                                 'site': tr.site,
+                                 'inst': tr.inst,
+                                 'mod': tr.mod,
+                                 'instrument': tr.instrument})
+
+            save_path = os.path.join(*path_parts).format(**fmt_dict)
+            save_name = f'{name_structure.format(**fmt_dict)}.mseed'
+            file_name = os.path.join(save_path, save_name)
+            if not os.path.exists(save_path):
+                os.makedirs(save_path)
+            tr.write(file_name=file_name, **options)
+
+    
     #####################################################################
     # SEARCH METHODS ####################################################
     #####################################################################

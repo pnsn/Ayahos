@@ -42,6 +42,7 @@ from obspy import Stream, read, UTCDateTime
 from obspy.core.trace import Trace, Stats
 from obspy.core.util.misc import flat_not_masked_contiguous
 from wyrm.util.compatability import bounded_floatlike
+from wyrm.util.seisbench import pretrained_dict
 
 
 # def read_from_mseed(filename, sanity_checks=True, stamp_load=False, **kwargs):
@@ -501,8 +502,8 @@ class MLTrace(Trace):
             return False
         if not np.array_equal(self.fold, other.fold):
             return False
-        
-        
+            
+            
         return True
     ###############################################################################
     # UPDATED TRIMMING METHODS ####################################################
@@ -1150,294 +1151,64 @@ class MLTrace(Trace):
         tr.data = data
         return tr
     
+    def read(file_name):
+        # Get dictionary of pretrained model-weight combinations
+        ptd = pretrained_dict()
+        st = read(file_name, fmt='MSEED')
+        if len(st) == 2:
+            fold_tr = st.select(network='FO',location='LD')
+            if len(fold_tr) == 1:
+                fold_tr = fold_tr[0]
+            else:
+                raise ValueError('MSEED file does not appear to contain a unique fold trace')
+            # Get the other trace
+            for tr in st:
+                if tr != fold_tr:
+                    data_tr = tr
+                    break
+        header = data_tr.stats
 
-    def write(
-        self,
-        savepath='.',
-        fmt='SAC',
-        save_fold=True,
-        fmt_str=None,
-        save_processing=True,
-        return_parsed=False,
-        **obspy_write_options):
+        for _m, _v in ptd.items():
+            if fold_tr.stats.station != '':
+                if fold_tr.stats.station in _m:
+                    header.update({'model': _m})
+                    if fold_tr.stats.channel != '':
+                        for _w in _v:
+                            if fold_tr.stats.channel in _w:
+                                header.update({'weight': _w})
+                                break
+                    break
+
+        mltr = MLTrace(data=data_tr.data, fold=fold_tr.data, header=header)
+        return mltr
+
+
+    
+    def write(self, file_name, **options):
         """
-        Write the contents of this MLTrace to a set of directories using
-        the ObsPy Stream.write() API and the Python open() API.
-
-        Directory Structure
-            savepath/
-                e.g., 
-                UW.GNW.--.HHD.EQTransformer.pnw_2023-10-09T02:22:45.420_100sps_DATA.sac
-                UW.GNW.--.HHD.EQTransformer.pnw_2023-10-09T02:22:45.420_100sps_FOLD.sac
-                UW.GNW.--.HHD.EQTransformer.pnw_2023-10-09T02:22:45.420_100sps_PROC.txt
-
-        :: INPUTS ::
-        :param savepath: [str] valid path to a save directory, or directory structure
-                        that can be created in your file system with the os.makedirs(savepath)
-                        method. 
-                        NOTE: savepath can include format_string arguments (see below)
-                            
-        :param fmt: [str] data format to use - passed to obspy.core.stream.Stream.write()
-        :param save_fold: [bool] - should the fold trace be saved for this MLTrace?
-        :param save_processing: [bool] - should the processing annotations for this MLTrace be written to disk?
-        :param fmt_str: [format str] - format string to use as a common file name for associated
-                    files in each directory.
-                    NOTE: the {ID} format flag must be the first 4 characters of the file
-                        name component of fmt_str (as evaluated by os.path.split(fm)
-                        if it is not present '{ID}_' is appended to the start of the provided
-                        fmt_str input
-                    DEFAULT: '{ID}
-        Supported format string arguments for `savepath` and `fmt_str`
-        NOTE: Attributes are from MLTrace.stats unless otherwise specified
-            ID - MLTrace.id
-            sampling_rate
-            delta
-            npts
-            dt - duration in seconds for the trace ((npts - 1) * delta)
-            station
-            network
-            channel
-            location
-            model
-            weight
-            site - MLTrace.site
-            inst - MLTrace.inst
-            mod - MLTrace.mod
-            instrument - MLTrace.instrument
-            t0 - starttime.timestamp
-            Y0, M0, D0, J0 - starttime. [year, month, day, julday]
-            h0, m0, s0, f0 - starttime. [hour, minute, second, microsecond]
-            t1 - endtime.timestamp
-            Y1, M1, D1, J1 - endtime. [year, month, day, julday]
-            h1, m1, s1, f1 - endtime. [hour, minute, second, microsecond]
-            
+        Write the contents of this MLTrace object to a miniSEED file comprising two
+        traces:
+        DATA:
+            Net.Sta.Loc.Chan trace - with self.data as the data
+        AUX:
+            FO.Model.LD.Wgt - with self.fold as the data
+        Where the Net 'FO' and location 'LD' are fixed strings used as a flag that
+        this is an auxillary trace providing
         """
-        fmt_str_kwargs = {
-            'ID':self.id,
-            'sampling_rate': self.stats.sampling_rate,
-            'delta': self.stats.delta,
-            'npts': self.stats.npts,
-            'dt': (self.stats.npts - 1)*self.stats.delta,
-            'station': self.stats.station,
-            'network': self.stats.network,
-            'channel': self.stats.channel,
-            'location': self.stats.location,
-            'model': self.stats.model,
-            'weight': self.stats.weight,
-            'site': self.site,
-            'inst': self.inst,
-            'comp': self.comp,
-            'instrument': self.instrument,
-            'starttime': self.stats.starttime,
-            't0': self.stats.starttime.timestamp,
-            'Y0': self.stats.starttime.year,
-            'M0': self.stats.starttime.month,
-            'D0': self.stats.starttime.day,
-            'J0': self.stats.starttime.julday,
-            'h0': self.stats.starttime.hour,
-            'm0': self.stats.starttime.minute,
-            's0': self.stats.starttime.second,
-            'f0': self.stats.starttime.microsecond,
-            'endtime': self.stats.endtime,
-            't1': self.stats.endtime.timestamp,
-            'Y1': self.stats.endtime.year,
-            'M1': self.stats.endtime.month,
-            'D1': self.stats.endtime.day,
-            'J1': self.stats.endtime.julday,
-            'h1': self.stats.endtime.hour,
-            'm1': self.stats.endtime.minute,
-            's1': self.stats.endtime.second,
-            'f1': self.stats.endtime.microsecond
-        }
-
-
-        # Catch if savepath is a format string
-        if '{' and '}' in savepath and any(_k in savepath for _k in fmt_str_kwargs.keys()):
-            savepath = savepath.format(**fmt_str_kwargs)
-
-
-        # Start forming iterable list of data kinds to save
-        dkinds = ['DATA']
-        # Form generic part of file path
-        if fmt_str is None:
-            fmt_str = '{ID}_{t0}_{t1}_{sampling_rate:.3f}sps'
-        # Ensure that this fmt_str does not include path elements
-        gen_path, gen_file = os.path.split(fmt_str)
-        if gen_path != '':
-            raise NotImplementedError('This method currently does not support `fmt_str` inputs that include path elements')
-        # Ensure that the first part of fmt_str is the MLTrace.id attribute (required for loading method)
-        if fmt_str[:4] != '{ID}':
-            fmt_str = '{ID}_' + fmt_str
-
-        fmt_str = fmt_str.format(**fmt_str_kwargs)
-        # Create holder for output
-        save_dict = {}
-        # Add data kinds based on user inputs
-        if save_fold:
-            dkinds += ['FOLD']
-        if save_processing:
-            dkinds += ['PROC']
-        # Iterate across included data kinds
-        if not os.path.exists(savepath):
-            os.makedirs(savepath)
-        for _dk in dkinds:
-            # Convert MLTrace.data into Trace
-            if _dk == 'DATA':
-                out = self.to_trace(attach_mod_to_chan=False).copy()
-                # out = Stream([out])
-                extension = fmt.lower()
-            # Convert MLTrace.fold into Trace
-            if _dk == 'FOLD':
-                out = save_dict['DATA']['obj'].copy()
-                out.data = self.fold
-                # out = Stream([out])
-                extension = fmt.lower()
-            # Grab Processing and get it ready for a 'with open() as f' style write
-            if _dk == 'PROC':
-                out = copy.deepcopy(self.stats.processing)
-                extension = 'txt'
-
-            save_fp = os.path.join(savepath, f'{fmt_str}_{_dk}.{extension}')
-            save_dict.update({_dk: {'obj': out, 'filename': save_fp}})
-            # If DATA or FOLD, use Obspy I/O
-            if _dk in ['DATA', 'FOLD']:
-                try:
-                    Stream([out]).write(save_fp, fmt=fmt, **obspy_write_options)
-                except:
-                    breakpoint()
-            # If PROC, use Python Writing utilities
-            elif _dk == 'PROC':
-                with open(save_fp, 'w') as _f:
-                    for _p in out:
-                        if isinstance(_p, str):
-                            _f.write(f'{_p}\n')
-                        elif isinstance(_p, list):
-                            for _i, _e in enumerate(_p):
-                                if _i + 1 < len(_p):
-                                    _f.write(f'{_e},')
-                                else:
-                                    _f.write(f'{_e}\n')
-                _f.close()
-
-        if return_parsed:     
-            return save_dict
-        
-    def write_to_sac(self, savepath, **kwargs):
-        """
-        Wrapper around the root obspy.core.trace.Trace.write class
-        method that appends the model and/or weight names to
-        the end of the file name if they are not empty strings
-        (i.e., default values '').
-
-        This allows for preservation of model/weight information
-        without having to 
-
-        E.g., 
-        mltr
-            UW.GNW.--.BHP.EqT.pnw | 2023-10-09T02:20:15.42000Z - 2023-10-09T02:22:5.41000Z | 100.Hz, 15000 samples
-        
-        mltr.write('./')
-        ls
-            DATA_UW.GNW.--.BHP.EQTransformer.pnw_1696818015.420000_100.00sps.sac
-            FOLD_UW.GNW.--.BHP.EQTransformer.pnw_1696818015.420000_100.00sps.sac
-            LOG_UW.GNW.--.BHP.EQTransformer.pnw_1696818015.420000_100.00sps.csv
-        """
-        fmt_str = '{ITYPE}_{ID}_{t0:.6f}_{SR:.2f}sps.{EXT}'
-        data_trace = self.to_trace(**kwargs)
-        data_name = fmt_str.format(
-            ITYPE='DATA',
-            ID=self.id,
-            t0=self.stats.starttime.timestamp,
-            SR=self.stats.sampling_rate,
-            EXT='sac')
-        data_trace.write(os.path.join(savepath, data_name), format='SAC')
-        fold_trace = data_trace.copy()
-        fold_trace.data = self.fold
-        fold_name = fmt_str.format(
-            ITYPE='FOLD',
-            ID=self.id,
-            t0=self.stats.starttime.timestamp,
-            SR=self.stats.sampling_rate,
-            EXT='sac')
-        fold_trace.write(os.path.join(savepath, fold_name), format='SAC')
-        df = pd.DataFrame(self.stats.processing, columns=['Timestamp','Program','Method','Arguments'])
-        csv_name = fmt_str.format(
-            ITYPE='LOG',
-            ID=self.id,
-            t0=self.stats.starttime.timestamp,
-            SR=self.stats.sampling_rate,
-            EXT='csv')
-        df.to_csv(os.path.join(savepath, csv_name), header=True, index=False)
-
-    def _prepare_stream_for_write_to_mseed(self, savepath, save_fold=True, save_processing=True, **kwargs):
-        fmt_str = '{ID}_{t0:.6f}_{SR:.2f}sps.{EXT}'
-        # Convert data to trace and trim off MOD
+        # Convert data vector from MLTrace into 
         data_trace = self.to_trace(attach_mod_to_chan=False)
         st = Stream([data_trace])
         # Create fold trace 
-        if save_fold:
-            fold_trace = data_trace.copy()
-            fold_trace.data = self.fold
-            fold_trace.stats.network='FO'
-            fold_trace.stats.location='LD'
-            # Update Fold trace header to contain (parts) of Model and Weight strings
-            if len(self.stats.model) <= 5:
-                fold_trace.stats.station=self.stats.model
-            else:
-                fold_trace.stats.station=self.stats.model[:5]
-            if len(self.stats.weight) <= 3:
-                fold_trace.stats.channel=self.stats.weight
-            else:
-                fold_trace.stats.channel=self.stats.weight[:3]
-            st += fold_trace
-
-        # Compose save path/name for data/fold
-        st_savename = fmt_str.format(
-            ID=self.id,
-            t0=self.stats.starttime.timestamp,
-            SR=self.stats.sampling_rate,
-            EXT='mseed'
-        )
-        kwargs.update({'filename': os.path.join(savepath, st_savename), 'fmt': 'MSEED'})
-        outputs = {'stream': {'obj': st,
-                              'method': 'write',
-                              'kwargs': kwargs}}
-        
-        # If saving processing
-        if save_processing:
-            # Compose savename
-            csv_savename = fmt_str.format(
-                ID=self.id,
-                t0=self.stats.starttime.timestamp,
-                SR=self.stats.sampling_rate,
-                EXT='csv'
-            )
-            # Create dataframe
-            df = pd.DataFrame(self.stats.processing, columns=['Timestamp','Program','Method','Arguments'])
-            # Use pandas I/O to write CSV
-            pout = {'dataframe': {'obj': df,
-                                  'method': 'to_csv',
-                                  'kwargs': {'path_or_buf': os.path.join(savepath, csv_savename),
-                                             'header': True,
-                                             'index': False}}}
-            outputs.update(pout)
-        return outputs
-    
-    def write_to_mseed(self, savepath, save_fold=True, save_processing=True, **kwargs):
-        outputs = self._prepare_stream_for_write_to_mseed(savepath, save_fold=save_fold, save_processing=save_processing, **kwargs)
-        for _v in outputs.values():
-            getattr(_v['obj'], _v['method'])(**_v['kwargs'])
-        return outputs
-            
-        #     # WRITE TO DISK
-        # st.write(os.path.join(savepath, st_savename), fmt='MSEED', **kwargs)
-        
-        #     df.to_csv(os.path.join(savepath, csv_savename), header=True, index=False)
-        #     # Output st and dataframe
-        #     return st, df
-        # else:
-        #     # Otherwise output stream only
-        #     return st
+        fold_trace = data_trace.copy()
+        fold_trace.data = self.fold
+        # Shoehorn Model and Weight info into NSLC strings
+        fold_trace.stats.update({'network': 'FO',
+                                 'location': 'LD',
+                                 'station': self.stats.model[:5],
+                                 'channel': self.stats.weight[:3]})
+        st += fold_trace
+        st.write(file_name, fmt='MSEED', **options)
+        return st
 
     def from_trace(self, trace, fold_trace=None, model=None, weight=None, blinding=0):
 
@@ -1577,153 +1348,11 @@ class MLTrace(Trace):
     
     key_opts = property(get_id_element_dict)
 
-###################################################################################
-# Machine Learning Trace Buffer Class Definition ##################################
-###################################################################################
-    
-class MLTraceBuffer(MLTrace):
 
-    def __init__(self, max_length=1, blinding=None, restrict_past_append=True, **merge_kwargs):
 
-        # Initialize as an MLTrace object
-        super().__init__()
-        # Compatability checks for max_length
-        self.max_length = bounded_floatlike(
-            max_length,
-            name='max_length',
-            minimum=0,
-            maximum=None,
-            inclusive=False
-        )
-        # Blinding compatability
-        if blinding is None or not blinding:
-            self.blinding = False
-        elif isinstance(blinding, (list, tuple)):
-            if len(blinding) == 2:
-                if all(int(_b) >= 0 for _b in blinding):
-                    self.blinding = (int(blinding[0]), int(blinding[1]))
-                else:
-                    raise ValueError
-            elif len(blinding) == 1:
-                if int(blinding[0]) >= 0:
-                    self.blinding = (int(blinding[0]), int(blinding[0]))
-        elif isinstance(blinding, (int, float)):
-            if int(blinding) >= 0:
-                self.blinding = (int(blinding), int(blinding))
-            else:
-                raise ValueError
-        else:
-            raise TypeError
-         
 
-        # Compatability check for restrict past appends
-        if not isinstance(restrict_past_append, bool):
-            raise TypeError
-        else:
-            self.RPA = restrict_past_append
 
-        # Compatability checks for default merge(**kwargs)
-        if merge_kwargs:
-            self.merge_kwargs = merge_kwargs
-        else:
-            self.merge_kwargs = {}
-        # Initialize _has_data private flag attribute
-        self._has_data = False
 
-    def __add__(self, other):
-        self.append(other)
-        return self
-
-    def append(self, other):
-        if not isinstance(other, Trace):
-            raise NotImplementedError
-        
-        # Apply blinding (if specified) to incoming trace
-        if self.blinding:
-            other.apply_blinding(blinding=self.blinding)
-
-        # If this is a first append
-        if not self._has_data:
-            self._first_append(other)
-        # If this is a subsequent append 
-        else:
-            # (FUTURE APPEND) If other ends at or after self (FUTURE APPEND)
-            if other.stats.endtime >= self.stats.endtime:
-                # If other starts within buffer range of self end
-                if other.stats.starttime - self.max_length < self.stats.endtime:
-                    # Conduct as a merge - future append (always unrestricted)
-                    self.merge(self, other, **self.merge_kwargs)
-                    self.enforce_max_length(reference='endtime')
-                # If other starts later that self end + max_length - big gap
-                else:
-                    # Run as a first append if id matches
-                    if self.id == other.id:
-                        self._has_data = False
-                        self._first_append(other)
-
-            # (PAST APPEND) If other starts at or before self (PAST APPEND)
-            elif other.stats.starttime <= self.stats.starttime:
-                # If big past gap
-                if self.stats.starttime - other.stats.endtime >= self.max_length:
-                    # IF restriction in place
-                    if self.RPA:
-                        # Return self (cancel append)
-                        pass
-                    # IF restriction is not in place, run as first_append
-                    else:
-                        if self.id == other.id:
-                            self._has_data = False
-                            self._first_append(other)
-                # If small past gap
-                else:
-                    if self.RPA:
-                        self.merge(other, **self.merge_kwargs)
-                        self.enforce_max_length(reference='endtime')
-                    else:
-                        self.merge(other, **self.merge_kwargs)
-                        self.enforce_max_length(reference='starttime')
-
-            # (INNER APPEND) - only allow merge if there is some masking
-            else:
-                # TODO: Make ssure this is a copy
-                ftr = self.get_fold_trace().trim(starttime=other.stats.starttime, endtime=other.stats.endtime)
-                # If there are any 0-fold data in self that have information from other
-                if (ftr.data == 0 & other.fold >0).any():
-                    self.merge(other, **self.merge_kwargs)
-                else:
-                    pass
-            
-        return self
-    
-    @_add_processing_info          
-    def _first_append(self, other):
-        if not self._has_data:
-            self.stats = other.stats.copy()
-            self.data = other.data
-            if 'fold' in dir(other):
-                self.fold = other.fold
-            self.enforce_max_length(reference='starttime')
-            self._has_data = True
-        else:
-           raise AttributeError('This MLTraceBuffer already contains data - canceling _first_append()')
-       
-    def enforce_max_length(self, reference='endtime'):
-        """
-        Enforce the maximum length of the buffer using information
-        """
-        sr = self.stats.sampling_rate
-        max_samp = int(self.max_length * sr + 0.5)
-        if reference == 'endtime':
-            te = self.stats.endtime
-            ts = te - max_samp/sr
-        elif reference == 'starttime':
-            ts = self.stats.starttime
-            te = ts + max_samp/sr
-        self.trim(starttime=ts, endtime=te, pad=True, fill_value=None, nearest_sample=True)
-
-    def to_mltrace(self):
-        self = MLTrace(data=self.data, header=self.stats, fold=self.fold)
-        return self
 
     # def copy(self, asbuffer=True):
     #     if asbuffer:
@@ -2627,3 +2256,277 @@ class MLTraceBuffer(MLTrace):
     # def treat_gaps(self, )
 
     # def apply_stream_method(self, method, *args, **kwargs)
+
+
+    #     def write(
+    #     self,
+    #     savepath='.',
+    #     fmt='SAC',
+    #     save_fold=True,
+    #     fmt_str=None,
+    #     save_processing=True,
+    #     return_parsed=False,
+    #     **obspy_write_options):
+    #     """
+    #     Write the contents of this MLTrace to a set of directories using
+    #     the ObsPy Stream.write() API and the Python open() API.
+
+    #     Directory Structure
+    #         savepath/
+    #             e.g., 
+    #             UW.GNW.--.HHD.EQTransformer.pnw_2023-10-09T02:22:45.420_100sps_DATA.sac
+    #             UW.GNW.--.HHD.EQTransformer.pnw_2023-10-09T02:22:45.420_100sps_FOLD.sac
+    #             UW.GNW.--.HHD.EQTransformer.pnw_2023-10-09T02:22:45.420_100sps_PROC.txt
+
+    #     :: INPUTS ::
+    #     :param savepath: [str] valid path to a save directory, or directory structure
+    #                     that can be created in your file system with the os.makedirs(savepath)
+    #                     method. 
+    #                     NOTE: savepath can include format_string arguments (see below)
+                            
+    #     :param fmt: [str] data format to use - passed to obspy.core.stream.Stream.write()
+    #     :param save_fold: [bool] - should the fold trace be saved for this MLTrace?
+    #     :param save_processing: [bool] - should the processing annotations for this MLTrace be written to disk?
+    #     :param fmt_str: [format str] - format string to use as a common file name for associated
+    #                 files in each directory.
+    #                 NOTE: the {ID} format flag must be the first 4 characters of the file
+    #                     name component of fmt_str (as evaluated by os.path.split(fm)
+    #                     if it is not present '{ID}_' is appended to the start of the provided
+    #                     fmt_str input
+    #                 DEFAULT: '{ID}
+    #     Supported format string arguments for `savepath` and `fmt_str`
+    #     NOTE: Attributes are from MLTrace.stats unless otherwise specified
+    #         ID - MLTrace.id
+    #         sampling_rate
+    #         delta
+    #         npts
+    #         dt - duration in seconds for the trace ((npts - 1) * delta)
+    #         station
+    #         network
+    #         channel
+    #         location
+    #         model
+    #         weight
+    #         site - MLTrace.site
+    #         inst - MLTrace.inst
+    #         mod - MLTrace.mod
+    #         instrument - MLTrace.instrument
+    #         t0 - starttime.timestamp
+    #         Y0, M0, D0, J0 - starttime. [year, month, day, julday]
+    #         h0, m0, s0, f0 - starttime. [hour, minute, second, microsecond]
+    #         t1 - endtime.timestamp
+    #         Y1, M1, D1, J1 - endtime. [year, month, day, julday]
+    #         h1, m1, s1, f1 - endtime. [hour, minute, second, microsecond]
+            
+    #     """
+    #     fmt_str_kwargs = {
+    #         'ID':self.id,
+    #         'sampling_rate': self.stats.sampling_rate,
+    #         'delta': self.stats.delta,
+    #         'npts': self.stats.npts,
+    #         'dt': (self.stats.npts - 1)*self.stats.delta,
+    #         'station': self.stats.station,
+    #         'network': self.stats.network,
+    #         'channel': self.stats.channel,
+    #         'location': self.stats.location,
+    #         'model': self.stats.model,
+    #         'weight': self.stats.weight,
+    #         'site': self.site,
+    #         'inst': self.inst,
+    #         'comp': self.comp,
+    #         'instrument': self.instrument,
+    #         'starttime': self.stats.starttime,
+    #         't0': self.stats.starttime.timestamp,
+    #         'Y0': self.stats.starttime.year,
+    #         'M0': self.stats.starttime.month,
+    #         'D0': self.stats.starttime.day,
+    #         'J0': self.stats.starttime.julday,
+    #         'h0': self.stats.starttime.hour,
+    #         'm0': self.stats.starttime.minute,
+    #         's0': self.stats.starttime.second,
+    #         'f0': self.stats.starttime.microsecond,
+    #         'endtime': self.stats.endtime,
+    #         't1': self.stats.endtime.timestamp,
+    #         'Y1': self.stats.endtime.year,
+    #         'M1': self.stats.endtime.month,
+    #         'D1': self.stats.endtime.day,
+    #         'J1': self.stats.endtime.julday,
+    #         'h1': self.stats.endtime.hour,
+    #         'm1': self.stats.endtime.minute,
+    #         's1': self.stats.endtime.second,
+    #         'f1': self.stats.endtime.microsecond
+    #     }
+
+
+    #     # Catch if savepath is a format string
+    #     if '{' and '}' in savepath and any(_k in savepath for _k in fmt_str_kwargs.keys()):
+    #         savepath = savepath.format(**fmt_str_kwargs)
+
+
+    #     # Start forming iterable list of data kinds to save
+    #     dkinds = ['DATA']
+    #     # Form generic part of file path
+    #     if fmt_str is None:
+    #         fmt_str = '{ID}_{t0}_{t1}_{sampling_rate:.3f}sps'
+    #     # Ensure that this fmt_str does not include path elements
+    #     gen_path, gen_file = os.path.split(fmt_str)
+    #     if gen_path != '':
+    #         raise NotImplementedError('This method currently does not support `fmt_str` inputs that include path elements')
+    #     # Ensure that the first part of fmt_str is the MLTrace.id attribute (required for loading method)
+    #     if fmt_str[:4] != '{ID}':
+    #         fmt_str = '{ID}_' + fmt_str
+
+    #     fmt_str = fmt_str.format(**fmt_str_kwargs)
+    #     # Create holder for output
+    #     save_dict = {}
+    #     # Add data kinds based on user inputs
+    #     if save_fold:
+    #         dkinds += ['FOLD']
+    #     if save_processing:
+    #         dkinds += ['PROC']
+    #     # Iterate across included data kinds
+    #     if not os.path.exists(savepath):
+    #         os.makedirs(savepath)
+    #     for _dk in dkinds:
+    #         # Convert MLTrace.data into Trace
+    #         if _dk == 'DATA':
+    #             out = self.to_trace(attach_mod_to_chan=False).copy()
+    #             # out = Stream([out])
+    #             extension = fmt.lower()
+    #         # Convert MLTrace.fold into Trace
+    #         if _dk == 'FOLD':
+    #             out = save_dict['DATA']['obj'].copy()
+    #             out.data = self.fold
+    #             # out = Stream([out])
+    #             extension = fmt.lower()
+    #         # Grab Processing and get it ready for a 'with open() as f' style write
+    #         if _dk == 'PROC':
+    #             out = copy.deepcopy(self.stats.processing)
+    #             extension = 'txt'
+
+    #         save_fp = os.path.join(savepath, f'{fmt_str}_{_dk}.{extension}')
+    #         save_dict.update({_dk: {'obj': out, 'filename': save_fp}})
+    #         # If DATA or FOLD, use Obspy I/O
+    #         if _dk in ['DATA', 'FOLD']:
+    #             try:
+    #                 Stream([out]).write(save_fp, fmt=fmt, **obspy_write_options)
+    #             except:
+    #                 breakpoint()
+    #         # If PROC, use Python Writing utilities
+    #         elif _dk == 'PROC':
+    #             with open(save_fp, 'w') as _f:
+    #                 for _p in out:
+    #                     if isinstance(_p, str):
+    #                         _f.write(f'{_p}\n')
+    #                     elif isinstance(_p, list):
+    #                         for _i, _e in enumerate(_p):
+    #                             if _i + 1 < len(_p):
+    #                                 _f.write(f'{_e},')
+    #                             else:
+    #                                 _f.write(f'{_e}\n')
+    #             _f.close()
+
+    #     if return_parsed:     
+    #         return save_dict
+        
+    # def write_to_sac(self, savepath, **kwargs):
+    #     """
+    #     Wrapper around the root obspy.core.trace.Trace.write class
+    #     method that appends the model and/or weight names to
+    #     the end of the file name if they are not empty strings
+    #     (i.e., default values '').
+
+    #     This allows for preservation of model/weight information
+    #     without having to 
+
+    #     E.g., 
+    #     mltr
+    #         UW.GNW.--.BHP.EqT.pnw | 2023-10-09T02:20:15.42000Z - 2023-10-09T02:22:5.41000Z | 100.Hz, 15000 samples
+        
+    #     mltr.write('./')
+    #     ls
+    #         DATA_UW.GNW.--.BHP.EQTransformer.pnw_1696818015.420000_100.00sps.sac
+    #         FOLD_UW.GNW.--.BHP.EQTransformer.pnw_1696818015.420000_100.00sps.sac
+    #         LOG_UW.GNW.--.BHP.EQTransformer.pnw_1696818015.420000_100.00sps.csv
+    #     """
+    #     fmt_str = '{ITYPE}_{ID}_{t0:.6f}_{SR:.2f}sps.{EXT}'
+    #     data_trace = self.to_trace(**kwargs)
+    #     data_name = fmt_str.format(
+    #         ITYPE='DATA',
+    #         ID=self.id,
+    #         t0=self.stats.starttime.timestamp,
+    #         SR=self.stats.sampling_rate,
+    #         EXT='sac')
+    #     data_trace.write(os.path.join(savepath, data_name), format='SAC')
+    #     fold_trace = data_trace.copy()
+    #     fold_trace.data = self.fold
+    #     fold_name = fmt_str.format(
+    #         ITYPE='FOLD',
+    #         ID=self.id,
+    #         t0=self.stats.starttime.timestamp,
+    #         SR=self.stats.sampling_rate,
+    #         EXT='sac')
+    #     fold_trace.write(os.path.join(savepath, fold_name), format='SAC')
+    #     df = pd.DataFrame(self.stats.processing, columns=['Timestamp','Program','Method','Arguments'])
+    #     csv_name = fmt_str.format(
+    #         ITYPE='LOG',
+    #         ID=self.id,
+    #         t0=self.stats.starttime.timestamp,
+    #         SR=self.stats.sampling_rate,
+    #         EXT='csv')
+    #     df.to_csv(os.path.join(savepath, csv_name), header=True, index=False)
+
+    
+
+
+    # def write_to_numpy(self, filename, writemode='w', hdr_decimals=6, array_dtype=None):
+    #     fp, ext = os.path.splitext(filename)
+    #     if ext in ['npy','hdr']:
+    #         filename = fp
+    #         # Logger.info(f'stripping "{ext}" extension from filename')
+    #     # Write header information
+    #     with open(f'{filename}.hdr', writemode) as hdr:
+    #         hdr.write('axis0:time\naxis1:(data,fold)\n')
+    #         for _k, _v in self.stats.items():
+    #             if _k in ['network','station','location','channel','model','weight']:
+    #                 hdr.write(f'{_k}:{_v}\n')
+    #             if _k in ['sampling_rate','calib']:
+    #                 hdr.write(f'{_k}:{np.round(_v, decimals=hdr_decimals)}\n')
+    #             if _k == 'starttime':
+    #                 hdr.write(f'{_k}:{np.round(_v.timestamp, decimals=hdr_decimals)}\n')
+    #     # Write data and fold to numpy 
+    #     array = np.c_[self.data, self.fold]
+    #     if array_dtype is not None:
+    #         array = array.astype(array_dtype)
+    #     np.save(f'{filename}.npy', array)
+
+    # def read_from_numpy_hdr(filename, readmode='r'):
+    #     fp, ext = os.path.splitext(filename)
+    #     if ext in ['npy','hdr']:
+    #         filename = fp
+    #     if not os.path.isfile(f'{filename}.npy'):
+    #         raise OSError(f'file {filename}.npy does not exist')
+    #     if not os.path.isfile(f'{filename}.hdr'):
+    #         raise OSError(f'file {filename}.hdr does not exist')
+    #     # Load Numpy Array
+    #     array = np.load(f'{filename}.npy')
+    #     if array.ndim != 2:
+    #         raise AttributeError(f'input array shape {array.shape} does not comply with MLTrace.read_from_numpy (expects [n, 2])')
+    #     data = array[:, 0]
+    #     fold = array[:, 1]
+
+    #     with open(f'{filename}.hdr', readmode) as hdr:
+    #         hdr_pairs = hdr.read().splitlines()
+    #     breakpoint()
+    #     header = {}
+    #     for _l in hdr_pairs:
+    #         _k, _v = _l.split(':')
+    #         if _k in ['station','network','location','channel','model','weight']:
+    #             header.update({_k: _v})
+    #         elif _k in ['calib','sampling_rate', 'starttime']:
+    #             header.update({_k: float(_v)})
+    #         else:
+    #             continue
+    #     breakpoint()
+    #     mltr = MLTrace(data=data, fold=fold, header=header)
+    #     return mltr

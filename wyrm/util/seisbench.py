@@ -1,6 +1,33 @@
 import seisbench.models as sbm
 from wyrm.util.compatability import bounded_intlike
 
+
+def pretrained_dict():
+    out = {'EQTransformer': ['ethz',
+                             'geofon',
+                             'instance',
+                             'iquique',
+                             'lendb',
+                             'neic',
+                             'obs',
+                             'original',
+                             'original_nonconservative',
+                             'pnw',
+                             'scedc',
+                             'stead'],
+           'PhaseNet': ['diting',
+                        'ethz',
+                        'geofon',
+                        'instance',
+                        'iquique',
+                        'lendb',
+                        'neic',
+                        'obs',
+                        'original',
+                        'scedc',
+                        'stead']}
+    return out
+
 def update_windowing_params(model, blinding=False, overlap=False):
     """
     Update the model._annotate_args 'blinding' and/or 'overlap' values

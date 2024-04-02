@@ -281,7 +281,7 @@ class DictStream(Stream):
         on an as-needed basis.
     """
     _max_processing_info = 100
-    def __init__(self, traces=None, header={}, **options):
+    def __init__(self, traces=None, header={}, key_attr='id', **options):
         """
         Initialize a DictStream object
 
@@ -292,6 +292,9 @@ class DictStream(Stream):
         :param header: [dict] dict stream header information
                         see wyrm.core.dictstream.DictStreamStats
         :param options: [kwargs] collector for kwargs to pass to DictStream.__add__
+                        when adding traces to this DictStream during initialization
+                        NOTE: unlike other methods (i.e., MLTraceBuffer) these
+                                kwargs are not saved as defaults.
         """
         # initialize as empty stream
         super().__init__()
@@ -299,8 +302,15 @@ class DictStream(Stream):
         self.stats = DictStreamStats(header=header)
         # Redefine self.traces as dict
         self.traces = {}
+        # TODO: Need some safety catches if a plain-vanilla obspy.Trace is introduced
+        self._attr_keys = ['id', 'site','inst','instrument','mod','component']
+        if key_attr in self._attr_keys:
+            self.default_key_attr = key_attr
+        else:
+            raise ValueError
+        
         if traces is not None:
-            self.__add__(traces, **options)
+            self.__add__(traces, key_attr=self.default_key_attr, **options)
             self.stats.reference_id = self.get_reference_id()
 
 
@@ -402,11 +412,25 @@ class DictStream(Stream):
         """
         return self.__class__(traces=self[max(0,i):max(0,j):k])
 
+    def __add__(self, traces, **options):
+        """
+        Alias for the DictStream.extend() method to allow
+        use of the += operator
 
-    def __add__(self, other, key_attr='id', **options):
         """
-        Wrapper method for the _add_trace() method
+        self.extend(traces, **options)            
+
+    def extend(self, other, key_attr=None, **options):
         """
+        Wrapper method for the _add_trace() method that
+        allows input of single or sets of Trace-type objects
+        to append to this DictStream with a specified key_attribute
+        """
+        if key_attr is None:
+            key_attr = self.default_key_attr
+        elif key_attr not in self._attr_keys:
+            raise ValueError
+
         if isinstance(other, Trace):
             self._add_trace(other, key_attr=key_attr, **options)
         elif isinstance(other, Stream):
@@ -419,7 +443,7 @@ class DictStream(Stream):
         else:
             raise TypeError(f'other type "{type(other)}" not supported.')
 
-    def _add_trace(self, other, key_attr='id', **options):
+    def _add_trace(self, other, key_attr=None, **options):
         """
         Add a trace-like object `other` to this DictStream using elements from
         the trace's id as the dictionary key in the DictStream.traces dictionary
@@ -427,7 +451,8 @@ class DictStream(Stream):
         :: INPUTS ::
         :param other: [obspy.core.trace.Trace] or child-class
                         Trace to append
-        :param key_attr: [str] name of the attribute to use as a key.
+        :param key_attr: [str] optional name of the attribute to use as a key.
+                        Supercedes the default value set in DictStream.__init__()
                         Supported Values:
                             'id' - full N.S.L.C(.M.W) code
                             'site' - Net + Station
@@ -438,6 +463,11 @@ class DictStream(Stream):
         :param **options: [kwargs] key-word argument gatherer to pass to the 
                         MLTrace.__add__() or MLTraceBuffer.__add__() method
         """
+        if key_attr is None:
+            key_attr = self.default_key_attr
+        elif key_attr not in self._attr_keys:
+            raise ValueError
+        
         # If potentially appending a wave
         if isinstance(other, dict):
             try:

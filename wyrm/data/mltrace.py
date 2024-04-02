@@ -452,16 +452,10 @@ class MLTrace(Trace):
                 self.fold[self.data.mask] = 0
         return self
 
-    ###############################################################################
-    # UPDATED MAGIC METHODS #######################################################
-    ###############################################################################
+    #####################################################################
+    # UPDATED SPECIAL METHODS ###########################################
+    #####################################################################
 
-    def __add__(self, other, method=1, fill_value=None, sanity_checks=True):
-        """
-        Alias to MLTrace.merge
-        """
-        self.merge(other, method=method, fill_value=fill_value, sanity_checks=sanity_checks)
-        return self
     
     def __repr__(self, id_length=None):
         rstr = super().__str__(id_length=id_length)
@@ -480,7 +474,7 @@ class MLTrace(Trace):
 
         This implementation checks the following fields in each
         MLTrace's header:
-            via self.id:    network, station, location, channel, model, weight
+            via self.id: network, station, location, channel, model, weight
             via self.stats: starttime, sampling_rate, npts, calib
         And assesses matches between self.data and self.fold and these
         attributes in other
@@ -502,53 +496,10 @@ class MLTrace(Trace):
             return False
         if not np.array_equal(self.fold, other.fold):
             return False
-            
-            
         return True
-    ###############################################################################
-    # UPDATED TRIMMING METHODS ####################################################
-    ###############################################################################
-
-    def _ltrim(self, starttime, pad=False, nearest_sample=True, fill_value=None):
-        """
-        Run the obspy.core.trace.Trace._ltrim() method on this MLTrace and trim
-        the start of the fold array if starttime > self.stats.endtime or pad the end
-        of the fold array if starttime < self.stats.endtime and pad = True
-        """
-        old_fold = self.fold
-        old_npts = self.stats.npts
-        super()._ltrim(starttime, pad=pad, nearest_sample=nearest_sample, fill_value=fill_value)
-        if old_npts < self.stats.npts:
-            self.fold = np.full(shape=self.data.shape, fill_value=0, dtype=self.data.dtype)
-            self.fold[-old_npts:] = old_fold
-        elif old_npts > self.stats.npts:
-            self.fold = old_fold[:self.stats.npts]
-        else:
-            self.fold = self.fold.astype(self.data.dtype)
-        self.enforce_zero_mask()
-        return self
-
-    def _rtrim(self, endtime, pad=False, nearest_sample=True, fill_value=None):
-        """
-        Run the obspy.core.trace.Trace._rtrim() method on this MLTrace and trim
-        the end of the fold array if endtime < self.stats.endtime or pad the end
-        of the fold array if endtime > self.stats.endtime and pad = True
-        """
-        old_fold = self.fold
-        old_npts = self.stats.npts
-        super()._rtrim(endtime, pad=pad, nearest_sample=nearest_sample, fill_value=fill_value)
-        if old_npts < self.stats.npts:
-            self.fold = np.full(shape=self.data.shape, fill_value=0, dtype=self.data.dtype)
-            self.fold[:old_npts] = old_fold
-        elif old_npts > self.stats.npts:
-            self.fold = old_fold[:self.stats.npts]
-        else:
-            self.fold = self.fold.astype(self.data.dtype)
-        self.enforce_zero_mask()
-        return self
-
+    
     # @_add_processing_info
-    def merge(self, trace, method='avg', fill_value=None, sanity_checks=True, dtype=np.float32):
+    def __add__(self, trace, method='avg', fill_value=None, sanity_checks=True, dtype=np.float32):
         """
         Join a (compatable) Trace-type object to this MLTrace-type object using a specified method
 
@@ -757,13 +708,9 @@ class MLTrace(Trace):
         self.enforce_zero_mask()
         return self
     
-    def why(self):
-        print('True love is the greatest thing on Earth - except for an MLT...')
-
-
     def _relative_indexing(self, other):
         """
-        Helper method for merge() - calculates the integer index positions
+        Helper method for __add__() - calculates the integer index positions
         of the first and last samples of self and other on a uniformly
         sampled time index vector
 
@@ -799,6 +746,51 @@ class MLTrace(Trace):
         
         index = [self_n0, self_n1, other_n0, other_n1]
         return index
+    
+    def why(self):
+        print('True love is the greatest thing on Earth - except for an MLT...')
+
+    ###############################################################################
+    # UPDATED TRIMMING METHODS ####################################################
+    ###############################################################################
+
+    def _ltrim(self, starttime, pad=False, nearest_sample=True, fill_value=None):
+        """
+        Run the obspy.core.trace.Trace._ltrim() method on this MLTrace and trim
+        the start of the fold array if starttime > self.stats.endtime or pad the end
+        of the fold array if starttime < self.stats.endtime and pad = True
+        """
+        old_fold = self.fold
+        old_npts = self.stats.npts
+        super()._ltrim(starttime, pad=pad, nearest_sample=nearest_sample, fill_value=fill_value)
+        if old_npts < self.stats.npts:
+            self.fold = np.full(shape=self.data.shape, fill_value=0, dtype=self.data.dtype)
+            self.fold[-old_npts:] = old_fold
+        elif old_npts > self.stats.npts:
+            self.fold = old_fold[:self.stats.npts]
+        else:
+            self.fold = self.fold.astype(self.data.dtype)
+        self.enforce_zero_mask()
+        return self
+
+    def _rtrim(self, endtime, pad=False, nearest_sample=True, fill_value=None):
+        """
+        Run the obspy.core.trace.Trace._rtrim() method on this MLTrace and trim
+        the end of the fold array if endtime < self.stats.endtime or pad the end
+        of the fold array if endtime > self.stats.endtime and pad = True
+        """
+        old_fold = self.fold
+        old_npts = self.stats.npts
+        super()._rtrim(endtime, pad=pad, nearest_sample=nearest_sample, fill_value=fill_value)
+        if old_npts < self.stats.npts:
+            self.fold = np.full(shape=self.data.shape, fill_value=0, dtype=self.data.dtype)
+            self.fold[:old_npts] = old_fold
+        elif old_npts > self.stats.npts:
+            self.fold = old_fold[:self.stats.npts]
+        else:
+            self.fold = self.fold.astype(self.data.dtype)
+        self.enforce_zero_mask()
+        return self
 
     def split(self):
         """
@@ -927,7 +919,7 @@ class MLTrace(Trace):
                 self.fold = tr.fold
                 self.stats = tr.stats
             else:
-                self.merge(trace=tr, **mergekw)
+                self.__add__(trace=tr, **mergekw)
         if trimkw:
             self.trim(**trimkw)
         return self
@@ -1210,58 +1202,58 @@ class MLTrace(Trace):
         st.write(file_name, fmt='MSEED', **options)
         return st
 
-    def from_trace(self, trace, fold_trace=None, model=None, weight=None, blinding=0):
+    # def from_trace(self, trace, fold_trace=None, model=None, weight=None, blinding=0):
 
-        if not isinstance(trace, Trace):
-            raise TypeError('trace must be an obspy.core.trace.Trace')
+    #     if not isinstance(trace, Trace):
+    #         raise TypeError('trace must be an obspy.core.trace.Trace')
         
-        self.data = trace.data
-        for _k, _v in trace.stats.items():
-            if _k == 'location' and _v == '':
-                _v = '--'
-            self.stats.update({_k: _v})
-        if fold_trace is None:
-            self.fold = np.ones(shape=self.data.shape, dtype=self.data.dtype)
-            self.apply_blinding(blinding=blinding)
+    #     self.data = trace.data
+    #     for _k, _v in trace.stats.items():
+    #         if _k == 'location' and _v == '':
+    #             _v = '--'
+    #         self.stats.update({_k: _v})
+    #     if fold_trace is None:
+    #         self.fold = np.ones(shape=self.data.shape, dtype=self.data.dtype)
+    #         self.apply_blinding(blinding=blinding)
         
-        elif isinstance(fold_trace, Trace):
-            if trace.stats.starttime != fold_trace.stats.starttime:
-                raise ValueError
-            if trace.stats.sampling_rate != fold_trace.stats.sampling_rate:
-                raise ValueError
-            if trace.stats.npts != fold_trace.stats.npts:
-                raise ValueError
-            self.fold = fold_trace.data
+    #     elif isinstance(fold_trace, Trace):
+    #         if trace.stats.starttime != fold_trace.stats.starttime:
+    #             raise ValueError
+    #         if trace.stats.sampling_rate != fold_trace.stats.sampling_rate:
+    #             raise ValueError
+    #         if trace.stats.npts != fold_trace.stats.npts:
+    #             raise ValueError
+    #         self.fold = fold_trace.data
 
-        if model is not None:
-            if not isinstance(model, str):
-                raise TypeError('model must be type str or NoneType')
-            else:
-                self.stats.model = model
+    #     if model is not None:
+    #         if not isinstance(model, str):
+    #             raise TypeError('model must be type str or NoneType')
+    #         else:
+    #             self.stats.model = model
         
-        if weight is not None:
-            if not isinstance(weight, str):
-                raise TypeError('weight must be type str or NoneType')
-            else:
-                self.stats.weight = weight
+    #     if weight is not None:
+    #         if not isinstance(weight, str):
+    #             raise TypeError('weight must be type str or NoneType')
+    #         else:
+    #             self.stats.weight = weight
 
-        return self 
+    #     return self 
 
-    def from_file(self, filename, model=None, weight=None):
-        st = read(filename)
-        holder = {}
-        if len(st) != 2:
-            raise TypeError('this file does not contain the right number of traces (2)')
-        for _tr in st:
-            if _tr.stats.component == 'F':
-                holder.update({'fold': _tr})
-            else:
-                holder.update({'data': _tr})
-        if 'fold' not in holder.keys():
-            raise TypeError('this file does not contain a fold trace')
-        else:
-            self.from_trace(holder['data'], fold_trace=holder['fold'], model=model, weight=weight)
-        return self
+    # def from_file(self, filename, model=None, weight=None):
+    #     st = read(filename)
+    #     holder = {}
+    #     if len(st) != 2:
+    #         raise TypeError('this file does not contain the right number of traces (2)')
+    #     for _tr in st:
+    #         if _tr.stats.component == 'F':
+    #             holder.update({'fold': _tr})
+    #         else:
+    #             holder.update({'data': _tr})
+    #     if 'fold' not in holder.keys():
+    #         raise TypeError('this file does not contain a fold trace')
+    #     else:
+    #         self.from_trace(holder['data'], fold_trace=holder['fold'], model=model, weight=weight)
+    #     return self
 
     ###############################################################################
     # ID PROPERTY ASSIGNMENT METHODS ##############################################

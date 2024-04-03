@@ -343,6 +343,82 @@ class MLTrace(Trace):
     # FOLD METHODS ################################################################
     ###############################################################################        
     
+    def get_fvalid_subset(self, starttime=None, endtime=None, threshold=1):
+        """
+        Get the fraction of data that are "valid" based on a fold threshold
+        for a specified time window. Output is a value \in [0, 1].
+
+        This routine is used extensively to assess window readiness by the
+        WindowWyrm submodule.
+
+        :: INPUTS ::
+        :param starttime: [None] use the stats.starttime of this MLTrace as the
+                                 reference starttime
+                          [obspy.UTCDateTime] reference starttime
+        :param endtime: [None] use the stats.endtime of this MLTrace as the
+                                 reference endtime
+                        [obspy.UTCDateTime] reference endtime
+        :param threshold: [float] threshold value that data points must meet
+                            (i.e., fold >= threshold) to be considered "valid"
+                            Note: should be a non-negative value, and likely a
+                            positive value as fold = 0 is reserved for blinded
+                            and masked datapoints.
+        
+        :: OUTPUT ::
+        :return fvalid: [float] fraction of the specified time window that has
+                            valid data points.                     
+        """
+        # Sanity check on inputs
+        if not starttime is None and not endtime is None:
+            if isinstance(starttime, UTCDateTime) and isinstance(endtime, UTCDateTime):
+                if starttime > endtime:
+                    tmp = starttime
+                    starttime = endtime
+                    endtime = tmp
+                elif starttime == endtime:
+                    return 0.
+            else:
+                raise TypeError('starttime and endtime must be either type obspy.UTCDateTime or NoneType')
+
+        # No specified starttime or starttime matches current starttime
+        if starttime is None or starttime==self.stats.starttime:
+            ii = None
+            head_null_samples = 0
+        # starttime is inside MLTrace time domain
+        elif self.stats.starttime < starttime < self.stats.endtime:
+            ii = round((starttime - self.stats.starttime)*self.stats.sampling_rate)
+            head_null_samples = 0
+        # starttime is before MLTrace time domain
+        elif starttime < self.stats.starttime:
+            ii = None
+            head_null_samples = round((self.stats.starttime - starttime)*self.stats.sampling_rate)
+        # starttime is after MLTrace time domain
+        elif self.stats.endtime <= starttime:
+            return 0.
+        
+        # No specified endtime or endtime matches current endtime
+        if endtime is None or endtime==self.stats.endtime:
+            ff = None
+            tail_null_samples = 0
+        # endtime is inside MLTrace time domain
+        elif self.stats.starttime < endtime < self.stats.endtime:
+            # Note: we want ff to be a negative valued integer here
+            ff = round((endtime - self.stats.endtime)*self.stats.sampling_rate)
+            tail_null_samples = 0
+        # endtime is after MLTrace time domain
+        elif endtime > self.stats.endtime:
+            ff = None
+            tail_null_samples = round((endtime - self.stats.endtime)*self.stats.sampling_rate)
+        # endtime is before or at the start of the MLTrace time domain
+        elif self.stats.starttime >= endtime:
+            return 0.
+
+        # get number of points in specified range that meet the fold threshold
+        num = np.sum(self.fold[ii:ff] >= threshold)
+        den = len(self.fold[ii:ff]) + head_null_samples + tail_null_samples
+        fvalid = num/den
+        return fvalid
+
     def get_fold_trace(self):
         """
         Return an obspy.core.trace.Trace object with data=fold vector for this MLTrace,
@@ -423,8 +499,14 @@ class MLTrace(Trace):
                     BUT
 
         Do not enforce the reciprocal
-            This would result in cloned/filled traces associated
-            with ComponentStream objects to become fully masked
+            WHY:
+            For example, this would result in cloned/filled traces 
+            associated with ComponentStream objects to become
+            fully masked, which is undesireable
+
+        In short, 
+            all masked values are 0-fold
+            not all 0-fold values are masked
 
         e.g., 
 
@@ -1258,6 +1340,7 @@ class MLTrace(Trace):
     ###############################################################################
     # ID PROPERTY ASSIGNMENT METHODS ##############################################
     ###############################################################################
+
     def get_site(self):
         hdr = self.stats
         site = f'{hdr.network}.{hdr.station}'
@@ -1340,6 +1423,8 @@ class MLTrace(Trace):
     
     key_opts = property(get_id_element_dict)
 
+
+    
 
 
 

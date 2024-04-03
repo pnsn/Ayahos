@@ -10,19 +10,20 @@ from wyrm.util.pyew import wave2mltrace
 ###############################################################################
 # Component Stream Header Class Definition ####################################
 ###############################################################################
+## TODO: Nix reference_components for now - too general.
 
 class ComponentStreamStats(DictStreamStats):
     # NTS: Deepcopy is necessary to not overwrite _types and defaults for parent class
     _types = copy.deepcopy(DictStreamStats._types)
-    _types.update({'aliases': dict,
-            'reference_starttime': (UTCDateTime, type(None)),
-            'reference_npts': (int, type(None)),
-            'reference_sampling_rate': (float, type(None))})
+    _types.update({'reference_id': (str, type(None)),
+                   'reference_starttime': (UTCDateTime, type(None)),
+                   'reference_npts': (int, type(None)),
+                   'reference_sampling_rate': (float, type(None))})
     defaults = copy.deepcopy(DictStreamStats.defaults)
-    defaults.update({'aliases': {},
-                    'reference_starttime': None,
-                    'reference_sampling_rate': None,
-                    'reference_npts': None})
+    defaults.update({'reference_id': None,
+                     'reference_starttime': None,
+                     'reference_sampling_rate': None,
+                     'reference_npts': None})
     
     def __init__(self, header={}):
         # Initialize super + updates to class attributes
@@ -32,16 +33,17 @@ class ComponentStreamStats(DictStreamStats):
 
     def __str__(self):
         prioritized_keys = ['reference_id',
+                            'common_id',
                             'reference_starttime',
                             'reference_sampling_rate',
                             'reference_npts',
-                            'aliases',
                             'processing']
 
         hidden_keys = ['min_starttime',
-                        'max_starttime',
-                        'min_endtime',
-                        'max_endtime']
+                       'max_starttime',
+                       'min_endtime',
+                       'max_endtime']
+
         return self._pretty_str(prioritized_keys, hidden_keys)
 
     def _repr_pretty_(self, p, cycle):
@@ -53,7 +55,12 @@ class ComponentStreamStats(DictStreamStats):
         
 class ComponentStream(DictStream):
 
-    def __init__(self, traces=None, header={}, component_aliases={'Z':'Z3', 'N':'N1', 'E':'E2'}, **options):
+    def __init__(
+            self,
+            traces=None,
+            reference_id=None,
+            header={},
+            **options):
         """
         Initialize a wyrm.core.dictstream.ComponentStream object
 
@@ -65,20 +72,18 @@ class ComponentStream(DictStream):
         :param component_aliases: [dict] mapping between aliases (keys) and native component codes (characters in each value)
                         that are mapped to those aliases
         :param **options: [kwargs] collector for key-word arguments to pass to the ComponentStream.__add__ method
-                        inherited from DictStream when 
+                        inherited from DictStream 
         """
+        # Initialize & inherit from DictStream
         super().__init__()
+        # Initialize Stream Header
         self.stats = ComponentStreamStats(header=header)
-
-        # component_aliases compatability checks
-        if isinstance(component_aliases, dict):
-            if all(isinstance(_k, str) and len(_k) == 1 and isinstance(_v, str) for _k, _v in component_aliases.items()):
-                self.stats.aliases = component_aliases
-            else:
-                raise TypeError('component_aliases keys and values must be type str')
-        else:
-            raise TypeError('component aliases must be type dict')
-
+        # Ingest reference_id
+        if isinstance(reference_id, (str, type(None))):
+            self.stats.reference_id = reference_id
+            
+        
+        # Check traces packaging
         if traces is not None:
             if isinstance(traces, Trace):
                 traces = [traces]
@@ -90,17 +95,25 @@ class ComponentStream(DictStream):
                     self.ref_type = ref_type
             else:
                 raise TypeError("input 'traces' must be Trace-like, Stream-like, or list-like")
+
+            
+
+            self.stats.common_id = DictStream().get_common_id()
             # Run validate_ids and continue if error isn't kicked
             self.validate_ids(traces)
             # Add traces using the ComponentStream __add__ method that converts non MLTrace objects into MLTrace objects
             self.__add__(traces, **options)
 
+
     def __add__(self, other, **options):
         """
-        Wrapper around the inherited DictStream.__add__ method that fixes
-        the key_attr to 'component'
+        Wrapper around the inherited MLTrace.__add__ method that fixes
+        the key_attr to 'component'. 
 
-        also see wyrm.core.dictstream.DictStream.__add__()
+        NOTE: Inheritance has an intermediate step where
+            DictStream.__add__() wraps MLTrace.__add__
+
+        also see wyrm.data.mltrace.MLTrace.__add__()
         """
         super().__add__(other, key_attr='component', **options)
 
@@ -134,57 +147,57 @@ class ComponentStream(DictStream):
             rstr += f'[Use "print({type(self).__name__}.__repr__(extended=True))" to print all labels and MLTraces]'
         return rstr
 
-    def _add_trace(self, other, **options):
-        # If potentially appending a wave
-        if isinstance(other, dict):
-            other = wave2mltrace(other)
-        # If appending a trace-type object
-        elif isinstance(other, Trace):
-            # If it isn't an MLTrace, __init__ one from data & header
-            if not isinstance(other, MLTrace):
-                other = MLTrace(data=other.data, header=other.stats)
-            else:
-                pass
-        # Otherwise
-        else:
-            raise TypeError(f'other {type(other)} not supported.')
-        # Ensure that the trace is converted to MLTrace
-        if isinstance(other, MLTrace):
-            # Get other's component code
-            comp = other.comp
-            # Get other's model code
-            mod = other.mod
-            key = f'{comp}.{mod}'
-            # If the component code is not in alias keys
-            if comp not in dict(self.stats.aliases).keys():
-                # Iterate across alias keys and aliases
-                for _k, _v in dict(self.stats.aliases).items():
-                    # If a match is found
-                    if comp in _v:
-                        # And the alias is not in self.traces.keys() - use update
-                        if _k not in self.traces.keys():
-                            self.traces.update({_k: other})
-                        # Otherwise try to add traces together - allowing MLTrace.__add__ to handle the error raising
-                        else:
-                            self.traces[_k].__add__(other, **options)
-                        self.stats.update_time_range(other)
-            else:
-                if comp not in self.traces.keys():
-                    self.traces.update({comp: other})
-                else:
-                    self.traces[comp].__add__(other, **options)
-                self.stats.update_time_range(other)
+    # def _add_trace(self, other, **options):
+    #     # If potentially appending a wave
+    #     if isinstance(other, dict):
+    #         other = wave2mltrace(other)
+    #     # If appending a trace-type object
+    #     elif isinstance(other, Trace):
+    #         # If it isn't an MLTrace, __init__ one from data & header
+    #         if not isinstance(other, MLTrace):
+    #             other = MLTrace(data=other.data, header=other.stats)
+    #         else:
+    #             pass
+    #     # Otherwise
+    #     else:
+    #         raise TypeError(f'other {type(other)} not supported.')
+    #     # Ensure that the trace is converted to MLTrace
+    #     if isinstance(other, MLTrace):
+    #         # Get other's component code
+    #         comp = other.comp
+    #         # Get other's model code
+    #         mod = other.mod
+    #         key = f'{comp}.{mod}'
+    #         # If the component code is not in alias keys
+    #         if comp not in dict(self.stats.aliases).keys():
+    #             # Iterate across alias keys and aliases
+    #             for _k, _v in dict(self.stats.aliases).items():
+    #                 # If a match is found
+    #                 if comp in _v:
+    #                     # And the alias is not in self.traces.keys() - use update
+    #                     if _k not in self.traces.keys():
+    #                         self.traces.update({_k: other})
+    #                     # Otherwise try to add traces together - allowing MLTrace.__add__ to handle the error raising
+    #                     else:
+    #                         self.traces[_k].__add__(other, **options)
+    #                     self.stats.update_time_range(other)
+    #         else:
+    #             if comp not in self.traces.keys():
+    #                 self.traces.update({comp: other})
+    #             else:
+    #                 self.traces[comp].__add__(other, **options)
+    #             self.stats.update_time_range(other)
 
-    def enforce_alias_keys(self):
-        """
-        Enforce aliases
-        """
-        for _k in self.traces.keys():
-            if _k not in self.stats.aliases.keys():
-                for _l, _w in self.stats.aliases.items():
-                    if _k in _w:
-                        _tr = self.traces.pop(_k)
-                        self.traces.update({_l: _tr})
+    # def enforce_alias_keys(self):
+    #     """
+    #     Enforce aliases
+    #     """
+    #     for _k in self.traces.keys():
+    #         if _k not in self.stats.aliases.keys():
+    #             for _l, _w in self.stats.aliases.items():
+    #                 if _k in _w:
+    #                     _tr = self.traces.pop(_k)
+    #                     self.traces.update({_l: _tr})
 
     def validate_ids(self, traces):
         """
@@ -196,9 +209,10 @@ class ComponentStream(DictStream):
         # Handle case where a single trace-type object is passed to validate_ids
         if isinstance(traces, Trace):
             traces = [traces]
+            # TODO: Shift reference_id use here to common_id, and then add cross-checks for new def of reference_id
         # if there is already a non-default reference_id, use that as reference
-        if self.stats.reference_id != self.stats.defaults['reference_id']:
-            ref = self.stats.reference_id
+        if self.stats.common_id != self.stats.defaults['common_id']:
+            ref = self.stats.common_id
         # Otherwise use the first trace in traces as the template
         else:
             tr0 = traces[0]

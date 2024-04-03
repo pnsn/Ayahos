@@ -123,7 +123,7 @@ class DictStreamStats(AttribDict):
     (a sibling class)
     """
     defaults = {
-        'reference_id': '*',
+        'common_id': '*',
         'min_starttime': None,
         'max_starttime': None,
         'min_endtime': None,
@@ -131,7 +131,7 @@ class DictStreamStats(AttribDict):
         'processing': []
     }
 
-    _types = {'reference_id': str,
+    _types = {'common_id': str,
               'min_starttime': (type(None), UTCDateTime),
               'max_starttime': (type(None), UTCDateTime),
               'min_endtime': (type(None), UTCDateTime),
@@ -186,7 +186,7 @@ class DictStreamStats(AttribDict):
 
 
     def __str__(self):
-        prioritized_keys = ['reference_id',
+        prioritized_keys = ['common_id',
                             'min_starttime',
                             'max_starttime',
                             'min_endtime',
@@ -311,7 +311,7 @@ class DictStream(Stream):
         
         if traces is not None:
             self.__add__(traces, key_attr=self.default_key_attr, **options)
-            self.stats.reference_id = self.get_reference_id()
+            self.stats.common_id = self.get_common_id()
 
 
     def _internal_add_processing_info(self, info):
@@ -497,7 +497,7 @@ class DictStream(Stream):
             else:
                 self.traces[key].__add__(other, **options)
             self.stats.update_time_range(other)
-            self.stats.reference_id = self.get_reference_id()
+            self.stats.common_id = self.get_common_id()
 
     def _add_stream(self, stream, **options):
         """
@@ -677,7 +677,7 @@ class DictStream(Stream):
             else:
                 _tr = self.traces[_m]
             out.traces.update({_m: _tr})
-        out.stats.reference_id = out.get_reference_id()
+        out.stats.common_id = out.get_common_id()
         return out
 
     def get_unique_id_elements(self):
@@ -710,7 +710,7 @@ class DictStream(Stream):
                        [N, S, L, C, M, W]))
         return out
     
-    def get_reference_id_elements(self):
+    def get_common_id_elements(self):
         """
         Return a dictionary of strings that are 
         UNIX wild-card representations of a common
@@ -756,15 +756,15 @@ class DictStream(Stream):
                 out.update({_k: _cs})
         return out
 
-    def get_reference_id(self):
+    def get_common_id(self):
         """
-        Get the UNIX wildcard formatted common reference_id string
+        Get the UNIX wildcard formatted common common_id string
         for all traces in this DictStream
 
         :: OUTPUT ::
         :return out: [str] output stream
         """
-        ele = self.get_reference_id_elements()
+        ele = self.get_common_id_elements()
         out = '.'.join(ele.values())
         return out                
     

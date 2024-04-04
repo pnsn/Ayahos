@@ -340,84 +340,102 @@ class MLTrace(Trace):
                 self.fold[self.data.mask] = 0
 
     ###############################################################################
+    def utcdatetime_to_nearest_index(self, utcdatetime):
+        return round((utcdatetime - self.stats.starttime)*self.stats.sampling_rate)
+
+    def get_subset_view(self, starttime=None, endtime=None):
+        # Get indicies of initial sample
+        if starttime is None:
+            ii = 0
+        elif isinstance(starttime, UTCDateTime):
+            ii = self.utcdatetime_to_nearest_index(starttime)
+            if ii < 0:
+                ii = 0
+        else:
+            raise TypeError
+        
+        # Get indices of final sample
+        if endtime is None:
+            ff = self.stats.npts
+        elif isinstance(endtime, UTCDateTime):
+            ff = self.utcdatetime_to_nearest_index(endtime)
+            if ff < 0:
+                ff = 0
+        else:
+            raise TypeError
+        
+        data_view = self.data[ii:ff]
+        fold_view = self.fold[ii:ff]
+        return data_view, fold_view
+
+
+    def trimmed_copy(self, starttime=None, endtime=None, pad=False, fill_value=None):
+        """
+        Return a subset view of the data and/or fold arrays using basic 
+        numpy indexing, such that the view of the underlying data.
+        I.e., the view is not a copy of the data
+
+        This is highly beneficial for reducing memory overhead when sampling small
+        segments of long traces (i.e., window generation from MLTraceBuffer objects)
+        where the source trace data cannot be altered.
+        """
+        data_view, fold_view = self.get_subset_view(starttime=starttime, endtime=endtime)
+        ii = self.utcdatetime_to_nearest_index(starttime)
+        if starttime is None:
+            new_starttime = self.stats.starttime
+        else:
+            new_starttime = self.stats.starttime + ii*self.stats.delta
+        
+        header = {_k: self.stats[_k] for _k in ['network',
+                                                'station',
+                                                'location',
+                                                'channel',
+                                                'model',
+                                                'weight',
+                                                'sampling_rate',
+                                                'calib']}
+        mlt = MLTrace(data=data_view.copy(), fold=fold_view.copy(), header=header)
+        # Update copied view starttime if specified starttime 
+        # is after the source MLTrace starttime
+        if ii > 0:
+            mlt.stats.starttime = new_starttime
+        else:
+            mlt.stats.starttime = self.stats.starttime
+
+        if pad:
+            mlt = mlt.trim(starttime=new_starttime, endtime=endtime, pad=pad, fill_value=fill_value)
+        return mlt
+
+    
+    def get_fvalid_subset(self, starttime=None, endtime=None, threshold=1):
+        _, fold_view = self.get_subset_view(starttime=starttime, endtime=endtime)
+        num = sum(fold_view >= threshold)
+        if starttime is None:
+            ii = 0
+        else:
+            ii = self.utcdatetime_to_nearest_index(starttime)
+        
+        if endtime is None:
+            ff = self.stats.npts
+        else:
+            ff = self.utcdatetime_to_nearest_index(endtime)
+        
+        den = ff - ii
+        if den > 0:
+            fvalid = num/den
+        else:
+            fvalid = 0
+        return fvalid
+
+
+
+
+
+
+    ###############################################################################
     # FOLD METHODS ################################################################
     ###############################################################################        
     
-    def get_fvalid_subset(self, starttime=None, endtime=None, threshold=1):
-        """
-        Get the fraction of data that are "valid" based on a fold threshold
-        for a specified time window. Output is a value \in [0, 1].
-
-        This routine is used extensively to assess window readiness by the
-        WindowWyrm submodule.
-
-        :: INPUTS ::
-        :param starttime: [None] use the stats.starttime of this MLTrace as the
-                                 reference starttime
-                          [obspy.UTCDateTime] reference starttime
-        :param endtime: [None] use the stats.endtime of this MLTrace as the
-                                 reference endtime
-                        [obspy.UTCDateTime] reference endtime
-        :param threshold: [float] threshold value that data points must meet
-                            (i.e., fold >= threshold) to be considered "valid"
-                            Note: should be a non-negative value, and likely a
-                            positive value as fold = 0 is reserved for blinded
-                            and masked datapoints.
-        
-        :: OUTPUT ::
-        :return fvalid: [float] fraction of the specified time window that has
-                            valid data points.                     
-        """
-        # Sanity check on inputs
-        if not starttime is None and not endtime is None:
-            if isinstance(starttime, UTCDateTime) and isinstance(endtime, UTCDateTime):
-                if starttime > endtime:
-                    tmp = starttime
-                    starttime = endtime
-                    endtime = tmp
-                elif starttime == endtime:
-                    return 0.
-            else:
-                raise TypeError('starttime and endtime must be either type obspy.UTCDateTime or NoneType')
-
-        # No specified starttime or starttime matches current starttime
-        if starttime is None or starttime==self.stats.starttime:
-            ii = None
-            head_null_samples = 0
-        # starttime is inside MLTrace time domain
-        elif self.stats.starttime < starttime < self.stats.endtime:
-            ii = round((starttime - self.stats.starttime)*self.stats.sampling_rate)
-            head_null_samples = 0
-        # starttime is before MLTrace time domain
-        elif starttime < self.stats.starttime:
-            ii = None
-            head_null_samples = round((self.stats.starttime - starttime)*self.stats.sampling_rate)
-        # starttime is after MLTrace time domain
-        elif self.stats.endtime <= starttime:
-            return 0.
-        
-        # No specified endtime or endtime matches current endtime
-        if endtime is None or endtime==self.stats.endtime:
-            ff = None
-            tail_null_samples = 0
-        # endtime is inside MLTrace time domain
-        elif self.stats.starttime < endtime < self.stats.endtime:
-            # Note: we want ff to be a negative valued integer here
-            ff = round((endtime - self.stats.endtime)*self.stats.sampling_rate)
-            tail_null_samples = 0
-        # endtime is after MLTrace time domain
-        elif endtime > self.stats.endtime:
-            ff = None
-            tail_null_samples = round((endtime - self.stats.endtime)*self.stats.sampling_rate)
-        # endtime is before or at the start of the MLTrace time domain
-        elif self.stats.starttime >= endtime:
-            return 0.
-
-        # get number of points in specified range that meet the fold threshold
-        num = np.sum(self.fold[ii:ff] >= threshold)
-        den = len(self.fold[ii:ff]) + head_null_samples + tail_null_samples
-        fvalid = num/den
-        return fvalid
 
     def get_fold_trace(self):
         """
@@ -642,6 +660,19 @@ class MLTrace(Trace):
                         methods into 0's, which creates a bug.
         
         """
+        if dtype is None:
+            # Ensure fold matches data dtype
+            if self.fold.dtype != self.data.dtype:
+                self.fold = self.fold.astype(self.data.dtype)
+            if trace.fold.dtype != trace.data.dtype:
+                trace.fold = trace.fold.astype(trace.data.dtype)
+        else:
+            original_dtypes={'self': self.data.dtype, 'other': trace.data.dtype}
+            self.data = self.data.astype(dtype)
+            self.fold = self.fold.astype(dtype)
+            trace.data = trace.data.astype(dtype)
+            trace.fold = trace.fold.astype(dtype)
+
         if sanity_checks:
             if isinstance(trace, Trace):
                 if not isinstance(trace, MLTrace):
@@ -657,20 +688,10 @@ class MLTrace(Trace):
             if self.stats.calib != trace.stats.calib:
                 raise TypeError
             if self.data.dtype != trace.data.dtype:
+                breakpoint()
                 raise TypeError
             
-        if dtype is None:
-            # Ensure fold matches data dtype
-            if self.fold.dtype != self.data.dtype:
-                self.fold = self.fold.astype(self.data.dtype)
-            if trace.fold.dtype != trace.data.dtype:
-                trace.fold = trace.fold.astype(trace.data.dtype)
-        else:
-            original_dtypes={'self': self.data.dtype, 'other': trace.data.dtype}
-            self.data = self.data.astype(dtype)
-            self.fold = self.fold.astype(dtype)
-            trace.data = trace.data.astype(dtype)
-            trace.fold = trace.fold.astype(dtype)
+
 
         # Get data and fold vectors
         sdata = self.data
@@ -1283,59 +1304,6 @@ class MLTrace(Trace):
         st += fold_trace
         st.write(file_name, fmt='MSEED', **options)
         return st
-
-    # def from_trace(self, trace, fold_trace=None, model=None, weight=None, blinding=0):
-
-    #     if not isinstance(trace, Trace):
-    #         raise TypeError('trace must be an obspy.core.trace.Trace')
-        
-    #     self.data = trace.data
-    #     for _k, _v in trace.stats.items():
-    #         if _k == 'location' and _v == '':
-    #             _v = '--'
-    #         self.stats.update({_k: _v})
-    #     if fold_trace is None:
-    #         self.fold = np.ones(shape=self.data.shape, dtype=self.data.dtype)
-    #         self.apply_blinding(blinding=blinding)
-        
-    #     elif isinstance(fold_trace, Trace):
-    #         if trace.stats.starttime != fold_trace.stats.starttime:
-    #             raise ValueError
-    #         if trace.stats.sampling_rate != fold_trace.stats.sampling_rate:
-    #             raise ValueError
-    #         if trace.stats.npts != fold_trace.stats.npts:
-    #             raise ValueError
-    #         self.fold = fold_trace.data
-
-    #     if model is not None:
-    #         if not isinstance(model, str):
-    #             raise TypeError('model must be type str or NoneType')
-    #         else:
-    #             self.stats.model = model
-        
-    #     if weight is not None:
-    #         if not isinstance(weight, str):
-    #             raise TypeError('weight must be type str or NoneType')
-    #         else:
-    #             self.stats.weight = weight
-
-    #     return self 
-
-    # def from_file(self, filename, model=None, weight=None):
-    #     st = read(filename)
-    #     holder = {}
-    #     if len(st) != 2:
-    #         raise TypeError('this file does not contain the right number of traces (2)')
-    #     for _tr in st:
-    #         if _tr.stats.component == 'F':
-    #             holder.update({'fold': _tr})
-    #         else:
-    #             holder.update({'data': _tr})
-    #     if 'fold' not in holder.keys():
-    #         raise TypeError('this file does not contain a fold trace')
-    #     else:
-    #         self.from_trace(holder['data'], fold_trace=holder['fold'], model=model, weight=weight)
-    #     return self
 
     ###############################################################################
     # ID PROPERTY ASSIGNMENT METHODS ##############################################
@@ -2607,3 +2575,136 @@ class MLTrace(Trace):
     #     breakpoint()
     #     mltr = MLTrace(data=data, fold=fold, header=header)
     #     return mltr
+
+
+
+
+    # def get_fvalid_subset(self, starttime=None, endtime=None, threshold=1):
+    #     """
+    #     Get the fraction of data that are "valid" based on a fold threshold
+    #     for a specified time window. Output is a value \in [0, 1].
+
+    #     This routine is used extensively to assess window readiness by the
+    #     WindowWyrm submodule.
+
+    #     :: INPUTS ::
+    #     :param starttime: [None] use the stats.starttime of this MLTrace as the
+    #                              reference starttime
+    #                       [obspy.UTCDateTime] reference starttime
+    #     :param endtime: [None] use the stats.endtime of this MLTrace as the
+    #                              reference endtime
+    #                     [obspy.UTCDateTime] reference endtime
+    #     :param threshold: [float] threshold value that data points must meet
+    #                         (i.e., fold >= threshold) to be considered "valid"
+    #                         Note: should be a non-negative value, and likely a
+    #                         positive value as fold = 0 is reserved for blinded
+    #                         and masked datapoints.
+        
+    #     :: OUTPUT ::
+    #     :return fvalid: [float] fraction of the specified time window that has
+    #                         valid data points.                     
+    #     """
+    #     # Sanity check on inputs
+    #     if not starttime is None and not endtime is None:
+    #         if isinstance(starttime, UTCDateTime) and isinstance(endtime, UTCDateTime):
+    #             if starttime > endtime:
+    #                 tmp = starttime
+    #                 starttime = endtime
+    #                 endtime = tmp
+    #             elif starttime == endtime:
+    #                 return 0.
+    #         else:
+    #             raise TypeError('starttime and endtime must be either type obspy.UTCDateTime or NoneType')
+
+    #     # No specified starttime or starttime matches current starttime
+    #     if starttime is None or starttime==self.stats.starttime:
+    #         ii = None
+    #         head_null_samples = 0
+    #     # starttime is inside MLTrace time domain
+    #     elif self.stats.starttime < starttime < self.stats.endtime:
+    #         ii = round((starttime - self.stats.starttime)*self.stats.sampling_rate)
+    #         head_null_samples = 0
+    #     # starttime is before MLTrace time domain
+    #     elif starttime < self.stats.starttime:
+    #         ii = None
+    #         head_null_samples = round((self.stats.starttime - starttime)*self.stats.sampling_rate)
+    #     # starttime is after MLTrace time domain
+    #     elif self.stats.endtime <= starttime:
+    #         return 0.
+        
+    #     # No specified endtime or endtime matches current endtime
+    #     if endtime is None or endtime==self.stats.endtime:
+    #         ff = None
+    #         tail_null_samples = 0
+    #     # endtime is inside MLTrace time domain
+    #     elif self.stats.starttime < endtime < self.stats.endtime:
+    #         # Note: we want ff to be a negative valued integer here
+    #         ff = round((endtime - self.stats.endtime)*self.stats.sampling_rate)
+    #         tail_null_samples = 0
+    #     # endtime is after MLTrace time domain
+    #     elif endtime > self.stats.endtime:
+    #         ff = None
+    #         tail_null_samples = round((endtime - self.stats.endtime)*self.stats.sampling_rate)
+    #     # endtime is before or at the start of the MLTrace time domain
+    #     elif self.stats.starttime >= endtime:
+    #         return 0.
+
+    #     # get number of points in specified range that meet the fold threshold
+    #     num = np.sum(self.fold[ii:ff] >= threshold)
+    #     den = len(self.fold[ii:ff]) + head_null_samples + tail_null_samples
+    #     fvalid = num/den
+    #     return fvalid
+
+
+    # def from_trace(self, trace, fold_trace=None, model=None, weight=None, blinding=0):
+
+    #     if not isinstance(trace, Trace):
+    #         raise TypeError('trace must be an obspy.core.trace.Trace')
+        
+    #     self.data = trace.data
+    #     for _k, _v in trace.stats.items():
+    #         if _k == 'location' and _v == '':
+    #             _v = '--'
+    #         self.stats.update({_k: _v})
+    #     if fold_trace is None:
+    #         self.fold = np.ones(shape=self.data.shape, dtype=self.data.dtype)
+    #         self.apply_blinding(blinding=blinding)
+        
+    #     elif isinstance(fold_trace, Trace):
+    #         if trace.stats.starttime != fold_trace.stats.starttime:
+    #             raise ValueError
+    #         if trace.stats.sampling_rate != fold_trace.stats.sampling_rate:
+    #             raise ValueError
+    #         if trace.stats.npts != fold_trace.stats.npts:
+    #             raise ValueError
+    #         self.fold = fold_trace.data
+
+    #     if model is not None:
+    #         if not isinstance(model, str):
+    #             raise TypeError('model must be type str or NoneType')
+    #         else:
+    #             self.stats.model = model
+        
+    #     if weight is not None:
+    #         if not isinstance(weight, str):
+    #             raise TypeError('weight must be type str or NoneType')
+    #         else:
+    #             self.stats.weight = weight
+
+    #     return self 
+
+    # def from_file(self, filename, model=None, weight=None):
+    #     st = read(filename)
+    #     holder = {}
+    #     if len(st) != 2:
+    #         raise TypeError('this file does not contain the right number of traces (2)')
+    #     for _tr in st:
+    #         if _tr.stats.component == 'F':
+    #             holder.update({'fold': _tr})
+    #         else:
+    #             holder.update({'data': _tr})
+    #     if 'fold' not in holder.keys():
+    #         raise TypeError('this file does not contain a fold trace')
+    #     else:
+    #         self.from_trace(holder['data'], fold_trace=holder['fold'], model=model, weight=weight)
+    #     return self

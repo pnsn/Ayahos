@@ -10,17 +10,21 @@ from wyrm.util.pyew import wave2mltrace
 ###############################################################################
 # Component Stream Header Class Definition ####################################
 ###############################################################################
-## TODO: Nix reference_components for now - too general.
+## TODO: Nix primary_components for now - too general.
 
 class ComponentStreamStats(DictStreamStats):
     # NTS: Deepcopy is necessary to not overwrite _types and defaults for parent class
     _types = copy.deepcopy(DictStreamStats._types)
-    _types.update({'reference_id': (str, type(None)),
+    _types.update({'primary_component': str,
+                   'aliases': dict,
                    'reference_starttime': (UTCDateTime, type(None)),
                    'reference_npts': (int, type(None)),
                    'reference_sampling_rate': (float, type(None))})
     defaults = copy.deepcopy(DictStreamStats.defaults)
-    defaults.update({'reference_id': None,
+    defaults.update({'primary_component': 'Z',
+                     'aliases': {'Z': 'Z3',
+                                 'N': 'N1',
+                                 'E': 'E2'},
                      'reference_starttime': None,
                      'reference_sampling_rate': None,
                      'reference_npts': None})
@@ -32,8 +36,9 @@ class ComponentStreamStats(DictStreamStats):
         self.update(header)
 
     def __str__(self):
-        prioritized_keys = ['reference_id',
+        prioritized_keys = ['primary_component',
                             'common_id',
+                            'aliases',
                             'reference_starttime',
                             'reference_sampling_rate',
                             'reference_npts',
@@ -57,8 +62,8 @@ class ComponentStream(DictStream):
 
     def __init__(
             self,
-            traces=None,
-            reference_id=None,
+            traces,
+            primary_component='Z',
             header={},
             **options):
         """
@@ -78,44 +83,115 @@ class ComponentStream(DictStream):
         super().__init__()
         # Initialize Stream Header
         self.stats = ComponentStreamStats(header=header)
-        # Ingest reference_id
-        if isinstance(reference_id, (str, type(None))):
-            self.stats.reference_id = reference_id
-            
-        
-        # Check traces packaging
-        if traces is not None:
-            if isinstance(traces, Trace):
-                traces = [traces]
-            elif isinstance(traces, (Stream, list)):
-                ref_type = type(traces[0])
-                if not all(isinstance(_tr, ref_type) for _tr in traces):
-                    raise TypeError('all input traces must be of the same type')
-                else:
-                    self.ref_type = ref_type
+        if isinstance(primary_component, str):
+            if primary_component in self.stats.aliases.keys():
+                self.stats.primary_component = primary_component
             else:
-                raise TypeError("input 'traces' must be Trace-like, Stream-like, or list-like")
+                raise ValueError(f'primary_component must be a key value in ComponentStream.stats.aliases')
+        else:
+            raise TypeError('primary_component must be type str')
+        
+        if isinstance(traces, Trace):
+            traces = [traces]
+        elif isinstance(traces, (Stream, list, tuple)):
+            if not all(isinstance(tr, Trace) for tr in traces):
+                raise TypeError('all input traces must be type MLTrace')
+        else:
+            raise TypeError("input 'traces' must be a single MLTrace or iterable set of MLTrace objects")
+        # Add traces using the ComponentStream __add__ method that converts non MLTrace objects into MLTrace objects
+        # if self.validate_trace_ids(self, other=traces)
+        self.extend(traces, **options)
+        self.stats.common_id = self.get_common_id()
+        # if self.ref['component'] in self.traces.keys():
+        #     self.stats.reference_id = self.traces[self.ref['component']].id
+
+    def extend(self, traces, **options):
+        for tr in traces:
+            if not isinstance(tr, MLTrace):
+                tr = MLTrace(tr)
+            comp = tr.stats.component
+            # If component is a primary key
+            if comp in self.stats.aliases.keys():
+                # And that key is not in the current holdings
+                if comp not in self.traces.keys():
+                    self.traces.update({comp: tr})
+                else:
+                    self.traces[comp].__add__(tr, **options)
+                self.stats.update_time_range(self.traces[comp])
+            # If component is an aliased key    
+            elif comp in ''.join(self.stats.aliases.values()):
+                # Get the matching alias/key pair
+                for _k, _v in self.stats.aliases.items():
+                    if comp in _v:
+                        # If primary key not in current holdings
+                        if _k not in self.traces.keys():
+                            self.traces.update({_k: tr})
+                        else:
+                            self.traces[_k].__add__(tr, **options)
+                        self.stats.update_time_range(self.traces[_k])
+                        break
+                    else:
+                        pass
+
+            else:
+                raise ValueError('component code for {tr.id} is not in the self.stats.aliases dictionary')
+
+
+    # def validate_traces(self, other=None):
+    #     if len(self.traces) == 0:
+    #         if other is None:
+    #             return True
+    #         elif isinstance(other, MLTrace):
+    #             return True
+    #         elif isinstance(other, (Stream, list, tuple)):
+    #             if not all(isinstance(tr, MLTrace) for tr in other):
+    #                 return False
+    #             else:
+    #                 bool_list = []
+    #                 for _i, itr in enumerate(other):
+    #                     for _j, jtr in enumerate(other):
+    #                         if _i > _j:
+    #                             bool_line = [getattr(itr, _k) == getattr(jtr, _k) for _k in ['site','inst','mod']]
+    #                             bool_list.append(all(bool_line))
+    #                 return all(bool_list)
+    #     if len(self.traces) > 0:
+    #         bool_list = []
+    #         for _i, itr in self.traces.items():
+    #             for _j, jtr in self.traces.items():
+    #                 if _i > _j:
+    #                     bool_line = [getattr(itr, _k) == getattr(jtr, _k) for _k in ['site','inst','mod']]
+    #                     bool_list.append(all(bool_line))
+    #         internal_status = all(bool_list)
+        
+    #         if other is None:
+    #             return internal_status
+    #         elif isinstance(other, MLTrace):
+
+
+        
+    #     if not all(bool_list):
+    #         raise ValueError('Input trace IDs (excluding component code) mismatch')
+    #     else:
+    #         self.extend(traces, **options)
+
 
             
+    # def extend(self, other, **options):
+    #     """
+    #     Wrapper around the inherited MLTrace.__add__ method that fixes
+    #     the key_attr to 'component'. 
 
-            self.stats.common_id = DictStream().get_common_id()
-            # Run validate_ids and continue if error isn't kicked
-            self.validate_ids(traces)
-            # Add traces using the ComponentStream __add__ method that converts non MLTrace objects into MLTrace objects
-            self.__add__(traces, **options)
+    #     NOTE: Inheritance has an intermediate step where
+    #         DictStream.__add__() wraps MLTrace.__add__
 
+    #     also see wyrm.data.mltrace.MLTrace.__add__()
+    #     """
 
-    def __add__(self, other, **options):
-        """
-        Wrapper around the inherited MLTrace.__add__ method that fixes
-        the key_attr to 'component'. 
+    #     super().extend(other, key_attr='component', **options)
+    
+    # def __add__(self, other, **options):
+    #     self.extend(other, **options)
 
-        NOTE: Inheritance has an intermediate step where
-            DictStream.__add__() wraps MLTrace.__add__
-
-        also see wyrm.data.mltrace.MLTrace.__add__()
-        """
-        super().__add__(other, key_attr='component', **options)
 
     def __repr__(self, extended=False):
         """
@@ -147,121 +223,72 @@ class ComponentStream(DictStream):
             rstr += f'[Use "print({type(self).__name__}.__repr__(extended=True))" to print all labels and MLTraces]'
         return rstr
 
-    # def _add_trace(self, other, **options):
-    #     # If potentially appending a wave
-    #     if isinstance(other, dict):
-    #         other = wave2mltrace(other)
-    #     # If appending a trace-type object
-    #     elif isinstance(other, Trace):
-    #         # If it isn't an MLTrace, __init__ one from data & header
-    #         if not isinstance(other, MLTrace):
-    #             other = MLTrace(data=other.data, header=other.stats)
-    #         else:
-    #             pass
-    #     # Otherwise
+    
+
+    # def validate_ids(self, traces):
+    #     """
+    #     Check id strings for traces against ComponentStream.stats.reference_id
+    #     :: INPUTS ::
+    #     :param traces: [list-like] of [obspy.core.trace.Trace-like] or individual
+    #                     objects thereof
+    #     """
+    #     # Handle case where a single trace-type object is passed to validate_ids
+    #     if isinstance(traces, Trace):
+    #         traces = [traces]
+    #         # TODO: Shift reference_id use here to common_id, and then add cross-checks for new def of reference_id
+    #     # if there is already a non-default reference_id, use that as reference
+    #     if self.stats.common_id != self.stats.defaults['common_id']:
+    #         ref = self.stats.common_id
+    #     # Otherwise use the first trace in traces as the template
     #     else:
-    #         raise TypeError(f'other {type(other)} not supported.')
-    #     # Ensure that the trace is converted to MLTrace
-    #     if isinstance(other, MLTrace):
-    #         # Get other's component code
-    #         comp = other.comp
-    #         # Get other's model code
-    #         mod = other.mod
-    #         key = f'{comp}.{mod}'
-    #         # If the component code is not in alias keys
-    #         if comp not in dict(self.stats.aliases).keys():
-    #             # Iterate across alias keys and aliases
-    #             for _k, _v in dict(self.stats.aliases).items():
-    #                 # If a match is found
-    #                 if comp in _v:
-    #                     # And the alias is not in self.traces.keys() - use update
-    #                     if _k not in self.traces.keys():
-    #                         self.traces.update({_k: other})
-    #                     # Otherwise try to add traces together - allowing MLTrace.__add__ to handle the error raising
-    #                     else:
-    #                         self.traces[_k].__add__(other, **options)
-    #                     self.stats.update_time_range(other)
-    #         else:
-    #             if comp not in self.traces.keys():
-    #                 self.traces.update({comp: other})
-    #             else:
-    #                 self.traces[comp].__add__(other, **options)
-    #             self.stats.update_time_range(other)
-
-    # def enforce_alias_keys(self):
-    #     """
-    #     Enforce aliases
-    #     """
-    #     for _k in self.traces.keys():
-    #         if _k not in self.stats.aliases.keys():
-    #             for _l, _w in self.stats.aliases.items():
-    #                 if _k in _w:
-    #                     _tr = self.traces.pop(_k)
-    #                     self.traces.update({_l: _tr})
-
-    def validate_ids(self, traces):
-        """
-        Check id strings for traces against ComponentStream.stats.reference_id
-        :: INPUTS ::
-        :param traces: [list-like] of [obspy.core.trace.Trace-like] or individual
-                        objects thereof
-        """
-        # Handle case where a single trace-type object is passed to validate_ids
-        if isinstance(traces, Trace):
-            traces = [traces]
-            # TODO: Shift reference_id use here to common_id, and then add cross-checks for new def of reference_id
-        # if there is already a non-default reference_id, use that as reference
-        if self.stats.common_id != self.stats.defaults['common_id']:
-            ref = self.stats.common_id
-        # Otherwise use the first trace in traces as the template
-        else:
-            tr0 = traces[0]
-            # If using wyrm.core.trace.MLTrace(Buffer) objects, as above with the 'mod' extension
-            if isinstance(tr0, MLTrace):
-                ref = f'{tr0.site}.{tr0.inst}?.{tr0.mod}'
-                        # If using obspy.core.trace.Trace objects, use id with "?" for component char
-            elif isinstance(tr0, Trace):
-                ref = tr0.id[:-1]+'?'
-        # Run match on all trace ids
-        matches = fnmatch.filter([_tr.id for _tr in traces], ref)
-        # If all traces conform to ref
-        if all(_tr.id in matches for _tr in traces):
-            # If reference_id 
-            if self.stats.reference_id == self.stats.defaults['reference_id']:
-                self.stats.reference_id = ref
+    #         tr0 = traces[0]
+    #         # If using wyrm.core.trace.MLTrace(Buffer) objects, as above with the 'mod' extension
+    #         if isinstance(tr0, MLTrace):
+    #             ref = f'{tr0.site}.{tr0.inst}?.{tr0.mod}'
+    #                     # If using obspy.core.trace.Trace objects, use id with "?" for component char
+    #         elif isinstance(tr0, Trace):
+    #             ref = tr0.id[:-1]+'?'
+    #     # Run match on all trace ids
+    #     matches = fnmatch.filter([_tr.id for _tr in traces], ref)
+    #     # If all traces conform to ref
+    #     if all(_tr.id in matches for _tr in traces):
+    #         # If reference_id 
+    #         if self.stats.reference_id == self.stats.defaults['reference_id']:
+    #             self.stats.reference_id = ref
         
-        else:
-            raise KeyError('Trace id(s) do not conform to reference_id: "{self.stats.reference_id}"')
+    #     else:
+    #         raise KeyError('Trace id(s) do not conform to reference_id: "{self.stats.reference_id}"')
 
     ###############################################################################
     # FILL RULE METHODS ###########################################################
     ###############################################################################
     # @_add_processing_info
-    def apply_fill_rule(self, rule='zeros', ref_component='Z', other_components='NE', ref_thresh=0.9, other_thresh=0.8):
-        if ref_component not in self.traces.keys():
-            raise KeyError('reference component {ref_component} is not present in traces')
-        else:
-            thresh_dict = {ref_component: ref_thresh}
-            thresh_dict.update({_c: other_thresh for _c in other_components})
-        # Check if data meet requirements before triggering fill rule
-        checks = []
-        # Check if all components are present in traces
-        checks.append(self.traces.keys() == thresh_dict.keys())
-        # Check if all valid data fractions meet/exceed thresholds
-        checks.append(all(self[_k].fvalid >= thresh_dict[_k] for _k in self.traces.keys()))
+    def apply_fill_rule(self, rule='zeros', ref_thresh=0.9, other_thresh=0.8):
+        thresh_dict = {}
+        for _k in self.stats.aliases.keys():
+            if _k == self.stats.primary_component:
+                thresh_dict.update({_k: ref_thresh})
+            else:
+                thresh_dict.update({_k: other_thresh})
+
+        # Check if all expected components are present and meet threshold
+        checks = [thresh_dict.keys() == self.traces.keys(),
+                  all(_v.get_fvalid_subset() >= thresh_dict[_k] for _k, _v in self.traces.items())]
+        # If so, do nothing
         if all(checks):
             pass
+        # Otherwise apply rule
         elif rule == 'zeros':
-            self._apply_zeros(ref_component, thresh_dict)
+            self._apply_zeros(thresh_dict)
         elif rule == 'clone_ref':
-            self._apply_clone_ref(ref_component, thresh_dict)
+            self._apply_clone_ref(thresh_dict)
         elif rule == 'clone_other':
-            self._apply_clone_other(ref_component, thresh_dict)
+            self._apply_clone_other(thresh_dict)
         else:
             raise ValueError(f'rule {rule} not supported. Supported values: "zeros", "clone_ref", "clone_other"')
 
     # @_add_processing_info
-    def _apply_zeros(self, ref_component, thresh_dict): #, method='fill'):
+    def _apply_zeros(self, thresh_dict): #, method='fill'):
         """
         Apply the channel filling rule "zero" (e.g., Retailleau et al., 2022)
         where both "other" (horzontal) components are set as zero-valued traces
@@ -287,19 +314,18 @@ class ComponentStream(DictStream):
         #                             the threshold, convert it into a 0-data 0-fold
         #                             MLTrace object
         """
+        ref_comp = self.stats.primary_component
         # Get reference trace
-        ref_tr = self[ref_component]
+        ref_tr = self.traces[ref_comp]
         # Safety catch that at least the reference component does have enough data
-        if ref_tr.fvalid < thresh_dict[ref_component]:
+        if ref_tr.get_fvalid_subset() < thresh_dict[ref_comp]:
             raise ValueError('insufficient valid data in reference trace')
         else:
             pass
         # Iterate across entries in the threshold dictionary
         for _k in thresh_dict.keys():
             # For "other" components
-            if _k != ref_component:
-                # # If using 'wipe' method
-                # if method == 'wipe':
+            if _k != ref_comp:
                 # Create copy of reference trace
                 tr0 = ref_tr.copy()
                 # Relabel
@@ -309,18 +335,8 @@ class ComponentStream(DictStream):
                 # Update 
                 self.traces.update({_k: tr0})
 
-                # # If using 'fill' method
-                # elif method == 'fill':
-                #     if _k in self.traces.keys():
-                #         if self.traces[_k].fvalid < thresh_dict[_k]:
-                #             tr0 = ref_tr.copy()
-                #             tr0.set_comp(_k)
-                #             tr0.to_zero(method='both')
-                #             self.traces.update({_k: tr0})
-
-
     # @_add_processing_info
-    def _apply_clone_ref(self, ref_component, thresh_dict):
+    def _apply_clone_primary(self, thresh_dict):
         """
         Apply the channel filling rule "clone reference" (e.g., Ni et al., 2023)
         where the reference channel (vertical component) is cloned onto both
@@ -339,14 +355,15 @@ class ComponentStream(DictStream):
                         thresholds below which the associated component is rejected
         """
         # Get reference trace
-        ref_tr = self[ref_component]
+        ref_comp = self.stats.primary_component
+        ref_tr = self[ref_comp]
         # Get 
-        if ref_tr.fvalid < thresh_dict[ref_component]:
+        if ref_tr.fvalid < thresh_dict[ref_comp]:
             raise ValueError('insufficient valid data in reference trace')
         else:
             pass
         for _k in thresh_dict.keys():
-            if _k != ref_component:
+            if _k != ref_comp:
                 # Create copy of reference trace
                 trC = ref_tr.copy()
                 # Relabel component
@@ -358,7 +375,7 @@ class ComponentStream(DictStream):
 
 
     # @_add_processing_info    
-    def _apply_clone_other(self, ref_component, thresh_dict):
+    def _apply_clone_other(self, thresh_dict):
         """
         Apply the channel filling rule "clone other" (e.g., Lara et al., 2023)
         where the reference channel (vertical component) is cloned onto both
@@ -377,14 +394,15 @@ class ComponentStream(DictStream):
                         and values \in [0, 1] representing fractional completeness
                         thresholds below which the associated component is rejected
         """
+        ref_comp = self.stats.primary_component
         # Run through each component and see if it passes thresholds
         pass_dict = {}
         for _k, _tr in self.traces.items():
             pass_dict.update({_k: _tr.fvalid >= thresh_dict[_k]})
 
         # If the reference component is present but fails to pass, kick error
-        if ref_component in pass_dict.keys():
-            if not pass_dict[ref_component]:
+        if ref_comp in pass_dict.keys():
+            if not pass_dict[ref_comp]:
                 raise ValueError('insufficient valid data in reference trace')
             else:
                 pass
@@ -400,15 +418,15 @@ class ComponentStream(DictStream):
                 pass
 
             # If at least one "other" component passed checks
-            elif any(_v for _k, _v in pass_dict.items() if _k != ref_component):
+            elif any(_v for _k, _v in pass_dict.items() if _k != ref_comp):
                 # Iterate across components in 
                 for _k, _v in pass_dict.items():
                     # If not the reference component and did not pass
-                    if _k != ref_component and not _v:
+                    if _k != ref_comp and not _v:
                         # Grab component code that will be cloned over
                         cc = _k
                     # If not the reference component and did pass
-                    if _k != ref_component and _v:
+                    if _k != ref_comp and _v:
                         # Create a clone of the passing "other" component
                         trC = _v.copy()
                 # Zero out the fold of the cloned component and overwrite it's component code
@@ -418,10 +436,10 @@ class ComponentStream(DictStream):
 
             # If only the reference trace passed, run _apply_clone_ref() method instead
             else:
-                self._apply_clone_ref(ref_component, thresh_dict)
+                self._apply_clone_ref(thresh_dict)
 
         # If ref and one "other" component are present
-        elif ref_component in pass_dict.keys():
+        elif ref_comp in pass_dict.keys():
             # ..and they both pass checks
             if all(pass_dict.items()):
                 # Iterate across all expected components
@@ -432,7 +450,7 @@ class ComponentStream(DictStream):
                     if _c not in pass_dict.keys():
                         cc = _c
                     # and use the present "other" as a clone template
-                    elif _c != ref_component:
+                    elif _c != ref_comp:
                         trC = self[_c].copy()
                 # Stitch results from the iteration loop together
                 trC.set_comp(cc)
@@ -442,10 +460,10 @@ class ComponentStream(DictStream):
                 self.traces.update({cc: trC})
             # If the single "other" trace does not pass, use _apply_clone_ref method
             else:
-                self._apply_clone_ref(ref_component, thresh_dict)
+                self._apply_clone_ref(thresh_dict)
         # If only the reference component is present & passing
         else:
-            self._apply_clone_ref(ref_component, thresh_dict)
+            self._apply_clone_ref(thresh_dict)
     
     ###############################################################################
     # Synchronization Methods #####################################################

@@ -243,16 +243,24 @@ class TubeWyrm(Wyrm):
             start = time.time()
         for _i in range(self.max_pulse_size):
             if self.debug:
-                print(f'TubeWyrm pulse {_i} - {time.time() - start}')
+                print(f'TubeWyrm pulse {_i} - {time.time() - start:.3f}sec')
             for _j, _wyrm in enumerate(self.wyrm_dict.values()):
                 if self.debug:
-                    print(f'...{_wyrm} pulse firing - {time.time() - start}')
+                    print('Tube∂ Pulse Element Firing')
+                    print(f'   {_wyrm}')
+                    tick = time.time()
+                    
                 # For first stage of pulse, pass output to `y`
                 if _j == 0:
                     y = _wyrm.pulse(x)
                 # For all subsequent pulses, update `y`
                 else:
                     y = _wyrm.pulse(y)
+                
+                if self.debug:
+                    print(f'    Pulse Element Runtime {time.time() - tick:.3f}sec')
+                    print(f'    Elapsed Pulse Time {tick - start:.3f}sec\n')
+
                 # if not last step, wait specified wait_sec
                 if _j + 1 < len(self.wyrm_dict):
                     time.sleep(self.wait_sec)
@@ -317,8 +325,8 @@ class CanWyrm(TubeWyrm):
                     self.dict.update({_k: _y})
             if self.debug:
                 print(f'CanWyrm pulse {_i + 1}')
-                for _l, _w in self.dict.items():
-                    print(f'    {_l} - {len(_w)}')
+            #     for _l, _w in self.dict.items():
+            #         print(f'    {_l} - {len(_w)}')
         y = self.dict
         return y
 
@@ -644,7 +652,7 @@ class BufferWyrm(Wyrm):
         if not isinstance(blinding, (type(None), bool, tuple)):
             raise TypeError
         else:
-            self.mltb_kwargs({'blinding': blinding})
+            self.mltb_kwargs.update({'blinding': blinding})
         # Create holder for add_kwargs to pass to 
         self.add_kwargs = add_kwargs
         if method in [0,'dis','discard',
@@ -658,13 +666,13 @@ class BufferWyrm(Wyrm):
 
 
     def add_new_buffer(self, other):
-        if isinstance(other, Trace):
+        if isinstance(other, MLTrace):
             if other.id not in self.buffer.traces.keys():
                 # Initialize an MLTraceBuffer Object
                 mltb = MLTraceBuffer(**self.mltb_kwargs,
                                      **self.add_kwargs)
                 mltb.append(other)
-                self.buffer.traces.update({mltb.id: mltb})
+                self.buffer.extend(mltb)
             
 
     def pulse(self, x):
@@ -687,28 +695,31 @@ class BufferWyrm(Wyrm):
                 break
             # otherwise, popleft to get oldest item in queue
             else:
+                breakpoint()
                 _x = x.popleft()
             # if not an MLTrace (or child) reappend to queue (safety catch)
-            if not isinstance(_x, MLTrace):
+            if not isinstance(_x, (MLTrace, DictStream)):
                 x.append(_x)
             #Otherwise get ID of MLTrace
-            else:
-                _id = _x.id
+            elif isinstance(_x, MLTrace):
+                _x = [_x]
+        
+            for _xtr in _x:
+                _id = _xtr.id
+                # If the MLTrace ID is not in the DictStream keys, create new tracebuffer
                 if _id not in self.buffer.traces.keys():
-                    self.add_mltracebuffer(self.)
-                if _id not in self.buffer.labels():
-                    new_buffer_item = MLTraceBuffer(max_length=self.max_length,
-                                               add_style=self.add_style,
-                                               restrict_add_past=self.restrict_add_past)
-                    new_buffer_item.__add__(_x, **self.add_kwargs)
-                    self.buffer.append(new_buffer_item, **self.add_kwargs)
+                    self.add_new_buffer(_xtr)
+                # If the MLTrace ID is in the DictStream keys, use the append method
                 else:
-                    self.buffer.append(_x,
-                                       restrict_add_past=self.restrict_add_past,
-                                        **self.add_kwargs)
+                    self.buffer[_id].append(_xtr, **self.add_kwargs)
+        
                     
-    def __repr__(self, extended=False):
-        rstr = f'Add Style: {self.add_style}'
+    # def __repr__(self, extended=False):
+    #     rstr = f'Add Style: {self.add_style}'
+    #     return rstr
+                    
+    def __str__(self):
+        rstr = f'wyrm.core.coordinate.BufferWyrm()'
         return rstr
     
 class CloneWyrm(Wyrm):

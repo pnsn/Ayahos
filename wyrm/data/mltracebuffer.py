@@ -85,19 +85,19 @@ class MLTraceBuffer(MLTrace):
         # Initialize _has_data private flag attribute
         self._has_data = False
 
-    def __add__(self, other):
-        """
-        Wrapper around the wyrm.data.mltracebuffer.MLTraceBuffer.append method
-        that uses the default key word arguments for MLTrace.__add__ or alternative
-        kwargs specified when the MLTraceBuffer was initialized (see the append_kwargs attribute)
+    # def __add__(self, other):
+    #     """
+    #     Wrapper around the wyrm.data.mltracebuffer.MLTraceBuffer.append method
+    #     that uses the default key word arguments for MLTrace.__add__ or alternative
+    #     kwargs specified when the MLTraceBuffer was initialized (see the append_kwargs attribute)
 
-        Use:
-        tr = Trace(data=np.ones(300), header={'sampling_rate': 10})
-        mltb = MLTraceBuffer(max_length=30)
-        mltb += tr
-        """
-        self.append(other, **self.add_kwargs)
-        return self
+    #     Use:
+    #     tr = Trace(data=np.ones(300), header={'sampling_rate': 10})
+    #     mltb = MLTraceBuffer(max_length=30)
+    #     mltb += tr
+    #     """
+    #     self.append(other, **self.add_kwargs)
+    #     return self
 
     def append(self, other, **kwargs):
         """
@@ -165,10 +165,11 @@ class MLTraceBuffer(MLTrace):
             if self.id != other.id:
                 raise ValueError(f'trace ID\'s do not match {self.id} vs {other.id}')
 
-        # Merge self.add_kwargs and user specified kwargs
-        for _k, _v in self.add_kwargs.items():
-            if _k not in kwargs.keys():
-                kwargs.update({_k, _v})
+        # # Merge self.add_kwargs and user specified kwargs
+        # for _k, _v in self.add_kwargs.items():
+        #     breakpoint()
+        #     if _k not in kwargs.keys():
+        #         kwargs.update({_k, _v})
 
         if isinstance(other, Trace):
             # If other is a trace, but not an MLTrace, convert
@@ -192,7 +193,7 @@ class MLTraceBuffer(MLTrace):
                 if other.stats.starttime - self.max_length < self.stats.endtime:
                     # Conduct future append (always unrestricted)
                     self._slide_buffer(other.stats.endtime, reference_type='endtime')
-                    self.__add__(self, other, **kwargs)
+                    self.__add__(self, other, **self.add_kwargs)
                     # self.enforce_max_length(reference='endtime')
                 # If other starts later that self end + max_length - big gap
                 else:
@@ -221,15 +222,15 @@ class MLTraceBuffer(MLTrace):
                     if self.RPA:
                         # Trim other
                         other.trim(starttime=self.stats.starttime)
-                        self.__add__(other, **kwargs)
+                        self.__add__(other, **self.add_kwargs)
                     # If not restricting past appends - slide buffer and append full other
                     else:
                         self._slide_buffer(other.stats.endtime, reference_type='endtime')
-                        self.__add__(other, **kwargs)
+                        self.__add__(other, **self.add_kwargs)
 
             # (INNER APPEND)
             else:
-                self.__add__(other, **kwargs)
+                self.__add__(other, **self.add_kwargs)
                 # # TODO: Make sure this is a copy
                 # ftr = self.get_fold_trace().trim(starttime=other.stats.starttime, endtime=other.stats.endtime)
                 # # If there are any 0-fold data in self that have information from other

@@ -51,12 +51,13 @@ class WindowWyrm(Wyrm):
     def __init__(
         self,
         component_aliases={"Z": "Z3", "N": "N1", "E": "E2"},
-        reference_components=['Z'],
+        reference_component='Z',
         reference_completeness_threshold=0.95,
         model_name="EQTransformer",
         reference_sampling_rate=100.0,
         reference_npts=6000,
         reference_overlap=1800,
+        pulse_type='network',
         max_pulse_size=1,
         debug=False,
         **options
@@ -103,6 +104,13 @@ class WindowWyrm(Wyrm):
         """
         # Initialize/inherit from Wyrm
         super().__init__(max_pulse_size=max_pulse_size, debug=debug)
+
+        if pulse_type.lower() in ['network','site','instrument']:
+            self.pulse_type = pulse_type.lower()
+            self.next_code = None
+        else:
+            raise ValueError(f'pulse_type "{pulse_type}" not supported.')
+
         # Compatability checks for component_aliases
         if not isinstance(component_aliases, dict):
             raise TypeError('component_aliases must be type dict')
@@ -112,15 +120,10 @@ class WindowWyrm(Wyrm):
             self.aliases = component_aliases
 
         # Compatability check for reference_component
-        if isinstance(reference_components, (list, tuple)):
-            if all(isinstance(_c, str) for _c in reference_components):
-                if all(len(_c)==1 for _c in reference_components):
-                    rfc = list(reference_components)
-        elif isinstance(reference_components, str):
-            if len(reference_components) == 1:
-                rfc = [reference_components]
+        if reference_component in self.aliases.keys():
+            refc = reference_component
         else:
-            raise TypeError('reference_components must be single-character string(s)')
+            raise ValueError('reference_component does not appear as a key in component_aliases')
         
         # Compatability check for reference_completeness_threshold
         reft = bounded_floatlike(
@@ -198,13 +201,79 @@ class WindowWyrm(Wyrm):
         """
         if not isinstance(x, DictStream):
             raise TypeError
-        for _ in range(self.max_pulse_size):
-            self._update_window_tracker(x)
-            nnew = self._sample_windows(x)
-            if nnew == 0:
-                break
+        # Update window tracker with DictStream metadata
+        self._update_window_tracker(x)
+        # Run pulse based on pulse_type
+        if self.pulse_type == 'network':
+            if self.debug:
+                print(f'∂∂∂ Window∂ - qlen {len(x)} - network pulse ∂∂∂')
+            self._network_pulse(x)
+        elif self.pulse_type == 'site':
+            if self.debug:
+                print(f'∂∂∂ Window∂ - qlen {len(x)} - site pulse ∂∂∂')
+            self._sitewise_pulse(x)
+
         y = self.queue
         return y
+        
+    def _network_pulse(self, x):
+        nnew = 0
+        # Execute number of network-wide sweeps
+        for _ in range(self.max_pulse_size):
+            # Iterate across sites
+            for site, _sv in self.window_tracker.items():
+                if self.debug:
+                    print(f'   {site}')
+                # Iterate across instruments
+                for inst, _ssv in _sv.items():
+                    # Skip t0 reference
+                    if isinstance(_ssv, dict):
+                        # Iterate across model-weights
+                        for mod in _ssv.keys():
+                            nnew += self._sample_window(x, site, inst, mod)
+            # If network sweep does not produce new windows, execute early stopping
+            if nnew == 0:
+                break
+
+
+
+    def _sitewise_pulse(self, x):
+        niter = 0
+        # Get current list of sites
+        sites = list(self.window_tracker.keys())
+        while niter <= self.max_pulse_size:
+            # Iterate across site names
+            for _i, site in enumerate(sites):
+                # Handle very first site-wise looping catch on last_code
+                if self.next_code is None:
+                    self.next_code = site
+                
+                if site == self.next_code:
+                    pass
+                else:
+                    continue
+
+                if self.debug:
+                    print(f'    processing {site}')
+                # If you're still here, iterate across instruments
+                for inst, _ssv in self.window_tracker[site].items():
+                    # Skip over 't0' reference entry in window_tracker[site]
+                    if not isinstance(_ssv, dict):
+                        continue
+                    for mod in _ssv.keys():
+                        # Attempt to sample window (if approved)
+                        nnew = self._sample_window(x, site, inst, mod)
+                        # Increase the iteration counter
+                        niter += 1
+                        # Get the site code of the next site in the list
+                        if _i + 1 < len(sites):
+                            self.next_code = sites[_i + 1]
+                        # If we hit the end of the list, loop over to the beginning
+                        else:
+                            self.next_code = sites[0]
+                        if self.debug:
+                            print(f'   next_code is {self.next_code}')
+
     
 
     def _update_window_tracker(self, dst):
@@ -246,8 +315,8 @@ class WindowWyrm(Wyrm):
                                                     {mod: 
                                                         {'ti': mltr.stats.starttime,
                                                          'ref': mltr.id,
-                                                         'ready': False}}},
-                                            't0': mltr.stats.starttime})
+                                                         'ready': False}},
+                                                't0': mltr.stats.starttime}})
             # If site is in window_tracker
             else:
                 # If inst is not in this site subdictionary
@@ -305,35 +374,40 @@ class WindowWyrm(Wyrm):
                         # Otherwise preserve dis-approval of window generation (ready = False) for now
                                 
 
-    def _sample_windows(self, dst):
+    def _sample_window(self, dst, site, inst, mod):
         """
         PRIVATE METHOD
         """
         nnew = 0
-        for site, _v in self.window_tracker.items():
-            for inst, _sv in _v.items():
-                for mod, _ssv in _sv.items():
-                    if _ssv['ready']:
-                        next_window_ti = _ssv['ti']
-                        next_window_tf = next_window_ti + self.window_sec
-                        # Subset data view
-                        _dst = dst.fnselect(f'{site}.{inst}?.{mod}')
-                        # Copy/trim traces from view
-                        traces = []
-                        for _mltb in _dst.traces.values():
-                            mlt = MLTrace(data=_mltb.data, fold=_mltb.fold, header=_mltb.stats.copy())
-                            mlt.trim(starttime=next_window_ti, endtime=next_window_tf)
-                            traces.append(mlt)
-                        # Compose ComponentStream copy
-                        cst = ComponentStream(traces=traces, header=_dst.stats.copy(), reference_id=_ssv['ref'])
-                        # Append to queue
-                        self.queue.append(cst)
-                        # Update window with an advance for this instrument
-                        self.window_tracker[site][inst][mod]['ti'] += self.advance_sec
-                        # Set ready flag to False for this new window (_update_window_tracker will handle re-readying)
-                        self.window_tracker[site][inst][mod].update({'ready': False})
-                        # Add to nneww
-                        nnew += 1
+        _ssv = self.window_tracker[site][inst][mod]
+        if _ssv['ready']:
+            next_window_ti = _ssv['ti']
+            next_window_tf = next_window_ti + self.window_sec
+            # Subset data view
+            _dst = dst.fnselect(f'{site}.{inst}?.{mod}')
+            # Copy/trim traces from view
+            traces = []
+            for _mltb in _dst.traces.values():
+                mlt = _mltb.trimmed_copy(starttime=next_window_ti,
+                                        endtime=next_window_tf,
+                                        pad=True,
+                                        fill_value=None)
+                traces.append(mlt)
+            # Compose ComponentStream copy
+            cst = ComponentStream(traces=traces,
+                                    header={'reference_starttime': next_window_ti,
+                                            'reference_sampling_rate': self.ref['sampling_rate'],
+                                            'reference_npts': self.ref['npts'],
+                                            'aliases': self.aliases},
+                                    ref_component=self.ref['component'])
+            # Append to queue
+            self.queue.append(cst)
+            # Update window with an advance for this instrument
+            self.window_tracker[site][inst][mod]['ti'] += self.advance_sec
+            # Set ready flag to False for this new window (_update_window_tracker will handle re-readying)
+            self.window_tracker[site][inst][mod].update({'ready': False})
+            # Add to nneww
+            nnew += 1
         return nnew
     
     def _reset(self, attr='window_tracker', safety_catch=True):
@@ -549,6 +623,13 @@ class MethodWyrm(Wyrm):
                 self.queue.append(_x)
         y = self.queue
         return y
+    
+    def __str__(self):
+        rstr = f'wyrm.core.process.MethodWyrm(pclass={self.pclass}, '
+        rstr += f'pmethod={self.pmethod}, pkwargs={self.pkwargs}, '
+        rstr += f'max_pulse_size={self.max_pulse_size}, '
+        rstr += f'debug={self.debug})'
+        return rstr
     
 ###################################################################################
 # PREDICTION WYRM CLASS DEFINITION - FOR BATCHED PREDICTION IN A PULSED MANNER ####
@@ -848,7 +929,8 @@ class PredictionWyrm(Wyrm):
         # Iterate across metadata dictionaries
         for _i, _meta in enumerate(batch_meta):
             # Split reference code into components
-            n,s,l,c,m,w = _meta.reference_id.split('.')
+            # breakpoint()
+            n,s,l,c,m,w = _meta.common_id.split('.')
             # Generate new MLTrace header for this set of predictions
             _header = {'starttime': _meta.reference_starttime,
                       'sampling_rate': _meta.reference_sampling_rate,

@@ -241,7 +241,7 @@ class TubeWyrm(Wyrm):
         """
         if self.debug:
             start = time.time()
-            out_lens = []
+        out_lens = []
         for _i in range(self.max_pulse_size):
             if self.debug:
                 print(f'TubeWyrm pulse {_i} - {time.time() - start:.3e}sec')
@@ -256,9 +256,8 @@ class TubeWyrm(Wyrm):
                     # if self.debug:
                         # print(f' ----- {len(x)} elements going in')
                     y = _wyrm.pulse(x)
-                    if self.debug:
                         # print(f' ----- {len(y)} elements coming out')
-                        out_lens.append(len(y))
+                    out_lens.append(len(y))
 
                 # For all subsequent pulses, update `y`
                 else:
@@ -267,8 +266,7 @@ class TubeWyrm(Wyrm):
                     y = _wyrm.pulse(y)
                     # if self.debug:
                         # print(f' ----- {len(y)} elements coming out')
-                    if self.debug:
-                        out_lens.append(len(y))
+                    out_lens.append(len(y))
                 if self.debug:
                     print(f'    Pulse Element Runtime {time.time() - tick:.3f}sec')
                     print(f'    Elapsed Pulse Time {tick - start:.3f}sec\n')
@@ -276,9 +274,9 @@ class TubeWyrm(Wyrm):
                 # if not last step, wait specified wait_sec
                 if _j + 1 < len(self.wyrm_dict):
                     time.sleep(self.wait_sec)
-            if self.debug:
-                for _k, _v in zip(self.wyrm_dict.keys(), out_lens):
-                    print(f'{_k} output length: {_v}')
+            # if self.debug:
+            for _k, _v in zip(self.wyrm_dict.keys(), out_lens):
+                print(f'{_k} output length: {_v}')
         return y
 
 

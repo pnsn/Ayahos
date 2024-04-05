@@ -1,4 +1,4 @@
-import obspy, os, sys, pandas, glob
+import obspy, os, sys, glob, time
 sys.path.append(os.path.join('..','..'))
 import seisbench.models as sbm
 import wyrm.data.dictstream as ds
@@ -32,14 +32,15 @@ RCFR= 'zeros'
 RCOMP = 'Z'
 
 # Initialize WindowWyrm elements
+# PARAM NOTE: Set these to 'network' pulses to generate all windows up front
 windwyrmEQT = proc.WindowWyrm(
     component_aliases=EQT_aliases,
     model_name='EQTransformer',
     reference_sampling_rate=RSR,
     reference_npts=6000,
     reference_overlap=1800,
-    pulse_type='site',
-    max_pulse_size=200,
+    pulse_type='network',
+    max_pulse_size=10,
     debug=False)
 
 windwyrmPN = proc.WindowWyrm(
@@ -48,8 +49,8 @@ windwyrmPN = proc.WindowWyrm(
     reference_sampling_rate=RSR,
     reference_npts=3001,
     reference_overlap=900,
-    pulse_type='site',
-    max_pulse_size=200,
+    pulse_type='network',
+    max_pulse_size=20,
     debug=False)
 
 
@@ -91,7 +92,7 @@ predwyrmEQT = proc.PredictionWyrm(
     weight_names=EQT_list,
     devicetype='mps',
     compiled=False,
-    max_pulse_size=10000,
+    max_pulse_size=1000,
     debug=False)
 
 predwyrmPN = proc.PredictionWyrm(
@@ -99,7 +100,7 @@ predwyrmPN = proc.PredictionWyrm(
     weight_names=PN_list,
     devicetype='mps',
     compiled=False,
-    max_pulse_size=10000,
+    max_pulse_size=1000,
     debug=False)
 
 # Initialize Prediction BufferWyrm elements
@@ -142,26 +143,45 @@ canwyrm = coor.CanWyrm(wyrm_dict={'EQTransformer': tubewyrmEQT,
                                   'PhaseNet': tubewyrmPN},
                        wait_sec=0,
                        max_pulse_size=30,
-                       debug=True)
+                       debug=False)
 
-
-for evid_dir in EVID_DIRS:
-    # Create copy of the processing line
+for evid_dir in EVID_DIRS[33:]:
+    print(f'=== STARTING {evid_dir} ===')
+    tick = time.time()
+    ## INIT ##
+    # Create copy of the processing line as a full reset for each dataset
     iter_canwyrm = canwyrm.copy()
+
+    ## PATH ##
     # Set event-specific paths & generate output directory
     _, dir = os.path.split(evid_dir)
     out_dir = os.path.join(OUT_ROOT, dir)
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
-    # Load waveform data
+
+    ## LOAD ##
     wffile = os.path.join(evid_dir, 'bulk.mseed')
     st = obspy.read(wffile, fmt='MSEED')
+    # Do slight sampling rate adjustments to floating point sampling rates
+    # Mainly analog stations and OBSs
+    for _tr in st:
+        if _tr.stats.sampling_rate != round(_tr.stats.sampling_rate):
+            _tr.resample(round(_tr.stats.sampling_rate))
+    # Merge data
+    st.merge()
+    # Convert to dictstream
     dst = ds.DictStream(traces=st)
-    # Run 
-    can_wyrm_out = canwyrm.pulse(dst)
-    breakpoint()
-    for _k, _v in can_wyrm_out.items():
-        _v.write(base_path=os.path.join(out_dir, _k),
+    
+    ## RUN ##
+    can_wyrm_out = iter_canwyrm.pulse(dst)
+    tock = time.time()
+    print(f'processing for {evid_dir} took {tock - tick:.2f} sec')
+
+    ## SAVE ##
+    for model, ml_dst_buffer in can_wyrm_out.items():
+        print(f'saving {model}')
+        ml_dst_buffer.write(base_path=os.path.join(out_dir, model),
                  path_structure='{weight}/{site}')
+    print(f'saving took {time.time() - tock: .3f}sec')
 
 

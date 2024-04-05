@@ -145,7 +145,7 @@ canwyrm = coor.CanWyrm(wyrm_dict={'EQTransformer': tubewyrmEQT,
                        max_pulse_size=30,
                        debug=False)
 
-for evid_dir in EVID_DIRS[33:]:
+for evid_dir in EVID_DIRS[34:]:
     print(f'=== STARTING {evid_dir} ===')
     tick = time.time()
     ## INIT ##

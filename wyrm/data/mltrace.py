@@ -395,6 +395,7 @@ class MLTrace(Trace):
                                                 'sampling_rate',
                                                 'calib']}
         mlt = MLTrace(data=data_view.copy(), fold=fold_view.copy(), header=header)
+        print(f'$$$$$$ {mlt.stats.processing}')
         # Update copied view starttime if specified starttime 
         # is after the source MLTrace starttime
         if ii > 0:

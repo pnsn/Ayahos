@@ -241,38 +241,40 @@ class WindowWyrm(Wyrm):
         niter = 0
         # Get current list of sites
         sites = list(self.window_tracker.keys())
-        while niter <= self.max_pulse_size:
-            # Iterate across site names
-            for _i, site in enumerate(sites):
-                # Handle very first site-wise looping catch on last_code
-                if self.next_code is None:
-                    self.next_code = site
-                
-                if site == self.next_code:
-                    pass
-                else:
-                    continue
+        # Iterate across site names
+        for _i, site in enumerate(sites):
+            # Handle very first site-wise looping catch on last_code
+            if self.next_code is None:
+                self.next_code = site
+            
+            if site == self.next_code:
+                pass
+            else:
+                continue
 
-                if self.debug:
-                    print(f'    processing {site}')
-                # If you're still here, iterate across instruments
-                for inst, _ssv in self.window_tracker[site].items():
-                    # Skip over 't0' reference entry in window_tracker[site]
-                    if not isinstance(_ssv, dict):
-                        continue
-                    for mod in _ssv.keys():
-                        # Attempt to sample window (if approved)
-                        nnew = self._sample_window(x, site, inst, mod)
-                        # Increase the iteration counter
-                        niter += 1
-                        # Get the site code of the next site in the list
-                        if _i + 1 < len(sites):
-                            self.next_code = sites[_i + 1]
-                        # If we hit the end of the list, loop over to the beginning
-                        else:
-                            self.next_code = sites[0]
-                        if self.debug:
-                            print(f'   next_code is {self.next_code}')
+            if self.debug:
+                print(f'    processing {site}')
+            # If you're still here, iterate across instruments
+            for inst, _ssv in self.window_tracker[site].items():
+                # Skip over 't0' reference entry in window_tracker[site]
+                if not isinstance(_ssv, dict):
+                    continue
+                for mod in _ssv.keys():
+                    # Attempt to sample window (if approved)
+                    nnew = self._sample_window(x, site, inst, mod)
+                    # Get the site code of the next site in the list
+                    if _i + 1 < len(sites):
+                        self.next_code = sites[_i + 1]
+                    # If we hit the end of the list, loop over to the beginning
+                    else:
+                        self.next_code = sites[0]
+                    if self.debug:
+                        print(f'   next_code is {self.next_code}')
+            # Increase the iteration counter
+            niter += 1
+            if niter > self.max_pulse_size:
+                return
+                        
 
     
 
@@ -392,6 +394,7 @@ class WindowWyrm(Wyrm):
                                         endtime=next_window_tf,
                                         pad=True,
                                         fill_value=None)
+                mlt.stats.model = self.model_name
                 traces.append(mlt)
             # Compose ComponentStream copy
             cst = ComponentStream(traces=traces,
@@ -654,6 +657,8 @@ class PredictionWyrm(Wyrm):
     This functionality allows tracking of information density across the prediction stage
     of a processing pipeline.
     """
+
+
     def __init__(
         self,
         model=sbm.EQTransformer(),
@@ -744,6 +749,13 @@ class PredictionWyrm(Wyrm):
             self.cmods.update({wname: cmod})
         # Initialize output deque
         self.queue = deque()
+
+    def __str__(self):
+        rstr = f'wyrm.core.process.PredictWyrm('
+        rstr += f'model=sbm.{self.model.name}, weight_names={self.weight_names}, '
+        rstr += f'devicetype={self.device.type}, compiled={self.compiled}, '
+        rstr += f'max_pulse_size={self.max_pulse_size}, debug={self.debug})'
+        return rstr
 
     def pulse(self, x):
         """

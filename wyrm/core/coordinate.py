@@ -241,9 +241,10 @@ class TubeWyrm(Wyrm):
         """
         if self.debug:
             start = time.time()
+            out_lens = []
         for _i in range(self.max_pulse_size):
             if self.debug:
-                print(f'TubeWyrm pulse {_i} - {time.time() - start:.3f}sec')
+                print(f'TubeWyrm pulse {_i} - {time.time() - start:.3e}sec')
             for _j, _wyrm in enumerate(self.wyrm_dict.values()):
                 if self.debug:
                     print('Tube∂ Pulse Element Firing')
@@ -252,11 +253,22 @@ class TubeWyrm(Wyrm):
                     
                 # For first stage of pulse, pass output to `y`
                 if _j == 0:
+                    if self.debug:
+                        print(f' ----- {len(x)} elements going in')
                     y = _wyrm.pulse(x)
+                    if self.debug:
+                        print(f' ----- {len(y)} elements coming out')
+                        out_lens.append(len(y))
+
                 # For all subsequent pulses, update `y`
                 else:
+                    if self.debug:
+                        print(f' ----- {len(y)} elements going in')
                     y = _wyrm.pulse(y)
-                
+                    if self.debug:
+                        print(f' ----- {len(y)} elements coming out')
+                    if self.debug:
+                        out_lens.append(len(y))
                 if self.debug:
                     print(f'    Pulse Element Runtime {time.time() - tick:.3f}sec')
                     print(f'    Elapsed Pulse Time {tick - start:.3f}sec\n')
@@ -264,6 +276,9 @@ class TubeWyrm(Wyrm):
                 # if not last step, wait specified wait_sec
                 if _j + 1 < len(self.wyrm_dict):
                     time.sleep(self.wait_sec)
+            if self.debug:
+                for _k, _v in zip(self.wyrm_dict.keys(), out_lens):
+                    print(f'{_k} output length: {_v}')
         return y
 
 
@@ -695,7 +710,6 @@ class BufferWyrm(Wyrm):
                 break
             # otherwise, popleft to get oldest item in queue
             else:
-                breakpoint()
                 _x = x.popleft()
             # if not an MLTrace (or child) reappend to queue (safety catch)
             if not isinstance(_x, (MLTrace, DictStream)):
@@ -705,13 +719,21 @@ class BufferWyrm(Wyrm):
                 _x = [_x]
         
             for _xtr in _x:
+                tick = time.time()
                 _id = _xtr.id
                 # If the MLTrace ID is not in the DictStream keys, create new tracebuffer
                 if _id not in self.buffer.traces.keys():
                     self.add_new_buffer(_xtr)
+                    tock = time.time()
+                    status = 'new'
                 # If the MLTrace ID is in the DictStream keys, use the append method
                 else:
                     self.buffer[_id].append(_xtr, **self.add_kwargs)
+                    tock = time.time()
+                    status = 'append'
+                # print(f'{_i:05} | {_id} | {status} took {tock - tick} sec')
+        y = self.buffer
+        return y
         
                     
     # def __repr__(self, extended=False):

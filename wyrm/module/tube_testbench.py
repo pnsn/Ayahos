@@ -23,12 +23,13 @@ pick_df = pick_df[pick_df.evid == evid][['evid','orid','arid','net','sta','arrda
 # Convert UNIX times, correcting for leap seconds
 pick_df.arrdatetime = pick_df.arrdatetime.apply(lambda x :unix_to_UTCDateTime(x))
 picked_netsta = list(pick_df[['net','sta']].value_counts().index)
+
 ist = obspy.Stream()
 for tr in st:
     if (tr.stats.network, tr.stats.station) in picked_netsta:
         ist += tr
 # Convert into dst
-dst = ds.DictStream(traces=st[:120])#[:60])
+dst = ds.DictStream(traces=st[:60])#[:60])
 # dst.traces = dict(reversed(list(dst.traces.items())))
 
 quicklog.update({'mseed load': time.time()})
@@ -73,7 +74,7 @@ windwyrmEQT = proc.WindowWyrm(
     reference_npts=6000,
     reference_overlap=1800,
     pulse_type='site',
-    max_pulse_size=120,
+    max_pulse_size=64,
     debug=False)
 
 windwyrmPN = proc.WindowWyrm(
@@ -83,7 +84,7 @@ windwyrmPN = proc.WindowWyrm(
     reference_npts=3001,
     reference_overlap=900,
     pulse_type='site',
-    max_pulse_size=120,
+    max_pulse_size=64,
     debug=False)
 
 
@@ -143,14 +144,14 @@ predwyrmPN = proc.PredictionWyrm(
 pbuffwyrmEQT = coor.BufferWyrm(max_length=200,
                               restrict_past_append=True,
                               blinding=(500,500),
-                              method=2,
+                              method=3,
                               max_pulse_size=10000,
                               debug=False)
 
 pbuffwyrmPN = coor.BufferWyrm(max_length=200,
                              restrict_past_append=True,
                              blinding=(250,250),
-                             method=2,
+                             method=3,
                              max_pulse_size=10000,
                              debug=False)
 
@@ -159,7 +160,7 @@ pbuffwyrmPN = coor.BufferWyrm(max_length=200,
 # Compose EQT processing TubeWyrm
 tubewyrmEQT = coor.TubeWyrm(
     max_pulse_size=1,
-    debug=False,
+    debug=True,
     wyrm_dict= {'window': windwyrmEQT,
                 'gaps': mwyrm_gaps.copy(),
                 'sync': mwyrm_sync.copy(),

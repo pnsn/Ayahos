@@ -1007,28 +1007,42 @@ class MLTrace(Trace):
                         [dict] - keyword arguments to pass to (ML)Trace.trim()
                                 that differ from default argument(s)
         """
-        st = self.split()
-        for _i, tr in enumerate(st):
+        # See if splitting is needed
+        if isinstance(self.data, np.ma.MaskedArray):
+            st = self.split()
+        else:
+            st = obspy.Stream([self])
+        # Apply trace(segment) processing
+        for tr in st:
             if filterkw:
-                tr.filter(**filterkw)
+                tr = tr.filter(**filterkw)
             if detrendkw:
-                tr.detrend(**detrendkw)
+                tr = tr.detrend(**detrendkw)
             if resample_method:
                 if resample_method in [func for func in dir(tr) if callable(getattr(tr, func))]:
                     if self.stats.sampling_rate != resamplekw['sampling_rate']:
-                        getattr(tr,resample_method)(**resamplekw)
+                        tr = getattr(tr,resample_method)(**resamplekw)
                 else:
                     raise TypeError(f'resample_method "{resample_method}" is not supported by {self.__class__}')
             if taperkw:
-                tr.taper(**taperkw)
-            if _i == 0:
-                self.data = tr.data
-                self.fold = tr.fold
-                self.stats = tr.stats
-            else:
-                self.__add__(trace=tr, **mergekw)
+                tr = tr.taper(**taperkw)
+            # print(st)
+        if len(st) > 1:
+            for _i, tr in enumerate(st):
+                if _i == 0:
+                    first_tr = tr
+                else:
+                    first_tr.__add__(tr, **mergekw)
+        elif len(st) == 1:
+            first_tr = st[0]
+        else:
+            breakpoint()
+
         if trimkw:
-            self.trim(**trimkw)
+            first_tr.trim(**trimkw)
+        self.stats = first_tr.stats
+        self.data = first_tr.data
+        self.fold = first_tr.fold
         return self
     
 

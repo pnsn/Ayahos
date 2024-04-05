@@ -394,8 +394,8 @@ class MLTrace(Trace):
                                                 'weight',
                                                 'sampling_rate',
                                                 'calib']}
-        mlt = MLTrace(data=data_view.copy(), fold=fold_view.copy(), header=header)
-        print(f'$$$$$$ {mlt.stats.processing}')
+        mlt = MLTrace(data=data_view.copy(), fold=fold_view.copy(), header=copy.deepcopy(header))
+        # print(f'$$$$$$ {mlt.stats.processing}')
         # Update copied view starttime if specified starttime 
         # is after the source MLTrace starttime
         if ii > 0:
@@ -404,7 +404,10 @@ class MLTrace(Trace):
             mlt.stats.starttime = self.stats.starttime
 
         if pad:
+            # breakpoint()
             mlt = mlt.trim(starttime=new_starttime, endtime=endtime, pad=pad, fill_value=fill_value)
+            # QnD treatment for run-away duplication of trim info...
+            mlt.stats.processing.pop()
         return mlt
 
     
@@ -600,7 +603,7 @@ class MLTrace(Trace):
         return True
     
     # @_add_processing_info
-    def __add__(self, trace, method='avg', fill_value=None, sanity_checks=True, dtype=np.float32):
+    def __add__(self, trace, method=1, fill_value=None, sanity_checks=True, dtype=np.float32):
         """
         Join a (compatable) Trace-type object to this MLTrace-type object using a specified method
 
@@ -1279,11 +1282,20 @@ class MLTrace(Trace):
         return mltr
 
 
+    def _prep_fold_for_mseed(self):
+        fold_trace = self.copy()
+        fold_trace.data = self.fold
+        # Shoehorn Model and Weight info into NSLC strings
+        fold_trace.stats.update({'network': 'FO',
+                                 'location': 'LD',
+                                 'station': self.stats.model[:5],
+                                 'channel': self.stats.weight[:3]})
+        return fold_trace
     
-    def write(self, file_name, **options):
+    def write(self, file_name, pad=False, fill_value=None, **options):
         """
         Write the contents of this MLTrace object to a miniSEED file comprising two
-        traces:
+        trace types:
         DATA:
             Net.Sta.Loc.Chan trace - with self.data as the data
         AUX:
@@ -1291,18 +1303,28 @@ class MLTrace(Trace):
         Where the Net 'FO' and location 'LD' are fixed strings used as a flag that
         this is an auxillary trace providing
         """
-        # Convert data vector from MLTrace into 
-        data_trace = self.to_trace(attach_mod_to_chan=False)
-        st = Stream([data_trace])
-        # Create fold trace 
-        fold_trace = data_trace.copy()
-        fold_trace.data = self.fold
-        # Shoehorn Model and Weight info into NSLC strings
-        fold_trace.stats.update({'network': 'FO',
-                                 'location': 'LD',
-                                 'station': self.stats.model[:5],
-                                 'channel': self.stats.weight[:3]})
-        st += fold_trace
+        st = Stream()
+        # Convert data vector from MLTrace into
+        if isinstance(self.data, np.ma.MaskedArray):
+            if np.ma.is_masked(self.data):
+                # Padding approach to handling gappy/padded data
+                if pad:
+                    padded_copy = self.copy()
+                    if fill_value is not None:
+                        padded_copy.data = padded_copy.data.filled(fill_value=fill_value)
+                    else:
+                        raise NotImplementedError
+                    data_trace = padded_copy.to_trace(attach_mod_to_chan=False)
+                    fold_trace = padded_copy._prep_fold_for_mseed()
+                    st += data_trace
+                    st += fold_trace
+                # Splitting approach to handling gappy/padded data
+                else:
+                    split_copy = self.copy().split()
+                    for mlt in split_copy:
+                        st += mlt.to_trace(attach_mod_to_chan=False)
+                        st += mlt._prep_fold_for_mseed()
+                    
         st.write(file_name, fmt='MSEED', **options)
         return st
 

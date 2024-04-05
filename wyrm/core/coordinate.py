@@ -253,20 +253,20 @@ class TubeWyrm(Wyrm):
                     
                 # For first stage of pulse, pass output to `y`
                 if _j == 0:
-                    if self.debug:
-                        print(f' ----- {len(x)} elements going in')
+                    # if self.debug:
+                        # print(f' ----- {len(x)} elements going in')
                     y = _wyrm.pulse(x)
                     if self.debug:
-                        print(f' ----- {len(y)} elements coming out')
+                        # print(f' ----- {len(y)} elements coming out')
                         out_lens.append(len(y))
 
                 # For all subsequent pulses, update `y`
                 else:
-                    if self.debug:
-                        print(f' ----- {len(y)} elements going in')
+                    # if self.debug:
+                        # print(f' ----- {len(y)} elements going in')
                     y = _wyrm.pulse(y)
-                    if self.debug:
-                        print(f' ----- {len(y)} elements coming out')
+                    # if self.debug:
+                        # print(f' ----- {len(y)} elements coming out')
                     if self.debug:
                         out_lens.append(len(y))
                 if self.debug:

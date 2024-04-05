@@ -222,8 +222,8 @@ class WindowWyrm(Wyrm):
         for _ in range(self.max_pulse_size):
             # Iterate across sites
             for site, _sv in self.window_tracker.items():
-                if self.debug:
-                    print(f'   {site}')
+                # if self.debug:
+                #     print(f'   {site}')
                 # Iterate across instruments
                 for inst, _ssv in _sv.items():
                     # Skip t0 reference
@@ -231,6 +231,7 @@ class WindowWyrm(Wyrm):
                         # Iterate across model-weights
                         for mod in _ssv.keys():
                             nnew += self._sample_window(x, site, inst, mod)
+            self._update_window_tracker(x)
             # If network sweep does not produce new windows, execute early stopping
             if nnew == 0:
                 break
@@ -615,14 +616,14 @@ class MethodWyrm(Wyrm):
             else:
                 getattr(_x, self.pmethod)(**self.pkwargs);
                 # For objects with a stats.processing attribute, append processing info
-                if 'stats' in dir(_x):
-                    if 'processing' in dir(_x.stats):
-                        _x.stats.processing.append(
-                            [time.time(),
-                             'Wyrm 0.0.0',
-                             'MethodWyrm',
-                             self.pmethod,
-                             f'({self.pkwargs})'])
+                # if 'stats' in dir(_x):
+                #     if 'processing' in dir(_x.stats):
+                #         _x.stats.processing.append(
+                #             [time.time(),
+                #              'Wyrm 0.0.0',
+                #              'MethodWyrm',
+                #              self.pmethod,
+                #              f'({self.pkwargs})'])
                 self.queue.append(_x)
         y = self.queue
         return y

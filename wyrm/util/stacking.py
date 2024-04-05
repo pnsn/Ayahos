@@ -118,7 +118,7 @@ def sum2(arr):
     """"""
     return sum(arr)
 
-def semblance(pstack, order=2, semb_npts=101, method='np', eta=1e-9, weighted=True):
+def semblance(pstack, fstack=None, order=2, semb_npts=101, method='np', eta=1e-9, weighted=True):
     """
     Calculate coherence via semblance analysis
 
@@ -225,8 +225,58 @@ def semblance(pstack, order=2, semb_npts=101, method='np', eta=1e-9, weighted=Tr
 
     return semb_array
 
+def fold_weighted_semblance(
+        pstack,
+        fstack=None,
+        semb_order=2,
+        max_scaled=True,
+        semb_npts=101,
+        method='np',
+        eta=1e-9):
+    """
+    Use a matching dimensionality fold array for predictions to calculate a 
 
-def generate_example_semblance_data(nlabels=2,mmodels=30):
+
+             sum(t=ti - dt to ti + dt){ sum(m=0 to M-1) {P_m(t)*f_m(t)}**2}
+    Sw(ti) = --------------------------------------------------------------
+             sum(t=ti - dt to ti + dt){(sum(m=0 to M-1){P_m(t)**2} sum(m=0 to M-1){f_m(t)**2}}
+
+    https://reproducibility.org/RSF/book/tccs/vscan/paper_html/node4.html
+    """
+    # Parse fold weighting array
+    if fstack is None:
+        fstack = np.ones(pstack.shape, dtype=pstack.dtype)
+        ftype = 'ones'
+    else:
+        ftype = 'data'
+    if pstack.shape != fstack.shape:
+        raise ValueError(f'pstack and fstack shape do not match')
+    # Get maximum scalar vector
+    if max_scaled:
+        max_scalar = np.max(pstack, axis=0)
+    else:
+        max_scalar = np.ones(pstack.shape[1])
+
+    if method in ['numpy', 'np']:
+        semb_array = np.full(shape=pstack.shape[1:],
+                             fill_value=np.nan,
+                             dtype=pstack.dtype)
+        first_t = semb_npts//2
+        # Generate sliding window views of data and fold
+        pviews = np.lib.stride_tricks.sliding_window_view(pstack, semb_npts, axis=-1)
+        fviews = np.lib.stride_tricks.sliding_window_view(fstack, semb_npts, axis=-1)
+
+M = pstack.shape[0]
+num = np.sum(np.sum(pviews*fviews, axis=0)**2, axis=-1)
+den = np.sum(np.sum(pviews, axis=0)**2 * np.sum(fviews, axis=0)**2, axis=-1)
+semb_array[..., first_t: first_t + pviews.shape[-2]] = num / (den + eta)
+        
+c2 = np.where(semb_array > 0, semb_array**2, 0)
+c2 *=max_scalar
+
+
+
+def generate_example_semblance_data(nlabels=1,mmodels=30):
     # Create holder
     pstack = np.zeros(shape=(mmodels, nlabels, 3000))
     # Create example vector

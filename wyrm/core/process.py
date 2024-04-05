@@ -205,12 +205,12 @@ class WindowWyrm(Wyrm):
         self._update_window_tracker(x)
         # Run pulse based on pulse_type
         if self.pulse_type == 'network':
-            if self.debug:
-                print(f'∂∂∂ Window∂ - qlen {len(x)} - network pulse ∂∂∂')
+            # if self.debug:
+            #     print(f'∂∂∂ Window∂ - qlen {len(x)} - network pulse ∂∂∂')
             self._network_pulse(x)
         elif self.pulse_type == 'site':
-            if self.debug:
-                print(f'∂∂∂ Window∂ - qlen {len(x)} - site pulse ∂∂∂')
+            # if self.debug:
+            #     print(f'∂∂∂ Window∂ - qlen {len(x)} - site pulse ∂∂∂')
             self._sitewise_pulse(x)
 
         y = self.queue
@@ -973,3 +973,24 @@ class PredictionWyrm(Wyrm):
                 # Add mltrace to dsbuffer (subsequent buffering to happen in the next step)
                 
 
+# class SemblanceWyrm(Wyrm):
+
+#     def __init__(self,
+#             labels=['P','S','Detection'],
+#             stacking_attributes=['weight'],
+#             trim_mode='min',
+#             fill_value=0
+#             semb_fn='max_weighted_semblance'):
+        
+#         if not all(isinstance(label, str) for label in labels):
+#             raise TypeError
+#         else:
+#             self.labels = labels
+        
+#         self._stacking_keys = ['weight',
+#                                'instrument',
+#                                'model']
+#         if any(sa not in self._stacking_keys for sa in stacking_attributes):
+#             raise ValueError
+        
+        

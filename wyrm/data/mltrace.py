@@ -870,9 +870,12 @@ class MLTrace(Trace):
         old_fold = self.fold
         old_npts = self.stats.npts
         super()._ltrim(starttime, pad=pad, nearest_sample=nearest_sample, fill_value=fill_value)
-        if old_npts < self.stats.npts:
+        if old_npts == 0:
+            self.fold = np.zeros(shape=self.data.shape, dtype=self.data.dtype)
+        elif old_npts < self.stats.npts:
             self.fold = np.full(shape=self.data.shape, fill_value=0, dtype=self.data.dtype)
             self.fold[-old_npts:] = old_fold
+            
         elif old_npts > self.stats.npts:
             self.fold = old_fold[:self.stats.npts]
         else:
@@ -889,7 +892,9 @@ class MLTrace(Trace):
         old_fold = self.fold
         old_npts = self.stats.npts
         super()._rtrim(endtime, pad=pad, nearest_sample=nearest_sample, fill_value=fill_value)
-        if old_npts < self.stats.npts:
+        if old_npts == 0:
+            self.fold = np.zeros(shape=self.data.shape, dtype=self.data.dtype)
+        elif old_npts < self.stats.npts:
             self.fold = np.full(shape=self.data.shape, fill_value=0, dtype=self.data.dtype)
             self.fold[:old_npts] = old_fold
         elif old_npts > self.stats.npts:
@@ -1035,14 +1040,20 @@ class MLTrace(Trace):
                     first_tr.__add__(tr, **mergekw)
         elif len(st) == 1:
             first_tr = st[0]
+        # If input is a fully masked MLTrace, resample
         else:
-            breakpoint()
+            getattr(self, resample_method)(**resamplekw)
+            self.to_zero(method='both')
+            
+        if len(st) > 0:
+            self.stats = first_tr.stats
+            self.data = first_tr.data
+            self.fold = first_tr.fold
+
 
         if trimkw:
-            first_tr.trim(**trimkw)
-        self.stats = first_tr.stats
-        self.data = first_tr.data
-        self.fold = first_tr.fold
+            self.trim(**trimkw)
+
         return self
     
 

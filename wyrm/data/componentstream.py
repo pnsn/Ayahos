@@ -554,23 +554,25 @@ class ComponentStream(DictStream):
                    resamplekw={},
                    taperkw={},
                    mergekw={},
-                   trimkw={}):
+                   trimkw={'pad': True, 'fill_value':0}):
         # Get reference values from header
         ref = {}
         for _k in ['reference_starttime','reference_npts','reference_sampling_rate']:
             ref.update({'_'.join(_k.split("_")[1:]): self.stats[_k]})
         resamplekw.update({'sampling_rate':ref['sampling_rate']})
         trimkw.update({'starttime': ref['starttime'],
-                        'endtime': ref['starttime'] + (ref['npts'] - 1)/ref['sampling_rate'],
-                        'fill_value': 0})
-        for tr in self.traces.values():
-            tr.treat_gaps(filterkw = filterkw,
-                          detrendkw = detrendkw,
-                          resample_method=resample_method,
-                          resamplekw=resamplekw,
-                          taperkw=taperkw,
-                          mergekw=mergekw,
-                          trimkw=trimkw)
+                        'endtime': ref['starttime'] + (ref['npts'] - 1)/ref['sampling_rate']})
+        for tr in self:
+            tr.treat_gaps(
+                filterkw = filterkw,
+                detrendkw = detrendkw,
+                resample_method=resample_method,
+                resamplekw=resamplekw,
+                taperkw=taperkw,
+                mergekw=mergekw,
+                trimkw=trimkw)
+            if tr.stats.sampling_rate != ref['sampling_rate']:
+                breakpoint()
         return self
     
     def sync_to_reference(self, fill_value=0., **kwargs):
@@ -588,6 +590,8 @@ class ComponentStream(DictStream):
 
         # If any checks against windowing references fail, proceed with interpolation/padding
         if not self.check_windowing_status(mode='summary'):
+            # df_full = self.check_windowing_status(mode='full')
+            # breakpoint()
             for _tr in self:
                 _tr.sync_to_window(starttime=starttime, endtime=endtime, fill_value=fill_value, **kwargs)
 

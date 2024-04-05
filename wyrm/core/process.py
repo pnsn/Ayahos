@@ -252,8 +252,8 @@ class WindowWyrm(Wyrm):
             else:
                 continue
 
-            if self.debug:
-                print(f'    processing {site}')
+            # if self.debug:
+            #     print(f'    processing {site}')
             # If you're still here, iterate across instruments
             for inst, _ssv in self.window_tracker[site].items():
                 # Skip over 't0' reference entry in window_tracker[site]
@@ -268,8 +268,8 @@ class WindowWyrm(Wyrm):
                     # If we hit the end of the list, loop over to the beginning
                     else:
                         self.next_code = sites[0]
-                    if self.debug:
-                        print(f'   next_code is {self.next_code}')
+                    # if self.debug:
+                    #     print(f'   next_code is {self.next_code}')
             # Increase the iteration counter
             niter += 1
             if niter > self.max_pulse_size:

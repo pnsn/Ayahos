@@ -1,5 +1,5 @@
 """
-:module: ml_prediction.core.feature_extraction
+:module: wyrm.util.feature_extraction
 :auth: Nathan T Stevens
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network
@@ -13,44 +13,53 @@
 import numpy as np
 from obspy import UTCDateTime
 from obspy.signal.trigger import trigger_onset
-from pandas import Timestamp, DataFrame
-from pyrocko.gui.marker import Marker
+from pandas import DataFrame
 from scipy.optimize import leastsq
 # from scipy.special import erf, erfc
 
 
-def format_timestamp(pick_object):
-    """
-    Extract an epoch timestamp from a variety of pick object formats
-    :: INPUT ::
-    :param pick_object: Currently handles:
-                        obspy.core.utcdatetime.UTCDateTime
-                        pandas._libs.tslibs.timestamps.Timestamp
-                        pyrocko.gui.markers.Marker (and child-classes)
-                        timestamp.timestamp
-    :: OUTPUT ::
-    :return time: [float] epoch time
-    """
-    if isinstance(pick_object, UTCDateTime):
-        time = pick_object.timestamp
-    elif isinstance(pick_object, Timestamp):
-        time = pick_object.timestamp()
-    elif isinstance(pick_object, Marker):
-        time1 = pick_object.get_tmin()
-        time2 = pick_object.get_tmax()
-        if time1 == time2:
-            time = time1
-        else:
-            time = (time1 + time2) / 2
-    elif isinstance(pick_object, datetime):
-        time = datetime
-    else:
-        print(
-            "Input object of type %s not handled by this method"
-            % (str(type(pick_object)))
-        )
-        time = False
-    return time
+def expandable_trigger(pred_trace, pthr=0.2, ethr=0.01, ndata_bounds=[15, 9e99], oob_delete=True):
+    charfct = pred_trace.data
+    # Based on obspy.signal.trigger.trigger_onset
+    t_main = trigger_onset(
+        charfct,
+        pthr,
+        pthr,
+        max_length=max(ndata_bounds),
+        max_len_delete=oob_delete)
+    t_exp = trigger_onset(
+        charfct,
+        ethr,
+        ethr,
+        max_length=max(ndata_bounds),
+        max_len_delete=oob_delete)
+    
+    passing_triggers = []
+    # Iterate across triggers
+    for mtrig in t_main:
+        mi0 = mtrig[0]
+        mi1 = mtrig[1]
+        for etrig in t_exp:
+            ei0 = etrig[0]
+            ei1 = etrig[1]
+            # If expanded trigger is, or contains main trigger
+            if ei0 <= mi0 < mi1 <= ei1:
+                # If delete bool is True and expanded trigger is too small, pass
+                if oob_delete and ei1 - ei0 < min(ndata_bounds):
+                    pass
+                # in all other cases, append
+                else:
+                    passing_triggers.append(etrig)
+    passing_triggers = np.array(passing_triggers, dtype=np.int64)
+    return passing_triggers
+    
+def triggers_to_time(triggers, t0, dt):
+    times = np.full(shape=triggers.shape, fill_value=t0)
+    times += triggers*dt
+    return times
+
+        
+
 
 
 ##########################################
@@ -124,9 +133,20 @@ def est_curve_normal_stats(x, y, fisher=False, dtype=np.float32):
     :return est_kurt: [dtype] y-weighted kurtosis estimate
     """
     if ~isinstance(x, np.ndarray):
-        x = np.array(x)
+        try:
+            x = np.array(x)
+        except:
+            raise TypeError
+    elif x.dtype != dtype:
+        x = x.astype(dtype)
     if ~isinstance(y, np.ndarray):
-        y = np.array(y)
+        try:
+            y = np.array(y)
+        except:
+            raise TypeError
+    elif y.dtype != dtype:
+        y = y.astype(dtype)
+
     # Remove the unweighted mean (perhaps redundant)
     dx = x - np.nanmean(x)
     # Calculate y-weigted mean of delta-X values
@@ -164,7 +184,7 @@ def est_curve_normal_stats(x, y, fisher=False, dtype=np.float32):
 def process_est_prediction_stats(
     prediction_trace,
     thr=0.1,
-    extra_quantiles=[0.16, 0.84],
+    extra_quantiles=[0.05, 0.2, 0.3, 0.7, 0.8, 0.95],
     pad_sec=0.05,
     ndata_bounds=[15, 9e99],
 ):
@@ -210,6 +230,9 @@ def process_est_prediction_stats(
                         Delta time(s) for extra_quantiles
                             relative to et_med: et_q{} - et_med
     """
+    # create dictionary holder for triggers
+
+
     # Define default statistics for each trigger
     cols = [
         "et_on",
@@ -228,7 +251,7 @@ def process_est_prediction_stats(
         "dt_q3",
     ]
     # Define default quantiles
-    quants = [0.5, 0.25, 0.75]
+    quants = [0.025, 0.159, 0.5, 0.84, 0.975]
     # Get epoch time vector from trace
     times = prediction_trace.times(type="timestamp")
     preds = prediction_trace.data

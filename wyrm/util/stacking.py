@@ -19,6 +19,31 @@ Yuan, C, Ni, Y, Lin, Y, Denolle, M, 2023, Better Together: Ensemble Learning for
 
 import numpy as np
 import scipy.ndimage as nd
+from itertools import chain, combinations
+
+def powerset(iterable, with_null=False):
+    """
+    Create a powerset from an iterable object comprising set elements
+    
+    {1, 2, 3} -> [(1,2,3), 
+                  (1,2), (1,3), (2,3),
+                  (1), (2), (3),
+                  ()] <-- NOTE: excluded if with_null=False
+
+
+    :: INPUTS ::
+    :param iterable: [list-like] iterable set of elements from which
+                    to create a power set
+    
+    Source Attribution: User Mark Rushakoff and edits by User Ran Feldesh
+    https://stackoverflow.com/questions/1482308/how-to-get-all-subsets-of-a-set-powerset
+    """
+    s = list(iterable)
+    if with_null:
+        out = chain.from_iterable(combinations(s, r) for r in range(len(s)+1))
+    else:
+        out = chain.from_iterable(combinations(s, r) for r in range(1, len(s)+1))
+    return out
 
 def shift_trim(array, npts_right, axis=None, fill_value=np.nan, dtype=None, **kwargs):
     """
@@ -225,54 +250,54 @@ def semblance(pstack, fstack=None, order=2, semb_npts=101, method='np', eta=1e-9
 
     return semb_array
 
-def fold_weighted_semblance(
-        pstack,
-        fstack=None,
-        semb_order=2,
-        max_scaled=True,
-        semb_npts=101,
-        method='np',
-        eta=1e-9):
-    """
-    Use a matching dimensionality fold array for predictions to calculate a 
+# def fold_weighted_semblance(
+#         pstack,
+#         fstack=None,
+#         semb_order=2,
+#         max_scaled=True,
+#         semb_npts=101,
+#         method='np',
+#         eta=1e-9):
+#     """
+#     Use a matching dimensionality fold array for predictions to calculate a 
 
 
-             sum(t=ti - dt to ti + dt){ sum(m=0 to M-1) {P_m(t)*f_m(t)}**2}
-    Sw(ti) = --------------------------------------------------------------
-             sum(t=ti - dt to ti + dt){(sum(m=0 to M-1){P_m(t)**2} sum(m=0 to M-1){f_m(t)**2}}
+#              sum(t=ti - dt to ti + dt){ sum(m=0 to M-1) {P_m(t)*f_m(t)}**2}
+#     Sw(ti) = --------------------------------------------------------------
+#              sum(t=ti - dt to ti + dt){(sum(m=0 to M-1){P_m(t)**2} sum(m=0 to M-1){f_m(t)**2}}
 
-    https://reproducibility.org/RSF/book/tccs/vscan/paper_html/node4.html
-    """
-    # Parse fold weighting array
-    if fstack is None:
-        fstack = np.ones(pstack.shape, dtype=pstack.dtype)
-        ftype = 'ones'
-    else:
-        ftype = 'data'
-    if pstack.shape != fstack.shape:
-        raise ValueError(f'pstack and fstack shape do not match')
-    # Get maximum scalar vector
-    if max_scaled:
-        max_scalar = np.max(pstack, axis=0)
-    else:
-        max_scalar = np.ones(pstack.shape[1])
+#     https://reproducibility.org/RSF/book/tccs/vscan/paper_html/node4.html
+#     """
+#     # Parse fold weighting array
+#     if fstack is None:
+#         fstack = np.ones(pstack.shape, dtype=pstack.dtype)
+#         ftype = 'ones'
+#     else:
+#         ftype = 'data'
+#     if pstack.shape != fstack.shape:
+#         raise ValueError(f'pstack and fstack shape do not match')
+#     # Get maximum scalar vector
+#     if max_scaled:
+#         max_scalar = np.max(pstack, axis=0)
+#     else:
+#         max_scalar = np.ones(pstack.shape[1])
 
-    if method in ['numpy', 'np']:
-        semb_array = np.full(shape=pstack.shape[1:],
-                             fill_value=np.nan,
-                             dtype=pstack.dtype)
-        first_t = semb_npts//2
-        # Generate sliding window views of data and fold
-        pviews = np.lib.stride_tricks.sliding_window_view(pstack, semb_npts, axis=-1)
-        fviews = np.lib.stride_tricks.sliding_window_view(fstack, semb_npts, axis=-1)
+#     if method in ['numpy', 'np']:
+#         semb_array = np.full(shape=pstack.shape[1:],
+#                              fill_value=np.nan,
+#                              dtype=pstack.dtype)
+#         first_t = semb_npts//2
+#         # Generate sliding window views of data and fold
+#         pviews = np.lib.stride_tricks.sliding_window_view(pstack, semb_npts, axis=-1)
+#         fviews = np.lib.stride_tricks.sliding_window_view(fstack, semb_npts, axis=-1)
 
-M = pstack.shape[0]
-num = np.sum(np.sum(pviews*fviews, axis=0)**2, axis=-1)
-den = np.sum(np.sum(pviews, axis=0)**2 * np.sum(fviews, axis=0)**2, axis=-1)
-semb_array[..., first_t: first_t + pviews.shape[-2]] = num / (den + eta)
-        
-c2 = np.where(semb_array > 0, semb_array**2, 0)
-c2 *=max_scalar
+#         M = pstack.shape[0]
+#         num = np.sum(np.sum(pviews*fviews, axis=0)**2, axis=-1)
+#         den = np.sum(np.sum(pviews, axis=0)**2 * np.sum(fviews, axis=0)**2, axis=-1)
+#         semb_array[..., first_t: first_t + pviews.shape[-2]] = num / (den + eta)
+                
+#         c2 = np.where(semb_array > 0, semb_array**2, 0)
+#         c2 *=max_scalar
 
 
 

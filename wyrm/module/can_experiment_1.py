@@ -1,4 +1,5 @@
 import obspy, os, sys, glob, time
+import numpy as np
 sys.path.append(os.path.join('..','..'))
 import seisbench.models as sbm
 import wyrm.data.dictstream as ds
@@ -145,7 +146,7 @@ canwyrm = coor.CanWyrm(wyrm_dict={'EQTransformer': tubewyrmEQT,
                        max_pulse_size=30,
                        debug=False)
 
-for evid_dir in EVID_DIRS[34:]:
+for evid_dir in [EVID_DIRS[50]]:
     print(f'=== STARTING {evid_dir} ===')
     tick = time.time()
     ## INIT ##
@@ -162,12 +163,17 @@ for evid_dir in EVID_DIRS[34:]:
     ## LOAD ##
     wffile = os.path.join(evid_dir, 'bulk.mseed')
     st = obspy.read(wffile, fmt='MSEED')
+    for tr in st:
+        tr.data = tr.data.astype(np.float32)
+        if tr.stats.sampling_rate != round(tr.stats.sampling_rate):
+            tr.resample(round(tr.stats.sampling_rate))
     # Do slight sampling rate adjustments to floating point sampling rates
     # Mainly analog stations and OBSs
-    for _tr in st:
-        if _tr.stats.sampling_rate != round(_tr.stats.sampling_rate):
-            _tr.resample(round(_tr.stats.sampling_rate))
+    # for _tr in st:
+    #     if _tr.stats.sampling_rate != round(_tr.stats.sampling_rate):
+    #         _tr.resample(round(_tr.stats.sampling_rate))
     # Merge data
+    # breakpoint()
     st.merge()
     # Convert to dictstream
     dst = ds.DictStream(traces=st)
@@ -178,10 +184,10 @@ for evid_dir in EVID_DIRS[34:]:
     print(f'processing for {evid_dir} took {tock - tick:.2f} sec')
 
     ## SAVE ##
-    for model, ml_dst_buffer in can_wyrm_out.items():
-        print(f'saving {model}')
-        ml_dst_buffer.write(base_path=os.path.join(out_dir, model),
-                 path_structure='{weight}/{site}')
+for model, ml_dst_buffer in can_wyrm_out.items():
+    print(f'saving {model}')
+    ml_dst_buffer.write(base_path=os.path.join(out_dir, model),
+                path_structure='{weight}/{site}')
     print(f'saving took {time.time() - tock: .3f}sec')
 
 

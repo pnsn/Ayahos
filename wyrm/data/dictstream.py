@@ -647,12 +647,25 @@ class DictStream(Stream):
                 os.makedirs(save_path)
             tr.write(file_name=file_name, **options)
 
+    def read(mltrace_mseed_files):
+        if isinstance(mltrace_mseed_files, str):
+            mltrace_mseed_files = [mltrace_mseed_files]
+        dst = DictStream()
+        for file in mltrace_mseed_files:
+            if not os.path.isfile(file):
+                raise FileExistsError(f'file {file} does not exist')
+            else:
+                mltr = MLTrace.read(file)
+            dst.extend(mltr)
+        return dst
+
+
     
     #####################################################################
     # SEARCH METHODS ####################################################
     #####################################################################
     
-    def fnselect(self, fnstr, ascopy=False):
+    def fnselect(self, fnstr, key_attr=None, ascopy=False):
         """
         Find DictStream.traces.keys() strings that match the
         input `fnstr` string using the fnmatch.filter() method
@@ -661,6 +674,10 @@ class DictStream(Stream):
         :: INPUTS ::
         :param fnstr: [str] Unix wildcard compliant string to 
                         use for searching for matching keys
+        :param key_attr: [str] - key attribute for indexing this view/copy
+                        of the source DictStream (see DictStream.__init__)
+                         [None] - defaults to the .default_key_attr attribute
+                         value of the source DictStream object
         :param ascopy: [bool] should the returned DictStream
                         be a view (i.e., accessing the same memory blocks)
                         or a copy of the traces contained within?
@@ -670,15 +687,55 @@ class DictStream(Stream):
                         subset traces that match the specified `fnstr`
         """
         matches = fnmatch.filter(self.traces.keys(), fnstr)
-        out = self.__class__(header=self.stats.copy())
+        out = self.__class__(header=self.stats.copy(), key_attr = self.default_key_attr)
         for _m in matches:
             if ascopy:
                 _tr = self.traces[_m].copy()
             else:
                 _tr = self.traces[_m]
-            out.traces.update({_m: _tr})
+            out.extend(_tr, key_attr=key_attr)
         out.stats.common_id = out.get_common_id()
         return out
+    
+    def isin(self, iterable, key_attr=None, ascopy=False):
+        """
+        Return a subset view (or copy) of the contents of this
+        dictstream with keys that conform to an iterable set
+        of strings.
+
+        Generally based on the behavior of the pandas.series.Series.isin() method
+
+        TODO: make sure the dictstream.extend() method is not
+              creating
+
+        :: INPUTS ::
+        :param iterable: [list-like] of [str] - strings to match
+                            NOTE: can accept wild-card strings 
+                                (also see DictStream.fnselect)
+        :param key_attr: [str] - key attribute for indexing this view/copy
+                        of the source DictStream (see DictStream.__init__)
+                         [None] - defaults to the .default_key_attr attribute
+                         value of the source DictStream object
+        :param ascopy: [bool] return as an independent copy of the subset?
+                        default - False
+                            NOTE: this creates a view that can
+                            alter the source dictstream's contents
+        :: OUTPUT ::
+        :return out: [wyrm.data.dictstream.DictStream] subset view/copy
+        """
+        out = self.__class__(header=self.stats.copy(), key_attr = self.default_key_attr)
+        matches = []
+        for _e in iterable:
+            matches += fnmatch.filter(self.traces.keys(), _e)
+        for _m in matches:
+            if ascopy:
+                _tr = self.traces[_m].copy()
+            else:
+                _tr = self.traces[_m]
+            out.extend(_tr, key_attr=key_attr)
+        out.stats.common_id = out.get_common_id()
+        return out
+
 
     def get_unique_id_elements(self):
         """
@@ -898,8 +955,37 @@ class DictStream(Stream):
         for tr in self:
             tr.normalize(norm_type=norm_type)
     
-        
 
+    #######################
+    # VISUALIZATION TOOLS #  
+    #######################
+    def _to_vis_stream(self, fold_threshold=0, normalize_src_traces=True, attach_mod_to_loc=True):
+        st = obspy.Stream()
+        for mltr in self:
+            tr = mltr.copy()
+            if normalize_src_traces:
+                if mltr.stats.weight == mltr.stats.defaults['weight']:
+                    tr = tr.normalize(norm_type='max')
+            st += tr.to_trace(fold_threshold=fold_threshold,
+                              attach_mod_to_loc=attach_mod_to_loc)
+        return st
+
+    def plot(self, fold_threshold=0, attach_mod_to_loc=True, normalize_src_traces=False, **kwargs):
+        st = self._to_vis_stream(fold_threshold=fold_threshold,
+                                 normalize_src_traces=normalize_src_traces,
+                                 attach_mod_to_loc=attach_mod_to_loc)
+        outs = st.plot(**kwargs)
+        return outs
+    
+    def snuffle(self, fold_threshold=0, attach_mod_to_loc=True, normalize_src_traces=True,**kwargs):
+        if 'obspy_compat' not in dir():
+            from pyrocko import obspy_compat
+            obspy_compat.plant()
+        st = self._to_vis_stream(fold_threshold=fold_threshold,
+                                 normalize_src_traces=normalize_src_traces,
+                                 attach_mod_to_loc=attach_mod_to_loc)
+        outs = st.snuffle(**kwargs)
+        return outs
                     
     
     ###############

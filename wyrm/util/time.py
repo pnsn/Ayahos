@@ -14,6 +14,9 @@
 """
 from obspy import UTCDateTime
 from pandas import Timestamp
+from pyrocko.gui.marker import Marker
+from datetime import datetime
+
 
 def unix_to_epoch(unixtime, output_format=float):
     """
@@ -90,3 +93,36 @@ def Timestamp_to_UTCDateTime(timestamp):
     obspy.core.utcdatetime.UTCDateTime
     """
     return UTCDateTime(timestamp.isoformat())
+
+
+def format_timestamp(pick_object, unix=False):
+    """
+    Extract an epoch timestamp from a variety of pick object formats
+    :: INPUT ::
+    :param pick_object: Currently handles:
+                        obspy.core.utcdatetime.UTCDateTime
+                        pandas._libs.tslibs.timestamps.Timestamp
+                        pyrocko.gui.markers.Marker (and child-classes)
+                        datetime.datetime
+    :: OUTPUT ::
+    :return time: [float] epoch time
+    """
+    if isinstance(pick_object, UTCDateTime):
+        time = pick_object.timestamp
+    elif isinstance(pick_object, Timestamp):
+        time = pick_object.timestamp()
+    elif isinstance(pick_object, Marker):
+        time1 = pick_object.get_tmin()
+        time2 = pick_object.get_tmax()
+        if time1 == time2:
+            time = time1
+        else:
+            time = (time1 + time2) / 2
+    elif isinstance(pick_object, datetime):
+        time = pick_object
+    else:
+        NotImplementedError(f"pick_object of type {type(pick_object)} not supported")
+    if unix:
+        time = unix_to_epoch(time)
+
+    return time

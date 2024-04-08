@@ -1242,7 +1242,7 @@ class MLTrace(Trace):
     # I/O METHODS #################################################################
     ###############################################################################
     
-    def to_trace(self, fold_threshold=0, attach_mod_to_chan=False):
+    def to_trace(self, fold_threshold=0, attach_mod_to_loc=False):
         """
         Convert this MLTrace into an obspy.core.trace.Trace,
         masking values that have fold less than fold_threshold
@@ -1263,9 +1263,8 @@ class MLTrace(Trace):
         for _k in tr.stats.keys():
             if _k not in tr.stats.readonly:
                 tr.stats.update({_k: self.stats[_k]})
-        if attach_mod_to_chan:
-            tr.stats.channel = f'{tr.stats.channel}.{self.stats.model}'
-            tr.stats.channel = f'{tr.stats.channel}.{self.stats.model}'
+        if attach_mod_to_loc:
+            tr.stats.location = f'{tr.stats.location}∂{self.stats.model}∂{self.stats.weight}'
 
         data = self.data
         mask = self.fold < fold_threshold
@@ -1339,7 +1338,7 @@ class MLTrace(Trace):
                         padded_copy.data = padded_copy.data.filled(fill_value=fill_value)
                     else:
                         raise NotImplementedError
-                    data_trace = padded_copy.to_trace(attach_mod_to_chan=False)
+                    data_trace = padded_copy.to_trace(attach_mod_to_loc=False)
                     fold_trace = padded_copy._prep_fold_for_mseed()
                     st += data_trace
                     st += fold_trace
@@ -1347,7 +1346,7 @@ class MLTrace(Trace):
                 else:
                     split_copy = self.copy().split()
                     for mlt in split_copy:
-                        st += mlt.to_trace(attach_mod_to_chan=False)
+                        st += mlt.to_trace(attach_mod_to_loc=False)
                         st += mlt._prep_fold_for_mseed()
                     
         st.write(file_name, fmt='MSEED', **options)
@@ -2483,7 +2482,7 @@ class MLTrace(Trace):
     #     for _dk in dkinds:
     #         # Convert MLTrace.data into Trace
     #         if _dk == 'DATA':
-    #             out = self.to_trace(attach_mod_to_chan=False).copy()
+    #             out = self.to_trace(attach_mod_to_loc=False).copy()
     #             # out = Stream([out])
     #             extension = fmt.lower()
     #         # Convert MLTrace.fold into Trace

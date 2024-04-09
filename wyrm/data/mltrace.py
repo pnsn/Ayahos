@@ -1277,18 +1277,13 @@ class MLTrace(Trace):
     def read(file_name):
         # Get dictionary of pretrained model-weight combinations
         ptd = pretrained_dict()
-        st = read(file_name, fmt='MSEED')
+        st = read(file_name, fmt='MSEED').merge()
         if len(st) == 2:
-            fold_tr = st.select(network='FO',location='LD')
-            if len(fold_tr) == 1:
-                fold_tr = fold_tr[0]
-            else:
-                raise ValueError('MSEED file does not appear to contain a unique fold trace')
-            # Get the other trace
             for tr in st:
-                if tr != fold_tr:
+                if tr.stats.network == 'FO' and tr.stats.location=='LD':
+                    fold_tr = tr
+                else:
                     data_tr = tr
-                    break
         header = data_tr.stats
 
         for _m, _v in ptd.items():

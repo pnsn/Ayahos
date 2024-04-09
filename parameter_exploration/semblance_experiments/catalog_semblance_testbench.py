@@ -1,6 +1,6 @@
 import os, sys, glob, obspy, pandas
 import numpy as np
-CROOT = os.path.join('..','..')
+ROOT = os.path.join('..','..')
 sys.path.append(os.path.join(CROOT))
 from wyrm.data.dictstream import DictStream
 from wyrm.data.mltrace import MLTrace
@@ -9,7 +9,6 @@ import wyrm.util.feature_extraction as fex
 import wyrm.util.stacking as stk
 
 # PROOT = os.path.join('/Users','nates','Documents','Conferences','2024_SSA','PNSN')
-ROOT = os.path.join('..','..')
 EXDF = os.path.join(ROOT, 'example','uw61127051')
 EX_URL = 'https://pnsn.org/event/61127051'
 PICK = os.path.join(ROOT,'example','AQMS_event_mag_phase_query_output.csv')
@@ -130,10 +129,12 @@ def ensemble_semblance(signals, paras):
     return semblance  
 #### END OF STRAIGHT COPY OF ELEP SEMBLANCE
 
-
+sites = [sites[0]]
 # Split by site
 output_holder = {}
-for site, sdst in dst.split_on_key(key='site').items():
+# for site, sdst in dst.split_on_key(key='site').items():
+for site in sites:
+    sdst = dst.fnselect(f'{site}.*')
     for comp, csdst in sdst.split_on_key(key='component').items():
         # Safety check that we're only including P or S prediction traces
         if comp in ['P','S']:
@@ -144,7 +145,7 @@ for site, sdst in dst.split_on_key(key='site').items():
 
         # Get list of models in this component-site subset
         # NOTE: need to include * to have this map as a wildcard call with .isin()
-        modset = [f'*{tr.mod}' for tr in csdst]
+        modset = list(csdst.traces.keys())
         # Create the weight/model powerset
         mod_powerset = stk.powerset(modset, with_null=False)
 
@@ -168,8 +169,8 @@ for site, sdst in dst.split_on_key(key='site').items():
                                     'window_flag': True,
                                     'dt': 0.01})
             # Trigger on ensemble semblance trace
-            for thr in threhold_vals:
-                triggers = 
+            # for thr in threhold_vals:
+            #     triggers = 
             output_holder[site][comp].update({_i: {'ct': ct, 'cset': iset}})
     
 

@@ -30,6 +30,12 @@ def run_cmat_stats(ser_C):
     
     return {'err': err, 'acc': acc, 'pre': pre, 'rec': rec, 'f1': F1}
 
+
+def calc_misfit(df, sampling_rate=100):
+    ser_npds = df.nearest_peak_dsmp
+    ser_npdt = ser_npds/sampling_rate
+    return ser_npdt
+
 Pthresh = [float(inpt[-15:-11]) for inpt in inputs]
 tf_dict = dict(zip(Pthresh, inputs))
 

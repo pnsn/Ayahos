@@ -32,6 +32,7 @@ evid_list.sort()
 evid_list = [int(os.path.split(evid)[-1][2:]) for evid in evid_list]
 pick_df = pandas.read_csv(PICK, index_col='arid')
 pick_df.arrdatetime = pick_df.arrdatetime.apply(lambda x: unix_to_UTCDateTime(float(x)))
+pick_df.datetime = pick_df.datetime.apply(lambda x: unix_to_UTCDateTime(float(x)))
 pick_df = pick_df[pick_df.evid.isin(evid_list)]
 
 

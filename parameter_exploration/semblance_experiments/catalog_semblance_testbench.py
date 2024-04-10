@@ -1,7 +1,7 @@
 import os, sys, glob, obspy, pandas
 import numpy as np
 ROOT = os.path.join('..','..')
-sys.path.append(os.path.join(CROOT))
+sys.path.append(os.path.join(ROOT))
 from wyrm.data.dictstream import DictStream
 from wyrm.data.mltrace import MLTrace
 from wyrm.util.time import unix_to_epoch
@@ -17,8 +17,8 @@ PICK = os.path.join(ROOT,'example','AQMS_event_mag_phase_query_output.csv')
 pfstr = os.path.join(EXDF,'{model}','{weight}','{site}','{file}')
 # Load bulk as well...
 
-mwd = {'EQTransformer': ['stead','pnw','iquique','lendb','instance'],
-       'PhaseNet': ['stead','diting','iquique','lendb','instance']}
+mwd = {'EQTransformer': ['stead','pnw','instance'],
+       'PhaseNet': ['diting']}
 
 sites_to_load = {'6Cbs': ['UW.GNW'],
                  '3Csm': ['UW.PCEP'],
@@ -136,13 +136,14 @@ output_holder = {}
 for site in sites:
     sdst = dst.fnselect(f'{site}.*')
     for comp, csdst in sdst.split_on_key(key='component').items():
+        csdst = csdst.isin(['*.EQTransformer.pnw*','*.EQTransformer.stead*','*.EQTransformer.instance*','*.PhaseNet.diting*'])
         # Safety check that we're only including P or S prediction traces
         if comp in ['P','S']:
             pass
         else:
             continue
+        breakpoint()
         output_holder.update({site: {comp:{}}})
-
         # Get list of models in this component-site subset
         # NOTE: need to include * to have this map as a wildcard call with .isin()
         modset = list(csdst.traces.keys())

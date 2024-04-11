@@ -343,6 +343,10 @@ class MLTrace(Trace):
     def utcdatetime_to_nearest_index(self, utcdatetime):
         return round((utcdatetime - self.stats.starttime)*self.stats.sampling_rate)
 
+    def is_utcdatetime_in_sampling(self, utcdatetime):
+        npts = (utcdatetime - self.stats.starttime)*self.stats.sampling_rate
+        return npts == int(npts)
+            
     def get_subset_view(self, starttime=None, endtime=None):
         # Get indicies of initial sample
         if starttime is None:

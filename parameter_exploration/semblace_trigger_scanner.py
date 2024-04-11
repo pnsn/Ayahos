@@ -1,4 +1,4 @@
-import sys, os, pandas, glob, fnmatch
+import sys, os, pandas, glob, fnmatch, time
 import multiprocessing as mp
 import numpy as np
 ROOT = os.path.join('..')
@@ -55,6 +55,7 @@ def init_worker(pick_df, thresholds, modset, trig_limits, paths):
 
 ## CORE PROCESS
 def semblance_trigger_site_event(evid, site):
+    time.sleep(0.05)
     read_ele = [BASE_PATH] + READ_FSTR.split('/')
     save_ele = [BASE_PATH] + SAVE_FSTR.split('/')
     read_fstring = os.path.join(*read_ele)
@@ -75,13 +76,12 @@ def semblance_trigger_site_event(evid, site):
     for label in ['P','S']:
         # Filter to find file names that meet the site-label requirements
         matches = fnmatch.filter(pfiles, f'*/{site}.*.??{label}.*.mseed')
-        # LOAD WAVEFORM DATA FOR SPECIFIC SITE AND LABEL
+
+        #### LOAD WAVEFORM DATA FOR SPECIFIC EVENT SITE AND LABEL ####
         dst = DictStream.read(matches)
         # Subset analyst picks to match this site, event, label
-        pick_idf = PICKS[(PICKS.evid==evid)&\
-                        (PICKS.iphase==label)&\
-                        (PICKS.sta == sta)&\
-                        (PICKS.net == net)]
+        # breakpoint()
+        pick_idf = PICKS[(PICKS.evid==evid)&(PICKS.iphase==label)&(PICKS.sta == sta)&(PICKS.net == net)]
         # Create powerset seed
         powerset_seed = list(dst.traces.keys())
         id_powerset = powerset(powerset_seed, with_null=False)
@@ -106,8 +106,9 @@ def semblance_trigger_site_event(evid, site):
                                                 'nearest_peak_dsmp','nearest_peak_Pval','nearest_peak_width',
                                                 'TP','FP','TN','FN','tol_needed','labeled_data'])
     output_name = save_fstring.format(evid=evid,site=site)
-    print(f'---- writing {output_name} ----')
+    print(f'---- writing {evid} {site} to disk ----')
     df_out.to_csv(output_name, header=True, index=False)
+
     return df_out
 
 def process_semblance(dst):
@@ -337,8 +338,17 @@ def assign_confusion_matrix_line(
     
     # df_evid_result.to_csv(sfstr.format(evid=evid), header=True, index=False)
 
+
+
+
+
+
+
 if __name__ == '__main__':
     run_parallel = True
+    n_pool = 10
+    n_chunk = 100
+
     # Assign global path variables
     # Get path to picks file
     PROOT = '/Users/nates/Documents/Conferences/2024_SSA/PNSN'
@@ -363,36 +373,41 @@ if __name__ == '__main__':
         breakpoint()
 
     # Set probability thresholds for triggering experiments
-    thresholds = np.arange(0.1,0.85,0.05)
+    thresholds = [0.05,0.1,0.2,0.3,0.4,0.5]
     # Set min/max lengths for acceptable triggers [samples]
     trig_limits = [5, 9e99]
-    # Parallelization Pool Size
-    n_pool = 6
-    c_chunk = 10
+
     # GET EVID SUBSET
     evid_dir_list = glob.glob(os.path.join(base_path,'uw*'))
-    evid_list = [int(os.path.split(evid_dir)[-1][2:]) for evid_dir in evid_dir_list][10:]
+    evid_list = [int(os.path.split(evid_dir)[-1][2:]) for evid_dir in evid_dir_list][:1]
     # GET PICKS FROM FILE
     pick_df = load_picks(pick_file, evids=evid_list, index_col='arid')
 
+    evid_site_sets = []
+    for evid, evid_dir in zip(evid_list, evid_dir_list):
+        sites = get_sitelist(evid_dir)
+        sites.sort()
+        for site in sites:
+            estup = (evid, site)
+            evid_site_sets.append(estup)
+    
+    picked_evid_site_sets = []
+    for evid, site in evid_site_sets:
+        net, sta = site.split('.')
+        if len(pick_df[(pick_df.evid==evid)&(pick_df.sta==sta)]) > 0:
+            picked_evid_site_sets.append((evid, site))
 
 
     initargs = (pick_df, thresholds, modset, trig_limits, paths)
     if run_parallel:
-
-        evid_site_sets = []
-        for evid, evid_dir in zip(evid_list, evid_dir_list):
-            sites = get_sitelist(evid_dir)
-            for site in sites:
-                estup = (evid, site)
-                evid_site_sets.append(estup)
-        breakpoint()
+        # breakpoint()
+        tick = time.time()
         print('==== LAUNCHING POOLED WORK ====')
         with mp.Pool(n_pool, initializer=init_worker, initargs=initargs) as p:
-            sout = p.starmap(semblance_trigger_site_event, evid_site_sets)
+            sout = p.starmap(semblance_trigger_site_event, picked_evid_site_sets)
+        tock = time.time()
+        print(f'!DONE! | runtime: {(tock - tick)/60:.2f} min | {(tock - tick)/len(evid_site_sets)} sec/job')
     else:
         init_worker(*initargs)
-        for evid in evid_list:
-            site_list = get_sitelist(evid)
-            for site in site_list:
-                df_evid_result = semblance_trigger_site_event(evid, site)
+        for evid, site in picked_evid_site_sets:
+            df_evid_result = semblance_trigger_site_event(evid, site)

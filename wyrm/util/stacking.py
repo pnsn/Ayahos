@@ -24,21 +24,28 @@ from itertools import chain, combinations
 def powerset(iterable, with_null=False):
     """
     Create a powerset from an iterable object comprising set elements
+
+    scales as 2**len(iterable) (including the null set)
     
     {1, 2, 3} -> [(1,2,3), 
                   (1,2), (1,3), (2,3),
                   (1), (2), (3),
-                  ()] <-- NOTE: excluded if with_null=False
-
+                  ()] <-- NOTE: null setexcluded if with_null=False
 
     :: INPUTS ::
-    :param iterable: [list-like] iterable set of elements from which
-                    to create a power set
+    :param iterable: [lis] iterable set of elements from which
+                        a power set is generated.
+                    NOTE: iterable is passed through a list(set(iterable))
+                        nest to ensure no duplicate entries
+    :param with_null: [bool] should the null set be included
+
+    :: OUTPUT ::
+    :return out: [list] of [tuple] power set
     
     Source Attribution: User Mark Rushakoff and edits by User Ran Feldesh
     https://stackoverflow.com/questions/1482308/how-to-get-all-subsets-of-a-set-powerset
     """
-    s = list(iterable)
+    s = list(set(iterable))
     if with_null:
         out = chain.from_iterable(combinations(s, r) for r in range(len(s)+1))
     else:
@@ -139,9 +146,107 @@ def shift_trim(array, npts_right, axis=None, fill_value=np.nan, dtype=None, **kw
     
     return tmp_array
 
-def sum2(arr):
-    """"""
+
+
+
+
+def neighbor_sum(arr):
+    '''
+    DIRECT COPY FROM: 
+    https://github.com/congcy/ELEP/blob/main/ELEP/elep/ensemble_coherence.py
+    '''
     return sum(arr)
+
+def ensemble_semblance(signals, paras):
+    '''
+    DIRECT COPY FROM: 
+    https://github.com/congcy/ELEP/blob/main/ELEP/elep/ensemble_coherence.py
+
+    Function: calculate coherence or continuity via semblance analysis.
+    Reference: Marfurt et al. 1998
+    
+    PARAMETERS:
+    ---------------
+    signals: input data [ntraces, npts]
+    paras: a dict contains various parameters used for calculating semblance. 
+           Note: see details in Tutorials.
+    
+    RETURNS:
+    ---------------
+    semblance: derived cohence vector [npts,]
+    
+    Written by Congcong Yuan (Jan 05, 2023)
+    '''
+    # setup parameters
+    ntr, npts = signals.shape 
+    dt = paras['dt']
+    semblance_order = paras['semblance_order']
+    semblance_win = paras['semblance_win']
+    weight_flag = paras['weight_flag']
+    window_flag = paras['window_flag']
+    
+    semblance_nsmps = int(semblance_win/dt)
+    
+    # initializing
+    semblance, v = np.zeros(npts), np.zeros(npts)
+    
+    # sums over traces
+    square_sums = np.sum(signals, axis=0)**2
+    sum_squares = np.sum(signals**2, axis=0)
+    
+    # loop over all time points
+    if weight_flag:
+        if weight_flag == 'max':
+            v = np.amax(signals, axis=0)
+        elif weight_flag == 'mean':
+            v = np.mean(signals, axis=0)
+        elif weight_flag == 'mean_std':
+            v_mean = np.mean(signals, axis=0)
+            v_std = np.mean(signals, axis=0)
+            v = v_mean/v_std
+    else:
+        v = 1.
+        
+    if window_flag:
+        # sum over time window
+        sums_num = nd.generic_filter(square_sums, neighbor_sum, semblance_nsmps, mode='constant')
+        sums_den = ntr*nd.generic_filter(sum_squares, neighbor_sum, semblance_nsmps, mode='constant')
+    else:
+        sums_num = square_sums
+        sums_den = ntr*sum_squares
+
+    # original semblance
+    semblance0 = sums_num/sums_den
+
+    # enhanced semblance
+    semblance = semblance0**semblance_order*v 
+    
+    return semblance  
+
+def preprocess_semblance_weights(signals, weights=None, enhanced_wt='max'):
+    if weights is None:
+        dwt = np.ones(shape=signals.shape, dtype=signals.dtype)
+    elif signals.shape != weights.shape:
+        raise IndexError(f'shapes of signals and weights mismatch')
+    elif weights.dtype != signals.dtype:
+        dwt = weights.astype(signals.dtype)
+    
+    if enhanced_wt == 'max':
+        ewt = np.amax(signals, axis=0)
+    elif enhanced_wt == 'mean':
+        ewt = np.mean(signals, axis=0)
+    elif enhanced_wt == 'mean_std':
+        ewt = np.mean(signals, axis=0)/np.std(signals, axis=0)
+    else:
+        ewt = np.ones(shape=signals.shape[-1])
+    
+    out = {'data_weights': dwt,
+           'enhancement_weights': ewt}
+    return out
+        
+
+# def powerset_ensemble_semblance(square_sums, summed_squares, data_weights, enhancement)
+
 
 def semblance(pstack, fstack=None, order=2, semb_npts=101, method='np', eta=1e-9, weighted=True):
     """

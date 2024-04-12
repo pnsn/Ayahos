@@ -176,6 +176,9 @@ def semblance_trigger_site_event(evid, site):
     matches = fnmatch.filter(pfiles, f'*/{site}*.mseed')
     #### LOAD PREDICTION DATA FOR SPECIFIC EVENT SITE AND LABEL ####
     dst = DictStream.read(matches)
+    if len(dst) == 0:
+        print(f'xx-- skipping {evid} {site} ---- no data')
+        return pandas.DataFrame()
     # Get picks for this site (apply to multiple instruments, if applicable)
     pick_idf = PICKS[(PICKS.evid==evid)&(PICKS.sta == sta)&(PICKS.net == net)]
     # Split predictions on instrument
@@ -183,6 +186,10 @@ def semblance_trigger_site_event(evid, site):
     semb_dst = DictStream()
     for instrument, idst in dst.split_on_key(key='instrument').items():
         # Subset again to match this site, event, label
+        output_name = save_fstring.format(evid=evid, instrument=instrument)
+        if os.path.isfile(output_name):
+            print(f'ss-- skipping {evid} {instrument} | already exists ----')
+            continue
 
         for comp, sidst in idst.split_on_key(key='component').items():
             # Create powerset seed for a given event-instrument-label combination
@@ -213,15 +220,14 @@ def semblance_trigger_site_event(evid, site):
                             holder[_k].append(_v)
                     # for line in trig_stats:
                     #     holder.append(line)
-    semb_dst
-    # Save for each instrument
-    df_out = pandas.DataFrame(holder, )
-    # output_name = save_fstring.format(evid=evid,site=site)
-    output_name = save_fstring.format(evid=evid, instrument=instrument)
-    # breakpoint()
+        semb_dst
+        # Save for each instrument
+        df_out = pandas.DataFrame(holder)
+        # output_name = save_fstring.format(evid=evid,site=site)
+        # breakpoint()
 
-    print(f'---- writing {evid} {instrument} to disk ----')
-    df_out.to_csv(output_name, header=True, index=False)
+        print(f'---- writing {evid} {instrument} to disk ----')
+        df_out.to_csv(output_name, header=True, index=False)
 
     return df_out
 

@@ -6,7 +6,7 @@ from wyrm.data.dictstream import DictStream
 from wyrm.data.mltrace import MLTrace
 from wyrm.util.time import unix_to_epoch
 import wyrm.util.feature_extraction as fex
-import wyrm.util.stacking as stk
+import wyrm.util.semblance as stk
 
 PROOT = os.path.join('/Users','nates','Documents','Conferences','2024_SSA','PNSN')
 PICK = os.path.join(PROOT,'data','AQMS','AQMS_event_mag_phase_query_output.csv')

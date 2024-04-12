@@ -8,7 +8,7 @@ from obspy.core.util.attribdict import AttribDict
 from obspy.core import compatibility
 from wyrm.data.mltrace import MLTrace, read_mltrace
 from wyrm.util.pyew import wave2mltrace
-from wyrm.util.stacking import ensemble_semblance #, weighted_ensemble_semblance
+from wyrm.util.semblance import ensemble_semblance #, weighted_ensemble_semblance
 
 
 def read_mltraces(data_files, obspy_read_kwargs={}, add_options={}):
@@ -997,7 +997,7 @@ class DictStream(Stream):
 
     def semblance(
             self,
-            window_len=1,
+            window_len=0.5,
             order=2,
             coefficient='max',
             fold_weighted=False,
@@ -1006,6 +1006,9 @@ class DictStream(Stream):
             dtype=np.float32):
         """
         OOP API for the ELEP ensemble_semblance method from Yuan et al. (2023)
+
+  
+
 
         :: INPUTS ::
         :param window_len: [float] window length for semblance calculation
@@ -1033,83 +1036,93 @@ class DictStream(Stream):
                         Default is numpy.float32
         
         :: OUTPUT ::
-        :return mlt_semb: [wyrm.data.mltrace.MLTrace] MLTrace object with
+        :return mlt_semb: [wyrm.data.mltrace.MLTrace] (if len(self) > 1)
+                MLTrace object with
                     data = semblance trace
                     fold = sum of contributors' fold
                     id = self.stats.common_id (via source attribute assignments)
                     starttime from trimming
+                if len(self) == 1
+                    Returns a view of the single trace in this dictstream
+                if len(self) == 0
+                    Returns an empty MLTrace object
         """
-        # Create dictionary holder for `paras` param
-        paras = {'semblance_win': window_len,
-                 'semblance_order': order,
-                 'weight_flag': coefficient,
-                 }
-        # Sanity check that sampling rates are the same
-        if not all(_tr.stats.sampling_rate == self[0].stats.sampling_rate for _tr in self):
-            raise ValueError('sampling_rate values mismatch in this DictStream, cannot run semblance')
+        if len(self) == 1:
+            return self[0]
+        elif len(self) == 0:
+            return MLTrace()
         else:
-            paras.update({'dt': self[0].stats.delta})
-            if self[0].stats.delta < window_len:
-                paras.update({'window_flag': True})
+            # Create dictionary holder for `paras` param
+            paras = {'semblance_win': window_len,
+                    'semblance_order': order,
+                    'weight_flag': coefficient,
+                    }
+            # Sanity check that sampling rates are the same
+            if not all(_tr.stats.sampling_rate == self[0].stats.sampling_rate for _tr in self):
+                raise ValueError('sampling_rate values mismatch in this DictStream, cannot run semblance')
             else:
-                paras.update({'window_flag': False})
-        if trim_type == 'inner':
-            ts = self.stats.max_starttime
-            te= self.stats.min_endtime
-        elif trim_type == 'outer':
-            ts = self.stats.min_starttime
-            te = self.stats.max_endtime
-        else:
-            raise ValueError(f'trim_type {trim_type} not supported.')
-        
-        data = []
-        fold = []
-        min_npts = 9e99
-        # Get trimmed copies of data in traces
-        header = {}
-        for tr in self:
-            # Capture all combinations of NSLCMW code elements for output
-            for _k in ['network','station','location','channel','model','weight']:
-                if _k not in header:
-                    header.update({_k: []})
-                if tr.stats[_k] not in header[_k]:
-                    header[_k].append(tr.stats[_k])
-            # Create a trimmed copy
-            tr_trim = tr.trimmed_copy(starttime=ts,
-                                      endtime=te,
-                                      pad=True,
-                                      fill_value=fill_value)
-            # Attempt to handle misalignment
-            if not tr_trim.is_utcdatetime_in_sampling(ts):
-                tr_trim.sync_to_window(starttime=ts,
-                                       fill_value=fill_value)
-            # Capture minimum data length
-            if tr_trim.stats.npts < min_npts:
-                min_npts = tr_trim.stats.npts
-            # Grab data and fold vectors 
-            data.append(tr_trim.data)
-            fold.append(tr_trim.fold)
-        # Compose data array input(s), trimming off extra trailing samples
-        signals = np.array([d_[:min_npts].astype(dtype) for d_ in data])
-        weights = np.array([f_[:min_npts].astype(dtype) for f_ in fold])
-        # Merge lists of NSLCMW code elements into strings
-        for _k, _v in header.items():
-            header.update({_k: '|'.join(_v)})
-        # Assess if fold should be used as a weighting
-        if fold_weighted:
-            raise NotImplementedError
-            # semblance = weighted_ensemble_semblance(signals, weights, paras)
+                paras.update({'dt': self[0].stats.delta})
+                if self[0].stats.delta < window_len:
+                    paras.update({'window_flag': True})
+                else:
+                    paras.update({'window_flag': False})
+            if trim_type == 'inner':
+                ts = self.stats.max_starttime
+                te= self.stats.min_endtime
+            elif trim_type == 'outer':
+                ts = self.stats.min_starttime
+                te = self.stats.max_endtime
+            else:
+                raise ValueError(f'trim_type {trim_type} not supported.')
+            
+            data = []
+            fold = []
+            min_npts = 9e99
+            # Get trimmed copies of data in traces
+            header = {}
+            for tr in self:
+                # Capture all combinations of NSLCMW code elements for output
+                for _k in ['network','station','location','channel','model','weight']:
+                    if _k not in header:
+                        header.update({_k: []})
+                    if tr.stats[_k] not in header[_k]:
+                        header[_k].append(tr.stats[_k])
+                # Create a trimmed copy
+                tr_trim = tr.trimmed_copy(starttime=ts,
+                                        endtime=te,
+                                        pad=True,
+                                        fill_value=fill_value)
+                # Attempt to handle misalignment
+                if not tr_trim.is_utcdatetime_in_sampling(ts):
+                    tr_trim.sync_to_window(starttime=ts,
+                                        fill_value=fill_value)
+                # Capture minimum data length
+                if tr_trim.stats.npts < min_npts:
+                    min_npts = tr_trim.stats.npts
+                # Grab data and fold vectors 
+                data.append(tr_trim.data)
+                fold.append(tr_trim.fold)
+            # Compose data array input(s), trimming off extra trailing samples
+            signals = np.array([d_[:min_npts].astype(dtype) for d_ in data])
+            weights = np.array([f_[:min_npts].astype(dtype) for f_ in fold])
+            # Merge lists of NSLCMW code elements into strings
+            for _k, _v in header.items():
+                header.update({_k: '|'.join(_v)})
+            # Assess if fold should be used as a weighting
+            if fold_weighted:
+                raise NotImplementedError
+                # semblance = weighted_ensemble_semblance(signals, weights, paras)
 
-        else:
-            semblance = ensemble_semblance(signals, paras)
+            else:
+                semblance = ensemble_semblance(signals, paras)
 
-        # Get starttime  and sampling_rate from processing
-        header.update({'starttime': ts, 'sampling_rate': 1/paras['dt']})
-        # Create a new attribute documenting the contributing ids for clarity
-        header.update({'contributors': list(self.traces.keys())})
-        # Create a new MLTrace to hold the semblance output
-        mlt_semb = MLTrace(data=semblance, fold=weights.sum(axis=0), header=header)
-        return mlt_semb
+            # Get starttime  and sampling_rate from processing
+            header.update({'starttime': ts, 'sampling_rate': 1/paras['dt']})
+            # Create a new attribute documenting the contributing ids for clarity
+            header.update({'contributors': list(self.traces.keys())})
+            # Create a new MLTrace to hold the semblance output
+            mlt_semb = MLTrace(data=semblance, fold=weights.sum(axis=0), header=header)
+            return mlt_semb
 
 
 

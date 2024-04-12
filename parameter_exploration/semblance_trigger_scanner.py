@@ -188,7 +188,7 @@ def semblance_trigger_site_event(evid, site):
         # Subset again to match this site, event, label
         output_name = save_fstring.format(evid=evid, instrument=instrument)
         if os.path.isfile(output_name):
-            print(f'ss-- skipping {evid} {instrument} | already exists ----')
+            print(f'ss-- skipping {evid} {instrument} | output file already exists ----')
             continue
 
         for comp, sidst in idst.split_on_key(key='component').items():
@@ -228,6 +228,11 @@ def semblance_trigger_site_event(evid, site):
 
         print(f'---- writing {evid} {instrument} to disk ----')
         df_out.to_csv(output_name, header=True, index=False)
+    
+    try:
+        df_out
+    except UnboundLocalError:
+        df_out = pandas.DataFrame()
 
     return df_out
 
@@ -298,9 +303,9 @@ def process_triggering(tr, threshold, pick_df, evid, trigger_limits=[5,9e99], pi
             except IndexError:
                 pass
             # If there are triggers to process and a pick inside the prediction timeseries
-            if len(passing_triggers) > 0 and tr.data[pick_samp] is not None:
+            if len(passing_triggers) > 0 and iout_dict['pick_Pval'] is not None:
                 # nearest_edge_dsamp = tr.stats.npts
-                nearest_peak_dsamp = tr.stats.npts
+                iout_dict.update({'nearest_peak_dsamp': tr.stats.npts})
                 # Scan across all triggers
                 for trigger in passing_triggers:
                     # Get sample location of the peak of this trigger
@@ -318,6 +323,10 @@ def process_triggering(tr, threshold, pick_df, evid, trigger_limits=[5,9e99], pi
                     # otherwise, if pick_sample is not inside this trigger
                     else:
                         # See if the pick-peak distance magnitude is the smallest yet
+                        try: 
+                            np.abs(inpdn)
+                        except TypeError:
+                            breakpoint()
                         if np.abs(inpdn) < np.abs(nearest_peak_dsamp):
                             iout_dict.update({'pick_in_trigger': False,
                                                'nearest_peak_dsamp': inpdn,
@@ -404,7 +413,7 @@ def init_worker(paras, pick_df, thresholds, modset, trig_limits, paths):
 
 #### IF MAIN ####
 if __name__ == '__main__':
-    run_parallel = True
+    run_parallel = False
     n_pool = 10
     n_chunk = 1000
 
@@ -458,7 +467,7 @@ if __name__ == '__main__':
     picked_evid_site_sets = [tuple([_e[0], f'{_e[1]}.{_e[2]}']) for _e in pick_df[['evid','net','sta']].value_counts().index]
 
     job_input = picked_evid_site_sets
-
+    breakpoint()
     # breakpoint()
     initargs = (paras, pick_df, thresholds, modset, trig_limits, paths)
     if run_parallel:

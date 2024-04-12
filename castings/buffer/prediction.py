@@ -1,7 +1,7 @@
 from obspy import Trace, Stream, UTCDateTime
 import numpy as np
 import wyrm.util.input_compatability_checks as icc
-from wyrm.util.stacking import shift_trim
+from wyrm.util.semblance import shift_trim
 import torch
 import seisbench.models as sbm
 import matplotlib.pyplot as plt

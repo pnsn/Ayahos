@@ -57,7 +57,7 @@ import numpy as np
 import pandas as pd
 import seisbench.models as sbm
 import wyrm.util.compatability as wuc
-from wyrm.util.stacking import shift_trim
+from wyrm.util.semblance import shift_trim
 from obspy import Trace, Stream, UTCDateTime, read
 from pandas import DataFrame
 from copy import deepcopy

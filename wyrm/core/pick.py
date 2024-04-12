@@ -1,7 +1,7 @@
 from wyrm.core.process import WindowWyrm
 from wyrm.data.dictstream import DictStream
 from wyrm.data.mltrace import MLTrace, MLTraceBuffer
-from wyrm.util.stacking import semblance
+from wyrm.util.semblance import semblance
 
 class SemblanceWyrm(WindowWyrm):
     """

@@ -25,7 +25,7 @@ import numpy as np
 from obspy import Trace, Stream, read
 from wyrm.core.window.prediction import PredictionWindow
 import wyrm.util.compatability as wcc
-from wyrm.util.stacking import shift_trim
+from wyrm.util.semblance import shift_trim
 from copy import deepcopy
 
 class PredictionBuffer(object):

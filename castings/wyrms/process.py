@@ -38,7 +38,7 @@ TODO: Clean up hanging try - except in def pulse():
 from wyrm import Wyrm
 from collections import deque
 from wyrm.structures.window import MLInstWindow
-from wyrm.util.stacking import semblance
+from wyrm.util.semblance import semblance
 from wyrm.wyrms.window import WindowWyrm
 import wyrm.util.input_compatability_checks as icc
 import inspect

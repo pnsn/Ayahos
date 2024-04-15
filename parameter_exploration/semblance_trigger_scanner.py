@@ -187,9 +187,9 @@ def semblance_trigger_site_event(evid, site):
     for instrument, idst in dst.split_on_key(key='instrument').items():
         # Subset again to match this site, event, label
         output_name = save_fstring.format(evid=evid, instrument=instrument)
-        if os.path.isfile(output_name):
-            print(f'ss-- skipping {evid} {instrument} | output file already exists ----')
-            continue
+        # if os.path.isfile(output_name):
+        #     print(f'ss-- skipping {evid} {instrument} | output file already exists ----')
+        #     continue
 
         for comp, sidst in idst.split_on_key(key='component').items():
             # Create powerset seed for a given event-instrument-label combination
@@ -279,7 +279,7 @@ def process_triggering(tr, threshold, pick_df, evid, trigger_limits=[5,9e99], pi
             passing_triggers.append(trigger)
     passing_triggers = np.array(passing_triggers, dtype=np.int64)
     out_dict.update({'trigger_ct': len(passing_triggers)})
-
+    # If there are no picks or passing triggers, assign pick_in_trigger = False
     if out_dict['trigger_ct'] == 0 or len(pick_df) == 0:
         out_dict.update({'pick_in_trigger': False})
 
@@ -287,25 +287,34 @@ def process_triggering(tr, threshold, pick_df, evid, trigger_limits=[5,9e99], pi
     if len(pick_df) > 0:
         # Iterate across picks
         for arid, row in pick_df.iterrows():
+            # Create a copy of the out(put) dictinary for this pick entry
             iout_dict = out_dict.copy()
-            iout_dict.update({'iphase': row.iphase, 'arid': arid})
-
-
+            # Update phase label and ARID
+            iout_dict.update({'iphase': row.iphase, 'arid': arid, 'labeled_data': True})
+            # Update if phase label matches prediction label
             if iout_dict['iphase'] == tr.comp:
                 iout_dict.update({'correctly_labeled':True})
             else:
                 iout_dict.update({'correctly_labeled':False})
-
+            # Get pick timing and pick sample location
             pick_time = row.arrdatetime
             pick_samp = round((pick_time - tr.stats.starttime)*tr.stats.sampling_rate)
+            # Try to get the pick location in the data & update, othwerwise default to None
             try:
                 iout_dict.update({'pick_Pval': tr.data[pick_samp]})
             except IndexError:
                 pass
             # If there are triggers to process and a pick inside the prediction timeseries
-            if len(passing_triggers) > 0 and iout_dict['pick_Pval'] is not None:
-                # nearest_edge_dsamp = tr.stats.npts
-                iout_dict.update({'nearest_peak_dsamp': tr.stats.npts})
+            if len(passing_triggers) > 0:
+                            # # If the pick is not inside the prediction data domain
+                            # if iout_dict['pick_Pval'] is None:
+                            #     iout_dict.update({'pick_in_trigger': False})
+                            # # Otherwise try to find the nearest fit
+                            # else:
+                # nearest_edge_dsamp = tr.stats.npts + pick samp
+                # i.e., maximum possible finite distance given a pick and the trace
+                iout_dict.update({'nearest_peak_dsamp': tr.stats.npts + pick_samp})
+
                 # Scan across all triggers
                 for trigger in passing_triggers:
                     # Get sample location of the peak of this trigger
@@ -314,55 +323,71 @@ def process_triggering(tr, threshold, pick_df, evid, trigger_limits=[5,9e99], pi
                     max_p_val = np.nanmax(tr.data[trigger[0]:trigger[1]])
                     # Get sample distance from pick to peak
                     inpdn = pick_samp - trigger[0] + max_p_samp
+                    # If the trigger contains the pick, update values and terminate for-loop
                     if trigger[0] <= pick_samp <= trigger[1]:
                         iout_dict.update({'pick_in_trigger': True,
                                         'nearest_peak_dsamp': inpdn,
                                         'nearest_peak_Pval': max_p_val,
                                         'nearest_peak_width': trigger[1] - trigger[0]})
+                        # Break the iteration loop so we don't overwrite this match
                         break
-                    # otherwise, if pick_sample is not inside this trigger
+                    # otherwise, if pick_sample is not inside this trigger, but it's closer than the placeholder
+                    elif abs(inpdn) < np.abs(iout_dict['nearest_peak_dsamp']):
+                        # update
+                        iout_dict.update({'pick_in_trigger': False,
+                                          'nearest_peak_dsamp': inpdn,
+                                          'nearest_peak_Pval': max_p_val,
+                                          'nearest_peak_width': trigger[1] - trigger[0]})
+                    
                     else:
+                        pass
                         # See if the pick-peak distance magnitude is the smallest yet
                         try: 
                             np.abs(inpdn)
                         except TypeError:
                             breakpoint()
-                        if np.abs(inpdn) < np.abs(nearest_peak_dsamp):
+                        # If the distance to the nearest peak for this pick-trigger is smallest yet
+                        if np.abs(inpdn) < np.abs(iout_dict['nearest_peak_dsamp']):
+                            # Update.
                             iout_dict.update({'pick_in_trigger': False,
-                                               'nearest_peak_dsamp': inpdn,
-                                               'nearest_peak_Pval': max_p_val,
-                                               'nearest_peak_width': trigger[1] - trigger[0]})
-            # Run confusion matrix processing at the pick level
-            if iout_dict['trigger_ct'] == 0:
-                iout_dict.update({'TN': 0, 'TP': 0, 'FN': 1, 'FP': 0, 'XP': 0})
-            else:
+                                            'nearest_peak_dsamp': inpdn,
+                                            'nearest_peak_Pval': max_p_val,
+                                            'nearest_peak_width': trigger[1] - trigger[0]})
+                # END OF FOR LOOP - run confusion matrix updates
+                # If this contains the trigger
                 if iout_dict['pick_in_trigger']:
-                    iout_dict.update({'tol_needed': False})
+                    # Update False trigger counts
+                    iout_dict.update({'FN': 0, 'FP': iout_dict['trigger_ct'] - 1, 'tol_needed': False})
                     if iout_dict['correctly_labeled']:
-                        iout_dict.update({'TP': 1, 'XP': 0, 'FN': 0})
+                        iout_dict.update({'TP': 1, 'XP': 0})
                     else:
-                        iout_dict.update({'TP': 0, 'XP': 1, 'FN': 0})
-                elif abs(iout_dict['nearest_peak_dsamp']) <= pick_tol_samp:
-                    iout_dict.update({'tol_needed': True})
+                        iout_dict.update({'TP': 0, 'XP': 1})   
+                elif iout_dict['nearest_peak_dsamp'] <= pick_tol_samp:
+                    # Update False trigger counts
+                    iout_dict.update({'FN': 0, 'FP': iout_dict['trigger_ct'] - 1, 'tol_needed': True})
                     if iout_dict['correctly_labeled']:
-                        iout_dict.update({'TP': 1, 'FN': 0, 'XP': 0})
+                        iout_dict.update({'TP': 1, 'XP': 0})
                     else:
-                        iout_dict.update({'TP': 0, 'FN': 0, 'XP': 1})
-                else:
-                    iout_dict.update({'TP': 0, 'FN': 1, 'XP': 0})
-                if iout_dict['correctly_labeled']:
-                    iout_dict.update({'FP': iout_dict['trigger_ct'] - iout_dict['TP']})
-                else:
-                    iout_dict.update({'FP': iout_dict['trigger_ct'] - iout_dict['XP']})
+                        iout_dict.update({'TP': 0, 'XP': 1})                       
+                # If there are no false positives, boost this detection's f1 score via a True Negative = 1
                 if iout_dict['FP'] == 0:
                     iout_dict.update({'TN': 1})
                 else:
                     iout_dict.update({'TN': 0})
-            outputs.append(iout_dict)
+            # If there are no triggers
+            else:
+                # Flag as no pick in trigger
+                iout_dict.update({'pick_in_trigger': False})
+                # And assign confusion matrix counts depending on if labels match (pick & prediciton)
+                if iout_dict['correctly_labeled']:
+                    iout_dict.update({'FP': 0, 'FN': 1, 'TP': 0,'TN': 0,'XP':0})
+                else:
+                    iout_dict.update({'FP': 0,'FN': 0, 'TN': 1, 'TP': 0, 'XP': 0})
 
-    # If there were no picks to process
+    # If there were no picks to process, assumes that the trace was reviewed and analysts
+    # Decide no pick for this site.
     else:
-        out_dict.update({'TP': 0, 'FN': 0, 'XP': 0})
+        out_dict.update({'TP': 0, 'FN': 0, 'XP': 0, 'labeled_data': False})
         if out_dict['trigger_ct'] == 0:
             out_dict.update({'TN': 1, 'FP': 0})
         else:
@@ -413,7 +438,7 @@ def init_worker(paras, pick_df, thresholds, modset, trig_limits, paths):
 
 #### IF MAIN ####
 if __name__ == '__main__':
-    run_parallel = False
+    run_parallel = True
     n_pool = 10
     n_chunk = 1000
 

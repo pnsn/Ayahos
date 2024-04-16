@@ -383,6 +383,7 @@ def process_triggering(tr, threshold, pick_df, evid, trigger_limits=[5,9e99], pi
                     iout_dict.update({'FP': 0, 'FN': 1, 'TP': 0,'TN': 0,'XP':0})
                 else:
                     iout_dict.update({'FP': 0,'FN': 0, 'TN': 1, 'TP': 0, 'XP': 0})
+            outputs.append(iout_dict)
 
     # If there were no picks to process, assumes that the trace was reviewed and analysts
     # Decide no pick for this site.
@@ -439,7 +440,7 @@ def init_worker(paras, pick_df, thresholds, modset, trig_limits, paths):
 #### IF MAIN ####
 if __name__ == '__main__':
     run_parallel = True
-    n_pool = 10
+    n_pool = 6
     n_chunk = 1000
 
     # Assign global path variables

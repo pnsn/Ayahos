@@ -1,6 +1,12 @@
-import os, sys, pandas
+import os, sys, pandas, logging
 import numpy as np
 from itertools import chain, combinations
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s\t%(name)s\t%(levelname)s\t%(message)s")
+
+Logger = logging.getLogger('semblance_post_processing')
 
 def powerset(iterable, with_null=False):
     """
@@ -86,7 +92,7 @@ def calc_mae_pc(df_src, multi_index, sampling_rate=100):
     holder = {'MAE': [], 'PC': []}
     # Iterate across multi-indices
     for _i, mi in enumerate(multi_index):
-        print(f'{_i + 1}/{len(multi_index)}')
+        Logger.debug(f'calc_mae_pc iteration {_i + 1}/{len(multi_index)}')
         # Get subset, correctly labeled metadata
         idf = get_subset_df(df_src, mi, multi_index.names)
         # Calculate PC as the sum of True Positives divided by sample size
@@ -109,6 +115,7 @@ def process_pivot(df,
                   test_indices=['channel'],
                   universal_values=['TP','XP','FP','TN','FN'],
                   sampling_rate=100):
+
     # Merge test and universal indices
     uindex = universal_indices + test_indices
     # Create pivot table
@@ -143,14 +150,22 @@ tindices = ['component','channel']
 uvalues = ['TP','XP','FP','TN','FN']
 
 pset = powerset(tindices, with_null=True)
+Logger.info(f'starting power-set iterations over a set of {len(tindices)} ({2**len(tindices)} sets)')
 for iset in pset:
-    print(iset)
+    Logger.info(f'processing test parameter set {iset}')
     df_out = process_pivot(df, universal_indices=uindices,
                            universal_values=uvalues,
                            test_indices=list(iset))
     out_path, _ = os.path.split(PFILE)
     out_fn = '__'.join(['semblance_trigger_scan'] + list(df_out.index.names))
     df_out.to_csv(os.path.join(out_path, f'{out_fn}.csv'), header=True, index=True)
+
+
+
+
+
+
+
     # if len(iset) > 0:
     #     for mindex in df[list(iset)].value_counts().index:
     #         idf_out = get_subset_df(df_out, mindex)

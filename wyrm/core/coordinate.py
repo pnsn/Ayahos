@@ -343,7 +343,12 @@ class CanWyrm(TubeWyrm):
         y = self.dict
         return y
 
-
+    def __str__(self):
+        rstr = f'wyrm.core.coordinate.CanWyrm(wyrm_dict={self.wyrm_dict}, '
+        rstr += f'wait_sec={self.wait_sec}, '
+        rstr += f'max_pulse_size={self.max_pulse_size}, '
+        rstr += f'debug={self.debug})'
+        return rstr
 
 ###################################################################################
 # HEART WYRM CLASS DEFINITION #####################################################

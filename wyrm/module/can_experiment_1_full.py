@@ -200,7 +200,7 @@ for evid_dir in [EVID_DIRS[50]]:
         tr.data = tr.data.astype(np.float32)
         if tr.stats.sampling_rate != round(tr.stats.sampling_rate):
             tr.resample(round(tr.stats.sampling_rate))
-    ## TODO: Filter for picked data only
+    ## TODO: Filter for picked data only - crib this from an earlier prototype module
     # Merge data
     st.merge()
     # Convert to dictstream
@@ -213,6 +213,8 @@ for evid_dir in [EVID_DIRS[50]]:
 
     ## SAVE ##
     for _k, _v in can_wyrm_out.items():
+        # TODO: Finish constructing the termination function
+        #       GIST: concatenate all trigger lines for a given EVID, split by save_attrs & create dir structure, write chunks into this structure
         termination_function(key=_k, queue=_v, base_path=evid_dir, save_attrs = ['network','station','model','weight'])
 
     # for model, ml_dst_buffer in can_wyrm_out.items():

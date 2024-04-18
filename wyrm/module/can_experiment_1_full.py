@@ -177,7 +177,7 @@ print('Wyrm Module Compiled')
 ROOT = os.path.join('..','..','example')
 # Define root directory path
 HDD_ROOT = os.path.join('/Volumes','TheWall','PNSN_miniDB','data')
-REPORT_FILE = os.path.join(HDD_ROOT,'processing_log_pt_2.txt')
+REPORT_FILE = os.path.join(HDD_ROOT,'processing_log_pt_2b.txt')
 if os.path.exists(REPORT_FILE):
     print('assign a new report_file name')
     breakpoint()
@@ -225,7 +225,12 @@ for evid in evids:
     
     ## LOAD ##
     wffile = os.path.join(evid_dir, 'bulk.mseed')
-    st = obspy.read(wffile, fmt='MSEED')
+    try:
+        st = obspy.read(wffile, fmt='MSEED')
+    except:
+        report_file.write(f'{time.time()}, {evid}, SKIP, bad_bulk_load')
+        report_file.close()
+        continue   
     ist = obspy.Stream()
     for tr in st:
         # If trace is from a site that has a pick for this event

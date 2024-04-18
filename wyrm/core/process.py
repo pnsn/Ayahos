@@ -27,6 +27,7 @@
 import torch, time, copy
 import seisbench.models as sbm
 import numpy as np
+import pandas as pd
 from collections import deque
 from obspy import UTCDateTime
 from wyrm.data.mltrace import MLTrace
@@ -634,7 +635,52 @@ class MethodWyrm(Wyrm):
         rstr += f'max_pulse_size={self.max_pulse_size}, '
         rstr += f'debug={self.debug})'
         return rstr
+
+
+class OutputWyrm(MethodWyrm):
+    def __init__(
+            self,
+            pclass=DictStream,
+            oclass=pd.DataFrame,
+            pmethod='prediction_trigger_report',
+            pkwargs={'thresh': 0.1, 'blinding': (500,500),
+                     'stats_pad': 20,
+                     'extra_quantiles':[0.025, 0.159, 0.25, 0.75, 0.841, 0.975]},
+            max_pulse_size=10000,
+            debug=False):
+        super().__init__(pclass=pclass, pmethod=pmethod, pkwargs=pkwargs, max_pulse_size=max_pulse_size, debug=debug)
+        if not isinstance(oclass, type):
+            raise ValueError
+        else:
+            self.oclass = oclass
     
+    def pulse(self, x):
+        if not isinstance(x, deque):
+            raise TypeError
+        qlen = len(x)
+        for _i in range(self.max_pulse_size):
+            if _i - 1 > qlen:
+                break
+            if len(x) == 0:
+                break
+            _x = x.popleft()
+            if not isinstance(_x, self.pclass):
+                x.append(_x)
+            else:
+                _y = getattr(_x, self.pmethod)(**self.pkwargs)
+                if isinstance(_y, self.oclass):
+                    self.queue.append(_y)
+        y = self.queue
+        return y
+
+    def __str__(self):
+        rstr = f'wyrm.core.process.OutputWyrm(pclass={self.pclass}, '
+        rstr += f'oclass={self.oclass}, '
+        rstr += f'pmethod={self.pmethod}, pkwargs={self.pkwargs}, '
+        rstr += f'max_pulse_size={self.max_pulse_size}, '
+        rstr += f'debug={self.debug})'
+        return rstr
+
 ###################################################################################
 # PREDICTION WYRM CLASS DEFINITION - FOR BATCHED PREDICTION IN A PULSED MANNER ####
 ###################################################################################

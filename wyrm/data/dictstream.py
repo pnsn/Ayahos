@@ -1,5 +1,6 @@
 import fnmatch, inspect, time, warnings, os, glob, obspy
 import numpy as np
+import pandas as pd
 from decorator import decorator
 from obspy.core.utcdatetime import UTCDateTime
 from obspy.core.stream import Stream, read
@@ -1124,7 +1125,18 @@ class DictStream(Stream):
             mlt_semb = MLTrace(data=semblance, fold=weights.sum(axis=0), header=header)
             return mlt_semb
 
-
+    def prediction_trigger_report(self, thresh, **kwargs):
+        df_out = pd.DataFrame()
+        for tr in self.traces.values():
+            idf_out = tr.prediction_trigger_report(thresh, **kwargs)
+            if isinstance(idf_out, pd.DataFrame):
+                df_out = pd.concat([df_out, idf_out], axis=0, ignore_index=True)
+            else:
+                continue
+        if len(df_out) > 0:
+            return df_out
+        else:
+            return None
 
 
 

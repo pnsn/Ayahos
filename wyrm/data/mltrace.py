@@ -43,6 +43,7 @@ from obspy.core.trace import Trace, Stats
 from obspy.core.util.misc import flat_not_masked_contiguous
 from wyrm.util.compatability import bounded_floatlike
 from wyrm.util.seisbench import pretrained_dict
+from wyrm.util.feature_extraction import est_curve_quantiles, est_curve_normal_stats
 
 
 # def read_from_mseed(filename, sanity_checks=True, stamp_load=False, **kwargs):
@@ -1060,7 +1061,84 @@ class MLTrace(Trace):
 
         return self
     
+    # TRIGGER METHOD ##############################################################
 
+    def prediction_trigger_report(self, thresh,
+                           blinding=(None, None),
+                           min_len=5, max_len=9e99,
+                           extra_quantiles=[0.159, 0.25, 0.75, 0.841],
+                           stats_pad=20,
+                           decimals=6):
+        if self.stats.model == self.stats.defaults['model']:
+            raise ValueError('model is unassigned - not working on a prediction trace')
+        elif self.stats.weight == self.stats.defaults['weight']:
+            raise ValueError('weight is unassigned - not working on a prediction trace')
+        else:
+            pass
+        output = []
+        cols = ['network','station','location','channel','model','weight','label',
+                't0','SR','npts','lblind','rblind','stats_pad',
+                'thrON','iON','thrOFF','iOFF','pMAX','iMAX',
+                'imean','istd','iskew','ikurt']
+        quantiles = [0.5]
+        if isinstance(extra_quantiles, list):
+            if all([0<=_q<=1 for _q in extra_quantiles]):
+                quantiles += extra_quantiles
+            else:
+                raise ValueError
+        elif extra_quantiles is None:
+            pass
+        else:
+            raise TypeError
+        
+        for _q in quantiles:
+            cols += [f'pQ{_q:.3f}', f'iQ{_q:.3f}']
+
+        triggers = obspy.signal.trigger.trigger_onset(self.data[blinding[0]:-blinding[1]], thresh, thresh)
+        if blinding[0] is not None:
+            offset = blinding[0]
+        else:
+            offset = 0
+        for trigger in triggers:
+            # Correct for blinding offset
+            trigger[0] += offset - stats_pad
+            trigger[1] += offset + stats_pad
+            if min_len <= trigger[1] - trigger[0] <= max_len:
+                trig_data = self.data[trigger[0]:trigger[1]]
+                trig_index = np.arange(trigger[0], trigger[1])
+                imax = trigger[0] + np.nanargmax(trig_data)
+                pmax = self.data[imax]
+                iq, pq = est_curve_quantiles(trig_index, trig_data, q=quantiles)
+                line = [self.stats.network,
+                        self.stats.station,
+                        self.stats.location,
+                        self.stats.channel,
+                        self.stats.model,
+                        self.stats.weight,
+                        self.stats.component,
+                        np.round(self.stats.starttime.timestamp, decimals=decimals),
+                        self.stats.sampling_rate,
+                        self.stats.npts,
+                        blinding[0], blinding[1],stats_pad,
+                        thresh,trigger[0] + stats_pad,
+                        thresh,trigger[1] - stats_pad,
+                        pmax,imax]
+                norm_stats = list(est_curve_normal_stats(trig_index, trig_data))
+                # breakpoint()
+                line += norm_stats
+                for _i, _p in zip(iq, pq):
+                    line += [_p, _i]
+                output.append(line)
+        if len(output) > 0:
+            df_out = pd.DataFrame(output, columns=cols)
+        
+            return df_out
+        else:
+            return None
+                
+
+                
+                        
 
         
     ###############################################################################

@@ -206,7 +206,7 @@ for evid in evids:
     report_file.write(f'{time.time()}, {evid}, START_OF_EVENT_ENTRY, \n')
     report_file.write(f'{time.time()}, {evid}, loading, {evid_dir}\n')
     save_file = SAVE_FILE.format(evid=evid)
-    report_file.write(f'{time.time()}, {evid}, will_write_to, {save_file}')
+    report_file.write(f'{time.time()}, {evid}, will_write_to, {save_file}\n')
     if OVERWRITE_PROTECT:
         if os.path.isfile(save_file):
             print(f'file: {save_file} already exists - skipping this event and continuing')

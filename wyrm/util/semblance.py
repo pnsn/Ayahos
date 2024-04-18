@@ -419,3 +419,6 @@ def generate_example_semblance_data(nlabels=1,mmodels=30):
             # Perturb example vector with roll and add to pstack
             pstack[_m, _l, :] = np.roll(vect.copy(), (_m+_l)%4 + _l)
     return pstack
+
+
+# def fit_gmm(index, data, n_normals=2, covariance_type='full', init_params='k-means++'):

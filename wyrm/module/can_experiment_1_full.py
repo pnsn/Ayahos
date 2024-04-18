@@ -177,7 +177,7 @@ print('Wyrm Module Compiled')
 ROOT = os.path.join('..','..','example')
 # Define root directory path
 HDD_ROOT = os.path.join('/Volumes','TheWall','PNSN_miniDB','data')
-REPORT_FILE = os.path.join(HDD_ROOT,'processing_log.txt')
+REPORT_FILE = os.path.join(HDD_ROOT,'processing_log_pt_2.txt')
 if os.path.exists(REPORT_FILE):
     print('assign a new report_file name')
     breakpoint()

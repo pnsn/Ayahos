@@ -228,7 +228,7 @@ for evid in evids:
     try:
         st = obspy.read(wffile, fmt='MSEED')
     except:
-        report_file.write(f'{time.time()}, {evid}, SKIP, bad_bulk_load')
+        report_file.write(f'{time.time()}, {evid}, SKIP, bad_bulk_load\n')
         report_file.close()
         continue   
     ist = obspy.Stream()
@@ -247,14 +247,14 @@ for evid in evids:
         # Merge data on the ObsPy side
         ist.merge()
     except:
-        report_file.write(f'{time.time()}, {evid}, SKIP, bad_stream_merge')
+        report_file.write(f'{time.time()}, {evid}, SKIP, bad_stream_merge\n')
         report_file.close()
         continue
         # Introduce to Wyrm DictStream
     try:
         dst = ds.DictStream(traces=ist)
     except:
-        report_file.write(f'{time.time()}, {evid}, SKIP, bad_dictstream_conversion')
+        report_file.write(f'{time.time()}, {evid}, SKIP, bad_dictstream_conversion\n')
         report_file.close()
         continue
     report_file.write(f'{time.time()}, {evid}, trace_count, {len(dst.traces)}\n')
@@ -263,7 +263,7 @@ for evid in evids:
     try:
         can_wyrm_out = iter_canwyrm.pulse(dst)
     except:
-        report_file.write(f'{time.time()}, {evid}, SKIP, error_in_pulse')
+        report_file.write(f'{time.time()}, {evid}, SKIP, error_in_pulse\n')
         report_file.close()
         continue
     report_file.write(f'{time.time()}, {evid}, STOP_WYRM, CanWyrm.pulse()\n')
@@ -285,19 +285,27 @@ for evid in evids:
                 # Append EVID to all picks
                 idf = idf.assign(evid= [evid for _i in range(len(idf))])
                 first_iter = True
+                # Iterate across unique net/sta (site) values
                 for net, sta in idf[['network','station']].value_counts().index:
+                    # Iterate across labels being kept
                     for label in SAVE_LABELS:
+                        # Get matching picks (if any)
                         ipick_df = pick_idf[(pick_idf.net==net)&(pick_idf.sta==sta)&(pick_idf.iphase==label)]
+                        # Iterate across matching picks (if any)
                         for _, ipick in ipick_df.iterrows():
+                            # If first iteration, assign ARID as a new column and np.nan as placeholders
                             if first_iter:
                                 idf = idf.assign(arid=[int(ipick.arid) if irow.label==label else np.nan for idx, irow in idf.iterrows()])
                                 first_iter=False
+                            # If subsequent iteration, assign ARID to matching columns, otherwise keep assigned values
                             else:
                                 idf = idf.assign(arid=[int(ipick.arid) if irow.label==label else irow.arid for idx, irow in idf.iterrows()])
+                            # IMPLICIT - triggers without corresponding labeled picks continue to have a NaN as the ARID
+                # If there are 
                 if len(idf) > 0:
                     df_summary = pd.concat([df_summary, idf], axis=0, ignore_index=True)
     except:
-        report_file.write(f'{time.time()}, {evid}, SKIP, bad_output_dataframe_compilation')
+        report_file.write(f'{time.time()}, {evid}, SKIP, bad_output_dataframe_compilation\n')
         report_file.close()
         continue
     try:
@@ -307,7 +315,7 @@ for evid in evids:
         print(f'saving took {time.time() - tock: .3f}sec')
         report_file.close()
     except:
-        report_file.write(f'{time.time()}, {evid}, SKIP, bad_dataframe_write')
+        report_file.write(f'{time.time()}, {evid}, SKIP, bad_dataframe_write\n')
         report_file.close()
 
     # breakpoint()

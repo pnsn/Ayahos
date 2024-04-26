@@ -739,6 +739,21 @@ class DictStream(Stream):
         out.stats.common_id = out.get_common_id()
         return out
 
+    def exclude(self, iterable, key_attr=None, ascopy=False):
+        out = self.__class__(header=self.stats.copy(), key_attr = self.default_key_attr)
+        matches = []
+        for _e in iterable:
+            matches += fnmatch.filter(self.traces.keys(), _e)
+        for _k in self.traces.keys():
+            if _k not in matches:
+                if ascopy:
+                    _tr = self.traces[_k].copy()
+                else:
+                    _tr = self.traces[_k]
+                out.extend(_tr, key_attr=key_attr)
+        out.stats.common_id = out.get_common_id()
+        return out
+
 
     def get_unique_id_elements(self):
         """
@@ -826,7 +841,12 @@ class DictStream(Stream):
         """
         ele = self.get_common_id_elements()
         out = '.'.join(ele.values())
-        return out                
+        return out
+
+    def update_stats_timing(self):
+        for tr in self:
+            self.stats.update_time_range(tr)
+        return None                
     
     def split_on_key(self, key='instrument', **options):
         """
@@ -952,6 +972,7 @@ class DictStream(Stream):
             # remove empty traces after trimming
             self.traces = {_k: _v for _k, _v in self.traces.items() if _v.stats.npts}
             self.stats.update_time_range(trace)
+        self.stats.common_id = self.get_common_id()
         return self
     
     def normalize_traces(self, norm_type:str ='peak'):
@@ -1125,16 +1146,41 @@ class DictStream(Stream):
             mlt_semb = MLTrace(data=semblance, fold=weights.sum(axis=0), header=header)
             return mlt_semb
 
-    def prediction_trigger_report(self, thresh, **kwargs):
+    def prediction_trigger_report(self, thresh, exclude_list=None, **kwargs):
         df_out = pd.DataFrame()
-        for tr in self.traces.values():
-            idf_out = tr.prediction_trigger_report(thresh, **kwargs)
-            if isinstance(idf_out, pd.DataFrame):
+        if 'include_processing_info' in kwargs.keys():
+            include_proc = kwargs['include_processing_info']
+        else:
+            include_proc = False
+        if include_proc:
+            df_proc = pd.DataFrame()
+        if exclude_list is not None:
+            if isinstance(exclude_list, list) and all(isinstance(_e, str) for _e in exclude_list):
+                view = self.exclude(exclude_list)
+            else:
+                raise TypeError('exclude_list must be a list of strings or NoneType')
+        else:
+            view = self
+        for tr in view.traces.values():
+            out = tr.prediction_trigger_report(thresh, **kwargs)
+            # Parse output depening on output type
+            if not include_proc and out is not None:
+                idf_out = out
+            elif include_proc and out is not None:
+                idf_out = out[0]
+                idf_proc = out[1]
+            # Concatenate outputs
+            if out is not None:
                 df_out = pd.concat([df_out, idf_out], axis=0, ignore_index=True)
+                if include_proc:
+                    df_proc = pd.concat([df_proc, idf_proc], axis=0, ignore_index=True)
             else:
                 continue
         if len(df_out) > 0:
-            return df_out
+            if include_proc:
+                return df_out, df_proc
+            else:
+                return df_out
         else:
             return None
 

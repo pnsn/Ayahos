@@ -1068,7 +1068,8 @@ class MLTrace(Trace):
                            min_len=5, max_len=9e99,
                            extra_quantiles=[0.159, 0.25, 0.75, 0.841],
                            stats_pad=20,
-                           decimals=6):
+                           decimals=6,
+                           include_processing_info=False):
         if self.stats.model == self.stats.defaults['model']:
             raise ValueError('model is unassigned - not working on a prediction trace')
         elif self.stats.weight == self.stats.defaults['weight']:
@@ -1131,8 +1132,18 @@ class MLTrace(Trace):
                 output.append(line)
         if len(output) > 0:
             df_out = pd.DataFrame(output, columns=cols)
-        
-            return df_out
+            if include_processing_info:
+                holder =[]
+                for line in self.stats.processing:
+                    iline = line.copy()
+                    iline += [self.id, self.stats.starttime, self.stats.endtime]
+                    holder.append(iline)
+                holder.append(['MLTrace','prediction_trigger_report','output',time.time()])
+                df_proc = pd.DataFrame(holder, columns=['class','method','status','timestamp','id','starttime','endtime'])
+
+                return df_out, df_proc
+            else:
+                return df_out
         else:
             return None
                 

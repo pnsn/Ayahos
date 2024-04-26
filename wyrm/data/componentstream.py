@@ -280,8 +280,8 @@ class ComponentStream(DictStream):
         # Otherwise apply rule
         elif rule == 'zeros':
             self._apply_zeros(thresh_dict)
-        elif rule == 'clone_ref':
-            self._apply_clone_ref(thresh_dict)
+        elif rule == 'clone_primary':
+            self._apply_clone_primary(thresh_dict)
         elif rule == 'clone_other':
             self._apply_clone_other(thresh_dict)
         else:
@@ -418,7 +418,7 @@ class ComponentStream(DictStream):
                 pass
 
             # If at least one "other" component passed checks
-            elif any(_v for _k, _v in pass_dict.items() if _k != ref_comp):
+            elif any(_v if _k != ref_comp else False for _k, _v in pass_dict.items()):
                 # Iterate across components in 
                 for _k, _v in pass_dict.items():
                     # If not the reference component and did not pass
@@ -434,12 +434,12 @@ class ComponentStream(DictStream):
                 # Write cloned, relabeled "other" trace to the failing trace's position
                 self.traces.update({cc: trC})
 
-            # If only the reference trace passed, run _apply_clone_ref() method instead
+            # If only the reference trace passed, run _apply_clone_primary() method instead
             else:
-                self._apply_clone_ref(thresh_dict)
+                self._apply_clone_primary(thresh_dict)
 
         # If ref and one "other" component are present
-        elif ref_comp in pass_dict.keys():
+        elif ref_comp in pass_dict.keys() and len(pass_dict) > 1:
             # ..and they both pass checks
             if all(pass_dict.items()):
                 # Iterate across all expected components
@@ -458,12 +458,12 @@ class ComponentStream(DictStream):
                 trC.to_zero(method='fold')
                 # And update traces with clone
                 self.traces.update({cc: trC})
-            # If the single "other" trace does not pass, use _apply_clone_ref method
+            # If the single "other" trace does not pass, use _apply_clone_primary method
             else:
-                self._apply_clone_ref(thresh_dict)
+                self._apply_clone_primary(thresh_dict)
         # If only the reference component is present & passing
         else:
-            self._apply_clone_ref(thresh_dict)
+            self._apply_clone_primary(thresh_dict)
     
     ###############################################################################
     # Synchronization Methods #####################################################

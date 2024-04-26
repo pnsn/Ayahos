@@ -36,7 +36,7 @@ class Wyrm:
     @ debug - bool switch for running the wyrm in debug mode (in development)
     """
 
-    def __init__(self, max_pulse_size=None, debug=False):
+    def __init__(self, timestamp=False, timestamp_method=None, max_pulse_size=None, debug=False):
         """
         Initialize a Wyrm object
         """
@@ -48,6 +48,16 @@ class Wyrm:
         else:
             self.debug = debug
         
+        if isinstance(timestamp, bool):
+            self._timestamp = timestamp
+        else:
+            raise TypeError('timestamp must be type bool')
+
+        if isinstance(timestamp_method, (type(None), str)):
+            self._timestamp_method=timestamp_method
+        else:
+            raise TypeError('timestamp_method must be NoneType or str')
+
         # Compatability check for max_pulse_size
         if max_pulse_size is None:
             self.max_pulse_size = None

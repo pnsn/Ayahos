@@ -60,6 +60,7 @@ class WindowWyrm(Wyrm):
         reference_overlap=1800,
         pulse_type='network',
         max_pulse_size=1,
+        timestamp=False,
         debug=False,
         **options
     ):
@@ -104,7 +105,7 @@ class WindowWyrm(Wyrm):
 
         """
         # Initialize/inherit from Wyrm
-        super().__init__(max_pulse_size=max_pulse_size, debug=debug)
+        super().__init__(timestamp=timestamp, max_pulse_size=max_pulse_size, debug=debug)
 
         if pulse_type.lower() in ['network','site','instrument']:
             self.pulse_type = pulse_type.lower()
@@ -385,6 +386,8 @@ class WindowWyrm(Wyrm):
         nnew = 0
         _ssv = self.window_tracker[site][inst][mod]
         if _ssv['ready']:
+            if self._timestamp:
+                start_entry = ['WindowWyrm','_sample_window','start',time.time()]
             next_window_ti = _ssv['ti']
             next_window_tf = next_window_ti + self.window_sec
             # Subset data view
@@ -405,8 +408,14 @@ class WindowWyrm(Wyrm):
                                             'reference_npts': self.ref['npts'],
                                             'aliases': self.aliases},
                                     ref_component=self.ref['component'])
+            if self._timestamp:
+                # TODO: Figure out why this hard reset is needed for stats.processing...
+                cst.stats.processing = []
+                cst.stats.processing.append(start_entry)
+                cst.stats.processing.append(['WindowWyrm','_sample_window','end',time.time()])
             # Append to queue
-            self.queue.append(cst)
+            self.queue.append(cst.copy())
+            del cst
             # Update window with an advance for this instrument
             self.window_tracker[site][inst][mod]['ti'] += self.advance_sec
             # Set ready flag to False for this new window (_update_window_tracker will handle re-readying)
@@ -542,6 +551,8 @@ class MethodWyrm(Wyrm):
         pkwargs={'type': 'bandpass',
                  'freqmin': 1,
                  'freqmax': 45},
+        timestamp = False,
+        timestamp_method=None,
         max_pulse_size=10000,
         debug=False,
         ):
@@ -565,7 +576,7 @@ class MethodWyrm(Wyrm):
         """
 
         # Initialize/inherit from Wyrm
-        super().__init__(max_pulse_size=max_pulse_size, debug=debug)
+        super().__init__(timestamp=timestamp, timestamp_method=timestamp_method, max_pulse_size=max_pulse_size, debug=debug)
         # pclass compatability checks
         if not isinstance(pclass,type):
             raise TypeError('pclass must be a class defining object (type "type")')
@@ -615,6 +626,8 @@ class MethodWyrm(Wyrm):
             if not isinstance(_x, self.pclass):
                 x.append(_x)
             else:
+                if self._timestamp:
+                    _x.stats.processing.append(['MethodWyrm',self.pmethod, 'start', time.time()])
                 getattr(_x, self.pmethod)(**self.pkwargs);
                 # For objects with a stats.processing attribute, append processing info
                 # if 'stats' in dir(_x):
@@ -625,6 +638,8 @@ class MethodWyrm(Wyrm):
                 #              'MethodWyrm',
                 #              self.pmethod,
                 #              f'({self.pkwargs})'])
+                if self._timestamp:
+                    _x.stats.processing.append(['MethodWyrm',self.pmethod, 'end', time.time()])
                 self.queue.append(_x)
         y = self.queue
         return y
@@ -715,6 +730,7 @@ class PredictionWyrm(Wyrm):
         devicetype='cpu',
         compiled=True,
         max_pulse_size=1000,
+        timestamp=False,
         debug=False):
         """
         Initialize a PredictionWyrm object
@@ -739,7 +755,7 @@ class PredictionWyrm(Wyrm):
         :debug: [bool] should this wyrm be run in debug mode?
 
         """
-        super().__init__(max_pulse_size=max_pulse_size, debug=debug)
+        super().__init__(timestamp=timestamp, max_pulse_size=max_pulse_size, debug=debug)
         
         # model compatability checks
         if not isinstance(model, sbm.WaveformModel):
@@ -844,11 +860,13 @@ class PredictionWyrm(Wyrm):
                     _fold = _x.collapse_fold().copy() 
                     _meta = _x.stats.copy()
                     # Attach processing information for split
-                    _meta.processing.append([time.time(),
-                                             'Wyrm 0.0.0',
-                                             'PredictionWyrm',
-                                             'split_for_ml',
-                                             '<internal>'])
+                    # _meta.processing.append([time.time(),
+                    #                          'Wyrm 0.0.0',
+                    #                          'PredictionWyrm',
+                    #                          'split_for_ml',
+                    #                          '<internal>'])
+                    if self._timestamp:
+                        _meta.processing.append(['PredictionWyrm','split_for_ml',str(_i), time.time()])
                     # Delete source ComponentStream object to clean up memory
                     del _x
                     # Append copied (meta)data to collectors
@@ -867,6 +885,10 @@ class PredictionWyrm(Wyrm):
             batch_dst_dict = {_i: DictStream() for _i in range(len(batch_meta))}
             # Iterate across preloaded (and precompiled) models
             for wname, weighted_model in self.cmods.items():
+                if self._timestamp:
+                    batch_meta = batch_meta.copy()
+                    for _meta in batch_meta:
+                        _meta.processing.append(['PredictWyrm','pulse','batch_start',time.time()])
                 # Run batch prediction for a given weighted_model weight
                 if batch_data.ndim != 3:
                     breakpoint()
@@ -1001,17 +1023,20 @@ class PredictionWyrm(Wyrm):
                       'weight': weight_name,
                       'processing': copy.deepcopy(_meta.processing)}
             # Update processing information to timestamp completion of batch prediction
-            _header['processing'].append([time.time(),
-                                          'Wyrm 0.0.0',
-                                          'PredictionWyrm',
-                                          'batch2dst_dict',
-                                          '<internal>'])
+     
+            # _header['processing'].append([time.time(),
+            #                               'Wyrm 0.0.0',
+            #                               'PredictionWyrm',
+            #                               'batch2dst_dict',
+            #                               '<internal>'])
             # Iterate across prediction labels
             for _j, label in enumerate(self.cmods[weight_name].labels):
                 # Compose output trace from prediction values, input data fold, and header data
                 _mlt = MLTrace(data = batch_preds[_i, _j, :], fold=batch_fold[_i], header=_header)
                 # Update component labeling
                 _mlt.set_comp(label)
+                if self._timestamp:
+                    _mlt.stats.processing.append(['PredictionWyrm','batch2dst',f'{_i+1} of {len(batch_meta)}',time.time()])
                 # Append to window-indexed dictionary of DictStream objects
                 if _i not in dst_dict.keys():
                     dst_dict.update({_i, DictStream()})

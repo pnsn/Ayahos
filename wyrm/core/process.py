@@ -888,7 +888,7 @@ class PredictionWyrm(Wyrm):
                 if self._timestamp:
                     batch_meta = batch_meta.copy()
                     for _meta in batch_meta:
-                        _meta.processing.append(['PredictWyrm','pulse','batch_start',time.time()])
+                        _meta.processing.append(['PredictionWyrm','pulse','batch_start',time.time()])
                 # Run batch prediction for a given weighted_model weight
                 if batch_data.ndim != 3:
                     breakpoint()

@@ -1,10 +1,10 @@
-import fnmatch, logging, torch, copy
+import copy
 import numpy as np
 import pandas as pd
 import seisbench.models as sbm
 from obspy import Trace, Stream, UTCDateTime
-from wyrm.data.dictstream import DictStream, DictStreamStats, _add_processing_info
-from wyrm.data.mltrace import MLTrace
+from wyrm.core.wyrmstream import WyrmStream, WyrmStreamStats, _add_processing_info
+from wyrm.core.mltrace import MLTrace
 from wyrm.util.pyew import wave2mltrace
 
 ###############################################################################
@@ -12,15 +12,15 @@ from wyrm.util.pyew import wave2mltrace
 ###############################################################################
 ## TODO: Nix primary_components for now - too general.
 
-class ComponentStreamStats(DictStreamStats):
+class WindowStreamStats(WyrmStreamStats):
     # NTS: Deepcopy is necessary to not overwrite _types and defaults for parent class
-    _types = copy.deepcopy(DictStreamStats._types)
+    _types = copy.deepcopy(WyrmStreamStats._types)
     _types.update({'primary_component': str,
                    'aliases': dict,
                    'reference_starttime': (UTCDateTime, type(None)),
                    'reference_npts': (int, type(None)),
                    'reference_sampling_rate': (float, type(None))})
-    defaults = copy.deepcopy(DictStreamStats.defaults)
+    defaults = copy.deepcopy(WyrmStreamStats.defaults)
     defaults.update({'primary_component': 'Z',
                      'aliases': {'Z': 'Z3',
                                  'N': 'N1',
@@ -31,7 +31,7 @@ class ComponentStreamStats(DictStreamStats):
     
     def __init__(self, header={}):
         # Initialize super + updates to class attributes
-        super(ComponentStreamStats, self).__init__()
+        super(WindowStreamStats, self).__init__()
         # THEN update self with header inputs
         self.update(header)
 
@@ -58,7 +58,7 @@ class ComponentStreamStats(DictStreamStats):
 # Component Stream Class Definition ###########################################
 ###############################################################################
         
-class ComponentStream(DictStream):
+class WindowStream(WyrmStream):
 
     def __init__(
             self,
@@ -67,27 +67,27 @@ class ComponentStream(DictStream):
             header={},
             **options):
         """
-        Initialize a wyrm.core.dictstream.ComponentStream object
+        Initialize a wyrm.core.WyrmStream.WindowStream object
 
         :: INPUTS ::
         :param traces: [obspy.core.trace.Trace] or [list]/[Stream] thereof
-                        trace-type object(s) to append to this ComponentStream, if they pass validation cross
+                        trace-type object(s) to append to this WindowStream, if they pass validation cross
                         checks with the component_aliases' contents
-        :param header: [dict] inputs to pass to ComponentStreamStats.__init__
+        :param header: [dict] inputs to pass to WindowStreamStats.__init__
         :param component_aliases: [dict] mapping between aliases (keys) and native component codes (characters in each value)
                         that are mapped to those aliases
-        :param **options: [kwargs] collector for key-word arguments to pass to the ComponentStream.__add__ method
-                        inherited from DictStream 
+        :param **options: [kwargs] collector for key-word arguments to pass to the WindowStream.__add__ method
+                        inherited from WyrmStream 
         """
-        # Initialize & inherit from DictStream
+        # Initialize & inherit from WyrmStream
         super().__init__()
         # Initialize Stream Header
-        self.stats = ComponentStreamStats(header=header)
+        self.stats = WindowStreamStats(header=header)
         if isinstance(primary_component, str):
             if primary_component in self.stats.aliases.keys():
                 self.stats.primary_component = primary_component
             else:
-                raise ValueError(f'primary_component must be a key value in ComponentStream.stats.aliases')
+                raise ValueError(f'primary_component must be a key value in WindowStream.stats.aliases')
         else:
             raise TypeError('primary_component must be type str')
         
@@ -98,7 +98,7 @@ class ComponentStream(DictStream):
                 raise TypeError('all input traces must be type MLTrace')
         else:
             raise TypeError("input 'traces' must be a single MLTrace or iterable set of MLTrace objects")
-        # Add traces using the ComponentStream __add__ method that converts non MLTrace objects into MLTrace objects
+        # Add traces using the WindowStream __add__ method that converts non MLTrace objects into MLTrace objects
         # if self.validate_trace_ids(self, other=traces)
         self.extend(traces, **options)
         self.stats.common_id = self.get_common_id()
@@ -182,7 +182,7 @@ class ComponentStream(DictStream):
     #     the key_attr to 'component'. 
 
     #     NOTE: Inheritance has an intermediate step where
-    #         DictStream.__add__() wraps MLTrace.__add__
+    #         WyrmStream.__add__() wraps MLTrace.__add__
 
     #     also see wyrm.data.mltrace.MLTrace.__add__()
     #     """
@@ -196,10 +196,10 @@ class ComponentStream(DictStream):
     def __repr__(self, extended=False):
         """
         Provide a user-friendly string representation of the contents and key parameters of this
-        ComponentStream object. 
+        WindowStream object. 
 
         :: INPUTS ::
-        :param extended: [bool] - option to show an extended form of the ComponentStream should 
+        :param extended: [bool] - option to show an extended form of the WindowStream should 
                             there be a large number of unique component codes (an uncommon use case)
         """
         rstr = self.stats.__str__()
@@ -227,7 +227,7 @@ class ComponentStream(DictStream):
 
     # def validate_ids(self, traces):
     #     """
-    #     Check id strings for traces against ComponentStream.stats.reference_id
+    #     Check id strings for traces against WindowStream.stats.reference_id
     #     :: INPUTS ::
     #     :param traces: [list-like] of [obspy.core.trace.Trace-like] or individual
     #                     objects thereof
@@ -408,7 +408,7 @@ class ComponentStream(DictStream):
                 pass
         # If the reference component is absent, kick error
         else:
-            raise KeyError("reference component is not in this ComponentStream's keys")
+            raise KeyError("reference component is not in this WindowStream's keys")
         
         # If all expected components are present
         if pass_dict.keys() == thresh_dict.keys():
@@ -475,7 +475,7 @@ class ComponentStream(DictStream):
                                reference_npts=None,
                                mode='summary'):
         """
-        Check if the data timing and sampling in this ComponentStream are synchronized
+        Check if the data timing and sampling in this WindowStream are synchronized
         with the reference_* [starttime, sampling_rate, npts] attributes in its Stats object
         or those specified as arguments in this check_sync() call. Options are provided for
         different slices of the boolean representation of trace-attribute-reference sync'-ing
@@ -578,13 +578,13 @@ class ComponentStream(DictStream):
     def sync_to_reference(self, fill_value=0., **kwargs):
         starttime = self.stats.reference_starttime
         if starttime is None:
-            raise ValueError('reference_starttime must be specified in this ComponentStream\'s `stats`')
+            raise ValueError('reference_starttime must be specified in this WindowStream\'s `stats`')
         npts = self.stats.reference_npts
         if npts is None:
-            raise ValueError('reference_npts must be specified in this ComponentStream\'s `stats`')
+            raise ValueError('reference_npts must be specified in this WindowStream\'s `stats`')
         sampling_rate = self.stats.reference_sampling_rate
         if sampling_rate is None:
-            raise ValueError('reference_sampling_rate must be specified in this ComponentStream\'s `stats`')
+            raise ValueError('reference_sampling_rate must be specified in this WindowStream\'s `stats`')
 
         endtime = starttime + (npts-1)/sampling_rate
 
@@ -603,16 +603,16 @@ class ComponentStream(DictStream):
 
 
     ###############################################################################
-    # ComponentStream to Tensor Methods ###########################################
+    # WindowStream to Tensor Methods ###########################################
     ###############################################################################
             
     def ready_to_burn(self, model):
         """
-        Assess if the data contents of this ComponentStream are ready
+        Assess if the data contents of this WindowStream are ready
         to convert into a torch.Tensor given a particular seisbench model
 
         NOTE: This inspects that the dimensionality, timing, sampling, completeness,
-             and component aliasing of the contents of this ComponentStream are
+             and component aliasing of the contents of this WindowStream are
              compliant with reference values in the metadata and in the input `model`'s
              metadata
               
@@ -624,8 +624,8 @@ class ComponentStream(DictStream):
                         object that prediction will be run on 
                         NOTE: This is really a child-class of sbm.WaveformModel
         :: OUTPUT ::
-        :return status: [bool] - is this ComponentStream ready for conversion
-                                using ComponentStream.to_torch(model)?
+        :return status: [bool] - is this WindowStream ready for conversion
+                                using WindowStream.to_torch(model)?
         """
         # model compatability check
         if not isinstance(model, sbm.WaveformModel):
@@ -656,14 +656,14 @@ class ComponentStream(DictStream):
     
     def to_npy_tensor(self, model):
         """
-        Convert the data contents of this ComponentStream into a numpy array that
+        Convert the data contents of this WindowStream into a numpy array that
         conforms to the component ordering required by a seisbench WaveformModel
         object
         :: INPUT ::
         :param model: []
         """
         if not self.ready_to_burn(model):
-            raise ValueError('This ComponentStream is not ready for conversion to a torch.Tensor')
+            raise ValueError('This WindowStream is not ready for conversion to a torch.Tensor')
         
         npy_array = np.c_[[self[_c].data for _c in model.component_order]]
         return npy_array
@@ -679,7 +679,7 @@ class ComponentStream(DictStream):
             addfold = np.sum(np.c_[[_tr.fold for _tr in self]], axis=0)
             return addfold
         else:
-            raise ValueError('not all traces in this ComponentStream have matching npts')
+            raise ValueError('not all traces in this WindowStream have matching npts')
         
 
     ## I/O ROUTINES ##

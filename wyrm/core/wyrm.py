@@ -10,7 +10,7 @@
     other *Wyrm classes -- "Wyrm" -- and serves as a template
     for the minimum required methods of each successor class. 
 """
-import wyrm.util.compatability as wcc
+import wyrm.util.input as wcc
 from copy import deepcopy
 from time import time
 import logging

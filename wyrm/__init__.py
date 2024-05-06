@@ -1,1 +1,1 @@
-from wyrm.core._base import Wyrm
+from wyrm.core.wyrm import Wyrm

@@ -28,8 +28,8 @@
 import os, sys, logging, time, threading
 import seisbench.models as sbm
 sys.path.append(os.path.join('..', '..'))
-from wyrm.core.coordinate import TubeWyrm
-from wyrm.core.process import WindowWyrm, ProcWyrm, WaveformModelWyrm
+from wyrm.coordinating.coordinate import TubeWyrm
+from wyrm.processing.process import WindowWyrm, ProcWyrm, WaveformModelWyrm
 from wyrm.core.data import InstrumentWindow, BufferTree, TraceBuffer
 import PyEW
 

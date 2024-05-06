@@ -3,10 +3,10 @@ import numpy as np
 import obspy, os, sys, pandas
 sys.path.append(os.path.join('..','..'))
 import seisbench.models as sbm
-import wyrm.data.dictstream as ds
-import wyrm.data.componentstream as cs
-import wyrm.core.coordinate as coor
-import wyrm.core.process as proc 
+import wyrm.core.wyrmstream as ds
+import wyrm.streaming.windowstream as cs
+import wyrm.coordinating.coordinate as coor
+import wyrm.processing.process as proc 
 from wyrm.util.time import unix_to_UTCDateTime
 from collections import deque
 import matplotlib.pyplot as plt

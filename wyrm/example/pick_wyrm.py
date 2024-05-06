@@ -1,7 +1,7 @@
 import os, sys, logging
-import wyrm.core.coordinate as wcoo
+import wyrm.coordinating.coordinate as wcoo
 import wyrm.core.submodule as wsub
-import wyrm.core.io as wio
+import wyrm.io.io as wio
 from wyrm.util.seisbench import update_windowing_params
 import seisbench.models as sbm
 

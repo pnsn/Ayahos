@@ -41,9 +41,8 @@ from decorator import decorator
 from obspy import Stream, read, UTCDateTime
 from obspy.core.trace import Trace, Stats
 from obspy.core.util.misc import flat_not_masked_contiguous
-from wyrm.util.compatability import bounded_floatlike
 from wyrm.util.seisbench import pretrained_dict
-from wyrm.util.feature_extraction import est_curve_quantiles, est_curve_normal_stats
+from wyrm.util.features import est_curve_quantiles, est_curve_normal_stats
 
 
 # def read_from_mseed(filename, sanity_checks=True, stamp_load=False, **kwargs):

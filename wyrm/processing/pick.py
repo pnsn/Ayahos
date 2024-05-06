@@ -1,6 +1,7 @@
-from wyrm.core.process import WindowWyrm
-from wyrm.data.dictstream import DictStream
-from wyrm.data.mltrace import MLTrace, MLTraceBuffer
+from wyrm.processing.process import WindowWyrm
+from wyrm.core.wyrmstream import WyrmStream
+from wyrm.core.mltrace import MLTrace
+from wyrm.streaming.mltracebuffer import MLTraceBuffer
 from wyrm.util.semblance import semblance
 
 class SemblanceWyrm(WindowWyrm):

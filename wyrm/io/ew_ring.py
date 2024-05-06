@@ -1,5 +1,5 @@
 """
-:module: wyrm.core.io
+:module: wyrm.io.ew_ring
 :auth: Nathan T. Stevens
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network
@@ -7,8 +7,7 @@
 
 :purpose:
     This module houses class definitions for handling data Input/Output
-    from the Earthworm Message Transport System (memory rings) and
-    from disk (in development)
+    from the Earthworm Message Transport System (memory rings)
 
     Classes
 
@@ -22,19 +21,14 @@
             `wave` messages into MLTrace objects, and appends these traces to MLTraceBuffer
             objects contained in a DictStream object
 
-    StreamWyrm - submodule that emulates packet-based data feeds into the Wyrm processing
-            pipeline using a single presented obspy.core.stream.Stream object as a data
-            source, rather than an Earthworm WAVE RING connection.
-
 
 """
 #import PyEW
-from obspy import Stream, read
-from wyrm.core._base import Wyrm
+from wyrm.core.wyrm import Wyrm
 from wyrm.util.pyew import is_wave_msg, wave2mltrace
-from wyrm.util.compatability import bounded_floatlike, bounded_intlike
-from wyrm.data.mltrace import MLTrace, MLTraceBuffer
-from wyrm.data.dictstream import DictStream
+from wyrm.util.input import bounded_floatlike, bounded_intlike
+from wyrm.core.mltrace import MLTrace, MLTraceBuffer
+from wyrm.core.wyrmstream import DictStream
 
 
 class RingWyrm(Wyrm):
@@ -311,82 +305,3 @@ class EarWyrm(RingWyrm):
             rstr += f', {_k}={_v}'
         rstr += ')'
         return rstr
-
-
-class StreamWyrm(Wyrm):
-    """
-    A class for simulating pulsed waveform loading behavior feeding off a pre-loaded
-    ObsPy Stream object wherein all traces have unique ID's (i.e., stream is pre-merged)
-    """
-
-    def __init__(self, max_length=300, dt_segment=1, realtime=False, max_pulse_sie=300, debug=False):
-        super().__init__(max_pulse_size=max_length, debug=debug)
-        self.dt_segment = bounded_floatlike(
-            dt_segment,
-            name='dt_segment',
-            minimum=0,
-            maximum=None,
-            inclusive=False
-        )
-        if not isinstance(realtime, bool):
-            raise TypeError
-        elif realtime:
-            raise NotImplementedError
-        else:
-            self.realtime = realtime
-        self.i_stream = DictStream()
-        self.o_stream = DictStream()
-        self.index = {}
-
-
-    def ingest_stream(self, stream):
-        """
-        Load data via a pre-merged obspy.core.stream.Stream object into this StreamWyrm's
-        i_stream attribute and populate the index attribute with trace id's and trace
-        starttimes
-        """
-        uid = []; trst = []
-        for _tr in stream:
-            if _tr.id not in uid:
-                uid.append(_tr.id)
-                trst.append(_tr.stats.starttime)
-            else:
-                raise ValueError('repeat trace ID found - merge stream before ingestion')
-        self.index = dict(zip(uid, trst))
-        self.i_stream = DictStream(traces=stream)
-
-    
-
-    def pulse(self, x=None):
-        for _i in range(self.max_pulse_size):
-            # Early stopping if index is exhausted
-            if len(self.index) == 0:
-                break
-            
-            # Iterate across traces in i_sream
-            for id, _tr in enumerate(self.i_stream.traces.items()):
-                t0 = self.index[_tr.id]
-                t1 = t0 + self.dt_segment
-                itr = _tr.copy().trim(startime=t0, endtime=t1)
-                if t1 <= _tr.stats.endtime:
-                    self.index[_tr.id] += self.dt_segment
-                else:
-                    self.index.pop(_tr.id)
-                    self.i_stream.pop(_tr.id)
-                # If new ID to output DictStream, generate MLTraceBuffer
-                if id not in self.o_stream.traces.keys():
-                    itr = MLTraceBuffer(max_length=self.max_length).__add__(itr)
-
-                # Use __add__ for generalized update/append
-                self.o_stream.__add__(itr)
-                if self.realtime:
-                    print('under construction - add stoppage time to simulate real-time operation')
-        y = self.o_stream
-        return y
-
-
-
-        
-
-
-        

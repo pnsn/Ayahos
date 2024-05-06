@@ -2,8 +2,8 @@ import os, sys, logging
 import seisbench.models as sbm
 
 sys.path.append(os.path.join('..','..'))
-import wyrm.core.coordinate as coo
-import wyrm.core.process as pro
+import wyrm.coordinating.coordinate as coo
+import wyrm.processing.process as pro
 from wyrm.core.data import InstrumentWindow, BufferTree, TraceBuffer
 
 

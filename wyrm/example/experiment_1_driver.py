@@ -1,10 +1,10 @@
 import glob, obspy, os, sys
 import seisbench.models as sbm
-import wyrm.data.dictstream as ds
-import wyrm.data.componentstream as cs
-import wyrm.data.mltrace as mt
-import wyrm.core.coordinate as coor
-import wyrm.core.process as proc 
+import wyrm.core.wyrmstream as ds
+import wyrm.streaming.windowstream as cs
+import wyrm.core.mltrace as mt
+import wyrm.coordinating.coordinate as coor
+import wyrm.processing.process as proc 
 
 common_pt = ['stead','instance','iquique','lendb']
 EQT = sbm.EQTransformer()

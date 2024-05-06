@@ -1,5 +1,5 @@
 import seisbench.models as sbm
-from wyrm.util.compatability import bounded_intlike
+from wyrm.util.input import bounded_intlike
 
 
 def pretrained_dict():

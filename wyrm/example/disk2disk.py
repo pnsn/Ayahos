@@ -3,7 +3,7 @@ import seisbench.models as sbm
 sys.path.append(os.path.join('..'))
 from wyrm.util.seisbench import update_windowing_params
 import wyrm.core.submodule as wsub
-import wyrm.core.io as wio
+import wyrm.io.io as wio
 
 def prep_models():
     """

@@ -1,4 +1,0 @@
-2024-02-27 15:26:17,367 - wyrm.module.wyrm_logging_example - INFO - creating an instance of wyrm.core._base.Wyrm
-2024-02-27 15:26:17,367 - wyrm.module.wyrm_logging_example - INFO - created an instance of wyrm.core._base.Wyrm
-2024-02-27 15:26:17,367 - wyrm.module.wyrm_logging_example - INFO - calling Wyrm.pulse(x=2)
-2024-02-27 15:26:17,367 - wyrm.module.wyrm_logging_example - INFO - finished Wyrm.pulse(x=2)

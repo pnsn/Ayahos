@@ -1,6 +1,5 @@
 import pytest, sys, os
-sys.path.append(os.path.join('..','..'))
-print('getting wyrm')
+# TODO: Need to sort out path addition for local 
 from wyrm.core.wyrm import Wyrm
 
 class test_wyrm:

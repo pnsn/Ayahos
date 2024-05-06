@@ -36,7 +36,7 @@ class Wyrm:
     @ debug - bool switch for running the wyrm in debug mode (in development)
     """
 
-    def __init__(self, timestamp=False, timestamp_method=None, max_pulse_size=None, debug=False):
+    def __init__(self, timestamp=False, max_pulse_size=None, debug=False):
         """
         Initialize a Wyrm object
         """
@@ -53,16 +53,16 @@ class Wyrm:
         else:
             raise TypeError('timestamp must be type bool')
 
-        if isinstance(timestamp_method, (type(None), str)):
-            self._timestamp_method=timestamp_method
-        else:
-            raise TypeError('timestamp_method must be NoneType or str')
-
         # Compatability check for max_pulse_size
         if max_pulse_size is None:
             self.max_pulse_size = None
+        elif isinstance(max_pulse_size, int, float):
+            if 1 <= max_pulse_size <= 1e6:
+                self.max_pulse_size = int(max_pulse_size)
+            else:
+                raise ValueError('max_pulse_size must be between 1 and 1000000')
         else:
-            self.max_pulse_size = wcc.bounded_intlike(max_pulse_size, name='max_pulse_size', minimum=1)
+            raise TypeError('max_pulse_size must be NoneType, or positive int-like')
 
     def __repr__(self):
         """
@@ -85,14 +85,6 @@ class Wyrm:
         """
         return deepcopy(self)
 
-    def timecheck(self, fmt=float):
-        if not isinstance(fmt, type):
-            raise TypeError('fmt must be type "type"')
-        try:
-            return fmt(time())
-        except TypeError:
-            raise TypeError(f'fmt {fmt} must be compatable with a single float argument input')
-
     def pulse(self, x=None):
         """
         Run a pulse with input argument and return that argument
@@ -104,7 +96,5 @@ class Wyrm:
         :: OUTPUT ::
         :return y: [type] or [NoneType] alias of input x
         """
-        self.logger.debug('pulse initiated')
         y = x
-        self.logger.debug('pulse concluded')
         return y

@@ -19,17 +19,22 @@
     EarWyrm - primary wave-fetching submodule for getting sets of tracebuff2 messages
             from a single WAVE RING using the PyEW.EWModule class, converts python-side
             `wave` messages into MLTrace objects, and appends these traces to MLTraceBuffer
-            objects contained in a DictStream object
-
+            objects contained in a WyrmStream object
+    
+    TODO: UNDER DEVELOPMENT
+    BookWyrm - primary message-submitting submodule for sending pick2k messages to a
+            single PICK RING
 
 """
+import logging
 #import PyEW
 from wyrm.core.wyrm import Wyrm
 from wyrm.util.pyew import is_wave_msg, wave2mltrace
 from wyrm.util.input import bounded_floatlike, bounded_intlike
 from wyrm.core.mltrace import MLTrace, MLTraceBuffer
-from wyrm.core.wyrmstream import DictStream
+from wyrm.core.wyrmstream import WyrmStream
 
+Logger = logging.getLogger(__name__)
 
 class RingWyrm(Wyrm):
     """
@@ -48,10 +53,17 @@ class RingWyrm(Wyrm):
         *with appropriate msg_type code
     """
     
-    def __init__(self, module=None, conn_id=0, pulse_method_str='get_wave', msg_type=19, max_pulse_size=10000, debug=False):
+    def __init__(
+            self,
+            module=None,
+            conn_id=0,
+            pulse_method_str='get_wave',
+            msg_type=19,
+            max_pulse_size=10000
+            ):
         
-        
-        Wyrm.__init__(self, debug=debug, max_pulse_size=max_pulse_size)
+        Wyrm.__init__(self, max_pulse_size=max_pulse_size)
+        Logger.debug('init RingWyrm')
         # Compatability checks for `module`
         if module is None:
             self.module = module
@@ -84,6 +96,7 @@ class RingWyrm(Wyrm):
         # In the case of get/put_wave, default to msg_type=19 (tracebuff2)
         else:
             self.msg_type=19
+        Logger.info('Ringwyrm method {0} for message type {1}'.format(self.pulse_method, self.msg_type))
 
     def pulse(self, x):
         """
@@ -168,7 +181,7 @@ class RingWyrm(Wyrm):
 class EarWyrm(RingWyrm):
     """
     Wrapper child-class of RingWyrm specific to listening to an Earthworm
-    WAVE Ring and populating MLTraceBuffers housed in a DictStream
+    WAVE Ring and populating MLTraceBuffers housed in a WyrmStream
     """
 
     def __init__(
@@ -177,10 +190,9 @@ class EarWyrm(RingWyrm):
         conn_id=0,
         max_length=150,
         restrict_past_append=True,
-        dictstream_kwargs={},
+        wyrmstream_kwargs={},
         mltrace_kwargs={},
         max_pulse_size=12000,
-        debug=False,
     ):
         """
         Initialize a EarWyrm object with a TieredBuffer + TraceBuff.
@@ -192,7 +204,6 @@ class EarWyrm(RingWyrm):
         :param max_length: [float] maximum MLTraceBuffer length in seconds
         :param max_pulse_size: [int] maximum number of get_wave() actions to execute per
                         pulse of this RingWyrm
-        :param debug: [bool] should this RingWyrm be run in debug mode?
         :param **options: [kwargs] additional kwargs to pass to MLTraceBuffer objects'
                             __add__() method.
         """
@@ -203,8 +214,8 @@ class EarWyrm(RingWyrm):
             pulse_method_str='get_wave',
             msg_type=19,
             max_pulse_size=max_pulse_size,
-            debug=debug
             )
+        Logger.info('init EarWyrm')
         # max_length compatability check (runs prior to init of a MLTraceBuffer to sanity check)
         self.max_length = bounded_floatlike(
             max_length,
@@ -223,15 +234,16 @@ class EarWyrm(RingWyrm):
             raise TypeError
         else:
             self.mltrace_kwargs = mltrace_kwargs
-        # accept options as-is and let DictStream.__add__ catches sort this out
-        if not isinstance(dictstream_kwargs, dict):
+        # accept options as-is and let WyrmStream.__add__ catches sort this out
+        if not isinstance(wyrmstream_kwargs, dict):
             raise TypeError
         else:
-            self.dictstream_kwargs = dictstream_kwargs
-        # basic check on DictStream.__add__ 
+            self.wyrmstream_kwargs = wyrmstream_kwargs
+        # basic check on WyrmStream.__add__ 
 
-        # Initialize DictStream
-        self.buffer = DictStream()
+        # Initialize WyrmStream
+        self.buffer = WyrmStream()
+        Logger.debug('init EarWyrm')
 
     def pulse(self, x=None):
         """
@@ -239,7 +251,7 @@ class EarWyrm(RingWyrm):
         a connected WAVE RING into python as a PyEarthworm `wave` message, which is converted
         into a wyrm.core.trace.MLTrace object and appended to a wyrm.core.trace.MLTraceBuffer
         object (or seeds a new MLTraceBuffer object) contained in the EarWyrm.buffer attribute
-        (a wyrm.core.dictstream.DictStream object) keyed on a given MLTrace(Buffer)'s `id`.
+        (a wyrm.core.WyrmStream.WyrmStream object) keyed on a given MLTrace(Buffer)'s `id`.
 
         Early stopping occurrs if the inherited RingWyrm.pulse() method returns a `False`
         output, signifying that a "no new messages" signal was received by the 
@@ -250,21 +262,22 @@ class EarWyrm(RingWyrm):
                     with the general template for the wyrm.core._base.Wyrm base class
         
         :: OUTPUT ::
-        :return y: [wyrm.core.dictstream.DictStream] access to the DictStream object
+        :return y: [wyrm.core.WyrmStream.WyrmStream] access to the WyrmStream object
                     contained in this EarWyrm's self.buffer attribute.
         """
         # Iterate up to max_pulse_size
-        for _ in range(self.max_pulse_size):
+        for _i in range(self.max_pulse_size):
             # Run pulse method from get_wave() formatted RingWyrm to get single wave
             _wave = super().pulse()
             # Early stopping if RingWyrm.pulse() returns False
             if not _wave:
+                Logger.debug('early stop - no new entries')
                 break
             # Otherwise
             else:
                 # Convert wave to MLTrace
                 mlt = wave2mltrace(_wave)
-                # If MLTrace id is not in the dictstream keys
+                # If MLTrace id is not in the WyrmStream keys
                 if mlt.id not in self.buffer.keys():
                     # Initialize a MLTraceBuffer
                     mltb = MLTraceBuffer(
@@ -272,9 +285,10 @@ class EarWyrm(RingWyrm):
                         restrict_past_append=self.restrict_past_append)
                     # Append 
                     mltb.__add__(mlt, **self.mltrace_kwargs)
-                    self.buffer.__add__(mlt, key_attr='id', **self.dictstream_kwargs)
+                    self.buffer.__add__(mlt, key_attr='id', **self.wyrmstream_kwargs)
                 else:
-                    self.buffer.__add__(mlt, key_attr='id', **self.dictstream_kwargs)
+                    self.buffer.__add__(mlt, key_attr='id', **self.wyrmstream_kwargs)
+        Logger.debug('pulse ran for {0} iterations'.format(_i))
         y = self.buffer
         return y
         
@@ -289,7 +303,7 @@ class EarWyrm(RingWyrm):
         """
         # Populate information from RingWyrm.__repr__
         rstr = super().__repr__()
-        # Add __repr__ from DictStream in self.buffer
+        # Add __repr__ from WyrmStream in self.buffer
         rstr += f'\n{self.buffer.__repr__(extended=extended)}'
         return rstr
 
@@ -299,7 +313,7 @@ class EarWyrm(RingWyrm):
         """
         rstr = f'wyrm.wyrms.io.EarWyrm(module={self.module}, '
         rstr += f'conn_id={self.conn_id}, max_length={self.max_length}, '
-        rstr += f'mltrace_kwargs={self.mltrace_kwargs}, dictstream_kwargs={self.dictstream_kwargs}, '
+        rstr += f'mltrace_kwargs={self.mltrace_kwargs}, wyrmstream_kwargs={self.wyrmstream_kwargs}, '
         rstr += f'max_pulse_size={self.max_pulse_size}, debug={self.debug}'
         for _k, _v in self.options.items():
             rstr += f', {_k}={_v}'

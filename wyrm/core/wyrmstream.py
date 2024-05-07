@@ -1,4 +1,4 @@
-import fnmatch, inspect, time, warnings, os, glob, obspy
+import fnmatch, inspect, time, warnings, os, glob, obspy, logging
 import numpy as np
 import pandas as pd
 from decorator import decorator
@@ -10,6 +10,8 @@ from obspy.core import compatibility
 from wyrm.core.mltrace import MLTrace, read_mltrace
 from wyrm.util.pyew import wave2mltrace
 from wyrm.util.semblance import ensemble_semblance #, weighted_ensemble_semblance
+
+Logger = logging.getLogger(__name__)
 
 
 def read_mltraces(data_files, obspy_read_kwargs={}, add_options={}):
@@ -47,70 +49,7 @@ def read_mltraces(data_files, obspy_read_kwargs={}, add_options={}):
         mlt = read_mltrace(df, **obspy_read_kwargs)
         dst.__add__(mlt, **add_options)
     return dst
-
-def read_from_numpy(file_list, dst_options={}, read_options={}):
-    if isinstance(file_list, str):
-        file_list = [file_list]
-    mltr_list = []
-    for _f in file_list:
-        _fn, _ext = os.path.splitext(_f)
-        mltr_list.append(MLTrace.read_from_numpy_hdr(_fn, **read_options))
-    dst = WyrmStream(traces=mltr_list, **dst_options)
-    return dst
         
-
-
-# def read_from_tiered_directory(root_path, common_string, key_attr='id', **options):
-    
-#     glob_DATA = os.path.join(root_path, 'DATA', f'{common_string}_DATA.*')
-#     gd = glob.glob(glob_DATA)
-#     if len(gd) == 0:
-#         raise ValueError(f'glob.glob({glob_DATA}) returned 0 entries')
-#     else:
-#         dst = WyrmStream()
-#         for _f in gd:
-#             try:
-#                 tr = read(_f)[0]
-#             except TypeError:
-#                 raise TypeError(f'Unknown format for file {_f}')
-#             # Get file name
-#             path, file_ext = os.path.split(_f)
-#             file, ext = os.path.splitext(file_ext)
-#             # Get id from start of file name
-#             parts = file.split('_')
-#             id = parts[0]
-#             common_name = '_'.join(parts[:-1])
-#             # Break into components
-#             n,s,l,c,m,w = id.split('.')
-#             # initialize MLTrace with tr as information
-#             mlt = MLTrace(data=tr)
-#             # Update model
-#             mlt.stats.model=m
-#             # Update weight
-#             mlt.stats.weight=w
-#             # Try to find fold and processing information
-#             fold_file = os.path.join(root_path,'FOLD',f'{common_name}_FOLD.{ext}')
-#             proc_file = os.path.join(root_path,'PROC',f'{common_name}_PROC.txt')
-#             # If fold file is found
-#             if os.path.exists(fold_file):
-#                 ftr = read(fold_file)[0]
-#                 mlt.fold = ftr.data
-#             # If processing file is found
-#             if os.path.isfile(proc_file):
-#                 with open(proc_file, 'r') as _p:
-#                     lines = _p.readlines()
-#                 for _l in lines:
-#                     # Strip newline character
-#                     _l = _l[:-1]
-#                     # Split comma separated into list
-#                     _l = _l.split(',')
-#                     # Append to processing
-#                     mlt.stats.processing.append(_l)
-#                 _p.close()
-#             dst.__add__(mlt, key_attr=key_attr, **options)
-#     return dst
-
-
 
 ###################################################################################
 # Dictionary Stream Stats Class Definition ########################################
@@ -239,33 +178,33 @@ class WyrmStreamStats(AttribDict):
         if self.max_endtime is None or self.max_endtime < trace.stats.endtime:
             self.max_endtime = trace.stats.endtime
 
-@decorator
-def _add_processing_info(func, *args, **kwargs):
-    """
-    This is a decorator that attaches information about a processing call as a string
-    to the WyrmStream.stats.processing lists
+# @decorator
+# def _add_processing_info(func, *args, **kwargs):
+#     """
+#     This is a decorator that attaches information about a processing call as a string
+#     to the WyrmStream.stats.processing lists
 
-    Attribution: Directly adapted from the obspy.core.trace function of the same name.
-    """
-    callargs = inspect.getcallargs(func, *args, **kwargs)
-    callargs.pop("self")
-    kwargs_ = callargs.pop("kwargs", {})
-    info = [time.time(), "Wyrm 0.0.0","{function}".format(function=func.__name__), "(%s)"]
-    arguments = []
-    arguments += \
-        ["%s=%s" % (k, repr(v)) if not isinstance(v, str) else
-         "%s='%s'" % (k, v) for k, v in callargs.items()]
-    arguments += \
-        ["%s=%s" % (k, repr(v)) if not isinstance(v, str) else
-         "%s='%s'" % (k, v) for k, v in kwargs_.items()]
-    arguments.sort()
-    info[-1] = info[-1] % "::".join(arguments)
-    self = args[0]
-    result = func(*args, **kwargs)
-    # Attach after executing the function to avoid having it attached
-    # while the operation failed.
-    self._internal_add_processing_info(info)
-    return result
+#     Attribution: Directly adapted from the obspy.core.trace function of the same name.
+#     """
+#     callargs = inspect.getcallargs(func, *args, **kwargs)
+#     callargs.pop("self")
+#     kwargs_ = callargs.pop("kwargs", {})
+#     info = [time.time(), "Wyrm 0.0.0","{function}".format(function=func.__name__), "(%s)"]
+#     arguments = []
+#     arguments += \
+#         ["%s=%s" % (k, repr(v)) if not isinstance(v, str) else
+#          "%s='%s'" % (k, v) for k, v in callargs.items()]
+#     arguments += \
+#         ["%s=%s" % (k, repr(v)) if not isinstance(v, str) else
+#          "%s='%s'" % (k, v) for k, v in kwargs_.items()]
+#     arguments.sort()
+#     info[-1] = info[-1] % "::".join(arguments)
+#     self = args[0]
+#     result = func(*args, **kwargs)
+#     # Attach after executing the function to avoid having it attached
+#     # while the operation failed.
+#     self._internal_add_processing_info(info)
+#     return result
 
 ###################################################################################
 # Dictionary Stream Class Definition ##############################################
@@ -651,6 +590,13 @@ class WyrmStream(Stream):
             tr.write(file_name=file_name, **options)
 
     def read(mltrace_mseed_files):
+        """
+        Read a list-like set of file names for mseed files created by a
+        MLTrace.write() call (i.e., MSEED files containing a data and fold trace)
+
+        also see wyrm.core.mltrace.MLTrace.write()
+                 wyrm.core.mltrace.MLTrace.read()
+        """
         if isinstance(mltrace_mseed_files, str):
             mltrace_mseed_files = [mltrace_mseed_files]
         dst = WyrmStream()

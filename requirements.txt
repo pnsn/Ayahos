@@ -1,0 +1,5 @@
+obspy
+scipy
+numpy
+seisbench
+

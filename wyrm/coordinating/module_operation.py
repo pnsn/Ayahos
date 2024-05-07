@@ -1,7 +1,18 @@
-import threading, logging, time
+import threading, logging, time, os
 import PyEW
 from wyrm.coordinating.sequence import TubeWyrm
 import pandas as pd
+
+Logger = logging.getLogger(__name__)
+
+def add_earthworm_to_path(Earthworm_Root='/usr/local/earthworm'):
+    ew_home = os.getenv('EW_HOME')
+    if ew_home:
+        Logger.debug(f'EW_HOME is already exported as {ew_home}')
+    else:
+        os.system(f'export EW_HOME={Earthworm_Root}')
+
+
 ###################################################################################
 # HEART WYRM CLASS DEFINITION #####################################################
 ###################################################################################
@@ -19,11 +30,12 @@ class HeartWyrm(TubeWyrm):
 
     def __init__(
         self,
-        wait_sec,
-        DR_ID,
-        MOD_ID,
-        INST_ID,
-        HB_PERIOD,
+        ew_home='/usr/local/earthworm',
+        wait_sec=0,
+        DR_ID=1000,
+        MOD_ID=200,
+        INST_ID=7,
+        HB_PERIOD=15,
         wyrm_list={},
         debug=False
     ):
@@ -71,6 +83,9 @@ class HeartWyrm(TubeWyrm):
             max_pulse_size=None,
             debug=debug)
         
+        # Check that earthworm is in path before initializing PyEW modules
+        add_earthworm_to_path(ew_home)
+
         # Public Attributes
         self.module = False
         self.conn_info = pd.DataFrame(columns=["Name", "RING_ID"])

@@ -34,7 +34,7 @@
                 to capture information on data packets' processing times
 """
 
-import inspect, time ,os, copy, glob, obspy
+import inspect, time ,os, copy, glob, obspy, logger
 import numpy as np
 import pandas as pd
 from decorator import decorator
@@ -44,6 +44,7 @@ from obspy.core.util.misc import flat_not_masked_contiguous
 from wyrm.util.seisbench import pretrained_dict
 from wyrm.util.features import est_curve_quantiles, est_curve_normal_stats
 
+Logger = logger.getLogger(__name__)
 
 def read_mltrace(data_file, **obspy_read_kwargs):
     """
@@ -1304,15 +1305,20 @@ class MLTrace(Trace):
     def read(file_name):
         # Get dictionary of pretrained model-weight combinations
         ptd = pretrained_dict()
+        # read input file and merge in case data saved were gappy
         st = read(file_name, fmt='MSEED').merge()
+        # Confirm there are 2 traces (data & fold)
         if len(st) == 2:
             for tr in st:
+                # Catch fold trace
                 if tr.stats.network == 'FO' and tr.stats.location=='LD':
                     fold_tr = tr
+                # Catch data trace
                 else:
                     data_tr = tr
+        # Initially populate header from data trace
         header = data_tr.stats
-
+        # Reconstitute model & weight labels from fold trace header
         for _m, _v in ptd.items():
             if fold_tr.stats.station != '':
                 if fold_tr.stats.station in _m:
@@ -1323,7 +1329,7 @@ class MLTrace(Trace):
                                 header.update({'weight': _w})
                                 break
                     break
-
+        # Complete mltrace reconstitution
         mltr = MLTrace(data=data_tr.data, fold=fold_tr.data, header=header)
         return mltr
 

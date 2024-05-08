@@ -1,0 +1,7 @@
+name: wyrm_v0
+channels:
+  - defaults
+dependencies:
+  - python=3.8
+  - cython
+  - numpy

@@ -1,10 +1,10 @@
 [build-system]
-requires = ["wheel", "setuptools >= 61.0.0", "setuptools_scm[toml]>=6.2"]
+requires = ["wheel", "setuptools >= 61.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "wyrm"
-dynamic = ["version"]
+version = "0.0.0"
 description = "A project connecting Earthworm to Python ML workflows"
 readme = "README.md"
 license = { text = "AGPL-3.0" }
@@ -33,11 +33,6 @@ dependencies = [
 [tool.setuptools.packages.find]
 include = ["wyrm*"]
 
-[project.optional-dependencies]
-development = ["flake8", "black"]
-tests = ["pytest"]
-
-[tool.setuptools_scm]
 
 [project.urls]
 GitHub = "https://github.com/pnsn/wyrm"

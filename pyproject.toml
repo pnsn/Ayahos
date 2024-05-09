@@ -34,7 +34,7 @@ dependencies = [
 include = ["wyrm*"]
 
 [project.optional-dependencies]
-development = ["flake8", "black", "isort", "pre-commit"]
+development = ["flake8", "black"]
 tests = ["pytest"]
 
 [tool.setuptools_scm]

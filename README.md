@@ -79,7 +79,11 @@ Will produce Sphinx documentation to host on ReadTheDocs
 wyrm  
 |__core - source code  
 |  |__stream     - obspy.core.stream.Stream child classes  
+|  |  |__stream.py
+|  |
 |  |__trace      - obspy.core.trace.Trace child classes  
+|  |  |__trace.py
+|  |
 |  |__wyrm       - process-focused classes ("wyrms")  
 |  
 |__modules - fully assembled wyrm modules for Py-EW or Py-DISK processing tasks    

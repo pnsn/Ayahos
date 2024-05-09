@@ -3,4 +3,6 @@
 *.xml
 wyrm.egg-info
 build
-environment
+environment*
+example_data*
+docs

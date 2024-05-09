@@ -8,18 +8,6 @@ and outputs
 :copyright: Nathan T. Stevens and Pacific Northwest Seismic Network (pnsn.org)
 :license: AGPL-3.0
 """
-from setuptools import setup, find_packages
+from setuptools import setup
 
-setup(
-    name='wyrm',
-    verions="0.0.0",
-    description='A package joining Python ML workflows to the Earthworm Message Transport System for streaming waveform data operations',
-    packages=find_packages(),
-    install_requires=[
-        'numpy',
-        'cython',
-        'obspy',
-        'pandas',
-        'seisbench'
-    ]
-)
+setup()

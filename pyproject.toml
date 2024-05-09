@@ -1,25 +1,42 @@
 [build-system]
 # Minimum requirements for the build system to execute (copied from ObsPy)
-requires = [
-    'setuptools'
-]
+requires = ['setuptools']
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include=['wyrm*']
+exclude=['doc*','environment*','example_data*','pyew*']
 
 [project]
 name = "wyrm"
-version = "0.0.0"
+version = "00.00.00"
+dependencies = [
+    "numpy",
+    "cython",
+    "obspy",
+    "pandas",
+    "seisbench"
+]
+
 authors = [
     {name="Nathan T. Stevens", email="ntsteven@uw.edu"},
-    {name="Pacific Northwest Seismic Network", email="pnsn.org"}
 ]
-description = "A python package connecting Earthworm messages and Python ML workflows"
+description = "A python package connecting Earthworm and Python ML workflows"
 readme = "README.md"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: AGPL-3.0 :: GNU General Public License",
-    "Operating System :: ISTI Earthworm Compliant"
+    "Operating System :: ISTI Earthworm Compliant",
+    "Development Status :: 3 - Alpha"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pyrocko",
+    "ipython"
 ]
 
 [project.urls]
 Homepage = "https://github.com/pnsn/wyrm"
 Issues = "https://github.com/pnsn/wyrm/issues"
+

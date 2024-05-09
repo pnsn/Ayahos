@@ -1,4 +1,6 @@
 *.pyc
 *.mseed
 *.xml
-
+wyrm.egg-info
+build
+environment

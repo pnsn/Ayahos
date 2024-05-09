@@ -18,19 +18,30 @@ This repository uses an identical GNU Affero General Public License (AGPL-3.0) t
 ## Installation Instructions  
 Full installation of this software requires the following steps:
 
-Create initial conda environment  
-`conda create --name wyrm python=3.12`  
-Activate environment  
-`conda activate wyrm`  
-install Wyrm from the main project directory using a `setuptools` backend to `pip`  
-`python -m pip install .`
 
-#### If interfacing with Earthworm via PyEarthworm (most cases) . 
-source your earthworm installation environment. e.g.,  
-`source /usr/local/earthworm/memphis/params/ew_macosx.bash`  
-install PyEarthworm from their `main` branch  
-`pip install git+https://github.com/Boritech-Solutions/PyEarthworm`  
+### Install with `conda` and `pip`
+Create and activate your `conda` environment  
+```
+conda create --name wyrm  
+conda activate wyrm  
+```
+Source your `Earthworm` OS-specific environment, e.g.,  
+```
+source /usr/local/earthworm/memphis/params/ew_macosx.bash
+```
+(University of Memphis EW Tankplayer example for MacOS X)  
 
+
+Install `Wyrm` from `develop`  
+```
+pip install git+https://github.com/pnsn/wyrm.git@develop
+```  
+Install `PyEarthworm` from `main`  
+```
+pip install git+https://github.com/Boritech-Solutions/PyEarthworm
+```  
+
+Tested with Python 3.12, Apple M2 chipset, and Earthworm 7.10  
 
 ## Notes on the Initial Package Development
 This initial version focuses on body wave detection and labeling tasks using the EarthquakeTransformer (EQT; Mousavi et al., 2018) and PhaseNet (Zhu et al., 2019) model architectures, along with the following pretrained model weights available through `SeisBench` (Woollam et al., 2020).
@@ -52,17 +63,10 @@ email: ntsteven (at) uw.edu
 org: Pacific Northwest Seismic Network
 
 ## Branching Plan/Development Notice  
-The current developmental version of this code will primarily be hosted on the `develop` branch and subsidiary `feature-*` branches in advance of a version 0.0 commit on the `main` branch.  
+The current developmental version of this code is hosted on the `develop` branch. Starting with version 0.0.1 the `main` branch will host deployment read code, `develop` will contain code that is in beta (debug only), and subsidiary `feature-*` branches will host new functionalities under development..  
 
-## Why "wyrm"?  
-Evocative elements of key tools for this code base - `Earthworm`, `Python`, and `Torch` - parallel descriptions of wyrms and dragons across various parts and periods of European folklore: a subterranean, fire-breathing serpent.  
-
-
-
-
-## References  
-
-
+## Why "Wyrm"?  
+Evocative elements of key tools for this project - `Earthworm`, `Python`, and `Torch` - that echo descriptions of wyrms in European folklore: a subterranean, fire-breathing serpent.  
 
 ## Documentation (Work In Progress)  
 Will produce Sphinx documentation to host on ReadTheDocs

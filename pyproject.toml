@@ -17,12 +17,12 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools]
 [toll.setuptools.dependencies]
 python = "^3.8"
-seisbench
-cython
-numpy
-obspy
-pandas
-ipython
+seisbench = "*"
+cython = "*"
+numpy = "*"
+obspy = "*"
+pandas = "*"
+ipython = "*"
 
 [tool.setuptools.package]
 name = "wyrm"

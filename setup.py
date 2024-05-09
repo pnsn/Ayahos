@@ -8,6 +8,19 @@ and outputs
 :copyright: Nathan T. Stevens and Pacific Northwest Seismic Network (pnsn.org)
 :license: AGPL-3.0
 """
-from setuptools import setup
+from setuptools import setup, find_packages
 
-setup()
+setup(
+    name='wyrm',
+    version='0.0.0',
+    description='Wyrm is a open-source project that builds on the PyEarthworm, ObsPy, Numpy, and SeisBench APIs to facilitate testing and operationalization of Python-based machine learning workflows that use Earthworm messages as inputs and outputs',
+    packages=find_packages(where='wyrm'),
+    package_dir={"":"wyrm"},
+    install_requires=[
+        'cython',
+        'numpy',
+        'pandas',
+        'obspy',
+        'seisbench'
+    ]
+)

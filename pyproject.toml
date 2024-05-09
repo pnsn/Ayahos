@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "wyrm"
 version = "0.0.0"
@@ -9,38 +13,15 @@ classifiers = [
     "Operating System :: ISTI Earthworm Compliant",
     "Development Status :: 3 - Alpha"
 ]
+dependencies = [
+    "python>=3.8",
+    "seisbench",
+    "cython",
+    "numpy",
+    "obspy",
+    "pandas",
+    "ipython",
+]
 
-[build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools]
-
-[tool.setuptools.dependencies]
-python = "^3.8"
-seisbench = "*"
-cython = "*"
-numpy = "*"
-obspy = "*"
-pandas = "*"
-ipython = "*"
-
-[tool.setuptools.package]
-name = "wyrm"
-version = "0.0.0"
-
-[[tool.setuptools.package.files]]
-path = "core"
-include = ["*.py"]
-
-[[tool.setuptools.package.files]]
-path = "util"
-include = ["*.py"]
-
-[[tool.setuptools.package.files]]
-path = "modules"
-include = ["*.py"]
-
-[[tool.setuptools.package.files]]
-path = "scripts"
-include = ["*.py"]
+[tool.setuptools.packages.find]
+include = ["wyrm*"]

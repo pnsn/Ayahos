@@ -15,7 +15,7 @@ This package primarily builds the `PyEarthworm` (or `PyEW`), `ObsPy`, `NumPy`, a
 ## License
 This repository uses an identical GNU Affero General Public License (AGPL-3.0) to match the license from `PyEarthworm` and conform with the GPL-3.0 license for `SeisBench`
 
-## Installation Instructions (Work In Progress)
+## Installation Instructions  
 Full installation of this software requires the following steps:
 
 Create initial conda environment  

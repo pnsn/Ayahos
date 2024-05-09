@@ -15,27 +15,15 @@
               last wyrm in the series
 
               y = wyrmN.pulse(...pulse(wyrm1.pulse(wyrm0.pulse(x))))
-    
-    CanWyrm - a submodule class for running a sequence of wyrms' pulse()
-                methods in parallel starting with a single input and returning
-                a dictionary of each wyrm's output
-
-                y = {id0: wyrm0.pulse(x),
-                     id1: wyrm1.pulse(x),
-                     ...
-                     idN: wyrmN.pulse(x)}
 
 """
-import time, threading, logging, copy
-import PyEW
+import time, logging
 import numpy as np
-import pandas as pd
 from collections import deque
-from wyrm.core.wyrm import Wyrm
+from wyrm.core.wyrm.wyrm import Wyrm
 from wyrm.util.input import bounded_intlike, bounded_floatlike
-from wyrm.core.mltrace import MLTrace
-from wyrm.streaming.mltracebuffer import MLTraceBuffer
-from wyrm.core.wyrmstream import WyrmStream
+
+logger = logging.getLogger(__name__)
 
 class TubeWyrm(Wyrm):
     """
@@ -50,7 +38,7 @@ class TubeWyrm(Wyrm):
         Note that the dictionary ordering dictates the execution order!
     """
 
-    def __init__(self, wyrm_dict={}, wait_sec=0.0, max_pulse_size=1, debug=False):
+    def __init__(self, wyrm_dict, wait_sec=0.0, max_pulse_size=1):
         """
         Create a tubewyrm object
         :: INPUT ::
@@ -69,11 +57,11 @@ class TubeWyrm(Wyrm):
         Initialized TubeWyrm object
         """
         # Inherit from Wyrm
-        super().__init__(max_pulse_size=max_pulse_size, debug=debug)
+        super().__init__(max_pulse_size=max_pulse_size)
 
         # wyrm_dict compat. checks
         if isinstance(wyrm_dict, Wyrm):
-            self.wyrm_dict = {'_tmp': wyrm_dict}
+            self.wyrm_dict = {0: wyrm_dict}
         elif isinstance(wyrm_dict, dict):
             if all(isinstance(_w, Wyrm) for _w in wyrm_dict.values()):
                 self.wyrm_dict = wyrm_dict
@@ -90,19 +78,14 @@ class TubeWyrm(Wyrm):
             raise TypeError('wyrm_dict must be a single Wyrm-type object or a list or dictionary thereof')
         
         # wait_sec compat. checks
-        self.wait_sec = bounded_floatlike(
-            wait_sec,
-            name='wait_sec',
-            minimum=0,
-            maximum=None,
-            inclusive=True
-        )
+        if not isinstance(wait_sec, (int, float)):
+            raise TypeError('wait_sec must be float-like')
+        elif wait_sec < 0:
+            raise ValueError('wait_sec must be non-negative')
+        else:
+            wait_sec = wait_sec
         # Create a list representation of keys
         self.names = list(wyrm_dict.keys())
-
-        # Enforce debug setting on all subsequent wyrms
-        for _w in self.wyrm_dict.values():
-            _w.debug = self.debug
 
     def update(self, new_dict):
         """
@@ -114,23 +97,22 @@ class TubeWyrm(Wyrm):
         at the end of self.wyrm_dict (same behavior as dict.update)
 
         :: INPUT ::
-        :param new_dict: [dict] of [Wyrm] objects
+        :param new_dict: dictionary of Wyrm-like objects
+        :type new_dict: dict
 
-        :: OUTPUT ::
-        :return self: [TubeWyrm] enables cascading
         """
+        # Safety catches identical to those in __init__
         if not isinstance(new_dict, dict):
             raise TypeError('new_dict must be type dict')
         elif not all(isinstance(_w, Wyrm) for _w in new_dict.values()):
             raise TypeError('new_dict can only have values of type Wyrm')
         else:
             pass
-        # Run updates on wyrm_dict, enforce debug, and update names list
+        # Run updates on wyrm_dict
         self.wyrm_dict.update(new_dict)
-        for _w in self.wyrm_dict.values():
-            _w.debug = self.debug
+        # Update names attribute
         self.names = list(self.wyrm_dict.keys())
-        return self
+ 
     
     def remove(self, key):
         """
@@ -139,16 +121,20 @@ class TubeWyrm(Wyrm):
         associated attributes
 
         :: INPUT ::
-        :param key: [object] valid key in self.wyrm_dict.keys()
+        :param key: valid key in self.wyrm_dict.keys()
+        :type key: object
 
         :: RETURN ::
-        :return popped_item: [tuple] popped (key, value)
+        :return popped_item: popped (key, value) pair
+        :rtype popped_item: tuple
         """
         if key not in self.wyrm_dict.keys():
             raise KeyError(f'key {key} is not in self.wyrm_dict.keys()')
-        
+        # Remove key/val combination from dict
         val = self.wyrm_dict.pop(key)
+        # Update names attribute
         self.names = list(self.wyrm_dict.keys())
+        # Return key and value
         return (key, val)
 
     def reorder(self, reorder_list):
@@ -157,7 +143,8 @@ class TubeWyrm(Wyrm):
         an ordered list of wyrm_dict
 
         :: INPUT ::
-        :reorder_list: [list] unique list of keys from self.wyrm
+        :param reorder_list: unique list of keys from self.wyrm
+        :type reorder_list: list of Wyrm-likes
         """
         # Ensure reorder_list is a list
         if not isinstance(reorder_list, list):
@@ -183,10 +170,19 @@ class TubeWyrm(Wyrm):
         # Run updates
         self.wyrm_dict = tmp
         self.names = list(tmp.keys())
-        return self
+
 
 
     def __repr__(self, extended=False):
+        """Provide a user-friendly summary of the contents of this TubeWyrm
+        :: INPUT ::
+        :param extended: show full __repr__ output of component Wyrms? , defaults to False
+        :type extended: bool, optional
+
+        :: OUTPUT ::
+        :return rstr: string representation of this Wyrm's contents
+        :rtype rstr: str
+        """
         rstr = super().__str__()
         rstr = "(wait: {self.wait_sec} sec)\n"
         for _i, (_k, _v) in enumerate(self.wyrm_dict.items()):
@@ -206,6 +202,7 @@ class TubeWyrm(Wyrm):
                 rstr += f'{type(_v)}\n'
         return rstr
 
+    
 
     def pulse(self, x):
         """
@@ -242,8 +239,6 @@ class TubeWyrm(Wyrm):
                     
                 # For first stage of pulse, pass output to `y`
                 if _j == 0:
-                    # if self.debug:
-                        # print(f' ----- {len(x)} elements going in')
                     y = _wyrm.pulse(x)
                         # print(f' ----- {len(y)} elements coming out')
                     out_lens.append(len(y))
@@ -268,73 +263,3 @@ class TubeWyrm(Wyrm):
                 print(f'{_k} output length: {_v}')
         return y
 
-
-class CanWyrm(TubeWyrm):
-    """
-    Child class of TubeWyrm.
-    It's pulse(x) method runs the dict of *wyrm_n.pulse(x)'s
-    sourcing inputs from a common input `x` and creating a dict
-    of each wyrm_n.pulse(x)'s output `y_n`.
-
-    NOTE: This class runs items in serial, but with some modification
-    this would be a good candidate class for orchestraing multiprocessing.
-    """
-
-    def __init__(self,
-                 wyrm_dict={},
-                 wait_sec=0.,
-                 max_pulse_size=1,
-                 debug=False):
-        """
-        
-        """
-        # Handle some basic indexing/formatting
-        if not isinstance(wyrm_dict, dict):
-            if isinstance(wyrm_dict, (list, tuple)):
-                wyrm_dict = dict(zip(range(len(wyrm_dict)), wyrm_dict))
-            elif isinstance(wyrm_dict, Wyrm):
-                wyrm_dict = {0: wyrm_dict}
-            else:
-                raise TypeError('wyrm_dict must be type dict, list, tuple, or Wyrm')
-        
-        # Initialize from Wyrm inheritance
-        super().__init__(wyrm_dict=wyrm_dict, wait_sec=wait_sec, debug=debug, max_pulse_size=max_pulse_size)
-
-        self.dict = {_k: None for _k in self.names}
-
-
-    def pulse(self, x, **options):
-        """
-        Triggers the wyrm.pulse(x) method for each wyrm in wyrm_dict, sharing
-        the same inputs, and writing outputs to self.dict[wyrmname] via the __iadd__
-        method. I.e.,
-
-            self.dict[wyrmname] += wyrm.pulse(x, **options)
-
-        :: INPUTS ::
-        :param x: [object] common input for all wyrms in wyrm_dict
-        :param options: [kwargs] key word arguments passed to each wyrm's
-                    wyrm.pulse(x, **options) method
-
-        :: OUTPUT ::
-        :return y: [dict] access to self.dict
-        """
-        for _i in range(self.max_pulse_size):
-            for _k, _v in self.wyrm_dict.items():
-                _y = _v.pulse(x, **options)
-                # If this wyrm output has not been mapped to self.dict
-                if self.dict[_k] is None:
-                    self.dict.update({_k: _y})
-            if self.debug:
-                print(f'CanWyrm pulse {_i + 1}')
-            #     for _l, _w in self.dict.items():
-            #         print(f'    {_l} - {len(_w)}')
-        y = self.dict
-        return y
-
-    def __str__(self):
-        rstr = f'wyrm.core.coordinate.CanWyrm(wyrm_dict={self.wyrm_dict}, '
-        rstr += f'wait_sec={self.wait_sec}, '
-        rstr += f'max_pulse_size={self.max_pulse_size}, '
-        rstr += f'debug={self.debug})'
-        return rstr

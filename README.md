@@ -75,3 +75,18 @@ Evocative elements of key tools for this project - `Earthworm`, `Python`, and `T
 Will produce Sphinx documentation to host on ReadTheDocs
 
 
+### Project Structure Outline  
+wyrm  
+|__core - source code  
+|  |__stream     - obspy.core.stream.Stream child classes  
+|  |__trace      - obspy.core.trace.Trace child classes  
+|  |__wyrm       - process-focused classes ("wyrms")  
+|  
+|__modules - fully assembled wyrm modules for Py-EW or Py-DISK processing tasks    
+|  
+|__submodules - assembled sets of wyrms for routine tasks within a complete wyrm module  
+|  
+|__util - general helper functions  
+|  
+|__scripts    - additional worked examples (likely to be obsolited)  
+

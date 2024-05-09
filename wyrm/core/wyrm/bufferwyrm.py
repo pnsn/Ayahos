@@ -1,5 +1,5 @@
 """
-:module: wyrm.streaming.buffering
+:module: wyrm.core.wyrm.bufferwyrm
 :author: Nathan T. Stevens
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network

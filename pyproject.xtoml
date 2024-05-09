@@ -1,0 +1,39 @@
+[build-system]
+# Minimum requirements for the build system to execute (copied from ObsPy)
+requires = ['setuptools']
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+
+
+[project]
+name = "wyrm"
+version = "00.00.00"
+requires-python= ">=3.8"
+dependencies = [
+    "numpy",
+    "cython",
+    "obspy",
+    "pandas",
+    "seisbench"
+]
+
+authors = [
+    {name="Nathan T. Stevens", email="ntsteven@uw.edu"},
+]
+description = "A python package connecting Earthworm and Python ML workflows"
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: AGPL-3.0 :: GNU General Public License",
+    "Operating System :: ISTI Earthworm Compliant",
+    "Development Status :: 3 - Alpha"
+]
+
+[project.optional-dependencies]
+dev = ["pyrocko","ipython"]
+
+[project.urls]
+Homepage = "https://github.com/pnsn/wyrm"
+Issues = "https://github.com/pnsn/wyrm/issues"
+

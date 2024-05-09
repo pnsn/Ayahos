@@ -1,30 +1,49 @@
-[tool.hatch]
+[build-system]
+requires = ["wheel", "setuptools >= 61.0.0", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
 name = "wyrm"
-version="0.0.0"
-description = "Wyrm - Earthworm + Python + Torch"
-authors = ["Nathan Stevens <ntsteven@uw.edu>"]
+dynamic = ["version"]
+description = "A project connecting Earthworm to Python ML workflows"
+readme = "README.md"
+license = { text = "AGPL-3.0" }
+requires-python = ">=3.9"
+authors = [
+    { name = "Nathan T. Stevens", email = "ntsteven@uw.edu" },
+]
+maintainers = [
+    { name = "Nathan T. Stevens", email = "ntsteven@uw.edu" },
+]
+keywords = ["earthworm", "seismology", "machine learning", "signal processing", "earthquake"]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Programming Language :: Python :: 3.9",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: GNU AFFERO GENERAL PUBLIC LICENSE v3 (AGPL-3.0)",
+]
+dependencies = [
+    "cython"
+    "numpy",
+    "pandas",
+    "seisbench",
+]
 
-[tool.hatch.dependencies]
-python = "^3.8"
+[tool.setuptools.packages.find]
+include = ["wyrm*"]
 
-[tool.hatch.package]
-name="wyrm"
-version="0.0.0"
+[project.optional-dependencies]
+development = ["flake8", "black", "isort", "pre-commit"]
+tests = ["pytest"]
 
-[[tool.hatch.package.files]]
-path="core"
-include=["*.py"]
+[tool.setuptools_scm]
 
-[[tool.hatch.package.files]]
-path="util"
-include=["*.py"]
-
-[[tool.hatch.package.files]]
-path="modules"
-include=["*.py"]
-
-[[tool.hatch.package.files]]
-path="scripts"
-include=["*.py"]
+[project.urls]
+GitHub = "https://github.com/pnsn/wyrm"
+#Documentation = ""
+#Issues = ""
+#path="scripts"
+#include=["*.py"]
 
 

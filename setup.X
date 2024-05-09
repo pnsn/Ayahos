@@ -17,7 +17,7 @@ setup(
     packages=find_packages(where='wyrm'),
     package_dir={"":"wyrm"},
     install_requires=[
-        'python>=3.12'
+        'python>=3.12',
         'cython',
         'numpy',
         'pandas',

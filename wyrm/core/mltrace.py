@@ -34,7 +34,7 @@
                 to capture information on data packets' processing times
 """
 
-import inspect, time ,os, copy, glob, obspy, logger
+import inspect, time ,os, copy, obspy, logging
 import numpy as np
 import pandas as pd
 from decorator import decorator
@@ -44,7 +44,7 @@ from obspy.core.util.misc import flat_not_masked_contiguous
 from wyrm.util.seisbench import pretrained_dict
 from wyrm.util.features import est_curve_quantiles, est_curve_normal_stats
 
-Logger = logger.getLogger(__name__)
+Logger = logging.getLogger(__name__)
 
 def read_mltrace(data_file, **obspy_read_kwargs):
     """

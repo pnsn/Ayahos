@@ -1,7 +1,7 @@
 [project]
 name = "wyrm"
 version = "0.0.0"
-authors = {name="Nathan T. Stevens", email="ntsteven@uw.edu"}
+authors = [{name="Nathan T. Stevens", email="ntsteven@uw.edu"}]
 readme = "README.md"
 classifiers = [
     "Programming Language :: Python :: 3",

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["wheel", "setuptools >= 61.0.0"]
+requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -36,9 +36,6 @@ include = ["wyrm*"]
 
 [project.urls]
 GitHub = "https://github.com/pnsn/wyrm"
-#Documentation = ""
-#Issues = ""
-#path="scripts"
-#include=["*.py"]
+
 
 

@@ -69,8 +69,7 @@ def triggers_to_time(triggers, t0, dt):
 
 
 def est_curve_quantiles(x, y, q=[0.16, 0.5, 0.84]):
-    """
-    Approximate the quantiles of a evenly binned population
+    """Approximate the quantiles of a evenly binned population
     represented as a discrete y = f(x) using the following
     formulation:
 
@@ -536,8 +535,7 @@ def process_predictions(
     ndata_bounds=[30, 9e99],
     quantiles=[0.25, 0.5, 0.75],
 ):
-    """
-    Extract statistical fits of normal distributions to prediction peaks from
+    """Extract statistical fits of normal distributions to prediction peaks from
     ML prediction traces that trigger above a specified threshold.
 
     :: INPUTS ::

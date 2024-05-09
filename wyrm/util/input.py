@@ -71,8 +71,7 @@ def isPyEWwave(x):
 
 
 def bounded_value(x, minimum=None, maximum=None, inclusive=True):
-    """
-    Check if input value x falls in a specified numerical value range
+    """Check if input value x falls in a specified numerical value range
 
     :: INPUTS ::
     :param x: int-like or float-like value to assess

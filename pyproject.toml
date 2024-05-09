@@ -1,41 +1,45 @@
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "wyrm"
 version = "0.0.0"
-description = "A project connecting Earthworm to Python ML workflows"
+authors = {name="Nathan T. Stevens", email="ntsteven@uw.edu"}
 readme = "README.md"
-license = { text = "AGPL-3.0" }
-requires-python = ">=3.9"
-authors = [
-    { name = "Nathan T. Stevens", email = "ntsteven@uw.edu" },
-]
-maintainers = [
-    { name = "Nathan T. Stevens", email = "ntsteven@uw.edu" },
-]
-keywords = ["earthworm", "seismology", "machine learning", "signal processing", "earthquake"]
 classifiers = [
-    "Intended Audience :: Science/Research",
-    "Topic :: Scientific/Engineering",
-    "Programming Language :: Python :: 3.9",
-    "Operating System :: OS Independent",
-    "License :: OSI Approved :: GNU AFFERO GENERAL PUBLIC LICENSE v3 (AGPL-3.0)",
-]
-dependencies = [
-    "cython"
-    "numpy",
-    "pandas",
-    "seisbench",
+    "Programming Language :: Python :: 3",
+    "License :: AGPL-3.0 :: GNU General Public License",
+    "Operating System :: ISTI Earthworm Compliant",
+    "Development Status :: 3 - Alpha"
 ]
 
-[tool.setuptools.packages.find]
-include = ["wyrm*"]
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+[toll.setuptools.dependencies]
+python = "^3.8"
+seisbench
+cython
+numpy
+obspy
+pandas
+ipython
 
-[project.urls]
-GitHub = "https://github.com/pnsn/wyrm"
+[tool.setuptools.package]
+name = "wyrm"
+version = "0.0.0"
 
+[[tool.setuptools.package.files]]
+path = "core"
+include = ["*.py"]
 
+[[tool.setuptools.package.files]]
+path = "util"
+include = ["*.py"]
 
+[[tool.setuptools.package.files]]
+path = "modules"
+include = ["*.py"]
+
+[[tool.setuptools.package.files]]
+path = "scripts"
+include = ["*.py"]

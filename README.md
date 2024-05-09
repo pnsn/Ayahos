@@ -1,5 +1,5 @@
-# wyrm
-### An integration of Python and Earthworm for incorporating pythonic seismology tools into near-real-time monitoring workflows.
+# Wyrm
+### A package joining Python ML workflows to the Earthworm Message Transport System for streaming waveform data operations.
 <a title="Richard Dybeck, Public domain, via Wikimedia Commons" href="https://commons.wikimedia.org/wiki/File:U_887,_Skillsta.jpg"><img width="256" alt="U 887, Skillsta" src="https://upload.wikimedia.org/wikipedia/commons/thumb/d/d1/U_887%2C_Skillsta.jpg/256px-U_887%2C_Skillsta.jpg"></a>
 
 https://en.wikipedia.org/wiki/Germanic_dragon

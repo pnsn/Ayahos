@@ -63,6 +63,9 @@ email: ntsteven (at) uw.edu
 org: Pacific Northwest Seismic Network
 
 ## Branching Plan/Development Notice  
+
+Current development version: ALPHA 
+
 The current developmental version of this code is hosted on the `develop` branch. Starting with version 0.0.1 the `main` branch will host deployment read code, `develop` will contain code that is in beta (debug only), and subsidiary `feature-*` branches will host new functionalities under development..  
 
 ## Why "Wyrm"?  

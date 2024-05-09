@@ -1,8 +1,0 @@
-*.pyc
-*.mseed
-*.xml
-wyrm.egg-info
-build
-environment*
-example_data*
-docs

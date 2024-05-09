@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "wyrm"
 version = "0.0.0"
 authors = [{name="Nathan T. Stevens", email="ntsteven@uw.edu"}]
+requires-python = ">=3.9"
 readme = "README.md"
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -14,7 +15,6 @@ classifiers = [
     "Development Status :: 3 - Alpha"
 ]
 dependencies = [
-    "python>=3.8",
     "seisbench",
     "cython",
     "numpy",

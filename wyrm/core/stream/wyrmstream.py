@@ -7,7 +7,7 @@ from obspy.core.stream import Stream, read
 from obspy.core.trace import Trace
 from obspy.core.util.attribdict import AttribDict
 from obspy.core import compatibility
-from wyrm.core.mltrace import MLTrace, read_mltrace
+from wyrm.core.trace.mltrace import MLTrace, read_mltrace
 from wyrm.util.pyew import wave2mltrace
 from wyrm.util.semblance import ensemble_semblance #, weighted_ensemble_semblance
 
@@ -255,18 +255,18 @@ class WyrmStream(Stream):
             self.stats.common_id = self.get_common_id()
 
 
-    def _internal_add_processing_info(self, info):
-        """
-        Add the given informational string to the `processing` field in the
-        WyrmStream's :class:`wyrm.core.WyrmStream.WyrmStreamStats` object.
-        """
-        proc = self.stats.setdefault('processing', [])
-        if len(proc) == self._max_processing_info-1:
-            msg = ('List of processing information in Trace.stats.processing '
-                   'reached maximal length of {} entries.')
-            warnings.warn(msg.format(self._max_processing_info))
-        if len(proc) < self._max_processing_info:
-            proc.append(info)
+    # def _internal_add_processing_info(self, info):
+    #     """
+    #     Add the given informational string to the `processing` field in the
+    #     WyrmStream's :class:`wyrm.core.WyrmStream.WyrmStreamStats` object.
+    #     """
+    #     proc = self.stats.setdefault('processing', [])
+    #     if len(proc) == self._max_processing_info-1:
+    #         msg = ('List of processing information in Trace.stats.processing '
+    #                'reached maximal length of {} entries.')
+    #         warnings.warn(msg.format(self._max_processing_info))
+    #     if len(proc) < self._max_processing_info:
+    #         proc.append(info)
 
     #####################################################################
     # MAGIC METHOD UPDATES ##############################################

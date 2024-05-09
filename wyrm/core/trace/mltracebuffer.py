@@ -14,7 +14,7 @@
 """
 import numpy as np
 from obspy import Trace
-from wyrm.core.mltrace import MLTrace
+from wyrm.core.trace.mltrace import MLTrace
 from wyrm.util.input import bounded_floatlike
     
 class MLTraceBuffer(MLTrace):

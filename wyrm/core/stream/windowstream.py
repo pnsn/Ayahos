@@ -3,9 +3,8 @@ import numpy as np
 import pandas as pd
 import seisbench.models as sbm
 from obspy import Trace, Stream, UTCDateTime
-from wyrm.core.wyrmstream import WyrmStream, WyrmStreamStats, _add_processing_info
+from wyrm.core.wyrmstream import WyrmStream, WyrmStreamStats
 from wyrm.core.mltrace import MLTrace
-from wyrm.util.pyew import wave2mltrace
 
 ###############################################################################
 # Component Stream Header Class Definition ####################################

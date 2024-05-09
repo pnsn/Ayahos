@@ -20,7 +20,9 @@
 
 import time
 from collections import deque
+import pandas as pd
 from wyrm.core.wyrm import Wyrm
+from wyrm.core.wyrmstream import WyrmStream
 from wyrm.streaming.windowstream import WindowStream
 
 ###################################################################################
@@ -146,7 +148,7 @@ class MethodWyrm(Wyrm):
 class OutputWyrm(MethodWyrm):
     def __init__(
             self,
-            pclass=DictStream,
+            pclass=WyrmStream,
             oclass=pd.DataFrame,
             pmethod='prediction_trigger_report',
             pkwargs={'thresh': 0.1, 'blinding': (500,500),

@@ -2,7 +2,7 @@ import math, pickle, warnings, pytest
 # Import obspy.core.trace.Trace test suite class for inheritance
 from obspy.core.tests.test_trace import TestTrace
 # Import wyrm.core.mltrace.MLTrace as Trace to supercede Trace calls in TestTrace
-from wyrm.core.mltrace import MLTrace as Trace
+from wyrm.core.trace.mltrace import MLTrace as Trace
 
 class MLTrace_Test(TestTrace):
 

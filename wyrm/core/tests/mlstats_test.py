@@ -5,7 +5,7 @@ from obspy.core.util import AttribDict
 # Get obspy.core.uti.Stats test suite for inheritance
 from obspy.core.tests.test_stats import TestStats
 # Alias MLStats to Stats to overwrite Stats calls in inherited class test methods
-from wyrm.core.mltrace import MLStats as Stats
+from wyrm.core.trace.mltrace import MLStats as Stats
 
 
 class MLStats_Test(TestStats):

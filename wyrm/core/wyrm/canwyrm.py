@@ -27,7 +27,7 @@
 
 """
 import time, threading, logging, copy
-#import PyEW
+import PyEW
 import numpy as np
 import pandas as pd
 from collections import deque
@@ -35,7 +35,7 @@ from wyrm.core.wyrm import Wyrm
 from wyrm.util.input import bounded_intlike, bounded_floatlike
 from wyrm.core.mltrace import MLTrace
 from wyrm.streaming.mltracebuffer import MLTraceBuffer
-from wyrm.core.wyrmstream import DictStream
+from wyrm.core.wyrmstream import WyrmStream
 
 class TubeWyrm(Wyrm):
     """

@@ -18,12 +18,19 @@ This repository uses an identical GNU Affero General Public License (AGPL-3.0) t
 ## Installation Instructions (Work In Progress)
 Full installation of this software requires the following steps:
 
-1) Install *most* dependencies for the Python-side, e.g.,  
-`conda create -f environment/dev_env_apple_silicon.yml`  
+Create initial conda environment  
+`conda create --name wyrm python=3.12`  
+Activate environment  
+`conda activate wyrm`  
+install Wyrm from the main project directory using a `setuptools` backend to `pip`  
+`python -m pip install .`
 
-2) Install Earthworm 7.10
+#### If interfacing with Earthworm via PyEarthworm (most cases) . 
+source your earthworm installation environment. e.g.,  
+`source /usr/local/earthworm/memphis/params/ew_macosx.bash`  
+install PyEarthworm from their `main` branch  
+`pip install git+https://github.com/Boritech-Solutions/PyEarthworm`  
 
-3) Follow instructions on installation of EarthWorm and PyEarthworm on the `PyEarthworm` repository: https://github.com/Boritech-Solutions/PyEarthworm
 
 ## Notes on the Initial Package Development
 This initial version focuses on body wave detection and labeling tasks using the EarthquakeTransformer (EQT; Mousavi et al., 2018) and PhaseNet (Zhu et al., 2019) model architectures, along with the following pretrained model weights available through `SeisBench` (Woollam et al., 2020).

@@ -11,7 +11,8 @@
 
 """
 import logging, copy
-from wyrm.core.wyrm import Wyrm, TubeWyrm
+from wyrm.core.wyrm.wyrm import Wyrm
+
 
 logger = logging.getLogger(__name__)
 

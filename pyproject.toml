@@ -1,8 +1,8 @@
 [tool.hatch]
-name="wyrm"
+name = "wyrm"
 version="0.0.0"
-description="Wyrm - Earthworm + Python + Torch"
-authors = ["Nathan Stevens ntsteven@uw.edu"]
+description = "Wyrm - Earthworm + Python + Torch"
+authors = ["Nathan Stevens <ntsteven@uw.edu>"]
 
 [tool.hatch.dependencies]
 python = "^3.8"

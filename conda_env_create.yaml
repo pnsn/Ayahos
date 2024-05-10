@@ -1,0 +1,9 @@
+name: wyrm
+channels:
+ - defaults
+dependencies:
+ - pip
+ - git
+ - pip:
+    - git+https://github.com/pnsn/wyrm@develop
+    

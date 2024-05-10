@@ -1,0 +1,6 @@
+seisbench
+cython
+numpy
+obspy
+pandas
+ipytho

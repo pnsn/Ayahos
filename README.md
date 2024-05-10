@@ -22,7 +22,7 @@ We recommend installing Wyrm and its dependencies in a `conda` environment. Inst
 ### Install with `conda` and `pip`
 Create and activate your `conda` environment  
 ```
-conda create --name wyrm  
+conda create --name wyrm pip git 
 conda activate wyrm  
 ```
 Source your `Earthworm` OS-specific environment, e.g.,  

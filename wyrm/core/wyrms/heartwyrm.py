@@ -1,6 +1,6 @@
 import threading, logging, time, os
 import PyEW
-from wyrm.coordinating.sequence import TubeWyrm
+from wyrm.core.wyrms.tubewyrm import TubeWyrm
 import pandas as pd
 
 Logger = logging.getLogger(__name__)

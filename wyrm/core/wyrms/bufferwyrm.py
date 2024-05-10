@@ -11,10 +11,10 @@
 
 import time
 from collections import deque
-from wyrm.core.wyrm import Wyrm
-from wyrm.core.mltrace import MLTrace
-from wyrm.streaming.mltracebuffer import MLTraceBuffer
-from wyrm.core.wyrmstream import WyrmStream
+from wyrm.core.wyrms.wyrm import Wyrm
+from wyrm.core.trace.mltrace import MLTrace
+from wyrm.core.trace.mltracebuffer import MLTraceBuffer
+from wyrm.core.stream.wyrmstream import WyrmStream
 from wyrm.util.input import bounded_floatlike
 
 class BufferWyrm(Wyrm):

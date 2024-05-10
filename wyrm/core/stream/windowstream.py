@@ -9,18 +9,18 @@ from wyrm.core.mltrace import MLTrace
 ###############################################################################
 # Component Stream Header Class Definition ####################################
 ###############################################################################
-## TODO: Nix primary_components for now - too general.
+## TODO: Nix ref_components for now - too general.
 
 class WindowStreamStats(WyrmStreamStats):
     # NTS: Deepcopy is necessary to not overwrite _types and defaults for parent class
     _types = copy.deepcopy(WyrmStreamStats._types)
-    _types.update({'primary_component': str,
+    _types.update({'ref_component': str,
                    'aliases': dict,
                    'reference_starttime': (UTCDateTime, type(None)),
                    'reference_npts': (int, type(None)),
                    'reference_sampling_rate': (float, type(None))})
     defaults = copy.deepcopy(WyrmStreamStats.defaults)
-    defaults.update({'primary_component': 'Z',
+    defaults.update({'ref_component': 'Z',
                      'aliases': {'Z': 'Z3',
                                  'N': 'N1',
                                  'E': 'E2'},
@@ -29,13 +29,18 @@ class WindowStreamStats(WyrmStreamStats):
                      'reference_npts': None})
     
     def __init__(self, header={}):
+        """Create a WindowStreamStats object
+
+        :param header: attribute: value pairs to assign in the WindowStreamStats, defaults to {}
+        :type header: dict, optional
+        """        
         # Initialize super + updates to class attributes
         super(WindowStreamStats, self).__init__()
         # THEN update self with header inputs
         self.update(header)
 
     def __str__(self):
-        prioritized_keys = ['primary_component',
+        prioritized_keys = ['ref_component',
                             'common_id',
                             'aliases',
                             'reference_starttime',
@@ -58,37 +63,41 @@ class WindowStreamStats(WyrmStreamStats):
 ###############################################################################
         
 class WindowStream(WyrmStream):
-
+    """A child-class of WyrmStream that only uses trace component codes as keys and
+    is postured towards processing a collection of windowed traces from a single
+    seismometer. It provides additional class methods extending from WyrmStream
+    that facilitate windowed trace data pre-processing in advance of ML prediction
+    using SeisBench WaveformModel type model architectures.
+    """
     def __init__(
             self,
             traces,
-            primary_component='Z',
+            ref_component='Z',
             header={},
             **options):
-        """
-        Initialize a wyrm.core.WyrmStream.WindowStream object
+        """Initialize a wyrm.core.WyrmStream.WindowStream object
 
-        :: INPUTS ::
-        :param traces: [obspy.core.trace.Trace] or [list]/[Stream] thereof
-                        trace-type object(s) to append to this WindowStream, if they pass validation cross
-                        checks with the component_aliases' contents
-        :param header: [dict] inputs to pass to WindowStreamStats.__init__
-        :param component_aliases: [dict] mapping between aliases (keys) and native component codes (characters in each value)
-                        that are mapped to those aliases
-        :param **options: [kwargs] collector for key-word arguments to pass to the WindowStream.__add__ method
-                        inherited from WyrmStream 
+        :param traces: ObsPy Trace-like object(s)
+        :type traces: obspy.core.trace.Trace or list/obspy.core.stream.Stream thereof
+        :param ref_component: reference component code for this window stream, defaults to 'Z'
+        :type ref_component: str, optional
+        :param header: inputs ot pass to the WindowStreamStats.__init__, defaults to {}
+        :type header: dict, optional
+        :param **options: collector for key-word arguments passed to WindowStream.__add__ 
+                for merging entries with matching component codes
+        :type **options: kwargs
         """
         # Initialize & inherit from WyrmStream
         super().__init__()
         # Initialize Stream Header
         self.stats = WindowStreamStats(header=header)
-        if isinstance(primary_component, str):
-            if primary_component in self.stats.aliases.keys():
-                self.stats.primary_component = primary_component
+        if isinstance(ref_component, str):
+            if ref_component in self.stats.aliases.keys():
+                self.stats.ref_component = ref_component
             else:
-                raise ValueError(f'primary_component must be a key value in WindowStream.stats.aliases')
+                raise ValueError(f'ref_component must be a key value in WindowStream.stats.aliases')
         else:
-            raise TypeError('primary_component must be type str')
+            raise TypeError('ref_component must be type str')
         
         if isinstance(traces, Trace):
             traces = [traces]
@@ -105,6 +114,19 @@ class WindowStream(WyrmStream):
         #     self.stats.reference_id = self.traces[self.ref['component']].id
 
     def extend(self, traces, **options):
+        """Extend (add) more traces to this WindowStream
+
+        :param traces: set of traces to add to this WindowStream, keying on their component codes
+        :type traces: obspy.core.trace.Trace-like
+
+        NOTE: Any true obspy.core.trace.Trace objects are converted into wyrm.core.trace.mltrace.MLTrace
+             objects before extending the WindowStream
+        """
+        # If extending with a single trace object
+        if isinstance(traces, Trace):
+            traces = [traces]
+
+        # Iterate across traces
         for tr in traces:
             if not isinstance(tr, MLTrace):
                 tr = MLTrace(tr)
@@ -136,70 +158,18 @@ class WindowStream(WyrmStream):
                 raise ValueError('component code for {tr.id} is not in the self.stats.aliases dictionary')
 
 
-    # def validate_traces(self, other=None):
-    #     if len(self.traces) == 0:
-    #         if other is None:
-    #             return True
-    #         elif isinstance(other, MLTrace):
-    #             return True
-    #         elif isinstance(other, (Stream, list, tuple)):
-    #             if not all(isinstance(tr, MLTrace) for tr in other):
-    #                 return False
-    #             else:
-    #                 bool_list = []
-    #                 for _i, itr in enumerate(other):
-    #                     for _j, jtr in enumerate(other):
-    #                         if _i > _j:
-    #                             bool_line = [getattr(itr, _k) == getattr(jtr, _k) for _k in ['site','inst','mod']]
-    #                             bool_list.append(all(bool_line))
-    #                 return all(bool_list)
-    #     if len(self.traces) > 0:
-    #         bool_list = []
-    #         for _i, itr in self.traces.items():
-    #             for _j, jtr in self.traces.items():
-    #                 if _i > _j:
-    #                     bool_line = [getattr(itr, _k) == getattr(jtr, _k) for _k in ['site','inst','mod']]
-    #                     bool_list.append(all(bool_line))
-    #         internal_status = all(bool_list)
-        
-    #         if other is None:
-    #             return internal_status
-    #         elif isinstance(other, MLTrace):
-
-
-        
-    #     if not all(bool_list):
-    #         raise ValueError('Input trace IDs (excluding component code) mismatch')
-    #     else:
-    #         self.extend(traces, **options)
-
-
-            
-    # def extend(self, other, **options):
-    #     """
-    #     Wrapper around the inherited MLTrace.__add__ method that fixes
-    #     the key_attr to 'component'. 
-
-    #     NOTE: Inheritance has an intermediate step where
-    #         WyrmStream.__add__() wraps MLTrace.__add__
-
-    #     also see wyrm.data.mltrace.MLTrace.__add__()
-    #     """
-
-    #     super().extend(other, key_attr='component', **options)
-    
-    # def __add__(self, other, **options):
-    #     self.extend(other, **options)
-
-
     def __repr__(self, extended=False):
         """
         Provide a user-friendly string representation of the contents and key parameters of this
         WindowStream object. 
 
         :: INPUTS ::
-        :param extended: [bool] - option to show an extended form of the WindowStream should 
-                            there be a large number of unique component codes (an uncommon use case)
+        :param extended: option to show an extended form of the WindowStream should 
+                         there be a large number of unique component codes (an uncommon use case)
+        :type extend: bool, optional
+
+        :return rstr: representative string
+        :rtype rstr: str
         """
         rstr = self.stats.__str__()
         if len(self.traces) > 0:
@@ -224,48 +194,42 @@ class WindowStream(WyrmStream):
 
     
 
-    # def validate_ids(self, traces):
-    #     """
-    #     Check id strings for traces against WindowStream.stats.reference_id
-    #     :: INPUTS ::
-    #     :param traces: [list-like] of [obspy.core.trace.Trace-like] or individual
-    #                     objects thereof
-    #     """
-    #     # Handle case where a single trace-type object is passed to validate_ids
-    #     if isinstance(traces, Trace):
-    #         traces = [traces]
-    #         # TODO: Shift reference_id use here to common_id, and then add cross-checks for new def of reference_id
-    #     # if there is already a non-default reference_id, use that as reference
-    #     if self.stats.common_id != self.stats.defaults['common_id']:
-    #         ref = self.stats.common_id
-    #     # Otherwise use the first trace in traces as the template
-    #     else:
-    #         tr0 = traces[0]
-    #         # If using wyrm.core.trace.MLTrace(Buffer) objects, as above with the 'mod' extension
-    #         if isinstance(tr0, MLTrace):
-    #             ref = f'{tr0.site}.{tr0.inst}?.{tr0.mod}'
-    #                     # If using obspy.core.trace.Trace objects, use id with "?" for component char
-    #         elif isinstance(tr0, Trace):
-    #             ref = tr0.id[:-1]+'?'
-    #     # Run match on all trace ids
-    #     matches = fnmatch.filter([_tr.id for _tr in traces], ref)
-    #     # If all traces conform to ref
-    #     if all(_tr.id in matches for _tr in traces):
-    #         # If reference_id 
-    #         if self.stats.reference_id == self.stats.defaults['reference_id']:
-    #             self.stats.reference_id = ref
-        
-    #     else:
-    #         raise KeyError('Trace id(s) do not conform to reference_id: "{self.stats.reference_id}"')
-
     ###############################################################################
     # FILL RULE METHODS ###########################################################
     ###############################################################################
-    # @_add_processing_info
     def apply_fill_rule(self, rule='zeros', ref_thresh=0.9, other_thresh=0.8):
+        """Summative class method for assessing if channels have enough data,
+        and applying the specified channel fill `rule`
+
+        The thresh(olds) values in this method are compared against a given
+        wyrm.core.trace.mltrace.MLTrace object's .get_fvalid_subset() output
+            ~also see wyrm.core.trace.mltrace.MLTrace.get_fvalid_subset()
+        
+
+        :param rule: channel fill rule to apply to non-reference channels that are
+                    missing or fail to meet the `other_thresh` requirement, defaults to 'zeros'
+            Supported:  'zeros' - fill with 0-valued traces
+                            ~also see wyrm.core.stream.windowstream.WindowStream._apply_zeros()
+                        'clone_ref' - clone the primary trace if any secondary traces are missing
+                            ~also see wyrm.core.stream.windowstream.WindowStream._apply_clone_ref()
+                        'clone_other' - if 1 `other` trace is missing, clone with the present one
+                                        if both `other` traces are missing, clone the `ref` trace
+                            ~also see wyrm.core.stream.windowstream.WindowStream._apply_clone_other()
+        :type rule: str, optional
+        :param ref_thresh: fractional completeness threshold for the reference trace,
+                        the `ref` trace must pass this threshold to be considered sufficiently complete,
+                        defaults to 0.9
+                        See rule-specific methods for failure behavior
+        :type ref_thresh: float, optional
+        :param other_thresh: fractional completeness threshold for the other traces, 
+                        traces are considered missing if they fail to meet/exceed this threshold,
+                        defaults to 0.8
+        :type other_thresh: float, optional
+        :raises ValueError: Raised if `rule` is not a supported value
+        """        
         thresh_dict = {}
         for _k in self.stats.aliases.keys():
-            if _k == self.stats.primary_component:
+            if _k == self.stats.ref_component:
                 thresh_dict.update({_k: ref_thresh})
             else:
                 thresh_dict.update({_k: other_thresh})
@@ -279,15 +243,14 @@ class WindowStream(WyrmStream):
         # Otherwise apply rule
         elif rule == 'zeros':
             self._apply_zeros(thresh_dict)
-        elif rule == 'clone_primary':
-            self._apply_clone_primary(thresh_dict)
+        elif rule == 'clone_ref':
+            self._apply_clone_ref(thresh_dict)
         elif rule == 'clone_other':
             self._apply_clone_other(thresh_dict)
         else:
             raise ValueError(f'rule {rule} not supported. Supported values: "zeros", "clone_ref", "clone_other"')
 
-    # @_add_processing_info
-    def _apply_zeros(self, thresh_dict): #, method='fill'):
+    def _apply_zeros(self, thresh_dict): 
         """
         Apply the channel filling rule "zero" (e.g., Retailleau et al., 2022)
         where both "other" (horzontal) components are set as zero-valued traces
@@ -297,12 +260,12 @@ class WindowStream(WyrmStream):
         added information.
 
         :: INPUTS ::
-        :param ref_component: [str] single character string corresponding to
-                        the KEYED (aliased) component code of the reference trace
-        :param thresh_dict: [dir] directory with keys matching keys in 
+        :param thresh_dict: directory with keys matching keys in 
                         self.traces.keys() (i.e., alised component characters)
                         and values \in [0, 1] representing fractional completeness
                         thresholds below which the associated component is rejected
+        :type thresh_dict: dict
+        :raise ValueError: raised if the `ref` component has insufficient data
 
         (OBSOLITED)
         # :param method: [str] method for filling behavior
@@ -313,7 +276,7 @@ class WindowStream(WyrmStream):
         #                             the threshold, convert it into a 0-data 0-fold
         #                             MLTrace object
         """
-        ref_comp = self.stats.primary_component
+        ref_comp = self.stats.ref_component
         # Get reference trace
         ref_tr = self.traces[ref_comp]
         # Safety catch that at least the reference component does have enough data
@@ -335,7 +298,7 @@ class WindowStream(WyrmStream):
                 self.traces.update({_k: tr0})
 
     # @_add_processing_info
-    def _apply_clone_primary(self, thresh_dict):
+    def _apply_clone_ref(self, thresh_dict):
         """
         Apply the channel filling rule "clone reference" (e.g., Ni et al., 2023)
         where the reference channel (vertical component) is cloned onto both
@@ -354,7 +317,7 @@ class WindowStream(WyrmStream):
                         thresholds below which the associated component is rejected
         """
         # Get reference trace
-        ref_comp = self.stats.primary_component
+        ref_comp = self.stats.ref_component
         ref_tr = self[ref_comp]
         # Get 
         if ref_tr.fvalid < thresh_dict[ref_comp]:
@@ -393,7 +356,7 @@ class WindowStream(WyrmStream):
                         and values \in [0, 1] representing fractional completeness
                         thresholds below which the associated component is rejected
         """
-        ref_comp = self.stats.primary_component
+        ref_comp = self.stats.ref_component
         # Run through each component and see if it passes thresholds
         pass_dict = {}
         for _k, _tr in self.traces.items():
@@ -433,9 +396,9 @@ class WindowStream(WyrmStream):
                 # Write cloned, relabeled "other" trace to the failing trace's position
                 self.traces.update({cc: trC})
 
-            # If only the reference trace passed, run _apply_clone_primary() method instead
+            # If only the reference trace passed, run _apply_clone_ref() method instead
             else:
-                self._apply_clone_primary(thresh_dict)
+                self._apply_clone_ref(thresh_dict)
 
         # If ref and one "other" component are present
         elif ref_comp in pass_dict.keys() and len(pass_dict) > 1:
@@ -457,12 +420,12 @@ class WindowStream(WyrmStream):
                 trC.to_zero(method='fold')
                 # And update traces with clone
                 self.traces.update({cc: trC})
-            # If the single "other" trace does not pass, use _apply_clone_primary method
+            # If the single "other" trace does not pass, use _apply_clone_ref method
             else:
-                self._apply_clone_primary(thresh_dict)
+                self._apply_clone_ref(thresh_dict)
         # If only the reference component is present & passing
         else:
-            self._apply_clone_primary(thresh_dict)
+            self._apply_clone_ref(thresh_dict)
     
     ###############################################################################
     # Synchronization Methods #####################################################

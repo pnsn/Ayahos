@@ -17,20 +17,20 @@ import time, threading, copy
 import numpy as np
 import pandas as pd
 from collections import deque
-from wyrm.core.wyrm import Wyrm
+from wyrm.core.wyrms.wyrm import Wyrm
 from wyrm.util.input import bounded_floatlike
-from wyrm.core.mltrace import MLTrace
-from wyrm.streaming.mltracebuffer import MLTraceBuffer
-from wyrm.core.wyrmstream import WyrmStream
+from wyrm.core.trace.mltrace import MLTrace
+from wyrm.core.trace.mltracebuffer import MLTraceBuffer
+from wyrm.core.stream.wyrmstream import WyrmStream
 
-class CloneWyrm(Wyrm):
+class ForkWyrm(Wyrm):
     """
     Submodule class that provides a pulsed method for producing (multiple) copies
     of an arbitrary set of items in an input deque into a dictionary of output deques
     """
     def __init__(self, queue_names=['A','B'], max_pulse_size=1000000, debug=False):
         """
-        Initialize a CloneWyrm object
+        Initialize a ForkWyrm object
         :: INPUTS ::
         :param queue_names: [list-like] of values to assign as keys (names) to 
                             output deques held in self.queues

@@ -1,5 +1,5 @@
 """
-:module: wyrm.io.ew_ring
+:module: wyrm.core.wyrms.pick2kwyrm
 :auth: Nathan T. Stevens
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network
@@ -11,7 +11,7 @@
 
     Class
 
-    EarWyrm - primary wave-fetching submodule for getting sets of tracebuff2 messages
+    Pick2kWyrm - primary wave-fetching submodule for getting sets of tracebuff2 messages
             from a single WAVE RING using the PyEW.EWModule class, converts python-side
             `wave` messages into MLTrace objects, and appends these traces to MLTraceBuffer
             objects contained in a WyrmStream object
@@ -26,11 +26,11 @@ from wyrm.core.stream.wyrmstream import WyrmStream
 
 Logger = logging.getLogger(__name__)
 
-class EarWyrm(RingWyrm):
+class Pick2kWyrm(RingWyrm):
     """
     Wrapper child-class of RingWyrm specific to listening to an Earthworm
     WAVE Ring and populating MLTraceBuffers housed in a WyrmStream
-    """
+    """ 
 
     def __init__(
         self,
@@ -42,6 +42,26 @@ class EarWyrm(RingWyrm):
         mltrace_kwargs={},
         max_pulse_size=12000,
     ):
+        """_summary_
+
+        :param module: _description_, defaults to None
+        :type module: _type_, optional
+        :param conn_id: _description_, defaults to 0
+        :type conn_id: int, optional
+        :param max_length: _description_, defaults to 150
+        :type max_length: int, optional
+        :param restrict_past_append: _description_, defaults to True
+        :type restrict_past_append: bool, optional
+        :param wyrmstream_kwargs: _description_, defaults to {}
+        :type wyrmstream_kwargs: dict, optional
+        :param mltrace_kwargs: _description_, defaults to {}
+        :type mltrace_kwargs: dict, optional
+        :param max_pulse_size: _description_, defaults to 12000
+        :type max_pulse_size: int, optional
+        :raises TypeError: _description_
+        :raises TypeError: _description_
+        :raises TypeError: _description_
+        """        
         """
         Initialize a EarWyrm object with a TieredBuffer + TraceBuff.
         This is a wrapper for a read-from-wave-ring RingWyrm object

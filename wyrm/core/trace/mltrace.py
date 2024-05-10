@@ -10,28 +10,21 @@
     Trace and Stats (in module obspy.core.trace) classes to add
     these key features:
 
-    Trace -> MLTrace - adds a 'fold' vector that tracks the number
-                of observations contributing to a given time-indexed
-                sample. Details on 'fold' and updated/new methods
-                are detailed in the class header documentation
+    Trace -> MLTrace
+        adds a 'fold' vector that tracks the number
+        of observations contributing to a given time-indexed
+        sample. Details on 'fold' and updated/new methods
+        are detailed in the class header documentation
 
-                Methods for saving MLTraces as miniSEED files and
-                reading these save files from disk are provided, built
-                on top of the obspy.core.stream.Stream.write API
+        Methods for saving MLTraces as miniSEED files and
+        reading these save files from disk are provided, built
+        on top of the obspy.core.stream.Stream.write API
 
-    Stats -> MLStats - adds the attribute/key values 'model' and
-                'weight' to document the names of ML models and 
-                pretrained weights during processing. These are
-                also appended to the MLTrace.id property with
-                the format:
-                    N.S.L.C.{Model}.{Weight}
-                Further details in the MLStats class header.
-                
-                Additionally, this class modifies the `info`
-                appended to MLStats.processing into a 4-list
-                comprising:
-                    info = [timestamp, 'Package Version', 'Method Name', '(*args, **kwargs)']
-                to capture information on data packets' processing times
+    Stats -> MLStats
+        adds the attribute/key values 'model' and 'weight' to document the names of ML models and  pretrained weights during processing. These are also appended to the MLTrace.id property with the format:
+            N.S.L.C.{Model}.{Weight}
+        Further details in the MLStats class header.
+
 """
 
 import inspect, time ,os, copy, obspy, logging

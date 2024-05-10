@@ -21,9 +21,9 @@
 import time
 from collections import deque
 import pandas as pd
-from wyrm.core.wyrm import Wyrm
-from wyrm.core.wyrmstream import WyrmStream
-from wyrm.streaming.windowstream import WindowStream
+from wyrm.core.wyrms.wyrm import Wyrm
+from wyrm.core.stream.wyrmstream import WyrmStream
+from wyrm.core.stream.windowstream import WindowStream
 
 ###################################################################################
 # METHOD WYRM CLASS DEFINITION - FOR EXECUTING CLASS METHODS IN A PULSED MANNER ###

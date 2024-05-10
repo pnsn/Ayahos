@@ -20,10 +20,10 @@ import time, torch, copy
 import numpy as np
 import seisbench.models as sbm
 from collections import deque
-from wyrm.core.mltrace import MLTrace
-from wyrm.core.wyrmstream import WyrmStream
-from wyrm.streaming.windowstream import WindowStream
-from wyrm.core.wyrm import Wyrm
+from wyrm.core.trace.mltrace import MLTrace
+from wyrm.core.stream.wyrmstream import WyrmStream
+from wyrm.core.stream.windowstream import WindowStream
+from wyrm.core.wyrms.wyrm import Wyrm
 
 
 ###################################################################################

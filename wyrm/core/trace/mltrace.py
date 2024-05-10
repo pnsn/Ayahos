@@ -876,25 +876,21 @@ class MLTrace(Trace):
             trace_list.append(tr)
         return Stream(trace_list)
     
-    def normalize(self, norm_type:str='max'):
-        """
+    def normalize(self, norm_type='max'):
+        """Normalize data in this trace by specified method
         Extension of the obspy.core.trace.Trace.normalize method
         where norm_type dictates what scalar is calculated for:
         [ML](Trace)
             super().normalize(norm=scalar)
 
-        This produces documentation of the normalization factor
-        in the stats.processing line via inherited decorator calls
-
-        :: INPUT ::
-        :param norm_type: [str] - normalization method
-                    Supported:
-                        'max': maximum absolute value of trace data
-                            aliases: 'minmax','peak'
-                        'std': standard deviation of trace data
-                            aliases: 'standard'
+        :param norm_type: normalization method name, defaults to 'max'
+        :type norm_type: str, optional
+            Supported:
+                'max': maximum absolute value of trace data
+                    aliases: 'minmax','peak'
+                'std': standard deviation of trace data
+                    aliases: 'standard'
         
-        :: OUTPUT ::
         :return self: [wyrm.data.mltrace.MLTrace] enable cascading.
         """
         if norm_type.lower() in ['max','minmax','peak']:
@@ -1183,11 +1179,20 @@ class MLTrace(Trace):
                              starttime that is consistent with MLTrace data
                              and specified endtime
                             [UTCDateTime] - reference starttime for trim and interpolate
+                            defaults to None
+        :type starttime: None or obspy.core.utcdatetime.UTCDateTime
         :param endtime:     [None] - no reference endtime
                             [UTCDateTime] - reference endtime
-        :param fill_value:  [None], [int], [float] - value passed to (ML)Trace.trim()
+                            defaults to None
+        :type endtime: None or obspy.core.utcdatetime.UTCDateTime
+        :param fill_value:  [None], [int], [float] - value passed to (ML)Trace.trim(), defaults to 0
+        :type fill_value: None, int, or float
+        :param pad_after: should padding out to inputs `starttime` and `endtime` be enforced after
+                        running sampling synchronization?, defaults to True
+        :type pad_after: bool
         :param **kwargs:    [kwargs] key word argument collector passed
                             to (ML)Trace.interpolate()
+        :type **kwargs: key-word arguments
 
         :: OUTPUT ::
         :return self: [wyrm.data.mltrace.MLTrace] - enables cascading

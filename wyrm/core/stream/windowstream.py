@@ -3,13 +3,12 @@ import numpy as np
 import pandas as pd
 import seisbench.models as sbm
 from obspy import Trace, Stream, UTCDateTime
-from wyrm.core.wyrmstream import WyrmStream, WyrmStreamStats
-from wyrm.core.mltrace import MLTrace
+from wyrm.core.stream.wyrmstream import WyrmStream, WyrmStreamStats
+from wyrm.core.trace.mltrace import MLTrace
 
 ###############################################################################
-# Component Stream Header Class Definition ####################################
+# WindowStreamStats Class Definition ##########################################
 ###############################################################################
-## TODO: Nix ref_components for now - too general.
 
 class WindowStreamStats(WyrmStreamStats):
     # NTS: Deepcopy is necessary to not overwrite _types and defaults for parent class
@@ -205,10 +204,10 @@ class WindowStream(WyrmStream):
         wyrm.core.trace.mltrace.MLTrace object's .get_fvalid_subset() output
             ~also see wyrm.core.trace.mltrace.MLTrace.get_fvalid_subset()
         
-
         :param rule: channel fill rule to apply to non-reference channels that are
                     missing or fail to meet the `other_thresh` requirement, defaults to 'zeros'
-            Supported:  'zeros' - fill with 0-valued traces
+                    Supported Values
+                        'zeros' - fill with 0-valued traces
                             ~also see wyrm.core.stream.windowstream.WindowStream._apply_zeros()
                         'clone_ref' - clone the primary trace if any secondary traces are missing
                             ~also see wyrm.core.stream.windowstream.WindowStream._apply_clone_ref()
@@ -259,22 +258,12 @@ class WindowStream(WyrmStream):
         0-valued traces are assigned fold values of 0 to reflect the absence of
         added information.
 
-        :: INPUTS ::
         :param thresh_dict: directory with keys matching keys in 
                         self.traces.keys() (i.e., alised component characters)
                         and values \in [0, 1] representing fractional completeness
                         thresholds below which the associated component is rejected
         :type thresh_dict: dict
-        :raise ValueError: raised if the `ref` component has insufficient data
-
-        (OBSOLITED)
-        # :param method: [str] method for filling behavior
-        #             Supported:
-        #                 'wipe' - without exception, convert all "other" component
-        #                         traces into 0-data 0-fold MLTrace objects
-        #                 'fill' - if a given existing "other" trace falls below
-        #                             the threshold, convert it into a 0-data 0-fold
-        #                             MLTrace object
+        :raises ValueError: raised if the `ref` component has insufficient data
         """
         ref_comp = self.stats.ref_component
         # Get reference trace
@@ -309,12 +298,12 @@ class WindowStream(WyrmStream):
         additional information contributed by this trace.
 
         :: INPUTS ::
-        :param ref_component: [str] single character string corresponding to
-                        the KEYED (aliased) component code of the reference trace
-        :param thresh_dict: [dir] directory with keys matching keys in 
+        :param thresh_dict: dictionary with keys matching keys in 
                         self.traces.keys() (i.e., alised component characters)
                         and values \in [0, 1] representing fractional completeness
                         thresholds below which the associated component is rejected
+        :type thresh_dict: dict
+        :raise ValueError: If ref trace has insufficient data
         """
         # Get reference trace
         ref_comp = self.stats.ref_component
@@ -349,12 +338,13 @@ class WindowStream(WyrmStream):
         additional information contributed by this trace.
 
         :: INPUTS ::
-        :param ref_component: [str] single character string corresponding to
-                        the KEYED (aliased) component code of the reference trace
-        :param thresh_dict: [dir] directory with keys matching keys in 
+        :param thresh_dict: dictionary with keys matching keys in 
                         self.traces.keys() (i.e., alised component characters)
                         and values \in [0, 1] representing fractional completeness
                         thresholds below which the associated component is rejected
+        :type thresh_dict: dict
+
+        :raise
         """
         ref_comp = self.stats.ref_component
         # Run through each component and see if it passes thresholds
@@ -446,13 +436,16 @@ class WindowStream(WyrmStream):
         as the output
 
         :: INPUTS ::
-        :param reference_starttime: None - use self.stats.reference_starttime
-                                    UTCDateTime - use this value for sync check on starttime
+        :param reference_starttime: if None - use self.stats.reference_starttime
+                                    if UTCDateTime - use this value for sync check on starttime
+        :type reference_starttime: None or obspy.core.utcdatetime.UTCDateTime
         :param reference_sampling_rate: None - use self.stats.reference_sampling_rate
                                     float - use this value for sync check on sampling_rate
+        :type reference_sampling_rate: None or float
         :param reference_npts: None - use self.stats.reference_npts
                                     int - use this value for sync check on npts
-        :param mode: [str] output mode
+        :type reference_npts: None or int
+        :param mode: output mode
                         'summary' - return the output of bool_array.all()
                         'trace' - return a dictionary of all() outputs of elements 
                                 subset by trace
@@ -461,10 +454,11 @@ class WindowStream(WyrmStream):
                         'full' - return a pandas DataFrame with each element, labeled
                                 with trace component codes (columns) and 
                                 attribute names (index)
-        :: OUTPUT ::
+        :type mode: str
         :return status: [bool] - for mode='summary'
                         [dict] - for mode='trace' or 'attribute'
                         [DataFrame] - for mode='full'
+        :rtype status: bool, dict, or pandas.core.dataframe.DataFrame
         """
         ref = {}
         if reference_starttime is not None:
@@ -517,6 +511,32 @@ class WindowStream(WyrmStream):
                    taperkw={},
                    mergekw={},
                    trimkw={'pad': True, 'fill_value':0}):
+        """Execute a wyrm.core.trace.mltrace.MLTrace.treat_gaps() method on each trace
+        in this WindowStream using common kwargs (see below) and reference sampling data
+        in the WindowStream.stats
+
+        filter -> detrend* -> resample* -> taper* -> merge* -> trim
+
+        For expanded explanation of key word arguments, see wyrm.core.trace.mltrace.MLTrace.treat_gaps
+
+        :param filterkw: kwargs to pass to MLTrace.filter(), defaults to {'type': 'bandpass', 'freqmin': 1, 'freqmax': 45}
+        :type filterkw: dict, optional
+        :param detrendkw: kwargs to pass to MLTrace.detrend(), defaults to {'type': 'linear'}
+        :type detrendkw: dict, optional
+        :param resample_method: resampling method to use, defaults to 'resample'
+                supported values - 'resample','interpolate','decimate'
+        :type resample_method: str, optional
+        :param resamplekw: kwargs to pass to specified resample_method, defaults to {}
+        :type resamplekw: dict, optional
+                            obspy.core.trace.Trace.interpolate
+                            obspy.core.trace.Trace.decimate
+        :param taperkw: kwargs to pass to MLTrace.taper(), defaults to {}
+        :type taperkw: dict, optional
+        :param mergekw: kwargs to pass to MLTrace.merge, defaults to {}
+        :type mergekw: dict, optional
+        :param trimkw: kwargs to pass to MLTrace.trim, defaults to {'pad': True, 'fill_value':0}
+        :type trimkw: dict, optional
+        """        
         # Get reference values from header
         ref = {}
         for _k in ['reference_starttime','reference_npts','reference_sampling_rate']:
@@ -535,9 +555,22 @@ class WindowStream(WyrmStream):
                 trimkw=trimkw)
             if tr.stats.sampling_rate != ref['sampling_rate']:
                 breakpoint()
-        return self
+
     
     def sync_to_reference(self, fill_value=0., **kwargs):
+        """Use a combination of trim and interpolate functions to synchronize
+        the sampling of traces contained in this WindowWyrm
+
+        Wraps the wyrm.core.trace.mltrace.MLTrace.sync_to_window() method
+
+        :param fill_value: fill value for, defaults to 0.
+        :type fill_value: _type_, optional
+        :raises ValueError: _description_
+        :raises ValueError: _description_
+        :raises ValueError: _description_
+        :return: _description_
+        :rtype: _type_
+        """        
         starttime = self.stats.reference_starttime
         if starttime is None:
             raise ValueError('reference_starttime must be specified in this WindowStream\'s `stats`')

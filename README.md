@@ -1,14 +1,12 @@
 #  Ayahos (ʔayahos)
 ## Connecting Python Machine Learning Seismic Analysis Tools to Earthworm  
-<a title="Pacific Northwest Seismic Network Logo" href="https://pnsn.org">
-    <img width="128" alt="PNSN_GitHub_Logo" src="https://avatars.githubusercontent.com/u/11384896?s=200&v=4">
-<a/>  
+
 <a title="Curtis Collection, Public Domain, via Wikimedia Commons" href="https://en.wikipedia.org/wiki/Ayahos">
     <img width="448" alt="Ayahos3" src="https://upload.wikimedia.org/wikipedia/commons/4/41/Ayahos3.png">
 </a>  
-<a title="Affero General Public License" href="https://en.wikipedia.org/wiki/GNU_Affero_General_Public_License">
-    <img width="256" alt="AGPLv3 Logo" src="https://upload.wikimedia.org/wikipedia/commons/0/06/AGPLv3_Logo.svg">
-</a>  
+<a title="Pacific Northwest Seismic Network Logo" href="https://pnsn.org">
+    <img width="128" alt="PNSN_GitHub_Logo" src="https://avatars.githubusercontent.com/u/11384896?s=200&v=4">
+<a/>  
 <img width="50" alt="CC Public Domain Button" src="https://mirrors.creativecommons.org/presskit/buttons/88x31/svg/cc-zero.svg">
 https://en.wikipedia.org/wiki/Ayahos  
 
@@ -39,8 +37,9 @@ https://en.wikipedia.org/wiki/Germanic_dragon
 
 ### License
 This project is distributed under a GNU Affero General Public License (AGPL-3.0), which comforms with licensing of its key dependencies.  
-<img width="256" alt="AGPLv3 Logo" src="https://upload.wikimedia.org/wikipedia/commons/0/06/AGPLv3_Logo.svg">  
-  
+<a title="Affero General Public License" href="https://en.wikipedia.org/wiki/GNU_Affero_General_Public_License">
+    <img width="256" alt="AGPLv3 Logo" src="https://upload.wikimedia.org/wikipedia/commons/0/06/AGPLv3_Logo.svg">
+</a>  
 # Getting Started
 
 Ayahos / Wyrm consists of a collection of single-task-oriented processing classes `wyrms`, adapted obspy `trace` and `stream` classes for handling data, and pre-constructed `modules` based on examples from the [PyEarthworm Workshop](https://github.com/Fran89/PyEarthworm_Workshop), the University of Memphis Test Suite, and locally saved waveform data. 

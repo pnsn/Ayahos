@@ -41,11 +41,11 @@ The project was initially named Wyrm as its key dependencies `Earthworm` and `Py
 
 Ayahos consists of a collection of single-task-oriented building-block classes `wyrms`, adapted obspy `Trace` and `Stream` classes for handling data, and pre-constructed `modules` based on examples from the [PyEarthworm Workshop](https://github.com/Fran89/PyEarthworm_Workshop).  
 
-#### For new users 
+## For new users 
 We recommend installing `Ayahos` and working through the **Pure-Python Tutorials** first to get familiar with the python-side aspects of the Ayahos API.  
 Once you're comfortable with these parts of the project, proceed with installing `Earthworm`, a Test Suite dataset, and `PyEarthworm` and try out the **Earthworm-Integrated Tutorials**
 
-## Installation Instructions  
+### Installation Instructions  
 
 ### Installing `Ayahos`
 We recommend creating a `conda` environment with clean installs of `pip` and `git` for the current distribution:  
@@ -99,7 +99,24 @@ pip install git+https://github.com/Boritech-Solutions/PyEarthworm
 | GaMMA Association RING2RING     | TankPlayer   | PLACEHOLDER  |
 | PhaseNet + GaMMA RING2RING        | TankPlayer   | PLACEHOLDER  |
 
-Developed with Python 3.1X, Apple M2 chipset, and Earthworm 7.10  
+
+## Installation In A Nutshell (For Experienced Users)
+```
+conda create --name Ayahos pip git
+```
+```
+conda activate Ayahos
+```
+```
+pip install git+https://github.com/pnsn/Ayahos@develop
+source </path/to/your/ew_env.bash>
+pip install git+https://github.com/Boritech-Solutions/PyEarthworm
+```
+
+# Documentation (Work In Progress)  
+Sphinx documentation in ReadTheDocs formatting is under construction - stay tuned!  
+Resource: https://sphinx-rtd-tutorial.readthedocs.io/en/latest/  
+
 
 <!-- ### Install with `conda`  
 The same as above, but using a *.yaml  
@@ -124,15 +141,13 @@ org: Pacific Northwest Seismic Network
 `PyEarthworm`: https://github.com/Boritech-Solutions/PyEarthworm; https://github.com/Fran89/PyEarthworm_Workshop
 
 
-## Branching Plan/Development Notice  
+## Branching Plan/Development Notes
 
 Current development version: ALPHA 
 
 The current developmental version of this code is hosted on the `develop` branch. Starting with version 0.0.1 the `main` branch will host deployment read code, `develop` will contain code that is in beta (debug only), and subsidiary `feature-*` branches will host new functionalities under development..  
 
-
-## Documentation (Work In Progress)  
-Sphinx documentation in ReadTheDocs formatting is under construction - stay tuned!
+Developed with Python 3.1X, Apple M2 chipset, and Earthworm 7.10  
 
 
 <!-- ## Notes on the Initial Package Development

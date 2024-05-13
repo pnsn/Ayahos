@@ -1,5 +1,5 @@
 """
-:module: wyrm.core.wyrm.bufferwyrm
+:module: ayahos.core.wyrm.bufferwyrm
 :author: Nathan T. Stevens
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network
@@ -9,17 +9,20 @@
         MLTraceBuffer objects
 """
 
-import time
+import time, logging
+from numpy import isfinite
 from collections import deque
-from wyrm.core.wyrms.wyrm import Wyrm
-from wyrm.core.trace.mltrace import MLTrace
-from wyrm.core.trace.mltracebuffer import MLTraceBuffer
-from wyrm.core.stream.dictstream import WyrmStream
-from wyrm.util.input import bounded_floatlike
+from ayahos.core.wyrms.wyrm import Wyrm
+from ayahos.core.trace.mltrace import MLTrace
+from ayahos.core.trace.mltracebuffer import MLTraceBuffer
+from ayahos.core.stream.dictstream import DictStream
+from ayahos.util.input import bounded_floatlike
+
+Logger = logging.getLogger(__name__)
 
 class BufferWyrm(Wyrm):
     """
-    Class for buffering/stacking MLTrace objects into a WyrmStream of MLTraceBuffer objects with
+    Class for buffering/stacking MLTrace objects into a DictStream of MLTraceBuffer objects with
     self-contained settings and sanity checks for changing the MLTraceBuffer.__add__ method options.
     """
     def __init__(
@@ -30,58 +33,63 @@ class BufferWyrm(Wyrm):
             blinding=None,
             method=1,
             max_pulse_size=10000,
-            debug=False,
             **add_kwargs):
+        """Initialize a BufferWyrm object
+
+        :param buffer_key: MLTrace attribute to use for the DictStream keys, defaults to 'id'
+        :type buffer_key: str, optional
+        :param max_length: Maximum MLTraceBuffer length in seconds, defaults to 300.
+        :type max_length: positive float-like, optional
+        :param restrict_past_append: Enforce MLTraceBuffer past append safeguards?, defaults to True
+        :type restrict_past_append: bool, optional
+        :param blinding: Apply blinding before appending MLTrace objects to MLTraceBuffer objects, defaults to None
+                also see ayahos.core.trace.mltrace.MLTrace.apply_blinding
+                Supported 
+                    None - do not blind
+                    (int, int) - left and right blinding sample counts (must be non-negative), e.g., (500, 500)
+        :type blinding: None or 2-tuple of int, optional
+        :param method: method to use for appending data to MLTrace-type objects in this BufferWyrm's buffer attribute, defaults to 1
+                Supported values:
+                    ObsPy-like
+                        0, 'dis','discard' - discard overlapping dat
+                        1, 'int','interpolate' - interploate between edge-points of overlapping data
+                    SeisBench-like
+                        2, 'max', 'maximum' - conduct stacking with "max" behavior
+                        3, 'avg', 'average' - condcut stacking with "avg" behavior
+
+                also see ayahos.core.trace.mltrace.MLTrace.__add__
+                         ayahos.core.trace.mltracebuffer.MLTraceBuffer.append
+        :type method: int or str, optional
+        :param max_pulse_size: maximum number of items to pull from source deque (x) for a single .pulse(x) call for this BufferWyrm, defaults to 10000
+        :type max_pulse_size: int, optional
+        :raises TypeError: _description_
+        :raises TypeError: _description_
+        :raises ValueError: _description_
         """
-        Initialize a BufferWyrm object that contains attributes that house a WyrmStream that comprises 
-        MLTraceBuffer objects keyed by trace IDs. 
-        
-
-        :: INPUTS ::
-        ~~~MLTraceBuffer Initilizing Inputs~~~
-        :param max_length: [float] maximum MLTraceBuffer length in seconds
-        :param restrict_past_add: [bool] - enforce restrictions on appending data that temporally preceed data contained
-                            within MLTraceBuffer objects? 
-                            ~also see wyrm.data.mltracebuffer.MLTraceBuffer.append()
-        :param blinding: [None], [int], or [tuple of int] number of samples on the left and
-                            right end of appended traces to "blind" (i.e. set fold = 0)
-                            ~also see wyrm.data.mltrace.MLTrace.apply_blinding() for specific behviors
-        ~~~Buffering Append Behavior Influencing Attributes~~~
-        :param method: [int] or [str] - method for wyrm.data.mltrace.MLTrace.__add__
-                        Supported:
-                            0, 'dis','discard' - discard overlapping dat
-                            1, 'int','interpolate' - interploate across overlapping data
-                            2, 'max', 'maximum' - conduct stacking with "max" behavior
-                            3, 'avg', 'average' - condcut stacking with "avg" behavior
-                        ~also see wyr.data.mltrace.MLTrace.__add__()
-        :param **add_kwargs: [kwargs] key-word argument collector passed to MLTrace.__add__() to alter
-                            behaviors of calls of MLTraceBuffer.append() made in the BufferWyrm.pulse() method
-                            ~also see wyrm.data.mltrace.MLTrace.__add__()
-                            ~also see wyrm.data.mltracebuffer.MLTraceBuffer.append()
-
-        :param max_pulse_size: [int] maximum number of items in `x` to assess in a single call of BufferWyrm.pulse(x)
-        :param debug: [bool] - run in debug mode?
-
-        """
-        super().__init__(max_pulse_size=max_pulse_size, debug=debug)
+        super().__init__(max_pulse_size=max_pulse_size)
         # Initialize Buffer Containing Object
-        self.buffer = WyrmStream(key_attr=buffer_key)
+        self.buffer = DictStream(key_attr=buffer_key)
         # Create holder attribute for MLTraceBuffer initialization Kwargs
         self.mltb_kwargs = {}
-        # Do sanity checks on max_length
-        self.mltb_kwargs.update({'max_length':
-                                 bounded_floatlike(
-                                        max_length,
-                                        name='max_length',
-                                        minimum = 0,
-                                        maximum=None,
-                                        inclusive=False
-                                        )})
+        if isinstance(max_length, (float, int)):
+            if isfinite(max_length):
+                if 0 < max_length:
+                    if max_length > 1e7:
+                        Logger.warning(f'max_length of {max_length} > 1e7 seconds. May be memory prohibitive')
+                    self.mltb_kwargs.update({'max_length': max_length})
+                else:
+                    raise ValueError('max_length must be non-negative')
+            else:
+                raise ValueError('max_length must be finite')
+        else:
+            raise TypeError('max_length must be type float or int')
+
         # Do sanity checks on restrict_past_append
         if not isinstance(restrict_past_append, bool):
             raise TypeError('restrict_past_append must be type bool')
         else:
             self.mltb_kwargs.update({'restrict_past_append': restrict_past_append})
+
         # Do sanity checks on blinding
         if not isinstance(blinding, (type(None), bool, tuple)):
             raise TypeError
@@ -95,11 +103,16 @@ class BufferWyrm(Wyrm):
                           3,'avg','average']:
             self.add_kwargs.update({'method': method})
         else:
-            raise ValueError(f'add_method {method} not supported. See wyrm.data.mltrace.MLTrace.__add__()')
+            raise ValueError(f'add_method {method} not supported. See ayahos.trace.mltrace.MLTrace.__add__()')
         
 
 
     def add_new_buffer(self, other):
+        """Add a new MLTraceBuffer object containing the contents of `other` to this BufferWyrm's .buffer attribute
+
+        :param other: Trace-like object to use as the source (meta)data
+        :type other: obspy.core.trace.Trace-like
+        """        
         if isinstance(other, MLTrace):
             if other.id not in self.buffer.traces.keys():
                 # Initialize an MLTraceBuffer Object
@@ -110,9 +123,20 @@ class BufferWyrm(Wyrm):
             
 
     def pulse(self, x):
-        """
-        Conduct a pulse on input deque of MLTrace objects (x)
-        """
+        """Conduct a pulse of this BufferWyrm for up to self.max_pulse_size items contained in `x`. This method conducts early stopping if there are no items in `x` or all items in `x` have been assessed.
+
+        items in `x` that are not consistent with expected inputs are re-appended to `x` using the `append()` method.
+
+        WARNING: 
+        As with most processing in Ayahos, this method removes items
+        from `x` using the `popleft()` method and conducts in-place changes 
+        on `y` (i.e., self.buffer). If you want to 
+
+        :param x: deque of Trace-like objects (or Stream-like collections thereof) to append to this BufferWyrm's self.buffer attribute
+        :type x: collections.deque of ayahos.core.trace.mltrace.MLTrace-like or ayahos.core.stream.dictstream.DictStream-like objects
+        :return y: aliased access to this BufferWyrm's self.buffer attribute
+        :rtype y: ayahos.core.stream.dictstream.DictStream
+        """        
         # Kick error if input is not collections.deque object
         if not isinstance(x, deque):
             raise TypeError
@@ -131,26 +155,20 @@ class BufferWyrm(Wyrm):
             else:
                 _x = x.popleft()
             # if not an MLTrace (or child) reappend to queue (safety catch)
-            if not isinstance(_x, (MLTrace, WyrmStream)):
+            if not isinstance(_x, (MLTrace, DictStream)):
                 x.append(_x)
             #Otherwise get ID of MLTrace
             elif isinstance(_x, MLTrace):
                 _x = [_x]
         
             for _xtr in _x:
-                tick = time.time()
                 _id = _xtr.id
                 # If the MLTrace ID is not in the WyrmStream keys, create new tracebuffer
                 if _id not in self.buffer.traces.keys():
                     self.add_new_buffer(_xtr)
-                    tock = time.time()
-                    status = 'new'
                 # If the MLTrace ID is in the WyrmStream keys, use the append method
                 else:
                     self.buffer[_id].append(_xtr, **self.add_kwargs)
-                    tock = time.time()
-                    status = 'append'
-                # print(f'{_i:05} | {_id} | {status} took {tock - tick} sec')
         y = self.buffer
         return y
         
@@ -160,5 +178,5 @@ class BufferWyrm(Wyrm):
     #     return rstr
                     
     def __str__(self):
-        rstr = f'wyrm.core.coordinate.BufferWyrm()'
+        rstr = f'ayahos.core.wyrms.bufferwyrm.BufferWyrm()'
         return rstr

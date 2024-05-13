@@ -11,19 +11,20 @@
     for the minimum required methods of each successor class. 
 """
 from copy import deepcopy
+from collections import deque
 from time import time
 import logging
 
 Logger = logging.getLogger(__name__)
 
 class Wyrm(object):
-    """Fundamental base class for all other *Wyrm classes
+    """Fundamental base class template all other *Wyrm classes
 
-    :return: Wyrm object
-    :rtype: wyrm.core.wyrm.Wyrm
+    Has a deque attribute `output`    
+    
     """
 
-    def __init__(self, max_pulse_size=None):
+    def __init__(self, max_pulse_size=1e9):
         """Initialize a Wyrm object
 
         :param max_pulse_size: maximum , defaults to None
@@ -42,6 +43,7 @@ class Wyrm(object):
                 raise ValueError('max_pulse_size must be g.e. 1 ')
         else:
             raise TypeError('max_pulse_size must be NoneType, or positive int-like')
+        self.output = deque()
 
 
     def __repr__(self):
@@ -65,15 +67,57 @@ class Wyrm(object):
         """
         return deepcopy(self)
 
-    def pulse(self, x=None):
-        """Run a pulse where the input equals the output
+    def _core_process(self, x):
+        """The core unit process for this particular wyrm
+        ayahos.core.wyrms.wyrm.Wyrm
 
-        :param x: input value, defaults to None
-        :type x: any, optional
-        :return: output value
-        :rtype: same as x
+        1) popleft() an item in x
+        2) set _y = _x
+        3) append(_y) to self.output
+
+        :param x: input data object source
+        :type x: collections.deque of objects
+        """        
+        _x = x.popleft()
+        _y = _x
+        self.output.append(_y)
+
+    def _early_stopping(self, x, i_):
+        """Early stopping criteria for this Wyrm
+        ayahos.core.wyrms.wyrm.Wyrm
+
+        Criteria:
+         - len(x) = 0
+         - i_ > len(x)
+        
+        :param x: input data object collection
+        :type x: collections.deque
+        :param i_: iteration number
+        :type i_: int
+        :return: early stopping criteria met?
+        :rtype: bool
+        """        
+        if len(x) == 0:
+            return True
+        elif i_ > len(x):
+            return True
+        else:
+            return False
+        
+    def pulse(self, x=deque()):
+        """Run a pulse for this Wyrm for up to self.max_pulse_size items in `x`
+
+        :param x: collection of objects to assess
+        :type x: collection.deque of objects
+        :return: collection of outputs in this Wyrm's self.output attribute
+        :rtype: collection.deque of objects
         """        
         Logger.debug('initiating pulse')
-        y = x
+        for i_ in range(self.max_pulse_size):
+            if self._early_stopping(x, i_):
+                break
+            else:
+                self._core_process(x)
+        y = self.output
         Logger.debug('concluding pulse')
         return y

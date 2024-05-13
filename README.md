@@ -1,7 +1,7 @@
 #  ʔayahos (Ayahos)
 ## Connecting Python ML Seismic Analysis Tools to Earthworm  
 
-<a title="Curtis Collection, Public Domain, via Wikimedia Commons" href="https://en.wikipedia.org/wiki/Ayahos">
+<a title="Depiction of the ʔayahos, Curtis Collection, Public Domain, via Wikimedia Commons" href="https://en.wikipedia.org/wiki/Ayahos">
     <img width="448" alt="Ayahos3" src="https://upload.wikimedia.org/wikipedia/commons/4/41/Ayahos3.png">
 </a>  
 <a title="Pacific Northwest Seismic Network Logo" href="https://pnsn.org">
@@ -39,7 +39,7 @@ The project was initially named Wyrm as its key dependencies `Earthworm` and `Py
 
 # Getting Started
 
-Ayahos consists of a collection of single-task-oriented building-block classes `wyrms`, adapted obspy `Trace` and `Stream` classes for handling data, and pre-constructed `modules` based on examples from the [PyEarthworm Workshop](https://github.com/Fran89/PyEarthworm_Workshop).  
+Ayahos consists of a collection of single-task-oriented building-block classes `wyrms`, adapted obspy `Trace` and `Stream` classes for handling data, and pre-constructed `modules` based on examples from the [PyEarthworm Workshop](https://github.com/Fran89/PyEarthworm_Workshop).    
 
 ## For new users 
 We recommend installing `Ayahos` and working through the **Pure-Python Tutorials** first to get familiar with the python-side aspects of the Ayahos API.  
@@ -109,7 +109,11 @@ conda activate Ayahos
 ```
 ```
 pip install git+https://github.com/pnsn/Ayahos@develop
+```
+```
 source </path/to/your/ew_env.bash>
+```
+```
 pip install git+https://github.com/Boritech-Solutions/PyEarthworm
 ```
 

@@ -22,7 +22,7 @@ import time
 from collections import deque
 import pandas as pd
 from wyrm.core.wyrms.wyrm import Wyrm
-from wyrm.core.stream.wyrmstream import WyrmStream
+from wyrm.core.stream.dictstream import WyrmStream
 from wyrm.core.stream.windowstream import WindowStream
 
 ###################################################################################

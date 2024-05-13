@@ -2,7 +2,7 @@ import obspy, os, sys, glob, time
 import numpy as np
 sys.path.append(os.path.join('..','..'))
 import seisbench.models as sbm
-import wyrm.core.stream.wyrmstream as ds
+import wyrm.core.stream.dictstream as ds
 import wyrm.streaming.windowstream as cs
 import wyrm.coordinating.coordinate as coor
 import wyrm.processing.process as proc 

@@ -8,7 +8,6 @@
     <img width="128" alt="PNSN_GitHub_Logo" src="https://avatars.githubusercontent.com/u/11384896?s=200&v=4">
 <a/>  
 <img width="50" alt="CC Public Domain Button" src="https://mirrors.creativecommons.org/presskit/buttons/88x31/svg/cc-zero.svg">
-https://en.wikipedia.org/wiki/Ayahos  
 
 <!-- <img width="128" alt="PNSN_logl" src="https://pbs.twimg.com/profile_images/1149118226829152257/SrdT6VZr_400x400.png">-->
 ## About  

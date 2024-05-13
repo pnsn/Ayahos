@@ -1,4 +1,4 @@
-import threading, logging, time, os
+import threading, logging, time, os, sys
 import PyEW
 from wyrm.core.wyrms.tubewyrm import TubeWyrm
 import pandas as pd
@@ -30,14 +30,14 @@ class HeartWyrm(TubeWyrm):
 
     def __init__(
         self,
-        ew_home='/usr/local/earthworm',
+        ew_home=None,
         wait_sec=0,
-        DR_ID=1000,
-        MOD_ID=200,
-        INST_ID=7,
-        HB_PERIOD=15,
+        default_ring_id=1000,
+        module_id=200,
+        installation_id=255,
+        heartbeat_period=15,
         wyrm_list={},
-        debug=False
+        max_pulse_size=1
     ):
         """
         ChildClass of wyrm.core.base_wyrms.TubeWyrm
@@ -77,21 +77,56 @@ class HeartWyrm(TubeWyrm):
         :attrib _HBP: [float] Saved HB_PERIOD input
         :attrib _debug: [bool] Saved debug input
         """
+        # Initialize TubeWyrm inheritance
         super().__init__(
             wyrm_list=wyrm_list,
             wait_sec=wait_sec,
-            max_pulse_size=None,
-            debug=debug)
-        
+            max_pulse_size=max_pulse_size)        
         # Check that earthworm is in path before initializing PyEW modules
-        add_earthworm_to_path(ew_home)
+        if ew_home is None:
+            try:
+                os.environ['EW_HOME']
+            except KeyError:
+                Logger.critical('Environmental varible $EW_HOME not mapped - cannot proceed')
+                sys.exit(1)
+        else:
+            add_earthworm_to_path(ew_home)
+
+        if isinstance(default_ring_id, int):
+            if 0 <=default_ring_id < 1e5:
+                self._default_ring_id = default_ring_id
+            else:
+                raise ValueError(f'default_ring_id must be an integer in [0, 10000). {default_ring_id} out of bounds')
+        else:
+            raise TypeError(f'default_ring_id must be type int, not {type(default_ring_id)}')
+        
+        if isinstance(module_id, int):
+            if 0 <=module_id < 1e5:
+                self._module_id = module_id
+            else:
+                raise ValueError(f'module_id must be an integer in [0, 10000). {module_id} out of bounds')
+        else:
+            raise TypeError(f'module_id must be type int, not {type(module_id)}')
+        
+        
+        if isinstance(default_ring_id, int):
+            if 0 <=default_ring_id < 1e5:
+                self._default_ring_id = default_ring_id
+            else:
+                raise ValueError(f'default_ring_id must be an integer in [0, 10000). {default_ring_id} out of bounds')
+        else:
+            raise TypeError(f'default_ring_id must be type int, not {type(default_ring_id)}')
+        
+        
 
         # Public Attributes
         self.module = False
         self.conn_info = pd.DataFrame(columns=["Name", "RING_ID"])
 
         # Private Attributes
-        self._default_ring_id = self._bounded_intlike_check(DR_ID, name='DR_ID', minimum=0, maximum=9999)
+        self.
+
+        self._default_ring_id = self._bounded_intlike_check(default_ring_id, name='default', minimum=0, maximum=9999)
         self._module_id = self._bounded_intlike_check(MOD_ID, name='MOD_ID', minimum=0, maximum=255)
         self._installation_id = self._bounded_intlike_check(INST_ID, name='INST_ID', minimum=0, maximum=255)
         self._HBP = self._bounded_floatlike_check(HB_PERIOD, name='HB_PERIOD', minimum=1)
@@ -174,6 +209,19 @@ class HeartWyrm(TubeWyrm):
         """
         # === RUN COMPATABILITY CHECKS ON INPUT VARIABLES === #
         # Enforce integer RING_ID type
+        if not isinstance(ring_id, int):
+            raise TypeError
+        elif ring_id < 0:
+            raise ValueError
+        elif ring_id > 10000:
+            raise ValueError
+        else:
+
+    if not self.module:
+        self.initialize_module()
+    elif ininstance(self.module, PyEW.EWModule):
+    p
+
         RING_ID = self._bounded_intlike_check(RING_ID,name='RING_ID', minimum=0, maximum=9999)
         
         # Warn on non-standard RING_Name types and convert to String

@@ -448,3 +448,17 @@ def validate_EW_msg_naming(mtype=None, mcode=None):
             raise TypeError('mtype must be type str or None')
             
     
+def ew_installation_defaults(profile='PNSN'):
+    """Placeholder method - this will house some default values
+       for different EW Installation profiles. Initially this will
+       be 
+
+    :param profile: _description_, defaults to 'PNSN'
+    :type profile: str, optional
+    :return: _description_
+    :rtype: _type_
+    """
+    profiles = {'PNSN': {},
+                'Memphis': {}}
+    return profiles[profile]
+

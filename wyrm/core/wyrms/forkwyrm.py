@@ -21,7 +21,7 @@ from wyrm.core.wyrms.wyrm import Wyrm
 from wyrm.util.input import bounded_floatlike
 from wyrm.core.trace.mltrace import MLTrace
 from wyrm.core.trace.mltracebuffer import MLTraceBuffer
-from wyrm.core.stream.wyrmstream import WyrmStream
+from wyrm.core.stream.dictstream import WyrmStream
 
 class ForkWyrm(Wyrm):
     """

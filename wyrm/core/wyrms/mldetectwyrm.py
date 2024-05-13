@@ -21,7 +21,7 @@ import numpy as np
 import seisbench.models as sbm
 from collections import deque
 from wyrm.core.trace.mltrace import MLTrace
-from wyrm.core.stream.wyrmstream import WyrmStream
+from wyrm.core.stream.dictstream import WyrmStream
 from wyrm.core.stream.windowstream import WindowStream
 from wyrm.core.wyrms.wyrm import Wyrm
 

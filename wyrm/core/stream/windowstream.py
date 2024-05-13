@@ -3,22 +3,22 @@ import numpy as np
 import pandas as pd
 import seisbench.models as sbm
 from obspy import Trace, Stream, UTCDateTime
-from wyrm.core.stream.wyrmstream import WyrmStream, WyrmStreamStats
+from wyrm.core.stream.dictstream import DictStream, DictStreamStats
 from wyrm.core.trace.mltrace import MLTrace
 
 ###############################################################################
 # WindowStreamStats Class Definition ##########################################
 ###############################################################################
 
-class WindowStreamStats(WyrmStreamStats):
+class WindowStreamStats(DictStreamStats):
     # NTS: Deepcopy is necessary to not overwrite _types and defaults for parent class
-    _types = copy.deepcopy(WyrmStreamStats._types)
+    _types = copy.deepcopy(DictStreamStats._types)
     _types.update({'ref_component': str,
                    'aliases': dict,
                    'reference_starttime': (UTCDateTime, type(None)),
                    'reference_npts': (int, type(None)),
                    'reference_sampling_rate': (float, type(None))})
-    defaults = copy.deepcopy(WyrmStreamStats.defaults)
+    defaults = copy.deepcopy(DictStreamStats.defaults)
     defaults.update({'ref_component': 'Z',
                      'aliases': {'Z': 'Z3',
                                  'N': 'N1',
@@ -61,10 +61,10 @@ class WindowStreamStats(WyrmStreamStats):
 # Component Stream Class Definition ###########################################
 ###############################################################################
         
-class WindowStream(WyrmStream):
-    """A child-class of WyrmStream that only uses trace component codes as keys and
+class WindowStream(DictStream):
+    """A child-class of DictStream that only uses trace component codes as keys and
     is postured towards processing a collection of windowed traces from a single
-    seismometer. It provides additional class methods extending from WyrmStream
+    seismometer. It provides additional class methods extending from DictStream
     that facilitate windowed trace data pre-processing in advance of ML prediction
     using SeisBench WaveformModel type model architectures.
     """
@@ -74,7 +74,7 @@ class WindowStream(WyrmStream):
             ref_component='Z',
             header={},
             **options):
-        """Initialize a wyrm.core.WyrmStream.WindowStream object
+        """Initialize a wyrm.core.DictStream.WindowStream object
 
         :param traces: ObsPy Trace-like object(s)
         :type traces: obspy.core.trace.Trace or list/obspy.core.stream.Stream thereof
@@ -86,7 +86,7 @@ class WindowStream(WyrmStream):
                 for merging entries with matching component codes
         :type **options: kwargs
         """
-        # Initialize & inherit from WyrmStream
+        # Initialize & inherit from DictStream
         super().__init__()
         # Initialize Stream Header
         self.stats = WindowStreamStats(header=header)

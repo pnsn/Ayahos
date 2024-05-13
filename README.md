@@ -35,25 +35,59 @@ The project was initially named Wyrm as its key dependencies `Earthworm` and `Py
 <img width="50" alt="CC Public Domain Button" src="https://mirrors.creativecommons.org/presskit/buttons/88x31/svg/cc-zero.svg">  
 https://en.wikipedia.org/wiki/Germanic_dragon  
 
+
 # Getting Started
 
-Ayahos / Wyrm consists of a collection of single-task-oriented processing classes `wyrms`, adapted obspy `trace` and `stream` classes for handling data, and pre-constructed `modules` based on examples from the [PyEarthworm Workshop](https://github.com/Fran89/PyEarthworm_Workshop), the University of Memphis Test Suite, and locally saved waveform data. 
+Ayahos consists of a collection of single-task-oriented building-block classes `wyrms`, adapted obspy `Trace` and `Stream` classes for handling data, and pre-constructed `modules` based on examples from the [PyEarthworm Workshop](https://github.com/Fran89/PyEarthworm_Workshop).  
 
-The easiest way to get familiar with Ayahos/Wyrm is by working through our colab notebooks
+#### For new users 
+We recommend installing `Ayahos` and working through the **Pure-Python Tutorials** first to get familiar with the python-side aspects of the Ayahos API.  
+Once you're comfortable with these parts of the project, proceed with installing `Earthworm`, a Test Suite dataset, and `PyEarthworm` and try out the **Earthworm-Integrated Tutorials**
 
-#### Local data examples (does not require PyEarthworm or Earthworm installs)
+## Installation Instructions  
+
+### Installing `Ayahos`
+We recommend creating a `conda` environment with clean installs of `pip` and `git` for the current distribution:  
+```
+conda create --name ayahos pip git
+conda activate ayahos
+pip install git+https://github.com/pnsn/Ayahos.git@develop
+``` 
+
+#### Pure-Python Tutorials (No Earthworm Required)
 
 | Examples                        | Source Data  |  Notebook    | Reference                    |  
 | ------------------------------- | ------------ | ------------ | ---------------------------- |
-| Typical ObsPy Signal Processing | local mSEED  | PLACEHOLDER  |                              |
-| PhaseNet on One Station         | local mSEED  | PLACEHOLDER  | [Retailleau et al. (2022)](https://doi.org/10.1785/0220210279)   |
-| EQTransformer on Many Stations  | local mSEED  | PLACEHOLDER  | [Ni et al. (2023)](https://doi.org/10.26443/seismica.v2i1.368) | 
-| Ensembling Model Predictions    | local mSEED  | PLACEHOLDER  | [Yuan et al. (2023)](https://doi.org/10.1109/TGRS.2023.3320148) | 
-| PhaseNet + GaMMA Pick/Associate | local mSEED  | PLACEHOLDER  | |
+| Introduction to Ayahos Data Classes | local | PLACEHOLDER | | 
+| ObsPy Signal Processing | local        | PLACEHOLDER  |                              |
+| PhaseNet on One Station         | local        | PLACEHOLDER  | [Retailleau et al. (2022)](https://doi.org/10.1785/0220210279)   |
+| EQTransformer on Many Stations  | local        | PLACEHOLDER  | [Ni et al. (2023)](https://doi.org/10.26443/seismica.v2i1.368) | 
+| Ensembling Model Predictions    | local        | PLACEHOLDER  | [Yuan et al. (2023)](https://doi.org/10.1109/TGRS.2023.3320148) | 
+| PhaseNet + GaMMA Pick/Associate | local        | PLACEHOLDER  | |
 
 
-If these are comfortable for you, install a Test Suite and try out Ayahos/Wyrm in concert with Earthworm
-#### Earthworm integrated examples  
+### Installing `Earthworm` and a Test Suite
+Follow  
+* Directions on Earthworm 7.10 installation can be found [here](https://gitlab.rm.ingv.it/earthworm/earthworm)  
+* The Univerity of Memphis Test Suite can be downloaded directly [here] (http://www.earthwormcentral.org/distribution/memphis_test.zip)
+
+**NOTE**: The PNSN is developing an PNW test suite to showcase Ayahos' functionalities. Stay tuned!  
+
+### Installing `PyEarthworm`
+#### `pip` install from `main`
+**NOTE**: This is an abstraction from the PyEarthworm install instructions, refer to their repository for authoritative installation instructions  
+
+Source your `Earthworm` OS-specific environment (e.g., for the Memphis Test Suite example installed on a Mac)     
+```
+source /usr/local/earthworm/memphis/params/ew_macosx.bash
+```
+
+Install `PyEarthworm` from `main`  
+```
+pip install git+https://github.com/Boritech-Solutions/PyEarthworm
+```  
+
+#### Earthworm Integrated Tutorials  
 
 | Examples                        | Source Data  |  Notebook    | 
 | ------------------------------- | ------------ | ------------ |
@@ -64,33 +98,7 @@ If these are comfortable for you, install a Test Suite and try out Ayahos/Wyrm i
 | GaMMA Association RING2RING     | TankPlayer   | PLACEHOLDER  |
 | PhaseNet + GaMMA RING2RING        | TankPlayer   | PLACEHOLDER  |
 
-
-## Installation Instructions  
-
-### `Earthworm` and a Test Suite
-For new users we recommend having Earthworm and an example tankplayer Test Suite pre-installed on your system before installing `ayahos/wyrm`  
-* Directions on Earthworm 7.10 installation can be found [here](https://gitlab.rm.ingv.it/earthworm/earthworm)  
-* The Univerity of Memphis Test Suite can be downloaded directly [here] (http://www.earthwormcentral.org/distribution/memphis_test.zip)
-
-**NOTE**: The PNSN is developing an PNW test suite to showcase Ayahos/Wyrm's functionalities. Stay tuned!  
-
-
-### Installing `Ayahos`
-We recommend creating a `conda` environment with clean installs of `pip` and `git` regardless of the install method you choose
-```
-conda create --name ayahos pip git
-conda activate ayahos
-```
-#### `pip` install from the `develop` branch  
-```
-pip install git+https://github.com/pnsn/Ayahos.git@develop
-``` 
-#### install from source  
-```
-git clone https://github.com/pnsn/Ayahos.git@develop
-cd /your/path/to/Ayahos-master
-python -m pip install .
-``` 
+Developed with Python 3.1X, Apple M2 chipset, and Earthworm 7.10  
 
 <!-- ### Install with `conda`  
 The same as above, but using a *.yaml  
@@ -98,20 +106,14 @@ The same as above, but using a *.yaml
 wget https://github.com/pnsn/Ayahos/conda_env_create.yaml
 ``` -->
 
-### Installing `PyEarthworm`
-Source your `Earthworm` OS-specific environment, e.g.,  
-```
-source /usr/local/earthworm/memphis/params/ew_macosx.bash
-```
-(Memphis Test Suite example installed on a Mac)
-Install `PyEarthworm` from `main`  
-```
-pip install git+https://github.com/Boritech-Solutions/PyEarthworm
-```  
-
-Tested with Python 3.1X, Apple M2 chipset, and Earthworm 7.10  
 
 
+# Additional Information
+
+## Primary Developer  
+Nathan T. Stevens  
+email: ntsteven (at) uw.edu  
+org: Pacific Northwest Seismic Network
 
 ## Key Project Dependencies & Resources
 `Earthworm`: http://www.earthwormcentral.org  
@@ -119,6 +121,17 @@ Tested with Python 3.1X, Apple M2 chipset, and Earthworm 7.10
 `ObsPy`: https://docs.obspy.org  
 `SeisBench`: https://github.com/seisbench/seisbench  
 `PyEarthworm`: https://github.com/Boritech-Solutions/PyEarthworm; https://github.com/Fran89/PyEarthworm_Workshop
+
+
+## Branching Plan/Development Notice  
+
+Current development version: ALPHA 
+
+The current developmental version of this code is hosted on the `develop` branch. Starting with version 0.0.1 the `main` branch will host deployment read code, `develop` will contain code that is in beta (debug only), and subsidiary `feature-*` branches will host new functionalities under development..  
+
+
+## Documentation (Work In Progress)  
+Sphinx documentation in ReadTheDocs formatting is under construction - stay tuned!
 
 
 <!-- ## Notes on the Initial Package Development
@@ -135,45 +148,3 @@ This initial version focuses on body wave detection and labeling tasks using the
 
 Abstracted from `SeisBench` documentation: https://seisbench.readthedocs.io/en/stable/pages/benchmark_datasets.html#  
  -->
-
-
-# About:  
-
-
-
-## Primary Developer  
-Nathan T. Stevens  
-email: ntsteven (at) uw.edu  
-org: Pacific Northwest Seismic Network
-
-## Branching Plan/Development Notice  
-
-Current development version: ALPHA 
-
-The current developmental version of this code is hosted on the `develop` branch. Starting with version 0.0.1 the `main` branch will host deployment read code, `develop` will contain code that is in beta (debug only), and subsidiary `feature-*` branches will host new functionalities under development..  
-
-
-
-## Documentation (Work In Progress)  
-Will produce Sphinx documentation to host on ReadTheDocs
-
-
-### Project Structure Outline  
-wyrm  
-|__core - source code  
-|  |__stream     - obspy.core.stream.Stream child classes  
-|  |  |__stream.py
-|  |
-|  |__trace      - obspy.core.trace.Trace child classes  
-|  |  |__trace.py
-|  |
-|  |__wyrm       - process-focused classes ("wyrms")  
-|  
-|__modules - fully assembled wyrm modules for Py-EW or Py-DISK processing tasks    
-|  
-|__submodules - assembled sets of wyrms for routine tasks within a complete wyrm module  
-|  
-|__util - general helper functions  
-|  
-|__scripts    - additional worked examples (likely to be obsolited)  
-

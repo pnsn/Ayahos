@@ -1,4 +1,4 @@
-#  Ayahos (ʔayahos)
+#  ʔayahos (Ayahos)
 ## Connecting Python Machine Learning Seismic Analysis Tools to Earthworm  
 
 <a title="Curtis Collection, Public Domain, via Wikimedia Commons" href="https://en.wikipedia.org/wiki/Ayahos">
@@ -9,36 +9,32 @@
 <a/>  
 <img width="50" alt="CC Public Domain Button" src="https://mirrors.creativecommons.org/presskit/buttons/88x31/svg/cc-zero.svg">
 
-<!-- <img width="128" alt="PNSN_logl" src="https://pbs.twimg.com/profile_images/1149118226829152257/SrdT6VZr_400x400.png">-->
 ## About  
-### A software product of the [Pacific Northwest Seismic Network](https://pnsn.org)
-
-The Ayahos project is an open-source (AGPL-3.0) python project for connecting machine learning (ML) seismic analysis tools into the [`Earthworm`](http://www.earthwormcentral.org) automated seismic processing system. It builds on popular Python APIs used in the seismological research community for routine data processing ([`ObsPy`](https://docs.obspy.org) and [`NumPy`](https://numpy.org)) and ML enhanced analysis tasks ([`SeisBench`](https://seisbench.readthedocs.io/en/stable/) and [`PyTorch`](https://pytorch.org)). This project relies upon the open-source [`PyEarthworm`](https://github.com/Boritech-Solutions/PyEarthworm) project for brokering in-memory data transfers between Earthworm and Python.  
+Ayahos is an open-source python project for connecting machine learning (ML) seismic analysis tools into the [`Earthworm`](http://www.earthwormcentral.org) automated seismic processing system. It builds on popular Python APIs used in the seismological research community for routine data processing ([`ObsPy`](https://docs.obspy.org) and [`NumPy`](https://numpy.org)) and ML enhanced analysis tasks ([`SeisBench`](https://seisbench.readthedocs.io/en/stable/) and [`PyTorch`](https://pytorch.org)). This project relies upon the open-source [`PyEarthworm`](https://github.com/Boritech-Solutions/PyEarthworm) project for brokering in-memory data transfers between Earthworm and Python.  
 
 We thank each of these development teams for their dedication to open-source scientific software.  
 
 Through this project we seek to provide a familiar, modular python API that can be adapted to meet Earthworm installation operators' needs and enable rapid integration of emerging ML tools from the seismological research community into seismic networks' existing automated operations.  
-
-### Whats in a name?  
-**ʔayahos (Ayahos), for where we stand**  
-This is a product of the Puget Sound, where oral traditions of Lushootseed speaking peoples associate earthquake activity with the supernatural spirit ʔayahus, who can take the form of a monsterous two headed serpent.
-
-*Also See*  
-* [PNSN Outreach: Serpent Spirit-power Stories along the Seattle Fault](https://pnsn.org/outreach/native-american-stories/serpent-spirit-power/native-american-serpent-spirit-power-stories)
-* [Ludiwin et al. (2005, SRL)](https://doi.org/10.1785/gssrl.76.5.526)
-
-**Wyrm, for shorthand**  
-The project was initially named Wyrm as its key dependencies `Earthworm` and `PyTorch` echo descriptions of Wyrms in European folklore: subterranean, fire-breathing serpents. This naming convention persists for base-module classes (e.g., class HeartWyrm) out of convenience and as a nod to singularity - there are many Wyrms, but only one A'yahos. 
-
-<a title="Richard Dybeck, Public domain, via Wikimedia Commons" href="https://commons.wikimedia.org/wiki/File:U_887,_Skillsta.jpg"><img width="128" alt="U 887, Skillsta" src="https://upload.wikimedia.org/wikipedia/commons/thumb/d/d1/U_887%2C_Skillsta.jpg/256px-U_887%2C_Skillsta.jpg"></a>  
-<img width="50" alt="CC Public Domain Button" src="https://mirrors.creativecommons.org/presskit/buttons/88x31/svg/cc-zero.svg">  
-https://en.wikipedia.org/wiki/Germanic_dragon  
 
 ### License
 This project is distributed under a GNU Affero General Public License (AGPL-3.0), which comforms with licensing of its key dependencies.  
 <a title="Affero General Public License" href="https://en.wikipedia.org/wiki/GNU_Affero_General_Public_License">
     <img width="256" alt="AGPLv3 Logo" src="https://upload.wikimedia.org/wikipedia/commons/0/06/AGPLv3_Logo.svg">
 </a>  
+
+### Whats in a name?  
+**ʔayahos (Ayahos), for where we stand**  
+This is a product of the Puget Sound, where oral traditions of Lushootseed speaking peoples associate earthquake activity with the supernatural spirit ʔayahus, who can take the form of a monsterous two headed serpent.
+* [PNSN Outreach: Serpent Spirit-power Stories along the Seattle Fault](https://pnsn.org/outreach/native-american-stories/serpent-spirit-power/native-american-serpent-spirit-power-stories)
+* [Ludiwin et al. (2005, SRL)](https://doi.org/10.1785/gssrl.76.5.526)
+
+**Wyrm, for shorthand**  
+The project was initially named Wyrm as its key dependencies `Earthworm` and `PyTorch` echo descriptions of Wyrms in European folklore: subterranean, fire-breathing serpents. This naming convention persists for building-block submodule classes (i.e., `ayahos.core.wyrms`) as a nod to uniqueness in these oral traditions - there are many Wyrms, but only one ʔayahos. 
+
+<a title="Richard Dybeck, Public domain, via Wikimedia Commons" href="https://commons.wikimedia.org/wiki/File:U_887,_Skillsta.jpg"><img width="128" alt="U 887, Skillsta" src="https://upload.wikimedia.org/wikipedia/commons/thumb/d/d1/U_887%2C_Skillsta.jpg/256px-U_887%2C_Skillsta.jpg"></a>  
+<img width="50" alt="CC Public Domain Button" src="https://mirrors.creativecommons.org/presskit/buttons/88x31/svg/cc-zero.svg">  
+https://en.wikipedia.org/wiki/Germanic_dragon  
+
 # Getting Started
 
 Ayahos / Wyrm consists of a collection of single-task-oriented processing classes `wyrms`, adapted obspy `trace` and `stream` classes for handling data, and pre-constructed `modules` based on examples from the [PyEarthworm Workshop](https://github.com/Fran89/PyEarthworm_Workshop), the University of Memphis Test Suite, and locally saved waveform data. 

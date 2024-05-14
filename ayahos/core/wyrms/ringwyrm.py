@@ -22,17 +22,17 @@
 
 """
 import logging
-#import PyEW
-from wyrm.core.wyrms.wyrm import Wyrm
-from wyrm.util.pyew import is_wave_msg, wave2mltrace
-from wyrm.util.input import bounded_floatlike, bounded_intlike
-from wyrm.core.trace.mltrace import MLTrace
-from wyrm.core.trace.mltracebuffer import MLTraceBuffer
-from wyrm.core.stream.dictstream import DictStream
+import PyEW
+from ayahos.core.wyrms.wyrm import Wyrm
+from ayahos.util.pyew import is_wave_msg, wave2mltrace
+from ayahos.util.input import bounded_floatlike, bounded_intlike
+from ayahos.core.trace.mltrace import MLTrace
+from ayahos.core.trace.mltracebuffer import MLTraceBuffer
+from ayahos.core.stream.dictstream import DictStream
 
 Logger = logging.getLogger(__name__)
 
-class RingWyrm(Wyrm):
+class RingWyrm(Wyrm):   
     """
     Wyrm that facilitates transactions between memory rings in the Earthworm
     Message Transport System and the Python environment. This wraps an active 
@@ -51,16 +51,37 @@ class RingWyrm(Wyrm):
     
     def __init__(
             self,
-            module=None,
+            module,
             conn_id=0,
-            pulse_method_str='get_wave',
+            pulse_method='get_wave',
             msg_type=19,
             max_pulse_size=10000
             ):
-        
+        """_summary_
+
+        :param module: Pre-initialized PyEarthworm module
+        :type module: PyEW.EWModule, optional
+        :param conn_id: connection ID number for target memory ring, defaults to 0
+        :type conn_id: int, optional
+            also see    PyEW.EWModule
+                        ayahos.core.wyrms.heartwyrm.HeartWyrm
+        :param pulse_method: name of PyEW.EWModule messaging method to use, defaults to 'get_wave'
+        :type pulse_method: str, optional
+            Supported: 'get_wave','put_wave','get_msg','put_msg','get_bytes','put_bytes'
+            also see    PyEW.EWModule
+        :param msg_type: Earthworm message code, defaults to 19 (TYPE_TRACEBUFF2)
+        :type msg_type: int, optional
+            cross reference with your installation's `earthworm_global.d` file
+        :param max_pulse_size: Maximum mumber of messages to transact in a single pulse, defaults to 10000
+        :type max_pulse_size: int, optional
+        """        
         Wyrm.__init__(self, max_pulse_size=max_pulse_size)
         Logger.debug('init RingWyrm')
         # Compatability checks for `module`
+        if isinstance(module, PyEW.EWModule):
+            self.module = module
+        else:
+            raise TypeError(f'module must be ')
         if module is None:
             self.module = module
             print('No EW connection provided - for debugging/dev purposes only')
@@ -72,13 +93,11 @@ class RingWyrm(Wyrm):
         # Compatability checks for `conn_id`
         self.conn_id = self._bounded_intlike_check(conn_id, name='conn_id', minimum=0)
 
-        # Compat. chekcs for pulse_method_str
-        if not isinstance(pulse_method_str, str):
-            raise TypeError('pulse_method_str must be type_str')
-        elif pulse_method_str not in ['get_wave','put_wave','get_msg','put_msg','get_bytes','put_bytes']:
-            raise ValueError(f'pulse_method_str {pulse_method_str} unsupported. See documentation')
+        # Compat. chekcs for pulse_method
+        if pulse_method not in ['get_wave','put_wave','get_msg','put_msg','get_bytes','put_bytes']:
+            raise ValueError(f'pulse_method {pulse_method} unsupported. See documentation')
         else:
-            self.pulse_method = pulse_method_str
+            self.pulse_method = pulse_method
         
         # Compatability checks for msg_type
         if self.pulse_method in ['get_msg','put_msg','get_bytes','put_bytes']:

@@ -1,6 +1,6 @@
 import threading, logging, time, os, sys
 import PyEW
-from wyrm.core.wyrms.tubewyrm import TubeWyrm
+from ayahos.core.wyrms.tubewyrm import TubeWyrm
 import pandas as pd
 
 Logger = logging.getLogger(__name__)
@@ -217,10 +217,10 @@ class HeartWyrm(TubeWyrm):
             raise ValueError
         else:
 
-    if not self.module:
-        self.initialize_module()
-    elif ininstance(self.module, PyEW.EWModule):
-    p
+        if not self.module:
+            self.initialize_module()
+        elif ininstance(self.module, PyEW.EWModule):
+    
 
         RING_ID = self._bounded_intlike_check(RING_ID,name='RING_ID', minimum=0, maximum=9999)
         
@@ -301,16 +301,71 @@ class HeartWyrm(TubeWyrm):
         """
         self.runs = False
 
+    def _early_stopping(self):
+        """_early_stopping for ayahos.core.wyrms.heartwyrm.HeartWyrm
+
+        Return status of self.module.mod_sta()
+            True - still running
+            False - shutdown signal
+
+        :return: self.module.mod_sta
+        :rtype: bool
+        """        
+        return self.module.mod_sta()
+
+    def _core_process(self, x=None):
+        """
+        _core_process for HeartWyrm
+
+        1) wait for self.wait_sec
+        2) execute y = TubeWyrm(...).pulse(x)
+
+        also see ayahos.core.wyrms.tubewyrm.TubeWyrm
+
+        :param x: input collection of objects for first wyrm_ in self.wyrm_dict, defaults to None
+        :type x: Varies, optional
+        :return: output of last wyrm_ in self.wyrm_dict
+        :rtype: Varies
+        """        
+        # Sleep for wait_sec
+        time.sleep(self.wait_sec)
+        # Then run TubeWyrm pulse
+        y = super().pulse(x)
+        return y
+
     def run(self):
         """
-        Module Execution Command
+        Run the PyEW.EWModule housed by this HeartWyrm
         """
+        Logger.critical("Starting Module Operation")        
+        self.start()
         while self.runs:
-            if self.module.mod_sta() is False:
+            # Break while loop if _early_stopping triggers at start of iteration
+            if self._early_stopping() is False:
                 break
-            time.sleep(self.wait_sec)
-            # Run Pulse Command inherited from TubeWyrm
-            self.pulse()  # conn_in = conn_in, conn_out = conn_out)
-        # Polite shut-down of module
+            self._core_process()
+            # Use stop to shut down while loop if _early_stopping triggers at end of iteration
+            if self._early_stopping() is False:
+                self.stop()
+        # Gracefully shut down
         self.module.goodbye()
-        print("Exiting HeartWyrm Instance")
+        # Note shutdown in logging
+        Logger.critical("Shutting Down Module")     
+
+    def pulse(self):
+        Logger.error("pulse() method disabled for ayahos.core.wyrms.heartwyrm.Heartwyrm")
+        Logger.error("Use HeartWyrm.run() to start module operation")
+
+    # def run(self):
+    #     """
+    #     Module Execution Command
+    #     """
+    #     while self.runs:
+    #         if self.module.mod_sta() is False:
+    #             break
+    #         time.sleep(self.wait_sec)
+    #         # Run Pulse Command inherited from TubeWyrm
+    #         self.pulse()  # conn_in = conn_in, conn_out = conn_out)
+    #     # Polite shut-down of module
+    #     self.module.goodbye()
+    #     print("Exiting HeartWyrm Instance")

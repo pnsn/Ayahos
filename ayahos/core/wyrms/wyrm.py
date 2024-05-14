@@ -81,6 +81,8 @@ class Wyrm(object):
         _x = x.popleft()
         _y = _x
         self.output.append(_y)
+        y = self.output
+        return y
 
     def _early_stopping(self, x, i_):
         """Early stopping criteria for this Wyrm
@@ -117,7 +119,6 @@ class Wyrm(object):
             if self._early_stopping(x, i_):
                 break
             else:
-                self._core_process(x)
-        y = self.output
+                y = self._core_process(x)
         Logger.debug('concluding pulse')
         return y

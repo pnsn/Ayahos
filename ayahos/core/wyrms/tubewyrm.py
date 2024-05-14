@@ -20,7 +20,7 @@
 import time, logging
 import numpy as np
 from collections import deque
-from wyrm.core.wyrm.wyrm import Wyrm
+from wyrm.core.wyrms.wyrm import Wyrm
 from wyrm.util.input import bounded_intlike, bounded_floatlike
 
 logger = logging.getLogger(__name__)
@@ -202,64 +202,97 @@ class TubeWyrm(Wyrm):
                 rstr += f'{type(_v)}\n'
         return rstr
 
+    def _early_stopping(self):
+        """early stopping criteria for TubeWyrm pulse
+
+         - None: allow internal Wyrm modules' _early_stopping decide
+
+        :return: False
+        :rtype: bool
+        """        
+        return False
     
+    def _core_process(self, x):
+        """_core_process for ayahos.core.wyrms.tubewyrm.TubeWyrm
 
-    def pulse(self, x):
-        """
-        Initiate a chained pulse for elements of wyrm_queue.
+        Execute a chained pulse of wyrm-type objects in the self.wyrm_dict
 
-        E.g.,
-        tubewyrm.wyrm_dict = {name0:<wyrm0>,
-                              name1:<wyrm1>,
-                              name2:<wyrm3>}
-        y = tubewyrm.pulse(x)
-            is equivalent to
-        y = wyrmw.pulse(wyrmq.pulse(wyrm0.pulse(x)))
+        i.e., wyrm_dict = {0: wyrm1, 1: wyrm2}
+        y = wyrm2.pulse(wyrm1.pulse(x))
 
-        Between each successive wyrm in the wyrm_dict there
-        is a pause of self.wait_sec seconds.
-
-        :: INPUT ::
-        :param x: Input `x` for the first Wyrm object in wyrm_dict
-
-        :: OUTPUT ::
-        :param y: Output `y` from the last Wyrm object in wyrm_dict
-        """
-        if self.debug:
-            start = time.time()
-        out_lens = []
-        for _i in range(self.max_pulse_size):
-            if self.debug:
-                print(f'TubeWyrm pulse {_i} - {time.time() - start:.3e}sec')
-            for _j, _wyrm in enumerate(self.wyrm_dict.values()):
-                if self.debug:
-                    print('Tube∂ Pulse Element Firing')
-                    print(f'   {_wyrm}')
-                    tick = time.time()
-                    
-                # For first stage of pulse, pass output to `y`
-                if _j == 0:
-                    y = _wyrm.pulse(x)
-                        # print(f' ----- {len(y)} elements coming out')
-                    out_lens.append(len(y))
-
-                # For all subsequent pulses, update `y`
-                else:
-                    # if self.debug:
-                        # print(f' ----- {len(y)} elements going in')
-                    y = _wyrm.pulse(y)
-                    # if self.debug:
-                        # print(f' ----- {len(y)} elements coming out')
-                    out_lens.append(len(y))
-                if self.debug:
-                    print(f'    Pulse Element Runtime {time.time() - tick:.3f}sec')
-                    print(f'    Elapsed Pulse Time {tick - start:.3f}sec\n')
-
-                # if not last step, wait specified wait_sec
-                if _j + 1 < len(self.wyrm_dict):
-                    time.sleep(self.wait_sec)
-            # if self.debug:
-            for _k, _v in zip(self.wyrm_dict.keys(), out_lens):
-                print(f'{_k} output length: {_v}')
+        Iterate for max_pulse_size
+            Iterate across wyrms in self.wyrm_dict
+                If first wyrm_, y = wyrm_.pulse(x)
+                else: y = wyrm_pulse(y)
+        
+        :param x: input expected by first wyrm-type objects' wyrm_.pulse() method in the self.wyrm_dict
+        :type x: varies, typically collections.deque or ayahos.core.streamdictstream.DictStream
+        :return y: output from wyrm_.pulse() for the last wyrm-type object in the self.wyrm_dict
+        :type y: varies, typically collections.deque or ayahos.core.stream.dictstream.DictStream
+        """        
+        for j_, wyrm_ in enumerate(self.wyrm_dict.values()):
+            if j_ == 0:
+                y = wyrm_.pulse(x)
+            else:
+                y = wyrm_.pulse(y)
         return y
+
+    # def pulse(self, x):
+    #     """
+    #     Initiate a chained pulse for elements of wyrm_queue.
+
+    #     E.g.,
+    #     tubewyrm.wyrm_dict = {name0:<wyrm0>,
+    #                           name1:<wyrm1>,
+    #                           name2:<wyrm3>}
+    #     y = tubewyrm.pulse(x)
+    #         is equivalent to
+    #     y = wyrmw.pulse(wyrmq.pulse(wyrm0.pulse(x)))
+
+    #     Between each successive wyrm in the wyrm_dict there
+    #     is a pause of self.wait_sec seconds.
+
+    #     :: INPUT ::
+    #     :param x: Input `x` for the first Wyrm object in wyrm_dict
+
+    #     :: OUTPUT ::
+    #     :param y: Output `y` from the last Wyrm object in wyrm_dict
+    #     """
+    #     if self.debug:
+    #         start = time.time()
+    #     out_lens = []
+    #     for _i in range(self.max_pulse_size):
+    #         if self.debug:
+    #             print(f'TubeWyrm pulse {_i} - {time.time() - start:.3e}sec')
+    #         for _j, _wyrm in enumerate(self.wyrm_dict.values()):
+    #             if self.debug:
+    #                 print('Tube∂ Pulse Element Firing')
+    #                 print(f'   {_wyrm}')
+    #                 tick = time.time()
+                    
+    #             # For first stage of pulse, pass output to `y`
+    #             if _j == 0:
+    #                 y = _wyrm.pulse(x)
+    #                     # print(f' ----- {len(y)} elements coming out')
+    #                 out_lens.append(len(y))
+
+    #             # For all subsequent pulses, update `y`
+    #             else:
+    #                 # if self.debug:
+    #                     # print(f' ----- {len(y)} elements going in')
+    #                 y = _wyrm.pulse(y)
+    #                 # if self.debug:
+    #                     # print(f' ----- {len(y)} elements coming out')
+    #                 out_lens.append(len(y))
+    #             if self.debug:
+    #                 print(f'    Pulse Element Runtime {time.time() - tick:.3f}sec')
+    #                 print(f'    Elapsed Pulse Time {tick - start:.3f}sec\n')
+
+    #             # if not last step, wait specified wait_sec
+    #             if _j + 1 < len(self.wyrm_dict):
+    #                 time.sleep(self.wait_sec)
+    #         # if self.debug:
+    #         for _k, _v in zip(self.wyrm_dict.keys(), out_lens):
+    #             print(f'{_k} output length: {_v}')
+    #     return y
 

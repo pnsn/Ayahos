@@ -80,7 +80,7 @@ class RingWyrm(Wyrm):
             raise TypeError(f'module must be type PyEW.EWModule, not type {type(module)}')
         
         if isinstance(conn_id, int):
-            if conn_id > 0:
+            if conn_id >= 0:
                 self.conn_id = conn_id
             else:
                 raise ValueError('conn_id must be a non-negative iteger')

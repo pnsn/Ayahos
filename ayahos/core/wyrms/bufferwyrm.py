@@ -16,7 +16,6 @@ from ayahos.core.wyrms.wyrm import Wyrm
 from ayahos.core.trace.mltrace import MLTrace
 from ayahos.core.trace.mltracebuffer import MLTraceBuffer
 from ayahos.core.stream.dictstream import DictStream
-from ayahos.util.input import bounded_floatlike
 
 Logger = logging.getLogger(__name__)
 
@@ -66,9 +65,12 @@ class BufferWyrm(Wyrm):
         :raises TypeError: _description_
         :raises ValueError: _description_
         """
+        # Inherit from Wyrm
         super().__init__(max_pulse_size=max_pulse_size)
-        # Initialize Buffer Containing Object
-        self.buffer = DictStream(key_attr=buffer_key)
+
+        # Initialize output of type ayahos.core.stream.dictstream.DictStream
+        self.output = DictStream(key_attr=buffer_key)
+        self.buffer_key = buffer_key
         # Create holder attribute for MLTraceBuffer initialization Kwargs
         self.mltb_kwargs = {}
         if isinstance(max_length, (float, int)):
@@ -119,64 +121,88 @@ class BufferWyrm(Wyrm):
                 mltb = MLTraceBuffer(**self.mltb_kwargs,
                                      **self.add_kwargs)
                 mltb.append(other)
-                self.buffer.extend(mltb)
+                self.output.extend(mltb)
             
-
-    def pulse(self, x):
-        """Conduct a pulse of this BufferWyrm for up to self.max_pulse_size items contained in `x`. This method conducts early stopping if there are no items in `x` or all items in `x` have been assessed.
-
-        items in `x` that are not consistent with expected inputs are re-appended to `x` using the `append()` method.
-
-        WARNING: 
-        As with most processing in Ayahos, this method removes items
-        from `x` using the `popleft()` method and conducts in-place changes 
-        on `y` (i.e., self.buffer). If you want to 
-
-        :param x: deque of Trace-like objects (or Stream-like collections thereof) to append to this BufferWyrm's self.buffer attribute
-        :type x: collections.deque of ayahos.core.trace.mltrace.MLTrace-like or ayahos.core.stream.dictstream.DictStream-like objects
-        :return y: aliased access to this BufferWyrm's self.buffer attribute
-        :rtype y: ayahos.core.stream.dictstream.DictStream
-        """        
-        # Kick error if input is not collections.deque object
-        if not isinstance(x, deque):
-            raise TypeError
-        # Get initial deque length
-        qlen = len(x)
-        # Iterate up to max_pulse_size times
-        for _i in range(self.max_pulse_size):
-            # Early stopping if no items in queue
-            if qlen == 0:
-                break
-            # Early stopping if next iteration would exceed
-            # the number of items in queue
-            elif _i + 1 > qlen:
-                break
-            # otherwise, popleft to get oldest item in queue
-            else:
+    def unit_process(self, x, i_):
+        if isinstance(x, deque):
+            if super()._continue_iteration(x, i_):
                 _x = x.popleft()
-            # if not an MLTrace (or child) reappend to queue (safety catch)
-            if not isinstance(_x, (MLTrace, DictStream)):
-                x.append(_x)
-            #Otherwise get ID of MLTrace
-            elif isinstance(_x, MLTrace):
-                _x = [_x]
-        
-            for _xtr in _x:
-                _id = _xtr.id
-                # If the MLTrace ID is not in the WyrmStream keys, create new tracebuffer
-                if _id not in self.buffer.traces.keys():
-                    self.add_new_buffer(_xtr)
-                # If the MLTrace ID is in the WyrmStream keys, use the append method
-                else:
-                    self.buffer[_id].append(_xtr, **self.add_kwargs)
-        y = self.buffer
-        return y
-        
-                    
-    # def __repr__(self, extended=False):
-    #     rstr = f'Add Style: {self.add_style}'
-    #     return rstr
+                if not isinstance(_x, (MLTrace, DictStream)):
+                    x.append(_x)
+                    Logger.debug(f'Popped element was type {type(_x)}')
+                elif isinstance(_x, MLTrace):
+                    _x = [_x]
+                for _xtr in _x:
+                    _key = getattr(_xtr, self.buffer_key)
+                    if _key not in self.output.traces.keys():
+                        self.add_new_buffer(_xtr)
+                    else:
+                        self.output[_key].append(_xtr, **self.append_kwargs)
+                status = True
+            else:
+                status = False
+        else:
+            raise TypeError('x must be type collections.deque')
+        return status
+
+    # PULSE IS INHERITED FROM WYRM
+
                     
     def __str__(self):
         rstr = f'ayahos.core.wyrms.bufferwyrm.BufferWyrm()'
         return rstr
+    
+
+
+
+
+    # def pulse(self, x):
+    #     """Conduct a pulse of this BufferWyrm for up to self.max_pulse_size items contained in `x`. This method conducts early stopping if there are no items in `x` or all items in `x` have been assessed.
+
+    #     items in `x` that are not consistent with expected inputs are re-appended to `x` using the `append()` method.
+
+    #     WARNING: 
+    #     As with most processing in Ayahos, this method removes items
+    #     from `x` using the `popleft()` method and conducts in-place changes 
+    #     on `y` (i.e., self.buffer). If you want to 
+
+    #     :param x: deque of Trace-like objects (or Stream-like collections thereof) to append to this BufferWyrm's self.buffer attribute
+    #     :type x: collections.deque of ayahos.core.trace.mltrace.MLTrace-like or ayahos.core.stream.dictstream.DictStream-like objects
+    #     :return y: aliased access to this BufferWyrm's self.buffer attribute
+    #     :rtype y: ayahos.core.stream.dictstream.DictStream
+    #     """        
+    #     # Kick error if input is not collections.deque object
+    #     if not isinstance(x, deque):
+    #         raise TypeError
+    #     # Get initial deque length
+    #     qlen = len(x)
+    #     # Iterate up to max_pulse_size times
+    #     for _i in range(self.max_pulse_size):
+    #         # Early stopping if no items in queue
+    #         if qlen == 0:
+    #             break
+    #         # Early stopping if next iteration would exceed
+    #         # the number of items in queue
+    #         elif _i + 1 > qlen:
+    #             break
+    #         # otherwise, popleft to get oldest item in queue
+    #         else:
+    #             _x = x.popleft()
+    #         # if not an MLTrace (or child) reappend to queue (safety catch)
+    #         if not isinstance(_x, (MLTrace, DictStream)):
+    #             x.append(_x)
+    #         #Otherwise get ID of MLTrace
+    #         elif isinstance(_x, MLTrace):
+    #             _x = [_x]
+        
+    #         for _xtr in _x:
+    #             _id = _xtr.id
+    #             # If the MLTrace ID is not in the WyrmStream keys, create new tracebuffer
+    #             if _id not in self.buffer.traces.keys():
+    #                 self.add_new_buffer(_xtr)
+    #             # If the MLTrace ID is in the WyrmStream keys, use the append method
+    #             else:
+    #                 self.buffer[_id].append(_xtr, **self.add_kwargs)
+    #     y = self.buffer
+    #     return y
+        

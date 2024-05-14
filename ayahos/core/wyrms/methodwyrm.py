@@ -21,9 +21,9 @@
 import time
 from collections import deque
 import pandas as pd
-from wyrm.core.wyrms.wyrm import Wyrm
-from wyrm.core.stream.dictstream import WyrmStream
-from wyrm.core.stream.windowstream import WindowStream
+from ayahos.core.wyrms.wyrm import Wyrm
+from ayahos.core.stream.dictstream import DictStream
+from ayahos.core.stream.windowstream import WindowStream
 
 ###################################################################################
 # METHOD WYRM CLASS DEFINITION - FOR EXECUTING CLASS METHODS IN A PULSED MANNER ###
@@ -47,7 +47,6 @@ class MethodWyrm(Wyrm):
         timestamp = False,
         timestamp_method=None,
         max_pulse_size=10000,
-        debug=False,
         ):
         """
         Initialize a MethodWyrm object
@@ -69,7 +68,8 @@ class MethodWyrm(Wyrm):
         """
 
         # Initialize/inherit from Wyrm
-        super().__init__(timestamp=timestamp, timestamp_method=timestamp_method, max_pulse_size=max_pulse_size, debug=debug)
+        super().__init__(max_pulse_size=max_pulse_size)
+
         # pclass compatability checks
         if not isinstance(pclass,type):
             raise TypeError('pclass must be a class defining object (type "type")')
@@ -88,67 +88,50 @@ class MethodWyrm(Wyrm):
         # initialize output queue
         self.queue = deque()
 
-    def pulse(self, x):
-        """
-        Execute a pulse wherein items are popleft'd off input deque `x`,
-        checked if they are type `pclass`, have `pmethod(**pkwargs)` applied,
-        and are appended to deque `self.queue`. Items popped off `x` that
-        are not type pclass are reappended to `x`.
 
-        Early stopping is triggered if `x` reaches 0 elements or the number of
-        iterations equals the initial len(x)
+    def core_process(self, x, i_):
+        """core_process for MethodWyrm
 
-        :: INPUT ::
-        :param x: [deque] of [pclass (ideally)]
+        Check if the input deque and iteration number
+        meet iteration continuation criteria inherited from Wyrm
 
-        :: OUTPUT ::
-        :return y: [deque] access to the objects in self.queue
-        """
-        if not isinstance(x, deque):
-            raise TypeError
-        qlen = len(x)
-        for _i in range(self.max_pulse_size):
-            # Early stopping if all items have been assessed
-            if _i - 1 > qlen:
-                break
-            # Early stopping if input deque is exhausted
-            if len(x) == 0:
-                break
-            
+        Check if the next object popleft'd off `x` is type self.pclass
+        
+            Mismatch: send object back to `x` with append()
+
+            Match: Execute the in-place processing and append to MethodWyrm.output
+
+        :param x: input set of objects
+        :type x: collections.deque
+        :param i_: iteration index
+        :type i_: int
+        :return: status - should iteration continue?
+        :rtype: bool
+        """    
+        if super()._continue_iteration(x, i_):
             _x = x.popleft()
-            if not isinstance(_x, self.pclass):
-                x.append(_x)
+            if isinstance(_x, self.pclass):
+                getattr(_x, self.pmethod)(**self.pkwargs)
+                self.output.append(_x)
             else:
-                if self._timestamp:
-                    _x.stats.processing.append(['MethodWyrm',self.pmethod, 'start', time.time()])
-                getattr(_x, self.pmethod)(**self.pkwargs);
-                # For objects with a stats.processing attribute, append processing info
-                # if 'stats' in dir(_x):
-                #     if 'processing' in dir(_x.stats):
-                #         _x.stats.processing.append(
-                #             [time.time(),
-                #              'Wyrm 0.0.0',
-                #              'MethodWyrm',
-                #              self.pmethod,
-                #              f'({self.pkwargs})'])
-                if self._timestamp:
-                    _x.stats.processing.append(['MethodWyrm',self.pmethod, 'end', time.time()])
-                self.queue.append(_x)
-        y = self.queue
-        return y
+                x.append(_x)
+            status = True
+        else:
+            status = False
+        return status
+
     
     def __str__(self):
-        rstr = f'wyrm.core.process.MethodWyrm(pclass={self.pclass}, '
+        rstr = f'{self.__class__}(pclass={self.pclass}, '
         rstr += f'pmethod={self.pmethod}, pkwargs={self.pkwargs}, '
         rstr += f'max_pulse_size={self.max_pulse_size}, '
-        rstr += f'debug={self.debug})'
         return rstr
 
 
 class OutputWyrm(MethodWyrm):
     def __init__(
             self,
-            pclass=WyrmStream,
+            pclass=DictStream,
             oclass=pd.DataFrame,
             pmethod='prediction_trigger_report',
             pkwargs={'thresh': 0.1, 'blinding': (500,500),
@@ -162,29 +145,78 @@ class OutputWyrm(MethodWyrm):
         else:
             self.oclass = oclass
     
-    def pulse(self, x):
-        if not isinstance(x, deque):
-            raise TypeError
-        qlen = len(x)
-        for _i in range(self.max_pulse_size):
-            if _i - 1 > qlen:
-                break
-            if len(x) == 0:
-                break
-            _x = x.popleft()
-            if not isinstance(_x, self.pclass):
-                x.append(_x)
-            else:
-                _y = getattr(_x, self.pmethod)(**self.pkwargs)
-                if isinstance(_y, self.oclass):
-                    self.queue.append(_y)
-        y = self.queue
-        return y
+    def core_process(self, x, i_):
+        """core_process for OutputWyrm
 
-    def __str__(self):
-        rstr = f'wyrm.core.process.OutputWyrm(pclass={self.pclass}, '
-        rstr += f'oclass={self.oclass}, '
-        rstr += f'pmethod={self.pmethod}, pkwargs={self.pkwargs}, '
-        rstr += f'max_pulse_size={self.max_pulse_size}, '
-        rstr += f'debug={self.debug})'
-        return rstr
+        This method appends the stdout of the pclass.pmethod(**kwargs) to
+        the output attribute, as opposed to the core_process
+
+        :param x: input collection of objects
+        :type x: collections.deque of pclass-type objects
+        :param i_: iteration number
+        :type i_: int
+        :return status: should process continue to next iteration?
+        :rtype: bool
+        """        
+        if super()._continue_iteration(x, i_):
+            _x = x.popleft()
+            if isinstance(_x, self.pclass):
+                _y = getattr(_x, self.pmethod)(**self.pkwargs)
+                self.output.append(_y)
+            else:
+                x.append(_x)
+            status = True
+        else:
+            status = False
+        return status
+    
+
+
+    # def pulse(self, x):
+    #     """
+    #     Execute a pulse wherein items are popleft'd off input deque `x`,
+    #     checked if they are type `pclass`, have `pmethod(**pkwargs)` applied,
+    #     and are appended to deque `self.queue`. Items popped off `x` that
+    #     are not type pclass are reappended to `x`.
+
+    #     Early stopping is triggered if `x` reaches 0 elements or the number of
+    #     iterations equals the initial len(x)
+
+    #     :: INPUT ::
+    #     :param x: [deque] of [pclass (ideally)]
+
+    #     :: OUTPUT ::
+    #     :return y: [deque] access to the objects in self.queue
+    #     """
+    #     if not isinstance(x, deque):
+    #         raise TypeError
+    #     qlen = len(x)
+    #     for _i in range(self.max_pulse_size):
+    #         # Early stopping if all items have been assessed
+    #         if _i - 1 > qlen:
+    #             break
+    #         # Early stopping if input deque is exhausted
+    #         if len(x) == 0:
+    #             break
+            
+    #         _x = x.popleft()
+    #         if not isinstance(_x, self.pclass):
+    #             x.append(_x)
+    #         else:
+    #             if self._timestamp:
+    #                 _x.stats.processing.append(['MethodWyrm',self.pmethod, 'start', time.time()])
+    #             getattr(_x, self.pmethod)(**self.pkwargs);
+    #             # For objects with a stats.processing attribute, append processing info
+    #             # if 'stats' in dir(_x):
+    #             #     if 'processing' in dir(_x.stats):
+    #             #         _x.stats.processing.append(
+    #             #             [time.time(),
+    #             #              'Wyrm 0.0.0',
+    #             #              'MethodWyrm',
+    #             #              self.pmethod,
+    #             #              f'({self.pkwargs})'])
+    #             if self._timestamp:
+    #                 _x.stats.processing.append(['MethodWyrm',self.pmethod, 'end', time.time()])
+    #             self.queue.append(_x)
+    #     y = self.queue
+    #     return y

@@ -53,7 +53,7 @@ class RingWyrm(Wyrm):
             msg_type=19,
             max_pulse_size=10000
             ):
-        """_summary_
+        """Initialize a RingWyrm object
 
         :param module: Pre-initialized PyEarthworm module
         :type module: PyEW.EWModule, optional
@@ -107,29 +107,54 @@ class RingWyrm(Wyrm):
 
         Logger.info('Ringwyrm method {0} for message type {1}'.format(self.pulse_method, self.msg_type))
 
-    def _core_process(self, x):
-        """_core_process for ayahos.core.wyrms.ringwyrm.RingWyrm
+    def unit_process(self, x, i_):
+        """unit_process for ayahos.core.wyrms.ringwyrm.RingWyrm
 
         Conduct a single transaction based on the following RingWyrm attributes
+
         .pulse_method
         .msg_type
         .conn_id
 
-        :param x: for 'put_*' methods - collection of message-like objects to submit to ring 
-                  for 'get_*' methods - None
-        :type x: collections.deque or None
-        :return y: for 'put_*' methods - None
-                   for 'get_*' methods - collection of message objects
-        :rtype: None or collections.deque
+        for "get" pulse_methods - appends new messages to self.output
+            :param x: Unused
+            :type x: None
+            :param i_: Unused
+            :type i_: int
+
+        for "put" pulse_methods - discards transacted message objects
+            :param x: deque of message-like objects
+            :type x: collections.deque
+            :param i_: iteration counter used for early stopping
+            :type i_: int
+
+        :return status: did this iteration raise an early stopping flag?
+        :rtype status: bool
         """        
-        if 'put' in self.pulse_method:
-            if not isinstance(x, deque):
-                raise 
-            _x = x.popleft()
-            _y = getattr(self.module, self.pulse_method)(*self._core_args, _x)
-        elif 'get' in self.pulse_method:
+        if 'get' in self.pulse_method:
+            # Get a message using the PyEW.EWModule.get_* method selected
             _y = getattr(self.module, self.pulse_method)(*self._core_args)
-        return _y
+            # Check if it is a blank message
+            status = self._get_early_stopping(_y)
+            if not status:
+                self.output.append(_y)
+
+        if 'put' in self.pulse_method:
+            # Check if the input is a deque
+            if not isinstance(x, deque):
+                raise TypeError('input x must be type collections.deque for put-type methods')
+            # Check for early stopping (if there are any unassessed items in the deque)
+            if self._put_early_stopping(x, i_):
+                status = True
+            else:
+                # Grab the leftmost (oldest) item from the deque
+                _x = x.popleft()
+                # Submit to rings
+                getattr(self.module, self.pulse_method)(*self._core_args, _x)
+                # Status flag to continue
+                status = False
+
+        return status
 
     def _get_early_stopping(self, _y):
 
@@ -167,21 +192,7 @@ class RingWyrm(Wyrm):
         status = super()._early_stopping(x, i_)
         return status
 
-    def pulse(self, x):
-        if 'get' in self.pulse_method:
-            for i_ in range(self.max_pulse_size):
-                _y = self._core_process(x)
-                self.output.append(_y)
-                if self._get_early_stopping(x):
-                    break
-            y = self.output
-        elif 'put' in self.pulse_method:
-            for i_ in range(self.max_pulse_size):
-                if self._put_early_stopping(x, i_):
-                    break
-                self._core_process(x)
-            y = None
-        return y
+    # PULSE IS INHERITED FROM WYRM AS-IS
 
 
     # def pulse(self, x):

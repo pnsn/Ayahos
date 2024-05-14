@@ -39,21 +39,15 @@ class TubeWyrm(Wyrm):
 
     def __init__(self, wyrm_dict, wait_sec=0.0, max_pulse_size=1):
         """
-        Create a tubewyrm object
-        :: INPUT ::
-        :param wyrm_dict: [dict], [list], or [deque] of [Wyrm-type] objects
-                        that are executed in their provided order. dict-type
-                        entries allow for naming of component wyrms for 
-                        user-friendly assessment. list, deque, and Wyrm-type
-                        inputs use a 0-indexed naming system.
-        :param wait_sec: [float] seconds to wait between execution of each
-                        Wyrm in wyrm_dict
-        :param max_pulse_size: [int] number of times to run the sequence of pulses
-                        Generally, this should be 1.
-        :param debug: [bool] run in debug mode?
-
-        :: OUTPUT ::
-        Initialized TubeWyrm object
+        Create a TubeWyrm object
+        :param wyrm_dict: collection of [Wyrm-type] objects that are executed in their provided order. 
+                    dict-type entries allow for naming of component wyrms for user-friendly assessment. list, deque, and Wyrm-type
+                    all other input types use a 0-indexed key.
+        :type wyrm_dict: dict, list, or tuple
+        :param wait_sec: seconds to wait between execution of each Wyrm in wyrm_dict, default is 0.0
+        :type wait_sec: float
+        :param max_pulse_size: number of times to run the sequence of pulses, default is 1
+        :type max_pulse_size: int
         """
         # Inherit from Wyrm
         super().__init__(max_pulse_size=max_pulse_size)
@@ -66,6 +60,7 @@ class TubeWyrm(Wyrm):
                 self.wyrm_dict = wyrm_dict
             else:
                 raise TypeError('All elements in wyrm_dict must be type Wyrm')
+            
         # Handle case where a list or deque are provided
         elif isinstance(wyrm_dict, (list, deque)):
             if all(isinstance(_w, Wyrm) for _w in wyrm_dict):
@@ -82,9 +77,14 @@ class TubeWyrm(Wyrm):
         elif wait_sec < 0:
             raise ValueError('wait_sec must be non-negative')
         else:
-            wait_sec = wait_sec
+            self.wait_sec = wait_sec
         # Create a list representation of keys
         self.names = list(wyrm_dict.keys())
+        # Alias the output of the last wyrm in wyrm_dict to self.output (inherited from Wyrm)
+        if len(self.wyrm_dict) > 0:
+            self._alias_last_wyrm_output()
+
+
 
     def update(self, new_dict):
         """
@@ -111,7 +111,20 @@ class TubeWyrm(Wyrm):
         self.wyrm_dict.update(new_dict)
         # Update names attribute
         self.names = list(self.wyrm_dict.keys())
- 
+        # Set outputs as alias to last wyrm
+        self._alias_last_wyrm_output()
+
+
+    def _alias_last_wyrm_output(self):
+        """
+        Alias the self.output attribute of the last wyrm-type object
+        in this TubeWyrm's wyrm_dict to this TubeWyrm's output attribute
+
+        i.e., 
+        TubeWyrm.wyrm_dict = {0: wyrm0, 1: wyrm1, 2: wyrm2}
+        TubeWyrm.output = wyrm2.output
+        """        
+        self.output = list(self.wyrm_dict.items())[-1].output
     
     def remove(self, key):
         """
@@ -134,6 +147,7 @@ class TubeWyrm(Wyrm):
         # Update names attribute
         self.names = list(self.wyrm_dict.keys())
         # Return key and value
+        self._alias_last_wyrm_output()
         return (key, val)
 
     def reorder(self, reorder_list):
@@ -169,7 +183,7 @@ class TubeWyrm(Wyrm):
         # Run updates
         self.wyrm_dict = tmp
         self.names = list(tmp.keys())
-
+        self._alias_last_wyrm_output()
 
 
     def __repr__(self, extended=False):
@@ -182,7 +196,7 @@ class TubeWyrm(Wyrm):
         :return rstr: string representation of this Wyrm's contents
         :rtype rstr: str
         """
-        rstr = super().__str__()
+        rstr = f'{super().__repr__()}\n'
         rstr = "(wait: {self.wait_sec} sec)\n"
         for _i, (_k, _v) in enumerate(self.wyrm_dict.items()):
             # Provide index number
@@ -200,19 +214,9 @@ class TubeWyrm(Wyrm):
             else:
                 rstr += f'{type(_v)}\n'
         return rstr
-
-    def _early_stopping(self):
-        """early stopping criteria for TubeWyrm pulse
-
-         - None: allow internal Wyrm modules' _early_stopping decide
-
-        :return: False
-        :rtype: bool
-        """        
-        return False
     
-    def _core_process(self, x):
-        """_core_process for ayahos.core.wyrms.tubewyrm.TubeWyrm
+    def unit_process(self, x):
+        """unit_process for ayahos.core.wyrms.tubewyrm.TubeWyrm
 
         Execute a chained pulse of wyrm-type objects in the self.wyrm_dict
 
@@ -224,16 +228,33 @@ class TubeWyrm(Wyrm):
                 If first wyrm_, y = wyrm_.pulse(x)
                 else: y = wyrm_pulse(y)
         
+                NOTE: No _continue_iteration check used ehre
+        
         :param x: input expected by first wyrm-type objects' wyrm_.pulse() method in the self.wyrm_dict
         :type x: varies, typically collections.deque or ayahos.core.streamdictstream.DictStream
         :return y: output from wyrm_.pulse() for the last wyrm-type object in the self.wyrm_dict
         :type y: varies, typically collections.deque or ayahos.core.stream.dictstream.DictStream
+        
         """        
         for j_, wyrm_ in enumerate(self.wyrm_dict.values()):
             if j_ == 0:
                 y = wyrm_.pulse(x)
             else:
                 y = wyrm_.pulse(y)
+        return True
+
+    def pulse(self, x):
+        """pulse method for ayahos.core.wyrms.tubewyrm.TubeWyrm
+
+        Pulse method is a polymorphic execution of Wyrm.pulse()
+        see TubeWyrm.core_process() for details
+
+        :param x: collection of input objects for the first wyrm in TubeWyrm.wyrm_dict
+        :type x: varies
+        :return y: alias to the output attribute of the last wyrm in TubeWyrm.wyrm_dict
+        :rtype y: varies
+        """
+        y = super().pulse(x)
         return y
 
     # def pulse(self, x):

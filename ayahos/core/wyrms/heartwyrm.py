@@ -58,43 +58,6 @@ class HeartWyrm(TubeWyrm):
         :param wyrm_dict: dictionary of ayahos.core.wyrms-type objects that will be executed in a chain , defaults to {}
         :type wyrm_dict: dict, optional
             also see ayahos.core.wyrms.tubewyrm.TubeWyrm
-        """        """
-        ChildClass of wyrm.core.base_wyrms.TubeWyrm
-
-        Initialize a HeartWyrm object that contains the parameters neededto
-        initialize an EWModule object assocaited with a running instance of
-        Earthworm.
-
-        The __init__ method populates the attributes necessary to initialize
-        the EWModule object with a subsequent heartwyrm.initialize_module().
-
-        :: INPUTS ::
-        :param wait_sec: [float] wait time in seconds between pulses
-        :param DR_ID: [int-like] Identifier for default reference memory ring
-        :param MOD_ID: [int-like] Module ID for this instace of Wyrms
-        :param INST_ID: [int-like] Installation ID (Institution ID)
-        :param HB_PERIOD: [float-like] Heartbeat reporting period in seconds
-        :param debug: [BOOL] Run module in debug mode?
-        :param wyrm_dict: [list-like] iterable set of *wyrm objects
-                            with sequentially compatable *wyrm.pulse(x)
-
-        :: PUBLIC ATTRIBUTES ::
-        :attrib module: False or [PyEW.EWModule] - Holds Module Object
-        :attrib wait_sec: [float] rate in seconds to wait between pulses
-        :attrib connections: [pandas.DataFrame]
-                            with columns 'Name' and 'Ring_ID' that provides
-                            richer indexing and display of connections
-                            made to the EWModule via EWModule.add_ring(RING_ID)
-                            Updated using heartwyrm.add_connection(RING_ID)
-        :attrib wyrm_dict: [list] list of *wyrm objects
-                            Inherited from TubeWyrm
-
-        :: PRIVATE ATTRIBUTES ::
-        :attrib _default_ring_id: [int] Saved DR_ID input
-        :attrib _module_id: [int] Saved MOD_ID input
-        :attrib _installation_id: [int] Saved INST_ID input
-        :attrib _HBP: [float] Saved HB_PERIOD input
-        :attrib _debug: [bool] Saved debug input
         """
         # Initialize TubeWyrm inheritance
         super().__init__(
@@ -269,21 +232,9 @@ class HeartWyrm(TubeWyrm):
         """
         self.runs = False
 
-    def _early_stopping(self):
-        """_early_stopping for ayahos.core.wyrms.heartwyrm.HeartWyrm
-
-        Return status of self.module.mod_sta()
-            True - still running
-            False - shutdown signal
-
-        :return: self.module.mod_sta
-        :rtype: bool
-        """        
-        return self.module.mod_sta()
-
-    def _core_process(self, x=None):
+    def unit_process(self, x):
         """
-        _core_process for HeartWyrm
+        unit_process for HeartWyrm inherited from TubeWyrm.unit_process()
 
         1) wait for self.wait_sec
         2) execute y = TubeWyrm(...).pulse(x)
@@ -292,29 +243,28 @@ class HeartWyrm(TubeWyrm):
 
         :param x: input collection of objects for first wyrm_ in self.wyrm_dict, defaults to None
         :type x: Varies, optional
-        :return: output of last wyrm_ in self.wyrm_dict
-        :rtype: Varies
-        """        
+        """
         # Sleep for wait_sec
         time.sleep(self.wait_sec)
-        # Then run TubeWyrm pulse
-        y = super().pulse(x)
-        return y
+        # Then run TubeWyrm unit_process
+        status = super().unit_process(x)
+        return status
 
-    def run(self):
+    def run(self, x=None):
         """
-        Run the PyEW.EWModule housed by this HeartWyrm
+        Run the PyEW.EWModule housed by this HeartWyrm with the option
+        of an initial input
+
+        :param x: initial input for the first wyrm in HeartWyrm.wyrm_dict, default None
+        :type x: None, other, optional
         """
         Logger.critical("Starting Module Operation")        
         self.start()
         while self.runs:
             # Break while loop if _early_stopping triggers at start of iteration
-            if self._early_stopping() is False:
+            status = self.unit_process(x)
+            if self.module.mod_sta() is False:
                 break
-            self._core_process()
-            # Use stop to shut down while loop if _early_stopping triggers at end of iteration
-            if self._early_stopping() is False:
-                self.stop()
         # Gracefully shut down
         self.module.goodbye()
         # Note shutdown in logging

@@ -2,9 +2,9 @@ from ayahos.core.wyrms.heartwyrm import HeartWyrm
 from ayahos.core.wyrms.ringwyrm import RingWyrm
 import logging
 
-# logging.basicConfig(level=logging.DEBUG,
-#                     format="%(asctime)s\t%(name)s\t%(levelname)s\t%(message)s")
-# Logger = logging.getLogger('EWMod')
+logging.basicConfig(level=logging.DEBUG,
+                    format="%(asctime)s\t%(name)s\t%(levelname)s\t%(message)s")
+Logger = logging.getLogger('EWMod')
 
 heartwyrm = HeartWyrm(ew_env_file='/usr/local/earthworm/memphis/environment/ew_macox.bash',
                       default_ring_id=1000,

@@ -1,8 +1,9 @@
 from ayahos.core.wyrms.heartwyrm import HeartWyrm
 from ayahos.core.wyrms.ringwyrm import RingWyrm
+from ayahos.core.wyrms.bufferwyrm import BufferWyrm
 import logging
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s\t%(name)s\t%(levelname)s\t%(message)s")
 Logger = logging.getLogger('EWMod')
 
@@ -20,12 +21,10 @@ iringwyrm = RingWyrm(module = heartwyrm.module,
                      msg_type=19,
                      max_pulse_size=1000)
 
-oringwyrm = RingWyrm(module = heartwyrm.module,
-                     conn_id = heartwyrm.connections['PICK'][0],
-                     pulse_method='put_wave',
-                     msg_type=19,
-                     max_pulse_size=1000)
+buffwyrm = BufferWyrm()
+# windwyrm_EWT = WindowWyrm()
+# we
 # string together input and output rings in heartwyrm
-heartwyrm.update({'iring': iringwyrm, 'oring': oringwyrm})
+heartwyrm.update({'iring': iringwyrm, 'buffer': buffwyrm})
 # Run module
 heartwyrm.run()

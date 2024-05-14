@@ -112,7 +112,7 @@ class HeartWyrm(TubeWyrm):
                 Logger.critical('Environmental varible $EW_HOME not mapped - cannot proceed')
                 sys.exit(1)
         else:
-            os.eval(f'source {ew_env_file}')
+            eval(f'source {ew_env_file}')
             try:
                 os.environ['EW_HOME']
             # If not, exit on code 1

@@ -222,6 +222,7 @@ class HeartWyrm(TubeWyrm):
                      incompatable!!!"
                 )
                 sys.exit(1)
+            self.add_connection('DEFAULT', self.module_init_kwargs['def_ring'])
         else:
             Logger.critical("User canceled module initialization -> exiting politely")
             sys.exit(0)

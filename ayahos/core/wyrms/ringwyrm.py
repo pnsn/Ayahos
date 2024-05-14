@@ -138,8 +138,9 @@ class RingWyrm(Wyrm):
             else:
                 _y = getattr(self.module, self.pulse_method)(*self._core_args)
             # Check if it is a blank message
-            status = self._get_early_stopping(_y)
-            if not status:
+            status = self._get_continue_iteration(_y)
+            # Append if status returns True (_y was a non-empty message)
+            if status:
                 self.output.append(_y)
 
         if 'put' in self.pulse_method:
@@ -147,7 +148,7 @@ class RingWyrm(Wyrm):
             if not isinstance(x, deque):
                 raise TypeError('input x must be type collections.deque for put-type methods')
             # Check for early stopping (if there are any unassessed items in the deque)
-            if self._put_early_stopping(x, i_):
+            if self._put_continue_iteration(x, i_):
                 status = True
             else:
                 # Grab the leftmost (oldest) item from the deque
@@ -162,25 +163,32 @@ class RingWyrm(Wyrm):
 
         return status
 
-    def _get_early_stopping(self, _y):
+    def _get_continue_iteration(self, _y):
+        """based on the input _y, determine if the `get` method returned an empty message
 
+        :param _y: message from PyEW.EWModule.get_*
+        :type _y: dict, str, or bytes
+        :return status: should iterations continue?
+        :rtype: _type_
+        """
         if self.pulse_method == 'get_msg':
             if _y == '':
-                return True
+                status = False
             else:
-                return False
-        if self.pulse_method == 'get_bytes':
+                status = True
+        elif self.pulse_method == 'get_bytes':
             if _y == (0,0):
-                return True
+                status = False
             else:
-                return False
-        if self.pulse_method == 'get_wave':
+                status = True
+        elif self.pulse_method == 'get_wave':
             if _y == {}:
-                return True
+                status = False
             else:
-                return False
+                status = True
+        return status
 
-    def _put_early_stopping(self, x, i_):
+    def _put_continue_iteration(self, x, i_):
         """Use _early_stopping from ayahos.core.wyrms.wyrm.Wyrm for "put" type pulse methods
 
         Early stopping if iteration counter exceeds length of `x`
@@ -191,11 +199,11 @@ class RingWyrm(Wyrm):
         :param i_: iteration counter
         :type i_: int
         :return: status
-                True = Trigger early stopping
-                False = do not trigger early stopping
+                True = continue iterations
+                False = trigger early stopping
         :rtype: bool
         """        
-        status = super()._early_stopping(x, i_)
+        status = super()._continue_iteration(x, i_)
         return status
 
     # PULSE IS INHERITED FROM WYRM AS-IS

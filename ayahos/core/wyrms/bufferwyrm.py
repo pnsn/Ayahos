@@ -1,5 +1,5 @@
 """
-:module: ayahos.core.wyrm.bufferwyrm
+:module: ayahos.core.wyrms.bufferwyrm
 :author: Nathan T. Stevens
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network
@@ -9,7 +9,7 @@
         MLTraceBuffer objects
 """
 
-import time, logging
+import logging
 from numpy import isfinite
 from collections import deque
 from ayahos.core.wyrms.wyrm import Wyrm
@@ -32,7 +32,7 @@ class BufferWyrm(Wyrm):
             blinding=None,
             method=1,
             max_pulse_size=10000,
-            **add_kwargs):
+            **append_kwargs):
         """Initialize a BufferWyrm object
 
         :param buffer_key: MLTrace attribute to use for the DictStream keys, defaults to 'id'
@@ -98,14 +98,14 @@ class BufferWyrm(Wyrm):
         else:
             self.mltb_kwargs.update({'blinding': blinding})
         # Create holder for add_kwargs to pass to 
-        self.add_kwargs = add_kwargs
+        self.append_kwargs = append_kwargs
         if method in [0,'dis','discard',
                           1,'int','interpolate',
                           2,'max','maximum',
                           3,'avg','average']:
-            self.add_kwargs.update({'method': method})
+            self.append_kwargs.update({'method': method})
         else:
-            raise ValueError(f'add_method {method} not supported. See ayahos.trace.mltrace.MLTrace.__add__()')
+            raise ValueError(f'method {method} not supported. See ayahos.trace.mltrace.MLTrace.__add__()')
         
 
 
@@ -116,10 +116,10 @@ class BufferWyrm(Wyrm):
         :type other: obspy.core.trace.Trace-like
         """        
         if isinstance(other, MLTrace):
-            if other.id not in self.buffer.traces.keys():
+            if other.id not in self.output.traces.keys():
                 # Initialize an MLTraceBuffer Object
                 mltb = MLTraceBuffer(**self.mltb_kwargs,
-                                     **self.add_kwargs)
+                                     **self.append_kwargs)
                 mltb.append(other)
                 self.output.extend(mltb)
             

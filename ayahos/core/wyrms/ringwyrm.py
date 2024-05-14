@@ -133,7 +133,10 @@ class RingWyrm(Wyrm):
         """        
         if 'get' in self.pulse_method:
             # Get a message using the PyEW.EWModule.get_* method selected
-            _y = getattr(self.module, self.pulse_method)(*self._core_args)
+            if 'wave' in self.pulse_method:
+                _y = getattr(self.module, self.pulse_method)(self._core_args[0], _x)
+            else:
+                _y = getattr(self.module, self.pulse_method)(*self._core_args)
             # Check if it is a blank message
             status = self._get_early_stopping(_y)
             if not status:
@@ -150,7 +153,10 @@ class RingWyrm(Wyrm):
                 # Grab the leftmost (oldest) item from the deque
                 _x = x.popleft()
                 # Submit to rings
-                getattr(self.module, self.pulse_method)(*self._core_args, _x)
+                if 'wave' in self.pulse_method:
+                    getattr(self.module, self.pulse_method)(self._core_args[0], _x)
+                else:
+                    getattr(self.module, self.pulse_method)(*self._core_args, _x)
                 # Status flag to continue
                 status = False
 

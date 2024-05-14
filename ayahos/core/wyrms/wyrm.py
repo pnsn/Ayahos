@@ -36,7 +36,7 @@ class Wyrm(object):
         # Compatability check for max_pulse_size
         if max_pulse_size is None:
             self.max_pulse_size = None
-        elif isinstance(max_pulse_size, int, float):
+        elif isinstance(max_pulse_size, (int, float)):
             if 1 <= max_pulse_size:
                 self.max_pulse_size = int(max_pulse_size)
             else:

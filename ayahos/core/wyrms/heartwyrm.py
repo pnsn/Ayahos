@@ -38,7 +38,7 @@ class HeartWyrm(TubeWyrm):
         heartbeat_period=15,
         module_debug = False,
         conn_dict = {},
-        wyrm_list={}
+        wyrm_dict={}
     ):
         """Create a HeartWyrm object
         Inherits the wyrm_dict attribute and pulse() method from TubeWyrm
@@ -55,8 +55,8 @@ class HeartWyrm(TubeWyrm):
         :type installation_id: int, optional
         :param heartbeat_period: send heartbeat message to Earthworm every X seconds, defaults to 15
         :type heartbeat_period: int, optional
-        :param wyrm_list: dictionary of ayahos.core.wyrms-type objects that will be executed in a chain , defaults to {}
-        :type wyrm_list: dict, optional
+        :param wyrm_dict: dictionary of ayahos.core.wyrms-type objects that will be executed in a chain , defaults to {}
+        :type wyrm_dict: dict, optional
             also see ayahos.core.wyrms.tubewyrm.TubeWyrm
         """        """
         ChildClass of wyrm.core.base_wyrms.TubeWyrm
@@ -75,7 +75,7 @@ class HeartWyrm(TubeWyrm):
         :param INST_ID: [int-like] Installation ID (Institution ID)
         :param HB_PERIOD: [float-like] Heartbeat reporting period in seconds
         :param debug: [BOOL] Run module in debug mode?
-        :param wyrm_list: [list-like] iterable set of *wyrm objects
+        :param wyrm_dict: [list-like] iterable set of *wyrm objects
                             with sequentially compatable *wyrm.pulse(x)
 
         :: PUBLIC ATTRIBUTES ::
@@ -86,7 +86,7 @@ class HeartWyrm(TubeWyrm):
                             richer indexing and display of connections
                             made to the EWModule via EWModule.add_ring(RING_ID)
                             Updated using heartwyrm.add_connection(RING_ID)
-        :attrib wyrm_list: [list] list of *wyrm objects
+        :attrib wyrm_dict: [list] list of *wyrm objects
                             Inherited from TubeWyrm
 
         :: PRIVATE ATTRIBUTES ::
@@ -98,7 +98,7 @@ class HeartWyrm(TubeWyrm):
         """
         # Initialize TubeWyrm inheritance
         super().__init__(
-            wyrm_list=wyrm_list,
+            wyrm_dict=wyrm_dict,
             wait_sec=wait_sec,
             max_pulse_size=1)
 

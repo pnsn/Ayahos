@@ -25,11 +25,6 @@ import logging
 import PyEW
 from collections import deque
 from ayahos.core.wyrms.wyrm import Wyrm
-from ayahos.util.pyew import is_wave_msg, wave2mltrace
-from ayahos.util.input import bounded_floatlike, bounded_intlike
-from ayahos.core.trace.mltrace import MLTrace
-from ayahos.core.trace.mltracebuffer import MLTraceBuffer
-from ayahos.core.stream.dictstream import DictStream
 
 Logger = logging.getLogger(__name__)
 

@@ -20,8 +20,7 @@
 import time, logging
 import numpy as np
 from collections import deque
-from wyrm.core.wyrms.wyrm import Wyrm
-from wyrm.util.input import bounded_intlike, bounded_floatlike
+from ayahos.core.wyrms.wyrm import Wyrm
 
 logger = logging.getLogger(__name__)
 

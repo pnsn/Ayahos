@@ -11,7 +11,7 @@
 """
 import numpy as np
 from obspy import UTCDateTime, Trace
-from wyrm.core.trace.mltrace import MLTrace
+from ayahos.core.trace.mltrace import MLTrace
 
 
 def npy2strdtype(dtype):
@@ -140,7 +140,10 @@ def wave2trace(wave):
         raise SyntaxError(status)
     trace = Trace()
     # Format data vector
-    _data = wave["data"].astype(wave['datatype'])
+    try:
+        _data = wave["data"].astype(wave['datatype'])
+    except TypeError:
+        _data = wave["data"]
     # Compose header
     _header = {_k:wave[_k] for _k in ['station','network','channel','location']}
     _header.update({'starttime': UTCDateTime(wave["startt"]),
@@ -152,7 +155,7 @@ def wave2trace(wave):
 def wave2mltrace(wave):
     """
     Convert a PyEW wave dictionary message into
-    a wyrm.core.trace.MLTrace object
+    a ayahos.core.trace.mltrace.MLTrace object
     """
     status = is_wave_msg(wave)
     if isinstance(status, str):
@@ -169,13 +172,17 @@ def wave2mltrace(wave):
             header.update({'starttime': UTCDateTime(_v)})
         elif _k == 'datatype':
             dtype = _v
-    mlt = MLTrace(data=data.astype(dtype), header=header)
+    try:
+        data = wave['data'].astype(dtype)
+    except TypeError:
+        data = wave['data']
+    mlt = MLTrace(data=data, header=header)
     return mlt
 
 
 def trace2wave(trace, dtype=None):
     """
-    Convert an obspy.core.trace.Trace object into a PyEarthworm compatable
+    Convert an obspy.core.trace.Trace-lik object into a PyEarthworm compatable
     wave-dict object that can be sent from Python to Earthworm via
     and active PyEW.EWModule object (see wyrm.core.io.RingWyrm)
 

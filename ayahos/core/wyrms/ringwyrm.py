@@ -148,9 +148,8 @@ class RingWyrm(Wyrm):
             if not isinstance(x, deque):
                 raise TypeError('input x must be type collections.deque for put-type methods')
             # Check for early stopping (if there are any unassessed items in the deque)
-            if self._put_continue_iteration(x, i_):
-                status = True
-            else:
+            status = self._put_continue_iteration(x, i_):
+            if status is True:
                 # Grab the leftmost (oldest) item from the deque
                 _x = x.popleft()
                 # Submit to rings
@@ -158,8 +157,6 @@ class RingWyrm(Wyrm):
                     getattr(self.module, self.pulse_method)(self._core_args[0], _x)
                 else:
                     getattr(self.module, self.pulse_method)(*self._core_args, _x)
-                # Status flag to continue
-                status = False
 
         return status
 
@@ -203,7 +200,12 @@ class RingWyrm(Wyrm):
                 False = trigger early stopping
         :rtype: bool
         """        
-        status = super()._continue_iteration(x, i_)
+        if len(x) == 0:
+            status = False
+        elif i_ + 1 > len(x):
+            status = False
+        else:
+            status = True
         return status
 
     # PULSE IS INHERITED FROM WYRM AS-IS

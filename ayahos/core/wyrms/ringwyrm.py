@@ -25,6 +25,7 @@ import logging
 import PyEW
 from collections import deque
 from ayahos.core.wyrms.wyrm import Wyrm
+from ayahos.util.pyew import wave2mltrace, trace2wave
 
 Logger = logging.getLogger(__name__)
 
@@ -135,13 +136,18 @@ class RingWyrm(Wyrm):
             # Get a message using the PyEW.EWModule.get_* method selected
             if 'wave' in self.pulse_method:
                 _y = getattr(self.module, self.pulse_method)(self._core_args[0])
+                status = self._get_continue_iteration(_y)
+                if status is True:
+                    _y = wave2mltrace(_y)
+                    self.output.append(_y)
+
             else:
                 _y = getattr(self.module, self.pulse_method)(*self._core_args)
-            # Check if it is a blank message
-            status = self._get_continue_iteration(_y)
-            # Append if status returns True (_y was a non-empty message)
-            if status:
-                self.output.append(_y)
+                # Check if it is a blank message
+                status = self._get_continue_iteration(_y)
+                # Append if status returns True (_y was a non-empty message)
+                if status:
+                    self.output.append(_y)
 
         if 'put' in self.pulse_method:
             # Check if the input is a deque
@@ -154,6 +160,7 @@ class RingWyrm(Wyrm):
                 _x = x.popleft()
                 # Submit to rings
                 if 'wave' in self.pulse_method:
+                    _x = trace2wave(_x)
                     getattr(self.module, self.pulse_method)(self._core_args[0], _x)
                 else:
                     getattr(self.module, self.pulse_method)(*self._core_args, _x)

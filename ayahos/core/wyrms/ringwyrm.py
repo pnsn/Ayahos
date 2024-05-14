@@ -134,7 +134,7 @@ class RingWyrm(Wyrm):
         if 'get' in self.pulse_method:
             # Get a message using the PyEW.EWModule.get_* method selected
             if 'wave' in self.pulse_method:
-                _y = getattr(self.module, self.pulse_method)(self._core_args[0], _x)
+                _y = getattr(self.module, self.pulse_method)(self._core_args[0])
             else:
                 _y = getattr(self.module, self.pulse_method)(*self._core_args)
             # Check if it is a blank message

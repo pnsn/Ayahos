@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 import seisbench.models as sbm
 from obspy import Trace, Stream, UTCDateTime
-from wyrm.core.stream.dictstream import DictStream, DictStreamStats
-from wyrm.core.trace.mltrace import MLTrace
+from ayahos.core.stream.dictstream import DictStream, DictStreamStats
+from ayahos.core.trace.mltrace import MLTrace
 
 ###############################################################################
 # WindowStreamStats Class Definition ##########################################

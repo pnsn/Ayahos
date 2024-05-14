@@ -1,11 +1,11 @@
 """
-:module: wyrm.data.mltracebuffer
+:module: ayahos.core.trace.mltracebuffer
 :author: Nathan T. Stevens
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network
 :license: AGPL-3.0
 :purpose: This module provides a class definition for a waveform buffer that has the added
-        attributes of the wyrm.data.mltrace.MLTrace class and works in an analogus way
+        attributes of the ayahos.data.mltrace.MLTrace class and works in an analogus way
         as the obspy.realtime.rttrace.RTTrace class is to the obspy.core.trace.Trace class.
 
         Additionally, this class provides some additional safety catch options to guard against
@@ -14,8 +14,8 @@
 """
 import numpy as np
 from obspy import Trace
-from wyrm.core.trace.mltrace import MLTrace
-from wyrm.util.input import bounded_floatlike
+from ayahos.core.trace.mltrace import MLTrace
+from ayahos.util.input import bounded_floatlike
     
 class MLTraceBuffer(MLTrace):
 
@@ -32,7 +32,7 @@ class MLTraceBuffer(MLTrace):
         :param blinding: [None], [positive int], or [2-tuple of positive int] 
                     bliding to apply to traces appended to this MLTraceBuffer
                     (including the initial trace) using the inherited
-                    wyrm.data.mltrace.MLTrace.apply_blinding() class method
+                    ayahos.data.mltrace.MLTrace.apply_blinding() class method
         :param restrict_past_append: [bool] enforce restrictions on appends that
                     would add chronologically older data to the buffer
                     ~also see MLTraceBuffer.append()
@@ -87,7 +87,7 @@ class MLTraceBuffer(MLTrace):
 
     # def __add__(self, other):
     #     """
-    #     Wrapper around the wyrm.data.mltracebuffer.MLTraceBuffer.append method
+    #     Wrapper around the ayahos.data.mltracebuffer.MLTraceBuffer.append method
     #     that uses the default key word arguments for MLTrace.__add__ or alternative
     #     kwargs specified when the MLTraceBuffer was initialized (see the append_kwargs attribute)
 
@@ -103,7 +103,7 @@ class MLTraceBuffer(MLTrace):
         """
         Primary method for adding data to this MLTraceBuffer object
         
-        This method wraps the wyrm.data.mltrace.MLTrace.__add__ special method and
+        This method wraps the ayahos.data.mltrace.MLTrace.__add__ special method and
         provides some additional checks relevant to semi-sequential data streaming
         and buffering described in the following scenarios.
 
@@ -159,7 +159,7 @@ class MLTraceBuffer(MLTrace):
                         here.
 
         :: OUTPUT ::
-        :return self: [wyrm.data.mltracebuffer.MLTraceBuffer] enable cascading
+        :return self: [ayahos.data.mltracebuffer.MLTraceBuffer] enable cascading
         """
         if self._has_data:
             if self.id != other.id:
@@ -251,7 +251,7 @@ class MLTraceBuffer(MLTrace):
         attributes to the max_length definied when initializing the the MLTraceBuffer object
 
         :: INPUTS ::
-        :param other: [obspy.Trace] or [wyrm.MLTrace] like object
+        :param other: [obspy.Trace] or [ayahos.MLTrace] like object
                         data and metadata to append to this initialized MLTraceBuffer object
         :param overflow_ref: [str] in the event that the appended trace has more data than
                         max_length allows, this specifies which endpoint of `other` is used
@@ -261,7 +261,7 @@ class MLTraceBuffer(MLTrace):
                             'endtime' - use other.stats.endtime as the fixed reference
         
         :: OUTPUT ::
-        :return self: [wyrm.data.mltracebuffer.MLTraceBuffer] enable cascading
+        :return self: [ayahos.data.mltracebuffer.MLTraceBuffer] enable cascading
         """
         # Extra safety catch that this is a first append
         if not self._has_data:
@@ -352,7 +352,7 @@ class MLTraceBuffer(MLTrace):
                                     'endtime'
         
         :: OUTPUT ::
-        :return self: [wyrm.data.mltracebuffer.MLTraceBuffer] enables cascading
+        :return self: [ayahos.data.mltracebuffer.MLTraceBuffer] enables cascading
         """
 
         if reference_type.lower() in ['end','endtime','t1']:

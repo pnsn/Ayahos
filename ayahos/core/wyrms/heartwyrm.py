@@ -183,7 +183,7 @@ class HeartWyrm(TubeWyrm):
     # MODULE INITIALIZATION HELPER FUNCTIONS #
     ##########################################
         
-    def _initialize_module(self, user_check=True):
+    def _initialize_module(self, user_check=False):
         """private method: _initialize_module
         Wraps ```PyEW.EWModule.__init__(**self.module_init_kwargs)```
         to initialize the self.module object contained in this HeartWyrm

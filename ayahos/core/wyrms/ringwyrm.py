@@ -148,7 +148,7 @@ class RingWyrm(Wyrm):
             if not isinstance(x, deque):
                 raise TypeError('input x must be type collections.deque for put-type methods')
             # Check for early stopping (if there are any unassessed items in the deque)
-            status = self._put_continue_iteration(x, i_):
+            status = self._put_continue_iteration(x, i_)
             if status is True:
                 # Grab the leftmost (oldest) item from the deque
                 _x = x.popleft()

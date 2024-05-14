@@ -95,6 +95,7 @@ class Wyrm(object):
         :rtype: collection.deque of objects
         """ 
         # Iterate across 
+        Logger.debug(f'{self.__class__} pulse firing')
         for i_ in range(self.max_pulse_size):
             status = self.unit_process(x, i_)
             if status is False:

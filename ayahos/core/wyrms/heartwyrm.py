@@ -246,7 +246,7 @@ class HeartWyrm(TubeWyrm):
             raise ValueError
         else:
             pass
-        self.module.add_connection(ring_id)
+        self.module.add_ring(ring_id)
         idx = len(self.connections)
         self.connections.update({name: (idx, ring_id)})
 

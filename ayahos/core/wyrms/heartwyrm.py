@@ -5,12 +5,12 @@ import pandas as pd
 
 Logger = logging.getLogger(__name__)
 
-def add_earthworm_to_path(Earthworm_Root='/usr/local/earthworm'):
-    ew_home = os.getenv('EW_HOME')
-    if ew_home:
-        Logger.debug(f'EW_HOME is already exported as {ew_home}')
-    else:
-        os.system(f'export EW_HOME={Earthworm_Root}')
+# def add_earthworm_to_path(Earthworm_Root='/usr/local/earthworm'):
+#     ew_home = os.getenv('EW_HOME')
+#     if ew_home:
+#         Logger.debug(f'EW_HOME is already exported as {ew_home}')
+#     else:
+#         os.system(f'export EW_HOME={Earthworm_Root}')
 
 
 ###################################################################################
@@ -30,16 +30,35 @@ class HeartWyrm(TubeWyrm):
 
     def __init__(
         self,
-        ew_home=None,
+        ew_env_file=None,
         wait_sec=0,
         default_ring_id=1000,
         module_id=200,
         installation_id=255,
         heartbeat_period=15,
-        wyrm_list={},
-        max_pulse_size=1
+        module_debug = False,
+        conn_dict = {},
+        wyrm_list={}
     ):
-        """
+        """Create a HeartWyrm object
+        Inherits the wyrm_dict attribute and pulse() method from TubeWyrm
+
+        :param ew_env_file: filepath for the desired EW environment to source, defaults to None
+        :type ew_env_file: str or None, optional
+        :param wait_sec: number of seconds to wait between pulses, defaults to 0
+        :type wait_sec: int, optional
+        :param default_ring_id: default ring ID to assign to EWModule, defaults to 1000
+        :type default_ring_id: int, optional
+        :param module_id: module ID that Earthworm will see for this EWModule, defaults to 200
+        :type module_id: int, optional
+        :param installation_id: installation ID, defaults to 255 - anonymous/nonexchanging installation
+        :type installation_id: int, optional
+        :param heartbeat_period: send heartbeat message to Earthworm every X seconds, defaults to 15
+        :type heartbeat_period: int, optional
+        :param wyrm_list: dictionary of ayahos.core.wyrms-type objects that will be executed in a chain , defaults to {}
+        :type wyrm_list: dict, optional
+            also see ayahos.core.wyrms.tubewyrm.TubeWyrm
+        """        """
         ChildClass of wyrm.core.base_wyrms.TubeWyrm
 
         Initialize a HeartWyrm object that contains the parameters neededto
@@ -81,89 +100,102 @@ class HeartWyrm(TubeWyrm):
         super().__init__(
             wyrm_list=wyrm_list,
             wait_sec=wait_sec,
-            max_pulse_size=max_pulse_size)        
+            max_pulse_size=1)
+
         # Check that earthworm is in path before initializing PyEW modules
-        if ew_home is None:
+        if ew_env_file is None:
+            # Check if EW_HOME is in $PATH
             try:
                 os.environ['EW_HOME']
+            # If not, exit on code 1
             except KeyError:
                 Logger.critical('Environmental varible $EW_HOME not mapped - cannot proceed')
                 sys.exit(1)
         else:
-            add_earthworm_to_path(ew_home)
+            os.eval(f'source {ew_env_file}')
+            try:
+                os.environ['EW_HOME']
+            # If not, exit on code 1
+            except KeyError:
+                Logger.critical(f'Environmental varible $EW_HOME not mapped with environment {ew_home}')
+                sys.exit(1)      
 
+        # Compatability check for default_ring_id          
         if isinstance(default_ring_id, int):
-            if 0 <=default_ring_id < 1e5:
+            if 0 <= default_ring_id < 1e5:
                 self._default_ring_id = default_ring_id
             else:
                 raise ValueError(f'default_ring_id must be an integer in [0, 10000). {default_ring_id} out of bounds')
         else:
             raise TypeError(f'default_ring_id must be type int, not {type(default_ring_id)}')
         
+        # Compatability check for module_id
         if isinstance(module_id, int):
             if 0 <=module_id < 1e5:
-                self._module_id = module_id
+                pass
             else:
                 raise ValueError(f'module_id must be an integer in [0, 10000). {module_id} out of bounds')
         else:
             raise TypeError(f'module_id must be type int, not {type(module_id)}')
         
-        
+        # Compatability check for default_ring_id
         if isinstance(default_ring_id, int):
             if 0 <=default_ring_id < 1e5:
-                self._default_ring_id = default_ring_id
+                pass
             else:
                 raise ValueError(f'default_ring_id must be an integer in [0, 10000). {default_ring_id} out of bounds')
         else:
             raise TypeError(f'default_ring_id must be type int, not {type(default_ring_id)}')
         
+        # Create connection holder
+        self.connections = {}
+
+        # Assemble module initialization kwargs
+        self.module_init_kwargs = {
+            'def_ring': default_ring_id,
+            'mod_id': module_id,
+            'inst_id' :installation_id,
+            'hb_time': heartbeat_period,
+            'db': module_debug}
         
-
-        # Public Attributes
+        # Placeholder for module
         self.module = False
-        self.conn_info = pd.DataFrame(columns=["Name", "RING_ID"])
-
-        # Private Attributes
-        self.
-
-        self._default_ring_id = self._bounded_intlike_check(default_ring_id, name='default', minimum=0, maximum=9999)
-        self._module_id = self._bounded_intlike_check(MOD_ID, name='MOD_ID', minimum=0, maximum=255)
-        self._installation_id = self._bounded_intlike_check(INST_ID, name='INST_ID', minimum=0, maximum=255)
-        self._HBP = self._bounded_floatlike_check(HB_PERIOD, name='HB_PERIOD', minimum=1)
-
-        # Module run attributes
-        # Threading - TODO - need to understand this better
+        # Initialize processing thread
         self._thread = threading.Thread(target=self.run)
+
+        # Initialize EWModule object
+        self._initialize_module(user_check = True)
+
+        # Initialize module connections from conn_dict
+        if isinstance(conn_dict, dict):
+            if all(isinstance(_v, int) for _v in conn_dict.values()):
+                for _k, _v in conn_dict.items():
+                    if _k not in self.connections.keys():
+                        self.add_connection(_k, _v)
+                    else:
+                        Logger.critical(f'Ring Name {_k} already assigned')
+                        sys.exit(1)
+        # Allow the module to run when self.run is next called
         self.runs = True
 
-    def __repr__(self):
-        # Start with TubeWyrm __repr__
-        rstr = f"{super().__repr__()}\n"
-        # List Pulse Rate
-        rstr += f"Pulse Wait Time: {self.wait_sec:.4f} sec\n"
-        # List Module Status and Parameters
-        if isinstance(self.module, PyEW.EWModule):
-            rstr += "Module: Initialized\n"
-        else:
-            rstr += "Module: NOT Initialized\n"
-        rstr += f"MOD: {self._module_id}"
-        rstr += f"DR: {self._default_ring_id}\n"
-        rstr += f"INST: {self._installation_id}\n"
-        rstr += f"HB: {self._HBP} sec\n"
-        # List Connections
-        rstr += "---- Connections ----\n"
-        rstr += f"{self.conn_info}\n"
-        rstr += "-------- END --------\n"
-        return rstr
 
-    def initialize_module(self, user_check=True):
+    ##########################################
+    # MODULE INITIALIZATION HELPER FUNCTIONS #
+    ##########################################
+        
+    def _initialize_module(self, user_check=True):
+        """private method: _initialize_module
+        Wraps ```PyEW.EWModule.__init__(**self.module_init_kwargs)```
+        to initialize the self.module object contained in this HeartWyrm
+
+        :param user_check: _description_, defaults to True
+        :type user_check: bool, optional
+        :raises RuntimeError: _description_
+        """        
         if user_check:
             cstr = "About to initialize the following PyEW.EWModule\n"
-            cstr += f"Default ring ID: {self._default_ring_id:d}\n"
-            cstr += f"Module ID: {self._module_id:d}\n"
-            cstr += f"Inst. ID: {self._installation_id:d}\n"
-            cstr += f"Heartbeat: {self._HBP:.1f} sec\n"
-            cstr += f"Debug?: {self.debug}\n"
+            for _k, _v in self.module_init_kwargs.items():
+                cstr += f'{_k}: {_v}\n'
             cstr += "\n Do you want to continue? [(y)/n]"
             ans = input(cstr)
             if ans.lower().startswith("y") or ans == "":
@@ -171,41 +203,37 @@ class HeartWyrm(TubeWyrm):
             elif ans.lower().startswith("n"):
                 user_continue = False
             else:
-                print("Invalid input -> exiting")
-                exit()
+                Logger.critical("Invalid input -> exiting")
+                sys.exit(1)
         else:
             user_continue = True
         if user_continue:
             # Initialize PyEarthworm Module
             if not self.module:
                 try:
-                    self.module = PyEW.EWModule(
-                        self._default_ring_id,
-                        self._module_id,
-                        self._installation_id,
-                        self._HBP,
-                        debug=self.debug,
-                    )
+                    self.module = PyEW.EWModule(**self.module_init_kwargs)
                 except RuntimeError:
-                    print("HeartWyrm: There is already a EWModule running!")
+                    Logger.error("HeartWyrm: There is already a EWModule running!")
             elif isinstance(self.module, PyEW.EWModule):
-                print("HeartWyrm: Module already initialized")
+                Logger.error("HeartWyrm: Module already assigned to self.module")
             else:
-                print(
+                Logger.critical(
                     f"HeartWyrm.module is type {type(self.module)}\
-                    -- incompatable!!!"
+                     incompatable!!!"
                 )
-                raise RuntimeError
+                sys.exit(1)
         else:
-            print("Canceling module initialization -> exiting")
-            exit()
+            Logger.critical("User canceled module initialization -> exiting politely")
+            sys.exit(0)
 
-    def add_connection(self, RING_ID, RING_Name):
-        """
-        Add a connection between target ring and the initialized self.module
-        and update the conn_info DataFrame.
+    def add_connection(self, name, ring_id):
+        """add a connection to the self.module (EWModule) object attached to this HeartWyrm
+        and update information in the self.connections attribute
 
-        Method includes safety catches
+        :param name: human-readable name to use as a key in self.connections
+        :type name: any, recommend str or int
+        :param ring_id: earthworm ring ID (value falls in the range [0, 9999])
+        :type ring_id: int
         """
         # === RUN COMPATABILITY CHECKS ON INPUT VARIABLES === #
         # Enforce integer RING_ID type
@@ -216,74 +244,11 @@ class HeartWyrm(TubeWyrm):
         elif ring_id > 10000:
             raise ValueError
         else:
-
-        if not self.module:
-            self.initialize_module()
-        elif ininstance(self.module, PyEW.EWModule):
-    
-
-        RING_ID = self._bounded_intlike_check(RING_ID,name='RING_ID', minimum=0, maximum=9999)
-        
-        # Warn on non-standard RING_Name types and convert to String
-        if not isinstance(RING_Name, (int, float, str)):
-            print(
-                f"Warning, RING_Name is not type (int, float, str) -\
-                   input type is {type(RING_Name)}"
-            )
-            print("Converting RING_Name to <type str>")
-            RING_Name = str(RING_Name)
-
-        # --- End Input Compatability Checks --- #
-
-        # === RUN CHECKS ON MODULE === #
-        # If the module is not already initialized, try to initialize module
-        if not self.module:
-            self.initialize_module()
-        # If the module is already initialized, pass
-        elif isinstance(self.module, PyEW.EWModule):
             pass
-        # Otherwise, raise TypeError with message
-        else:
-            print(f"Module type {type(self.module)} is incompatable!")
-            raise TypeError
-        # --- End Checks on Module --- #
+        self.module.add_connection(ring_id)
+        idx = len(self.connections)
+        self.connections.update({name: (idx, ring_id)})
 
-        # === MAIN BLOCK === #
-        # Final safety check that self.module is an EWModule object
-        if isinstance(self.module, PyEW.EWModule):
-            # If there isn't already an established connection to a given ring
-            if not any(self.conn_info.RING_ID == RING_ID):
-                # create new connection
-                self.module.add_connection(RING_ID)
-
-                # If this is the first connection logged, populate conn_info
-                if len(self.conn_info) == 0:
-                    self.conn_info = pd.DataFrame(
-                        {"RING_Name": RING_Name, "RING_ID": RING_ID}, index=[0]
-                    )
-
-                # If this is not the first connection, append to conn_info
-                elif len(self.conn_info) > 0:
-                    new_conn_info = pd.DataFrame(
-                        {"RING_Name": RING_Name, "RING_ID": RING_ID},
-                        index=[self.conn_info.index[-1] + 1],
-                    )
-                    self.conn_info = pd.concat(
-                        [self.conn_info, new_conn_info], axis=0, ignore_index=False
-                    )
-
-            # If connection exists, notify and provide the connection IDX in the notification
-            else:
-                idx = self.conn_info[self.conn_info.RING_ID == RING_ID].index[0]
-                print(
-                    f"IDX {idx:d} -- connection to RING_ID {RING_ID:d}\
-                       already established"
-                )
-
-        # This shouldn't happen, but if somehow we get here...
-        else:
-            print(f"Module type {type(self.module)} is incompatable!")
-            raise RuntimeError
 
     ######################################
     ### MODULE OPERATION CLASS METHODS ###
@@ -292,12 +257,14 @@ class HeartWyrm(TubeWyrm):
     def start(self):
         """
         Start Module Command
+        runs ```self._thread.start()```
         """
         self._thread.start()
 
     def stop(self):
         """
         Stop Module Command
+        sets self.runs = False
         """
         self.runs = False
 

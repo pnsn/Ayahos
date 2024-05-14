@@ -124,7 +124,7 @@ class TubeWyrm(Wyrm):
         TubeWyrm.wyrm_dict = {0: wyrm0, 1: wyrm1, 2: wyrm2}
         TubeWyrm.output = wyrm2.output
         """        
-        self.output = list(self.wyrm_dict.items())[-1].output
+        self.output = list(self.wyrm_dict.values())[-1].output
     
     def remove(self, key):
         """

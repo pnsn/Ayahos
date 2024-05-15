@@ -16,14 +16,14 @@
                         output: deque of MLTrace objects
 """
 
-import time, torch, copy
+import torch, copy
 import numpy as np
 import seisbench.models as sbm
 from collections import deque
-from wyrm.core.trace.mltrace import MLTrace
-from wyrm.core.stream.dictstream import WyrmStream
-from wyrm.core.stream.windowstream import WindowStream
-from wyrm.core.wyrms.wyrm import Wyrm
+from ayahos.core.trace.mltrace import MLTrace
+from ayahos.core.stream.dictstream import DictStream
+from ayahos.core.stream.windowstream import WindowStream
+from ayahos.core.wyrms.wyrm import Wyrm
 
 
 ###################################################################################
@@ -59,34 +59,43 @@ class MLDetectWyrm(Wyrm):
                       'stead'],
         devicetype='cpu',
         compiled=True,
-        max_pulse_size=1000,
-        timestamp=False,
-        debug=False):
+        max_batch_size=256,
+        max_pulse_size=1):
         """
-        Initialize a PredictionWyrm object
+        Initialize a ayahos.core.wyrms.mldetectwyrm.MLDetectWyrm object
 
         :: INPUTS ::
-        :param model: [seisbench.models.WaveformModel] child class object
-        :param weight_names: [list-like] of [str] names of pretrained model
-                        weights included in the model.list_pretrained() output
+        :param model: seisbench WaveformModel child class object, default is seisbench.models.EQTransformer()
+        :type model: seisbench.models.WaveformModel
+        :param weight_names: names of pretrained model weights included in the model.list_pretrained() output
+                        default is ['pnw','instance','stead']
                         NOTE: This object holds distinct, in-memory instances of
                             all model-weight combinations, allowing rapid cycling
                             across weights and storage of pre-compiled models
-        :param devicetype: [str] name of a device compliant with a torch.device()
-                            object and the particular hardware of the system running
-                            this instance of Wyrm 
+        :type weight_names: list-like of str or str
+        :param devicetype: name of a device compliant with a torch.device(), default is 'cpu'
                                 (e.g., on Apple M1/2 'mps' becomes an option)
-        :param compiled: [bool] should the model(s) be precompiled on initialization
-                            using the torch.compile() method?
+        :type devicetype: str
+        :param compiled: should the model(s) be precompiled on initialization using the torch.compile() method?, default is False
                         NOTE: This is suggested in the SeisBench documentation as
                             a way to accelerate model application
-        :param max_pulse_size: [int] - maximum BATCH SIZE for windowed data
-                            to pass to the model(s) for a single call of self.pulse()
-        :debug: [bool] should this wyrm be run in debug mode?
-
+        :type compiled: bool
+        :param max_batch_size: maximum batch size for windowed data in each pulse, default is 256
+        :type max_batch_size: int
+        :param max_pulse_size: maximum number of iterations (batches) to run per pulse, default is 1
+        :type max_pulse_size: int
         """
-        super().__init__(timestamp=timestamp, max_pulse_size=max_pulse_size, debug=debug)
+        super().__init__(max_pulse_size=max_pulse_size)
         
+        # max_batch_size compatability checks
+        if isinstance(max_batch_size, int):
+            if 0 < max_batch_size <= 2**15:
+                self.max_batch_size = max_batch_size
+            else:
+                raise ValueError(f'max_batch_size {max_batch_size} falls out of bounds should be \in(0, 2**15]')
+        else:
+            raise TypeError(f'max_batch_size must be type int, not {type(max_batch_size)}')
+
         # model compatability checks
         if not isinstance(model, sbm.WaveformModel):
             raise TypeError('model must be a seisbench.models.WaveformModel object')
@@ -140,98 +149,86 @@ class MLDetectWyrm(Wyrm):
             else:
                 cmod = cmod.to(self.device)
             self.cmods.update({wname: cmod})
-        # Initialize output deque
-        self.queue = deque()
 
-    def __str__(self):
-        rstr = f'wyrm.core.process.PredictWyrm('
-        rstr += f'model=sbm.{self.model.name}, weight_names={self.weight_names}, '
-        rstr += f'devicetype={self.device.type}, compiled={self.compiled}, '
-        rstr += f'max_pulse_size={self.max_pulse_size}, debug={self.debug})'
-        return rstr
 
-    def pulse(self, x):
-        """
-        Execute a pulse on input deque of WindowStream objects `x`, predicting
-        values for each model-weight-window combination and outputting individual
-        predicted value traces as MLTrace objects in the self.queue attribute
+    # def __str__(self):
+    #     rstr = f'ayahos.core.wyrms.mldetectwyrm.MLDetectWyrm('
+    #     rstr += f'model=sbm.{self.model.name}, weight_names={self.weight_names}, '
+    #     rstr += f'devicetype={self.device.type}, compiled={self.compiled}, '
+    #     rstr += f'max_pulse_size={self.max_pulse_size}, debug={self.debug})'
+    #     return rstr
 
-        :: INPUT ::
-        :param x: [deque] of [wyrm.core.WyrmStream.WindowStream] objects
-                    objects must be 
-        
+    def unit_process(self, x, i_):
+        """unit_process of ayahos.core.wyrms.mldetectwyrm.MLDetectWyrm
 
-        TODO: Eventually, have the predictions overwrite the windowed data
-              values of the ingested WindowStream objects so predictions
-              largely work as a in-place change
+        This unit process batches data, runs predictions, reassociates
+        predicted values and their source metadata, and attaches prediction
+        containing objects to the output attribute
+
+        :param x: input collection of objects
+        :type x: collections.deque containing ayahos.core.stream.windowstream.WindowStream objects
+        :param i_: iteration index
+        :type i_: int
+        :return status: should iteration at the Wyrm.pulse() level continue?
+        :rtype status: bool
         """
         if not isinstance(x, deque):
-            raise TypeError('input "x" must be type deque')
-        
-        qlen = len(x)
-        # Initialize batch collectors for this pulse
+            raise TypeError('input `x` must be type collections.deque')        
+
         batch_data = []
         batch_fold = []
         batch_meta = []
-
-        for _i in range(self.max_pulse_size):
-            if len(x) == 0:
-                break
-            if _i == qlen:
-                break
-            else:
+        # Compose Batch
+        for _i in range(self.max_batch_size):
+            # Check if there are still objects to assess (inherited from Wyrm)
+            status = self._continue_iteration(x, i_)
+            # If there are 
+            if status:
                 _x = x.popleft()
-                if not(isinstance(_x, WindowStream)):
+                if not isinstance(_x, WindowStream):
                     x.append(_x)
-                # Check that WindowStream is ready to split out, copy, and be eliminated
+                # Check if window is ready for conversion to torch.Tensor
                 if _x.ready_to_burn(self.model):
-                    # Part out copied data, metadata, and fold objects
+                    # Get data tensor
                     _data = _x.to_npy_tensor(self.model).copy()
-                    _fold = _x.collapse_fold().copy() 
+                    # Get data fold vector
+                    _fold = _x.collapse_fold().copy()
+                    # Get WindowStream metadata
                     _meta = _x.stats.copy()
-                    # Attach processing information for split
-                    # _meta.processing.append([time.time(),
-                    #                          'Wyrm 0.0.0',
-                    #                          'PredictionWyrm',
-                    #                          'split_for_ml',
-                    #                          '<internal>'])
-                    if self._timestamp:
-                        _meta.processing.append(['PredictionWyrm','split_for_ml',str(_i), time.time()])
-                    # Delete source WindowStream object to clean up memory
+                    # Explicitly delete the source window from memory
                     del _x
-                    # Append copied (meta)data to collectors
+                    # Append coppied (meta)data to batch collectors
                     batch_data.append(_data)
                     batch_fold.append(_fold)
                     batch_meta.append(_meta)
-                # TODO: If not ready to burn, kick error
                 else:
-                    breakpoint()
-                    raise ValueError('WindowStream is not sufficiently preprocessed - suspect an error earlier in the tube')
-       
-        # IF there are windows to process
-        if len(batch_meta) > 0:
-            # Concatenate batch_data tensor list into a single tensor
-            batch_data = torch.Tensor(np.array(batch_data))
-            batch_dst_dict = {_i: WyrmStream() for _i in range(len(batch_meta))}
-            # Iterate across preloaded (and precompiled) models
+                    self.logger.error(f'WindowStream for {_x.stats.common_id} is not sufficiently processed - skipping')
+                    pass
+            # If we've run out of objects to assess, stop creating batch
+            else:
+                break
+        # If we have at least one tensor to predict on, proceed
+        if len(batch_data) > 0:
+            # Convert list of 2d numpy.ndarrays into a 3d numpy.ndarray
+            batch_data = np.array(batch_data)
+            # Catch case where we have a single window (add the window axis)
+            if batch_data.ndim == 2:
+                batch_data = batch_data[np.newaxis, :, :]
+            # Convert int
+            batch_data = torch.Tensor(batch_data)
+            # Create output holder for all predictions
+            batch_out_holder = {i_: DictStream() for i_ in range(len(batch_meta))}
+            # Iterate across preloaded (possibly precompiled) models
             for wname, weighted_model in self.cmods.items():
-                if self._timestamp:
-                    batch_meta = batch_meta.copy()
-                    for _meta in batch_meta:
-                        _meta.processing.append(['PredictionWyrm','pulse','batch_start',time.time()])
-                # Run batch prediction for a given weighted_model weight
-                if batch_data.ndim != 3:
-                    breakpoint()
+                # RUN PREDICTION
                 batch_pred = self.run_prediction(weighted_model, batch_data, batch_meta)
-                # Reassociate window metadata to predicted values and send MLTraces to queue
-                self.batch2dst_dict(wname, batch_pred, batch_fold, batch_meta, batch_dst_dict)
-            # Provide access to queue as pulse output
-            for _v in batch_dst_dict.values():
-                self.queue.append(_v)
-
-        # alias self.queue to output
-        y = self.queue
-        return y
+                # Reassociate
+                self.batch2dst_dict(wname, batch_pred, batch_fold, batch_meta, batch_out_holder)
+                # Attach DictStreams to output
+                for _v in batch_out_holder.values():
+                    self.output.append(_v)
+        # return last status to pass to Wyrm.pulse() to determine if pulse iterations should continue
+        return status
 
     def run_prediction(self, weighted_model, batch_data, reshape_output=True):
         """
@@ -240,15 +237,14 @@ class MLDetectWyrm(Wyrm):
         enforce a uniform shape of batch_preds and batch_data.
 
         :: INPUT ::
-        :param weighted_model: [seisbench.models.WaveformModel] initialized model object with
-                        pretrained weights loaded (and potentialy precompiled) with
-                        which this prediction will be conducted
-        :param batch_data: [numpy.ndarray] or [torch.Tensor] data array with scaling
-                        appropriate to the input layer of `model` 
-        :reshape_output: [bool] if batch_preds has a different shape from batch_data
-                        should batch_preds be reshaped to match?
-        :: OUTPUT ::
-        :return batch_preds: [torch.Tensor] prediction outputs 
+        :param weighted_model: ML model with pretrained weights loaded (and potentialy precompiled) with
+        :type weighted_model: seisbench.models.WaveformModel
+        :param batch_data: data array with scaling appropriate to the input layer of `weighed_model` 
+        :type batch_data: torch.Tensor or numpy.ndarray
+        :param reshape_output: if batch_preds has a different shape from batch_data, should batch_preds be reshaped to match?
+        :type reshape_output: bool
+        :return batch_preds: prediction outputs
+        :rtype batch_preds: torch.Tensor
         """
         # Ensure input data is a torch.tensor
         if not isinstance(batch_data, (torch.Tensor, np.ndarray)):
@@ -279,7 +275,8 @@ class MLDetectWyrm(Wyrm):
             else:
                 detached_batch_preds = batch_preds.detach().numpy()
         else:
-            raise NotImplementedError(f'model "{self.model.name}" prediction initial unpacking not yet implemented')
+            self.logger.critical(f'model "{self.model.name}" prediction initial unpacking not yet implemented')
+            raise NotImplementedError
         # breakpoint()
         # # Check if output predictions are presented as some list-like of torch.Tensors
         # if isinstance(batch_preds, (tuple, list)):
@@ -303,33 +300,21 @@ class MLDetectWyrm(Wyrm):
             weight = pretrained weight name
         
 
-        :: INPUTS ::
-        :param weight_name: [str] name of the pretrained model weight used
-        :param batch_preds: [torch.Tensor] predicted values with expected axis assignments:
+        :param weight_name: name of the pretrained model weight used
+        :type weight_name: str
+        :param batch_preds: predicted values with expected axis assignments:
                                 axis 0: window # - corresponding to the axis 0 values in batch_fold and batch_meta
                                 axis 1: label - label assignments from the model architecture used
                                 axis 2: values
-        :param batch_fold: [list] of [numpy.ndarray] vectors of summed input data fold for each input window
-        :param batch_meta: [list] of [wyrm.core.WyrmStream.WindowStreamStats] objects corresponding to
-                                input data for each prediction window
-        :param dst_dict
-        
-        :: OUTPUT ::
-        None
-
-        :: ATTR UPDATE ::
-        :attr queue: [deque] MLTrace objects generated as shown below are appended to `queue`
-                    for window _i and predicted value label _j
-                       mlt = MLTrace(data=batch_pred[_i, _j, :], fold = batch_fold[_i, :], header=batch_meta[_i])
+        :type batch_preds: torch.Tensor
+        :param batch_fold: vectors of summed input data fold for each input window
+        :type batch_fold: list of numpy.ndarray
+        :param batch_meta: metadata corresponding to input data for each prediction window
+        :type batch_meta: list of wyrm.core.WindowStream.WindowStreamStats
+        :param dst_dict: prediction output holder object that will house reassociated (meta)data
+        :type dst_dict: dict of ayahos.core.stream.dictstream.DictStream objects
 
         """
-
-        # # Detach prediction array and convert to numpy
-        # if batch_preds.device.type != 'cpu':
-        #     batch_preds = batch_preds.detach().cpu().numpy()
-        # else:
-        #     batch_preds = batch_preds.detach().numpy()
-        
         # Reshape sanity check
         if batch_preds.ndim != 3:
             if batch_preds.shape[0] != len(batch_meta):
@@ -365,11 +350,96 @@ class MLDetectWyrm(Wyrm):
                 _mlt = MLTrace(data = batch_preds[_i, _j, :], fold=batch_fold[_i], header=_header)
                 # Update component labeling
                 _mlt.set_comp(label)
-                if self._timestamp:
-                    _mlt.stats.processing.append(['PredictionWyrm','batch2dst',f'{_i+1} of {len(batch_meta)}',time.time()])
+                # if self._timestamp:
+                #     _mlt.stats.processing.append(['PredictionWyrm','batch2dst',f'{_i+1} of {len(batch_meta)}',time.time()])
                 # Append to window-indexed dictionary of WyrmStream objects
                 if _i not in dst_dict.keys():
-                    dst_dict.update({_i, WyrmStream()})
+                    dst_dict.update({_i, DictStream()})
                 dst_dict[_i].__add__(_mlt, key_attr='id')
                 # Add mltrace to dsbuffer (subsequent buffering to happen in the next step)
                 
+
+
+
+    # def pulse(self, x):
+    #     """
+    #     Execute a pulse on input deque of WindowStream objects `x`, predicting
+    #     values for each model-weight-window combination and outputting individual
+    #     predicted value traces as MLTrace objects in the self.queue attribute
+
+    #     :: INPUT ::
+    #     :param x: [deque] of [wyrm.core.WyrmStream.WindowStream] objects
+    #                 objects must be 
+        
+
+    #     TODO: Eventually, have the predictions overwrite the windowed data
+    #           values of the ingested WindowStream objects so predictions
+    #           largely work as a in-place change
+    #     """
+    #     if not isinstance(x, deque):
+    #         raise TypeError('input "x" must be type deque')
+        
+    #     qlen = len(x)
+    #     # Initialize batch collectors for this pulse
+    #     batch_data = []
+    #     batch_fold = []
+    #     batch_meta = []
+
+    #     for _i in range(self.max_pulse_size):
+    #         if len(x) == 0:
+    #             break
+    #         if _i == qlen:
+    #             break
+    #         else:
+    #             _x = x.popleft()
+    #             if not(isinstance(_x, WindowStream)):
+    #                 x.append(_x)
+    #             # Check that WindowStream is ready to split out, copy, and be eliminated
+    #             if _x.ready_to_burn(self.model):
+    #                 # Part out copied data, metadata, and fold objects
+    #                 _data = _x.to_npy_tensor(self.model).copy()
+    #                 _fold = _x.collapse_fold().copy() 
+    #                 _meta = _x.stats.copy()
+    #                 # Attach processing information for split
+    #                 # _meta.processing.append([time.time(),
+    #                 #                          'Wyrm 0.0.0',
+    #                 #                          'PredictionWyrm',
+    #                 #                          'split_for_ml',
+    #                 #                          '<internal>'])
+    #                 if self._timestamp:
+    #                     _meta.processing.append(['PredictionWyrm','split_for_ml',str(_i), time.time()])
+    #                 # Delete source WindowStream object to clean up memory
+    #                 del _x
+    #                 # Append copied (meta)data to collectors
+    #                 batch_data.append(_data)
+    #                 batch_fold.append(_fold)
+    #                 batch_meta.append(_meta)
+    #             # TODO: If not ready to burn, kick error
+    #             else:
+    #                 breakpoint()
+    #                 raise ValueError('WindowStream is not sufficiently preprocessed - suspect an error earlier in the tube')
+       
+    #     # IF there are windows to process
+    #     if len(batch_meta) > 0:
+    #         # Concatenate batch_data tensor list into a single tensor
+    #         batch_data = torch.Tensor(np.array(batch_data))
+    #         batch_dst_dict = {_i: WyrmStream() for _i in range(len(batch_meta))}
+    #         # Iterate across preloaded (and precompiled) models
+    #         for wname, weighted_model in self.cmods.items():
+    #             if self._timestamp:
+    #                 batch_meta = batch_meta.copy()
+    #                 for _meta in batch_meta:
+    #                     _meta.processing.append(['PredictionWyrm','pulse','batch_start',time.time()])
+    #             # Run batch prediction for a given weighted_model weight
+    #             if batch_data.ndim != 3:
+    #                 breakpoint()
+    #             batch_pred = self.run_prediction(weighted_model, batch_data, batch_meta)
+    #             # Reassociate window metadata to predicted values and send MLTraces to queue
+    #             self.batch2dst_dict(wname, batch_pred, batch_fold, batch_meta, batch_dst_dict)
+    #         # Provide access to queue as pulse output
+    #         for _v in batch_dst_dict.values():
+    #             self.queue.append(_v)
+
+    #     # alias self.queue to output
+    #     y = self.queue
+    #     return y

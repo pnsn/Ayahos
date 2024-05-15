@@ -11,7 +11,6 @@ from ayahos.core.trace.mltrace import MLTrace, read_mltrace
 from ayahos.util.pyew import wave2mltrace
 from ayahos.util.semblance import ensemble_semblance #, weighted_ensemble_semblance
 
-Logger = logging.getLogger(__name__)
 
 
 def read_mltraces(data_files, obspy_read_kwargs={}, add_options={}):
@@ -239,6 +238,9 @@ class DictStream(Stream):
         """
         # initialize as empty stream
         super().__init__()
+        # Create logger
+        self.logger = logging.getLogger(__name__)
+
         # Create stats attribute with DictStreamStats
         self.stats = DictStreamStats(header=header)
         # Redefine self.traces as dict

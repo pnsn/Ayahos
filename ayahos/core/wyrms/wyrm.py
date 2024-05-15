@@ -14,7 +14,7 @@ from copy import deepcopy
 from collections import deque
 import logging
 
-Logger = logging.getLogger(__name__)
+# Logger = logging.getLogger(__name__)
 
 def add_class_name_to_docstring(cls):
     for name, method in vars(cls).items():
@@ -45,7 +45,8 @@ class Wyrm(object):
         :raises ValueError: for non-positive number argument for max_pulse_size
         :raises TypeError: for non-int-like or non-NoneType argument for max_pulse_size
         """
-        Logger.debug('Initializing a Wyrm object')
+        self.logger = logging.getLogger(__name__)
+        # Logger.debug('Initializing a Wyrm object')
         # Compatability check for max_pulse_size
         if isinstance(max_pulse_size, (int, float)):
             if 1 <= max_pulse_size:
@@ -95,7 +96,7 @@ class Wyrm(object):
         :rtype: collection.deque of objects
         """ 
         # Iterate across 
-        Logger.debug(f'{self.__class__} pulse firing')
+        self.logger.debug(f'{self.__class__.__name__} pulse firing')
         for i_ in range(self.max_pulse_size):
             status = self.unit_process(x, i_)
             if status is False:
@@ -116,19 +117,20 @@ class Wyrm(object):
         :type x: collections.deque of objects
         :param i_: iteration number
         :type i_: int
-        :return status: early stopping flag. True = stop early, False = continue
+        :return status: continue pulse iterations?
+            True = Yes, continue pulse iterations
+            False = No, halt pulse
         :rtype status: bool
         """
         if isinstance(x, deque):
-            if self._continue_iteration(x, i_):
+            status = self._continue_iteration(x, i_)
+            if status:
                 _x = x.popleft()
                 _y = _x
                 self.output.append(_y)
-                status = True
-            else:
-                status = False
         else:
             raise TypeError('x must be type collections.deque')
+        return status
 
     def _continue_iteration(self, x, i_):
         """Iteration continuation criteria for {class_name_camel}

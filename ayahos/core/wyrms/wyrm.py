@@ -83,73 +83,115 @@ class Wyrm(object):
         """
         return deepcopy(self)
 
-    def pulse(self, x):
+    def pulse(self, stdin):
         """
-        Run up to max_pulse_size iterations of unit_process()
+        Run up to max_pulse_size iterations of _unit_process()
         for ayahos.core.wyrms.{class_name_lower}.{class_name_camel}
 
-        see {class_name_camel}.unit_process() for details
+        NOTE: Houses the following polymorphic methods
+            _continue_iteration: check if iteration should continue
+            _get_obj_from_input: get input object for _unit_process
+            _unit_process: run core process
+            _capture_stdout: attach _unit_process output to {class_name_camel}.output
 
-        :param x: input iterable
-        :type x: any
+        :param stdin: standard input
+        :type stdin: collections.deque
+            see ayahos.core.wyrms.wyrm.Wyrm._get_obj_from_input()
         :return: aliased access to {class_name_camel}.output
         :rtype: collection.deque of objects
         """ 
         # Iterate across 
         self.logger.debug(f'{self.__class__.__name__} pulse firing')
-        for i_ in range(self.max_pulse_size):
-            status = self.unit_process(x, i_)
-            if status is False:
+        for iterno in range(self.max_pulse_size):
+            # Check if iterations should continue
+            status = self._continue_iteration(stdin, iterno)
+            # If iterations should continue
+            if status:
+                # get single object for unit_process
+                obj = self._get_obj_from_input(stdin)
+                # Execute unit process
+                stdout = self._unit_process(obj)
+                # Attach
+                self._capture_stdout(stdout)
+
+            # If iterations should not continue
+            else:
+                # end iterations
                 break
+        # Get alias of self.output as stdout
         y = self.output
         return y
 
-    def unit_process(self, x, i_):
-        """The unit process for this particular wyrm
-        ayahos.core.wyrms.{class_name_lower}.{class_name_camel}
-        0) assess if _early_stopping criteria are met
-        if not:
-            1) popleft() an item in x
-            2) set _y = _x
-            3) append(_y) to self.output
 
-        :param x: input data object source
-        :type x: collections.deque of objects
-        :param i_: iteration number
-        :type i_: int
-        :return status: continue pulse iterations?
-            True = Yes, continue pulse iterations
-            False = No, halt pulse
-        :rtype status: bool
-        """
-        if isinstance(x, deque):
-            status = self._continue_iteration(x, i_)
-            if status:
-                _x = x.popleft()
-                _y = _x
-                self.output.append(_y)
+    def _get_obj_from_input(self, stdin):
+        """_get_obj_from_input for Wyrm
+        POLYMORPHIC
+
+        Get the input object for this Wyrm's _unit_process
+
+        :param stdin: standard input object
+        :type stdin: collections.deque
+        :return obj: object popleft'd from stdin
+        :rtype obj: any
+        
+        :raises TypeError: if stdin is not expected type
+        
+        """        
+        if isinstance(stdin, deque):
+            obj = stdin.popleft()
+            return obj
         else:
-            raise TypeError('x must be type collections.deque')
-        return status
+            self.logger.error(f'stdin object was incorrect type')
+            raise TypeError
+        
 
-    def _continue_iteration(self, x, i_):
+    def _unit_process(self, obj):
+        """unit_process for ayahos.core.wyrms.wyrm.Wyrm
+        POLYMORPHIC
+
+        return stdout = obj
+
+        :param obj: input object
+        :type obj: any
+        :return stdout: output object
+        :rtype stdout: any
+        """
+        stdout = obj
+        return stdout        
+
+    def _continue_iteration(self, stdin, iterno):
         """Iteration continuation criteria for {class_name_camel}
+        POLYMORPHIC
 
         Criteria:
-         - len(x) > 0
-         - i_ < len(x)
+         - len(stdin) > 0
+         - i_ < len(stdin)
         
-        :param x: input data object collection
-        :type x: collections.deque
-        :param i_: iteration number
-        :type i_: int
-        :return: continue to next iteration?
-        :rtype: bool
-        """        
-        if len(x) == 0:
-            return False
-        elif i_ + 1 > len(x):
-            return False
+        :param stdin: input data object collection
+        :type stdin: collections.deque
+        :param iterno: iteration number
+        :type iterno: int
+        :return status: continue to next iteration?
+        :rtype status: bool
+        """
+        if isinstance(stdin, deque):
+            if len(stdin) == 0:
+                status = False
+            elif iterno + 1 > len(stdin):
+                status = False
+            else:
+                status = True
         else:
-            return True
-        
+            status = False
+        return status
+    
+    def _capture_stdout(self, stdout):
+        """Append the stdout to Wyrm().output
+        POLYMORPHIC
+
+        run Wyrm().output.append(stdout)
+
+        :param stdout: standard output object from unit_process
+        :type stdout: any
+        """        
+        self.output.append(stdout)

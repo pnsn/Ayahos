@@ -309,9 +309,14 @@ class WindowWyrm(Wyrm):
         
         :param unit_out: number of new windows generated in _unit_process
         :type unit_out: int
+        :return status: should iterations continue?
+        :rtype status: bool
         """        
         if unit_out == 0:
-            break
+            status = False
+        else:
+            status = True
+        return status
 
 
     def __update_window_tracker(self, dst):

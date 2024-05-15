@@ -19,7 +19,7 @@ from ayahos.core.stream.dictstream import DictStream
 
 Logger = logging.getLogger(__name__)
 
-@add_class_name_to_docstring
+# @add_class_name_to_docstring
 class BufferWyrm(Wyrm):
     """
     Class for buffering/stacking MLTrace objects into a DictStream of MLTraceBuffer objects with
@@ -171,15 +171,18 @@ class BufferWyrm(Wyrm):
         unit_out = None
         return unit_out
     
-    def _capture_stdout(self, unit_out):
-        """_capture_stdout for BufferWyrm
+    def _capture_unit_out(self, unit_out):
+        """_capture_unit_out for BufferWyrm
 
         pass - output capture is handled by _unit_process for this class
 
         :param unit_out: unused
         :type unit_out: None
+        :return status: unconditional True (do not trigger early stopping in pulse)
+        :rtype status: bool
         """        
-        pass
+        status=True
+        return status
 
                     
     # def __str__(self):

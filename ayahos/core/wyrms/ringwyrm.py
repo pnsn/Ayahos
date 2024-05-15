@@ -28,7 +28,7 @@ from ayahos.core.wyrms.wyrm import Wyrm, add_class_name_to_docstring
 from ayahos.util.pyew import wave2mltrace, trace2wave
 
 
-@add_class_name_to_docstring
+# @add_class_name_to_docstring
 class RingWyrm(Wyrm):   
     """
     Wyrm that facilitates transactions between memory rings in the Earthworm
@@ -205,13 +205,17 @@ class RingWyrm(Wyrm):
 
         :param unit_out: standard output object from _unit_process
         :type unit_out: PyEW message-formatted object or None
+        :return status: continue iterating in pulse?
+        :rtype status: bool
         """
         # For "get" methods, capture messages        
         if 'get' in self.pulse_method:
             # If unit_out is an empty message
             if self._is_empty_message(unit_out):
                 # send break message to the for-loop in *Wyrm().pulse()
-                break
+                status = False
+            else:
+                status = True
             # If get_wave pulse_method, convert into MLTrace
             if self.pulse_method == 'get_wave':
                 unit_out = wave2mltrace(unit_out)
@@ -219,7 +223,8 @@ class RingWyrm(Wyrm):
             super()._capture_unit_out(unit_out)
         # For "put" methods, capture nothing
         elif 'put' in self.pulse_method:
-            pass
+            status = True
+        return status
 
     # def __repr__(self):
     #     """

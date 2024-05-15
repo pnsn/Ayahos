@@ -26,7 +26,7 @@ from ayahos.core.stream.dictstream import DictStream
 # METHOD WYRM CLASS DEFINITION - FOR EXECUTING CLASS METHODS IN A PULSED MANNER ###
 ###################################################################################
 
-@add_class_name_to_docstring
+# @add_class_name_to_docstring
 class OutputWyrm(MethodWyrm):
     """A child class of MethodWyrm that orchestrates execution of a class method for
     input data objects and captures their standard output in the OutputWyrm.output
@@ -90,10 +90,24 @@ class OutputWyrm(MethodWyrm):
         return unit_out
     
     def _capture_unit_out(self, unit_out):
+        """_capture_unit_out for OutputWyrm
+
+        Use MethodWyrm's _capture_unit_out method to capture
+        unit_out if unit_out's type matches self.oclass
+
+        :param unit_out: obj.pmethod(**pkwargs) output
+        :type unit_out: rtype of obj.pmethod(**pkwargs) output
+        :return status: continue iterating in pulse?
+        :rtype status: bool
+        :raises TypeError: type(unit_out) != self.oclass
+        """        
         if isinstance(unit_out, self.oclass):
-            super()._capture_unit_out(unit_out)
+            status = super()._capture_unit_out(unit_out)
+            return status
         else:
             self.logger.critical(f'unit_out type mismatch {self.oclass} != {type(unit_out)}')
+            raise TypeError
+        
 
     def __str__(self):
         rstr = f'{self.__class__.__name__}\n'

@@ -28,7 +28,7 @@ from ayahos.core.stream.windowstream import WindowStream
 # METHOD WYRM CLASS DEFINITION - FOR EXECUTING CLASS METHODS IN A PULSED MANNER ###
 ###################################################################################
 
-@add_class_name_to_docstring
+# @add_class_name_to_docstring
 class MethodWyrm(Wyrm):
     """
     A submodule for applying a class method with specified key-word arguments to objects
@@ -88,6 +88,7 @@ class MethodWyrm(Wyrm):
 
     # Inherited from Wyrm
     # def _continue_iteration()
+    # def _capture_unit_out()
         
     def _get_obj_from_input(self, stdin):
         # Use checks from Wyrm on stdin

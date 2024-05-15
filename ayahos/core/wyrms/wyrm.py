@@ -24,7 +24,7 @@ def add_class_name_to_docstring(cls):
                                                    class_name_upper=cls.__name__.upper())
     return cls
 
-@add_class_name_to_docstring
+# @add_class_name_to_docstring
 class Wyrm(object):
     """Fundamental base class template all other *Wyrm classes with the following
     template methods
@@ -104,16 +104,17 @@ class Wyrm(object):
         self.logger.debug(f'{self.__class__.__name__} pulse firing')
         for iterno in range(self.max_pulse_size):
             # Check if iterations should continue
-            status = self._continue_iteration(stdin, iterno)
+            status1 = self._continue_iteration(stdin, iterno)
             # If iterations should continue
-            if status:
+            if status1:
                 # get single object for unit_process
                 obj = self._get_obj_from_input(stdin)
                 # Execute unit process
                 unit_out = self._unit_process(obj)
                 # Attach
-                self._capture_stdout(unit_out)
-
+                status2 = self._capture_unit_out(unit_out)
+                if status2 is False:
+                    break
             # If iterations should not continue
             else:
                 # end iterations
@@ -195,3 +196,5 @@ class Wyrm(object):
         :type unit_out: any
         """        
         self.output.append(unit_out)
+        status = True
+        return status

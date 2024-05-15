@@ -30,7 +30,7 @@ from ayahos.core.wyrms.wyrm import Wyrm, add_class_name_to_docstring
 # MLDETECT WYRM CLASS DEFINITION - FOR BATCHED PREDICTION IN A PULSED MANNER ####
 ###################################################################################
 
-@add_class_name_to_docstring
+# @add_class_name_to_docstring
 class MLDetectWyrm(Wyrm):
     """
     Conduct ML model predictions on preprocessed data ingested as a deque of
@@ -256,12 +256,19 @@ class MLDetectWyrm(Wyrm):
 
         Iterate across DictStreams in unit_out and append each to the output attribute
 
+        If the batch_size is less than max_batch_size return an early breaking flag
+        (status = False) to pass to pulse()
+
         :param unit_out: unit output from _unit_out
         :type unit_out: dict of ayahos.core.stream.dictstream.DictStream objects
+        :return status: should pulse iterations continue?
+        :rtype status: bool
         """                       
         # Attach DictStreams to output
+        status = len(unit_out) == self.max_batch_size
         for _v in unit_out.values():
-            self.output.append(_v)
+            self.output.append(_v)    
+        return status
 
     #############################
     # _unit_process subroutines #

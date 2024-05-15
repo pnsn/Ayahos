@@ -21,7 +21,7 @@ import numpy as np
 from collections import deque
 from ayahos.core.wyrms.wyrm import Wyrm, add_class_name_to_docstring
 
-@add_class_name_to_docstring
+# @add_class_name_to_docstring
 class TubeWyrm(Wyrm):
     """
     Wyrm child-class facilitating chained execution of pulse(x) class methods
@@ -276,7 +276,7 @@ class TubeWyrm(Wyrm):
     def _capture_unit_out(unit_out):
         """_capture_unit_out for TubeWyrm
 
-        pass - do nothing - 
+        Return unconditional status = True : Continue iterating
         
         TubeWyrm.output is a view of the last wyrm in wyrm_dict's output,
         so TubeWyrm().output is implicitly updated in _unit_process
@@ -284,7 +284,8 @@ class TubeWyrm(Wyrm):
         :param unit_out: standard output from _unit_process, unused
         :type unit_out: varies
         """
-        pass
+        status = True
+        return status
 
 
     # def unit_process(self, x):

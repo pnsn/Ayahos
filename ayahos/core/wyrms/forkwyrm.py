@@ -72,5 +72,8 @@ class ForkWyrm(Wyrm):
 
         :param unit_out: placeholder, unused
         :type unit_out: any
+        :return status: unconditional True (keep iterating in pulse)
+        :rtype status: bool
         """        
-        pass
+        status = True
+        return status

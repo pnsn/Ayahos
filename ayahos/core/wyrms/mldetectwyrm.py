@@ -23,13 +23,14 @@ from collections import deque
 from ayahos.core.trace.mltrace import MLTrace
 from ayahos.core.stream.dictstream import DictStream
 from ayahos.core.stream.windowstream import WindowStream
-from ayahos.core.wyrms.wyrm import Wyrm
+from ayahos.core.wyrms.wyrm import Wyrm, add_class_name_to_docstring
 
 
 ###################################################################################
 # MLDETECT WYRM CLASS DEFINITION - FOR BATCHED PREDICTION IN A PULSED MANNER ####
 ###################################################################################
-    
+
+@add_class_name_to_docstring
 class MLDetectWyrm(Wyrm):
     """
     Conduct ML model predictions on preprocessed data ingested as a deque of
@@ -158,36 +159,43 @@ class MLDetectWyrm(Wyrm):
     #     rstr += f'max_pulse_size={self.max_pulse_size}, debug={self.debug})'
     #     return rstr
 
-    def unit_process(self, x, i_):
-        """unit_process of ayahos.core.wyrms.mldetectwyrm.MLDetectWyrm
+    #################################
+    # PULSE POLYMORPHIC SUBROUTINES #
+    #################################
 
-        This unit process batches data, runs predictions, reassociates
-        predicted values and their source metadata, and attaches prediction
-        containing objects to the output attribute
+    # def _continue_iteration(self, stdin, iterno):
+    #     if len(stdin) == 0:
 
-        :param x: input collection of objects
-        :type x: collections.deque containing ayahos.core.stream.windowstream.WindowStream objects
-        :param i_: iteration index
-        :type i_: int
-        :return status: should iteration at the Wyrm.pulse() level continue?
-        :rtype status: bool
-        """
-        if not isinstance(x, deque):
-            raise TypeError('input `x` must be type collections.deque')        
+    # Inherit from Wyrm
+    # _continue_iteration() - stdin must be a non-empty deque and iterno +1 < len(stdin)
+
+    def _get_obj_from_input(self, stdin):
+        """ _get_obj_from_input method for MLDetectWyrm
+
+        Create batched window data for input to ML prediction
+
+        :param stdin: collection of input objects
+        :type stdin: collections.deque of ayahos.core.stream.windowstream.WindowStream(s)
+        :return: batch_data, batch_fold, and batch_meta objects
+        :rtype: 3-tuple
+        """        
+        if not isinstance(stdin, deque):
+            raise TypeError('input `obj` must be type collections.deque')        
 
         batch_data = []
         batch_fold = []
         batch_meta = []
         # Compose Batch
-        for _i in range(self.max_batch_size):
+        for j_ in range(self.max_batch_size):
             # Check if there are still objects to assess (inherited from Wyrm)
-            status = self._continue_iteration(x, i_)
+            status = super()._continue_iteration(stdin, j_)
             # If there are 
             if status:
-                _x = x.popleft()
+                _x = stdin.popleft()
                 if not isinstance(_x, WindowStream):
-                    x.append(_x)
-                # Check if window is ready for conversion to torch.Tensor
+                    self.logger.critical('type mismatch')
+                    raise TypeError
+                # Check if windowstream is ready for conversion to torch.Tensor
                 if _x.ready_to_burn(self.model):
                     # Get data tensor
                     _data = _x.to_npy_tensor(self.model).copy()
@@ -207,6 +215,23 @@ class MLDetectWyrm(Wyrm):
             # If we've run out of objects to assess, stop creating batch
             else:
                 break
+        obj = (batch_data, batch_fold, batch_meta)
+        return obj
+    
+    def _unit_process(self, obj):
+        """unit_process of ayahos.core.wyrms.mldetectwyrm.MLDetectWyrm
+
+        This unit process batches data, runs predictions, reassociates
+        predicted values and their source metadata, and attaches prediction
+        containing objects to the output attribute
+
+        :param obj: tuple containing batched data, fold, and metadata objects
+        :type obj: 3-tuple
+        :return unit_out: unit process output
+        :rtype unit_out: dict of ayahos.core.stream.dictstream.DictStream objects
+        """
+        # unpack obj
+        batch_data, batch_fold, batch_meta = obj
         # If we have at least one tensor to predict on, proceed
         if len(batch_data) > 0:
             # Convert list of 2d numpy.ndarrays into a 3d numpy.ndarray
@@ -217,20 +242,31 @@ class MLDetectWyrm(Wyrm):
             # Convert int
             batch_data = torch.Tensor(batch_data)
             # Create output holder for all predictions
-            batch_out_holder = {i_: DictStream() for i_ in range(len(batch_meta))}
+            unit_out = {i_: DictStream() for i_ in range(len(batch_meta))}
             # Iterate across preloaded (possibly precompiled) models
             for wname, weighted_model in self.cmods.items():
                 # RUN PREDICTION
-                batch_pred = self.run_prediction(weighted_model, batch_data, batch_meta)
-                # Reassociate
-                self.batch2dst_dict(wname, batch_pred, batch_fold, batch_meta, batch_out_holder)
-                # Attach DictStreams to output
-                for _v in batch_out_holder.values():
-                    self.output.append(_v)
-        # return last status to pass to Wyrm.pulse() to determine if pulse iterations should continue
-        return status
+                batch_pred = self.__run_prediction(weighted_model, batch_data, batch_meta)
+                # Reassociate metadata
+                self.__batch2dst_dict(wname, batch_pred, batch_fold, batch_meta, unit_out)
+        return unit_out
+    
+    def _capture_unit_out(self, unit_out): 
+        """_capture_unit_out
 
-    def run_prediction(self, weighted_model, batch_data, reshape_output=True):
+        Iterate across DictStreams in unit_out and append each to the output attribute
+
+        :param unit_out: unit output from _unit_out
+        :type unit_out: dict of ayahos.core.stream.dictstream.DictStream objects
+        """                       
+        # Attach DictStreams to output
+        for _v in unit_out.values():
+            self.output.append(_v)
+
+    #############################
+    # _unit_process subroutines #
+    #############################
+    def __run_prediction(self, weighted_model, batch_data, reshape_output=True):
         """
         Run a prediction on an input batch of windowed data using a specified model on
         self.device. Provides checks that batch_data is on self.device and an option to
@@ -243,8 +279,8 @@ class MLDetectWyrm(Wyrm):
         :type batch_data: torch.Tensor or numpy.ndarray
         :param reshape_output: if batch_preds has a different shape from batch_data, should batch_preds be reshaped to match?
         :type reshape_output: bool
-        :return batch_preds: prediction outputs
-        :rtype batch_preds: torch.Tensor
+        :return detached_batch_preds: prediction outputs, detached from non-cpu processor if applicable
+        :rtype detached_batch_preds: numpy.ndarray
         """
         # Ensure input data is a torch.tensor
         if not isinstance(batch_data, (torch.Tensor, np.ndarray)):
@@ -291,7 +327,7 @@ class MLDetectWyrm(Wyrm):
 
         return detached_batch_preds
 
-    def batch2dst_dict(self, weight_name, batch_preds, batch_fold, batch_meta, dst_dict):
+    def __batch2dst_dict(self, weight_name, batch_preds, batch_fold, batch_meta, dst_dict):
         """
         Reassociated batched predictions, batched metadata, and model metadata to generate MLTrace objects
         that are appended to the output deque (self.queue). The following MLTrace ID elements are updated

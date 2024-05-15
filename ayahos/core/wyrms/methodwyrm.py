@@ -20,7 +20,7 @@
 
 from collections import deque
 import pandas as pd
-from ayahos.core.wyrms.wyrm import Wyrm
+from ayahos.core.wyrms.wyrm import Wyrm, add_class_name_to_docstring
 from ayahos.core.stream.dictstream import DictStream
 from ayahos.core.stream.windowstream import WindowStream
 
@@ -28,6 +28,7 @@ from ayahos.core.stream.windowstream import WindowStream
 # METHOD WYRM CLASS DEFINITION - FOR EXECUTING CLASS METHODS IN A PULSED MANNER ###
 ###################################################################################
 
+@add_class_name_to_docstring
 class MethodWyrm(Wyrm):
     """
     A submodule for applying a class method with specified key-word arguments to objects
@@ -85,8 +86,20 @@ class MethodWyrm(Wyrm):
         # initialize output queue
         self.queue = deque()
 
-
-    def unit_process(self, x, i_):
+    # Inherited from Wyrm
+    # def _continue_iteration()
+        
+    def _get_obj_from_input(self, stdin):
+        # Use checks from Wyrm on stdin
+        obj = super()._get_obj_from_input(stdin)
+        # Then apply checks from pclass
+        if isinstance(obj, self.pclass):
+            return obj
+        else:
+            self.logger.critical(f'object popped from stdin mismatch {self.pclass} != {type(obj)}')
+            raise TypeError
+        
+    def _unit_process(self, obj):
         """unit_process for MethodWyrm
 
         Check if the input deque and iteration number
@@ -98,30 +111,35 @@ class MethodWyrm(Wyrm):
 
             Match: Execute the in-place processing and append to MethodWyrm.output
 
-        :param x: input set of objects
-        :type x: collections.deque
-        :param i_: iteration index
-        :type i_: int
-        :return: status - should iteration continue?
-        :rtype: bool
+        :param obj: input object to be modified
+        :type obj: self.pclass
+
+        :return unit_out: modified obj
+        :rtype: self.pclass
         """ 
-        # Use inherited Wyrm()._continue_iteration() check to see if input deque has unassessed items
-        status = super()._continue_iteration(x, i_)
-        # if there are items in `x` to assess
-        if status:
-            # Detach the next item
-            _x = x.popleft()
-            # Check that it matches pclass
-            if isinstance(_x, self.pclass):
-                # Run inplace modification
-                getattr(_x, self.pmethod)(**self.pkwargs)
-                # Attach modified object to output
-                self.output.append(_x)
-            # If the object isnt type pclass, re-attach it to x
-            else:
-                x.append(_x)
-        # Return status for use in Wyrm().pulse() iteration continuation assessment
-        return status
+        getattr(obj, self.pmethod)(**self.pkwargs)
+        unit_out = obj
+        return unit_out
+    
+
+
+        # # Use inherited Wyrm()._continue_iteration() check to see if input deque has unassessed items
+        # status = super()._continue_iteration(x, i_)
+        # # if there are items in `x` to assess
+        # if status:
+        #     # Detach the next item
+        #     _x = x.popleft()
+        #     # Check that it matches pclass
+        #     if isinstance(_x, self.pclass):
+        #         # Run inplace modification
+        #         getattr(_x, self.pmethod)(**self.pkwargs)
+        #         # Attach modified object to output
+        #         self.output.append(_x)
+        #     # If the object isnt type pclass, re-attach it to x
+        #     else:
+        #         x.append(_x)
+        # # Return status for use in Wyrm().pulse() iteration continuation assessment
+        # return status
 
     
     def __str__(self):

@@ -19,14 +19,14 @@
 """
 
 import pandas as pd
-from ayahos.core.wyrms.methodwyrm import MethodWyrm
+from ayahos.core.wyrms.methodwyrm import MethodWyrm, add_class_name_to_docstring
 from ayahos.core.stream.dictstream import DictStream
 
 ###################################################################################
 # METHOD WYRM CLASS DEFINITION - FOR EXECUTING CLASS METHODS IN A PULSED MANNER ###
 ###################################################################################
 
-
+@add_class_name_to_docstring
 class OutputWyrm(MethodWyrm):
     """A child class of MethodWyrm that orchestrates execution of a class method for
     input data objects and captures their standard output in the OutputWyrm.output
@@ -73,33 +73,28 @@ class OutputWyrm(MethodWyrm):
         else:
             self.oclass = oclass
     
-    def unit_process(self, x, i_):
-        """unit_process for OutputWyrm
+    def _unit_process(self, obj):
+        """_unit_process for OutputWyrm
 
         Serves as a polymorphic method call in the inherited Wyrm().pulse() method
 
         This method appends the stdout of the pclass.pmethod(**kwargs) to
         the output attribute, as opposed to the core_process
 
-        :param x: input collection of objects
-        :type x: collections.deque of pclass-type objects
-        :param i_: iteration number
-        :type i_: int
-        :return status: should process continue to next iteration?
-        :rtype: bool
-        """        
-        if super()._continue_iteration(x, i_):
-            _x = x.popleft()
-            if isinstance(_x, self.pclass):
-                _y = getattr(_x, self.pmethod)(**self.pkwargs)
-                self.output.append(_y)
-            else:
-                x.append(_x)
-            status = True
-        else:
-            status = False
-        return status
+        :param obj: input object to act upon
+        :type obj: varies
+        :return unit_out: output of obj.pmethod(**pkwargs)
+        :rtype: varies, must match self.oclass
+        """
+        unit_out = getattr(obj, self.pmethod)(**self.pkwargs)
+        return unit_out
     
+    def _capture_unit_out(self, unit_out):
+        if isinstance(unit_out, self.oclass):
+            super()._capture_unit_out(unit_out)
+        else:
+            self.logger.critical(f'unit_out type mismatch {self.oclass} != {type(unit_out)}')
+
     def __str__(self):
         rstr = f'{self.__class__.__name__}\n'
         rstr += f'{self.pclass.__name__}.{self.pmethod} --> {self.oclass.__name__}'

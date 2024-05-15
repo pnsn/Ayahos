@@ -12,13 +12,14 @@
 import logging
 from numpy import isfinite
 from collections import deque
-from ayahos.core.wyrms.wyrm import Wyrm
+from ayahos.core.wyrms.wyrm import Wyrm, add_class_name_to_docstring
 from ayahos.core.trace.mltrace import MLTrace
 from ayahos.core.trace.mltracebuffer import MLTraceBuffer
 from ayahos.core.stream.dictstream import DictStream
 
 Logger = logging.getLogger(__name__)
 
+@add_class_name_to_docstring
 class BufferWyrm(Wyrm):
     """
     Class for buffering/stacking MLTrace objects into a DictStream of MLTraceBuffer objects with
@@ -122,35 +123,68 @@ class BufferWyrm(Wyrm):
                                      **self.append_kwargs)
                 mltb.append(other)
                 self.output.extend(mltb)
-            
-    def unit_process(self, x, i_):
-        if isinstance(x, deque):
-            if super()._continue_iteration(x, i_):
-                _x = x.popleft()
-                if not isinstance(_x, (MLTrace, DictStream)):
-                    x.append(_x)
-                    Logger.debug(f'Popped element was type {type(_x)}')
-                elif isinstance(_x, MLTrace):
-                    _x = [_x]
-                for _xtr in _x:
-                    _key = getattr(_xtr, self.buffer_key)
-                    if _key not in self.output.traces.keys():
-                        self.add_new_buffer(_xtr)
-                    else:
-                        self.output[_key].append(_xtr, **self.append_kwargs)
-                status = True
-            else:
-                status = False
-        else:
-            raise TypeError('x must be type collections.deque')
-        return status
+    
 
-    # PULSE IS INHERITED FROM WYRM
+    # PULSE POLYMORPHIC SUBROUTINES #
+    #################################
+                
+    # Direct Inheritance from Wyrm
+    # def _continue_iteration - input is non-empty deque and iterno + 1 < len(stdin)
+
+
+    def _get_obj_from_input(self, stdin):
+        """_get_obj_from_input for BufferWyrm
+
+        :param stdin: _description_
+        :type stdin: _type_
+        :return: _description_
+        :rtype: _type_
+        """        
+        obj = stdin.popleft()
+        if not isinstance(obj, (MLTrace, DictStream)):
+            self.logger.critical(f'type mismatch {type(obj)} != MLTrace or DictStream')
+        elif isinstance(obj, MLTrace):
+            obj = [obj]
+        return obj
+
+    def _unit_process(self, obj):
+        """_unit_process for BufferWyrm
+
+        iterate across MLTraces in `obj` and either generate new
+        MLTraceBuffers keyed by the MLTrace.id or append the MLTrace
+        to an existing MLTraceBuffer with the same MLTrace.id.
+
+        This method conducts output "capture" by generating new
+        buffers or appending to existing buffers
+
+        :param obj: iterable set of MLTrace objects
+        :type obj: DictStream, list-like
+        :return unit_output: standard output of _unit_process
+        :rtype unit_output: None
+        """        
+        for _tr in obj:
+            _key = getattr(_tr, self.buffer_key)
+            if _key not in self.output.traces.keys():
+                self.add_new_buffer(_tr)
+            else:
+                self.output[_key].append(_tr, **self.append_kwargs)
+        unit_out = None
+        return unit_out
+    
+    def _capture_stdout(self, unit_out):
+        """_capture_stdout for BufferWyrm
+
+        pass - output capture is handled by _unit_process for this class
+
+        :param unit_out: unused
+        :type unit_out: None
+        """        
+        pass
 
                     
-    def __str__(self):
-        rstr = f'ayahos.core.wyrms.bufferwyrm.BufferWyrm()'
-        return rstr
+    # def __str__(self):
+    #     rstr = f'ayahos.core.wyrms.bufferwyrm.BufferWyrm()'
+    #     return rstr
     
 
 

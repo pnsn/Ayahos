@@ -19,8 +19,9 @@
 """
 import numpy as np
 from collections import deque
-from ayahos.core.wyrms.wyrm import Wyrm
+from ayahos.core.wyrms.wyrm import Wyrm, add_class_name_to_docstring
 
+@add_class_name_to_docstring
 class TubeWyrm(Wyrm):
     """
     Wyrm child-class facilitating chained execution of pulse(x) class methods
@@ -79,7 +80,7 @@ class TubeWyrm(Wyrm):
         self.names = list(wyrm_dict.keys())
         # Alias the output of the last wyrm in wyrm_dict to self.output (inherited from Wyrm)
         if len(self.wyrm_dict) > 0:
-            self._alias_last_wyrm_output()
+            self._alias_wyrm_dict_output()
 
 
 
@@ -109,10 +110,10 @@ class TubeWyrm(Wyrm):
         # Update names attribute
         self.names = list(self.wyrm_dict.keys())
         # Set outputs as alias to last wyrm
-        self._alias_last_wyrm_output()
+        self._alias_wyrm_dict_output()
 
 
-    def _alias_last_wyrm_output(self):
+    def _alias_wyrm_dict_output(self):
         """
         Alias the self.output attribute of the last wyrm-type object
         in this TubeWyrm's wyrm_dict to this TubeWyrm's output attribute
@@ -144,7 +145,7 @@ class TubeWyrm(Wyrm):
         # Update names attribute
         self.names = list(self.wyrm_dict.keys())
         # Return key and value
-        self._alias_last_wyrm_output()
+        self._alias_wyrm_dict_output()
         return (key, val)
 
     def reorder(self, reorder_list):
@@ -180,7 +181,7 @@ class TubeWyrm(Wyrm):
         # Run updates
         self.wyrm_dict = tmp
         self.names = list(tmp.keys())
-        self._alias_last_wyrm_output()
+        self._alias_wyrm_dict_output()
 
 
     def __repr__(self, extended=False):
@@ -212,48 +213,122 @@ class TubeWyrm(Wyrm):
                 rstr += f'{type(_v)}\n'
         return rstr
     
-    def unit_process(self, x):
-        """unit_process for ayahos.core.wyrms.tubewyrm.TubeWyrm
+    #############################
+    # PULSE POLYMORPHIC METHODS #
+    #############################
+    def _continue_iteration(self, stdin, iterno):
+        """ _continue_iteration for TubeWyrm
+        POLYMORPHIC
 
-        Execute a chained pulse of wyrm-type objects in the self.wyrm_dict
+        always return status = True
+        Execute max_pulse_size iterations regardless of internal processes
 
-        i.e., wyrm_dict = {0: wyrm1, 1: wyrm2}
-        y = wyrm2.pulse(wyrm1.pulse(x))
+        :param stdin: Unused
+        :type stdin: any
+        :param iterno: Unused
+        :type iterno: any
+        :return status: continue iteration - always True
+        :rtype: bool
+        """        
+        status = True
+        return status
+    
+    def _get_obj_from_input(self, stdin):
+        """_get_obj_from_input for TubeWyrm
 
-        Iterate for max_pulse_size
-            Iterate across wyrms in self.wyrm_dict
-                If first wyrm_, y = wyrm_.pulse(x)
-                else: y = wyrm_pulse(y)
-        
-                NOTE: No _continue_iteration check used ehre
-        
-        :param x: input expected by first wyrm-type objects' wyrm_.pulse() method in the self.wyrm_dict
-        :type x: varies, typically collections.deque or ayahos.core.streamdictstream.DictStream
-        :return y: output from wyrm_.pulse() for the last wyrm-type object in the self.wyrm_dict
-        :type y: varies, typically collections.deque or ayahos.core.stream.dictstream.DictStream
-        
+        Pass the standard input directly to the first wyrm in wyrm_dict
+
+        :param stdin: standard input object
+        :type stdin: varies, depending on stdin expected by first wyrm in wyrm_dict
+        :return obj: view of standard input object
+        :rtype obj: varies
+        """        
+        obj = stdin
+        return obj
+
+    def _unit_process(self, obj):
+        """_unit_process for TubeWyrm
+
+        POLYMORPHIC
+
+        Chain pulse() methods of wyrms in wyrm_dict
+        passing obj as the input to the first 
+
+            wyrm2.pulse(wyrm1.pulse(wyrm0.pulse(obj)))
+
+        In this example output is captured by wyrm2's pulse and
+        TubeWyrm.output is a view of wyrm2.output
+
+        :param obj: standard input for the pulse method of the first wyrm in wyrm_dict
+        :type obj: varies
+        :return unit_out: standard unit output, fixed as None
+        :rtype: None
         """        
         for j_, (name, wyrm_) in enumerate(self.wyrm_dict.items()):
             if j_ == 0:
-                y = wyrm_.pulse(x)
-                self.logger.debug(f'{name}.output length {len}')
+                y = wyrm_.pulse(obj)
+                self.logger.debug(f'{name}.output length: {len(y)}')
             else:
                 y = wyrm_.pulse(y)
-        return True
+        unit_out = None
+        return unit_out
 
-    def pulse(self, x):
-        """pulse method for ayahos.core.wyrms.tubewyrm.TubeWyrm
+    def _capture_unit_out(unit_out):
+        """_capture_unit_out for TubeWyrm
 
-        Pulse method is a polymorphic execution of Wyrm.pulse()
-        see TubeWyrm.core_process() for details
+        pass - do nothing - 
+        
+        TubeWyrm.output is a view of the last wyrm in wyrm_dict's output,
+        so TubeWyrm().output is implicitly updated in _unit_process
 
-        :param x: collection of input objects for the first wyrm in TubeWyrm.wyrm_dict
-        :type x: varies
-        :return y: alias to the output attribute of the last wyrm in TubeWyrm.wyrm_dict
-        :rtype y: varies
+        :param unit_out: standard output from _unit_process, unused
+        :type unit_out: varies
         """
-        y = super().pulse(x)
-        return y
+        pass
+
+
+    # def unit_process(self, x):
+    #     """unit_process for ayahos.core.wyrms.tubewyrm.TubeWyrm
+
+    #     Execute a chained pulse of wyrm-type objects in the self.wyrm_dict
+
+    #     i.e., wyrm_dict = {0: wyrm1, 1: wyrm2}
+    #     y = wyrm2.pulse(wyrm1.pulse(x))
+
+    #     Iterate for max_pulse_size
+    #         Iterate across wyrms in self.wyrm_dict
+    #             If first wyrm_, y = wyrm_.pulse(x)
+    #             else: y = wyrm_pulse(y)
+        
+    #             NOTE: No _continue_iteration check used ehre
+        
+    #     :param x: input expected by first wyrm-type objects' wyrm_.pulse() method in the self.wyrm_dict
+    #     :type x: varies, typically collections.deque or ayahos.core.streamdictstream.DictStream
+    #     :return y: output from wyrm_.pulse() for the last wyrm-type object in the self.wyrm_dict
+    #     :type y: varies, typically collections.deque or ayahos.core.stream.dictstream.DictStream
+        
+    #     """        
+    #     for j_, (name, wyrm_) in enumerate(self.wyrm_dict.items()):
+    #         if j_ == 0:
+    #             y = wyrm_.pulse(x)
+    #             self.logger.debug(f'{name}.output length {len}')
+    #         else:
+    #             y = wyrm_.pulse(y)
+    #     return True
+
+    # def pulse(self, x):
+    #     """pulse method for ayahos.core.wyrms.tubewyrm.TubeWyrm
+
+    #     Pulse method is a polymorphic execution of Wyrm.pulse()
+    #     see TubeWyrm.core_process() for details
+
+    #     :param x: collection of input objects for the first wyrm in TubeWyrm.wyrm_dict
+    #     :type x: varies
+    #     :return y: alias to the output attribute of the last wyrm in TubeWyrm.wyrm_dict
+    #     :rtype y: varies
+    #     """
+    #     y = super().pulse(x)
+    #     return y
 
     # def pulse(self, x):
     #     """

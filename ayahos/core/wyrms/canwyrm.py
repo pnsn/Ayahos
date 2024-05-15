@@ -105,7 +105,7 @@ class CanWyrm(TubeWyrm):
             wyrm_.pulse(obj)
             self.logger.debug(f'{name}.output length: {len()}')
         
-        unit_out = None
+        unit_out = True
         return unit_out
 
 

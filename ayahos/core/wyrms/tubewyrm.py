@@ -270,10 +270,10 @@ class TubeWyrm(Wyrm):
                 self.logger.debug(f'{name}.output length: {len(y)}')
             else:
                 y = wyrm_.pulse(y)
-        unit_out = None
+        unit_out = True
         return unit_out
 
-    def _capture_unit_out(unit_out):
+    def _capture_unit_out(self, unit_out):
         """_capture_unit_out for TubeWyrm
 
         Return unconditional status = True : Continue iterating
@@ -284,7 +284,7 @@ class TubeWyrm(Wyrm):
         :param unit_out: standard output from _unit_process, unused
         :type unit_out: varies
         """
-        status = True
+        status = unit_out
         return status
 
 

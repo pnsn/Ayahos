@@ -112,7 +112,10 @@ class Wyrm(object):
                 # Execute unit process
                 unit_out = self._unit_process(obj)
                 # Attach
-                status2 = self._capture_unit_out(unit_out)
+                try:
+                    status2 = self._capture_unit_out(unit_out)
+                except:
+                    breakpoint()
                 if status2 is False:
                     break
             # If iterations should not continue

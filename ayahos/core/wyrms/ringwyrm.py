@@ -214,15 +214,18 @@ class RingWyrm(Wyrm):
             if self._is_empty_message(unit_out):
                 # send break message to the for-loop in *Wyrm().pulse()
                 status = False
+            # If unit_out is not empty
             else:
                 status = True
-            # If get_wave pulse_method, convert into MLTrace
-            if self.pulse_method == 'get_wave':
-                unit_out = wave2mltrace(unit_out)
-            # For all "get" methods, use Wyrm._capture_unit_out()
-            super()._capture_unit_out(unit_out)
+                # If get_wave pulse_method, convert into MLTrace
+                if self.pulse_method == 'get_wave':
+                    unit_out = wave2mltrace(unit_out)
+                # For all "get" methods, use Wyrm._capture_unit_out()
+                super()._capture_unit_out(unit_out)
+
         # For "put" methods, capture nothing
         elif 'put' in self.pulse_method:
+            # And provide unconditional continue iteration flag (let _continue_iteration handle early stopping)
             status = True
         return status
 

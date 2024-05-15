@@ -152,9 +152,12 @@ class WindowStream(DictStream):
                         break
                     else:
                         pass
-
+            # If component is not in the alias list, skip
             else:
-                raise ValueError('component code for {tr.id} is not in the self.stats.aliases dictionary')
+                self.logger.debug(f'component code for {tr.id} is not in stats.aliases. Skipping this trace')
+                pass
+                # breakpoint()
+                # raise ValueError('component code for {tr.id} is not in the self.stats.aliases dictionary')
 
 
     def __repr__(self, extended=False):

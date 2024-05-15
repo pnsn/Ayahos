@@ -140,12 +140,10 @@ class MLDetectWyrm(Wyrm):
 
         self.cmods = {}
         for wname in self.weight_names:
-            if self.debug:
-                print(f'Loading {self.model.name} - {wname}')
+            self.logger.debug(f'Loading {self.model.name} - {wname}')
             cmod = self.model.from_pretrained(wname)
             if compiled:
-                if self.debug:
-                    print(f'...pre compiling model on device type "{self.device.type}"')
+                self.logger.debug(f'...pre compiling model on device type "{self.device.type}"')
                 cmod = torch.compile(cmod.to(self.device))
             else:
                 cmod = cmod.to(self.device)
@@ -234,6 +232,7 @@ class MLDetectWyrm(Wyrm):
         batch_data, batch_fold, batch_meta = obj
         # If we have at least one tensor to predict on, proceed
         if len(batch_data) > 0:
+            self.logger.info(f'prediction on batch of {len(batch_data)} windows')
             # Convert list of 2d numpy.ndarrays into a 3d numpy.ndarray
             batch_data = np.array(batch_data)
             # Catch case where we have a single window (add the window axis)

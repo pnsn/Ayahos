@@ -261,7 +261,7 @@ class HeartWyrm(TubeWyrm):
         Logger.critical("Starting Module Operation")        
         while self.runs:
             # Break while loop if _early_stopping triggers at start of iteration
-            Logger.info('running main pulse')
+            Logger.debug('running main pulse')
             status = self.unit_process(x)
             if self.module.mod_sta() is False:
                 break

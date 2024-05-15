@@ -3,8 +3,6 @@ import PyEW
 from ayahos.core.wyrms.tubewyrm import TubeWyrm
 import pandas as pd
 
-Logger = logging.getLogger(__name__)
-
 # def add_earthworm_to_path(Earthworm_Root='/usr/local/earthworm'):
 #     ew_home = os.getenv('EW_HOME')
 #     if ew_home:
@@ -72,7 +70,7 @@ class HeartWyrm(TubeWyrm):
                 os.environ['EW_HOME']
             # If not, exit on code 1
             except KeyError:
-                Logger.critical('Environmental varible $EW_HOME not mapped - cannot proceed')
+                self.logger.critical('Environmental varible $EW_HOME not mapped - cannot proceed')
                 sys.exit(1)
         else:
             os.system(f'source {ew_env_file}')
@@ -80,7 +78,7 @@ class HeartWyrm(TubeWyrm):
                 os.environ['EW_HOME']
             # If not, exit on code 1
             except KeyError:
-                Logger.critical(f'Environmental varible $EW_HOME not mapped with environment {ew_home}')
+                self.logger.critical(f'Environmental varible $EW_HOME not mapped with environment {ew_home}')
                 sys.exit(1)      
 
         # Compatability check for default_ring_id          
@@ -136,7 +134,7 @@ class HeartWyrm(TubeWyrm):
                     if _k not in self.connections.keys():
                         self.add_connection(_k, _v)
                     else:
-                        Logger.critical(f'Ring Name {_k} already assigned')
+                        self.logger.critical(f'Ring Name {_k} already assigned')
                         sys.exit(1)
         # Allow the module to run when self.run is next called
         self.runs = True
@@ -166,7 +164,7 @@ class HeartWyrm(TubeWyrm):
             elif ans.lower().startswith("n"):
                 user_continue = False
             else:
-                Logger.critical("Invalid input -> exiting")
+                self.logger.critical("Invalid input -> exiting")
                 sys.exit(1)
         else:
             user_continue = True
@@ -176,18 +174,18 @@ class HeartWyrm(TubeWyrm):
                 try:
                     self.module = PyEW.EWModule(**self.module_init_kwargs)
                 except RuntimeError:
-                    Logger.error("HeartWyrm: There is already a EWModule running!")
+                    self.logger.error("HeartWyrm: There is already a EWModule running!")
             elif isinstance(self.module, PyEW.EWModule):
-                Logger.error("HeartWyrm: Module already assigned to self.module")
+                self.logger.error("HeartWyrm: Module already assigned to self.module")
             else:
-                Logger.critical(
+                self.logger.critical(
                     f"HeartWyrm.module is type {type(self.module)}\
                      incompatable!!!"
                 )
                 sys.exit(1)
             self.add_connection('DEFAULT', self.module_init_kwargs['def_ring'])
         else:
-            Logger.critical("User canceled module initialization -> exiting politely")
+            self.logger.critical("User canceled module initialization -> exiting politely")
             sys.exit(0)
 
     def add_connection(self, name, ring_id):
@@ -247,32 +245,31 @@ class HeartWyrm(TubeWyrm):
         # Sleep for wait_sec
         time.sleep(self.wait_sec)
         # Then run TubeWyrm unit_process
-        status = super().unit_process(x)
+        status = super().pulse(x)
         return status
 
-    def run(self, x=None):
+    def run(self, stdin=None):
         """
         Run the PyEW.EWModule housed by this HeartWyrm with the option
         of an initial input
 
-        :param x: initial input for the first wyrm in HeartWyrm.wyrm_dict, default None
-        :type x: None, other, optional
+        :param stdin: standard input for the pulse() method of the first wyrm in HeartWyrm.wyrm_dict, default None
+        :type stdin: varies, optional
         """
-        Logger.critical("Starting Module Operation")        
+        self.logger.critical("Starting Module Operation")        
         while self.runs:
-            # Break while loop if _early_stopping triggers at start of iteration
-            Logger.debug('running main pulse')
-            status = self.unit_process(x)
+            self.logger.debug('running main pulse')
+            stdout = super().pulse(stdin)
             if self.module.mod_sta() is False:
                 break
         # Gracefully shut down
         self.module.goodbye()
         # Note shutdown in logging
-        Logger.critical("Shutting Down Module")     
+        self.logger.critical("Shutting Down Module")     
 
     def pulse(self):
-        Logger.error("pulse() method disabled for ayahos.core.wyrms.heartwyrm.Heartwyrm")
-        Logger.error("Use HeartWyrm.run() to start module operation")
+        self.logger.error("pulse() method disabled for ayahos.core.wyrms.heartwyrm.Heartwyrm")
+        self.logger.error("Use HeartWyrm.run() to start module operation")
 
     # def run(self):
     #     """

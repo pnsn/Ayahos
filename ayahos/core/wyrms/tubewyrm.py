@@ -17,12 +17,9 @@
               y = wyrmN.pulse(...pulse(wyrm1.pulse(wyrm0.pulse(x))))
 
 """
-import logging
 import numpy as np
 from collections import deque
 from ayahos.core.wyrms.wyrm import Wyrm
-
-Logger = logging.getLogger(__name__)
 
 class TubeWyrm(Wyrm):
     """
@@ -239,7 +236,7 @@ class TubeWyrm(Wyrm):
         for j_, (name, wyrm_) in enumerate(self.wyrm_dict.items()):
             if j_ == 0:
                 y = wyrm_.pulse(x)
-                Logger.debug(f'{name}.output length {len}')
+                self.logger.debug(f'{name}.output length {len}')
             else:
                 y = wyrm_.pulse(y)
         return True

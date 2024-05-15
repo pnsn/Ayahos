@@ -17,11 +17,10 @@ import time, threading, copy
 import numpy as np
 import pandas as pd
 from collections import deque
-from wyrm.core.wyrms.wyrm import Wyrm
-from wyrm.util.input import bounded_floatlike
-from wyrm.core.trace.mltrace import MLTrace
-from wyrm.core.trace.mltracebuffer import MLTraceBuffer
-from wyrm.core.stream.dictstream import WyrmStream
+from ayahos.core.wyrms.wyrm import Wyrm
+from ayahos.core.trace.mltrace import MLTrace
+from ayahos.core.trace.mltracebuffer import MLTraceBuffer
+from ayahos.core.stream.dictstream import WyrmStream
 
 class ForkWyrm(Wyrm):
     """
@@ -34,41 +33,44 @@ class ForkWyrm(Wyrm):
         :: INPUTS ::
         :param queue_names: [list-like] of values to assign as keys (names) to 
                             output deques held in self.queues
+        :p
         :param max_pulse_size: [int] maximum number of elements to pull from 
                             an input deque in a single pulse
         :param debug: [bool] - should this be run in debug mode?
         """
-        super().__init__(max_pulse_size=max_pulse_size, debug=debug)
+        super().__init__(max_pulse_size=max_pulse_size)
         self.nqueues = len(queue_names)
-        self.queues = {}
+        self.output = {}
         for _k in queue_names:
-            self.queues.update({_k: deque()})
+            self.output.update({_k: deque()})
     
-    def pulse(self, x):
-        """
-        Run a pulse on deque x where items are popleft'd out of `x`,
-        deepcopy'd for each deque in self.queues and appended to 
-        each deque in self.deques. The original object popped off
-        of `x` is then deleted from memory as a clean-up step.
+    # Inherit from Wyrm()
+    # def _continue_iteration - input is deque, non-empty,and iterno + 1 <= len(stdin)
+    # def _get_obj_from_input - use popleft()
+    
+    def _unit_process(self, obj):
+        """_unit_process for ForkWyrm
 
-        Stopping occurs if `x` is empty (len = 0) or self.max_pulse_size
-        items are cloned from `x` 
+        appends a copy of obj to each deque in output
 
-        :: INPUT ::
-        :param x: [collections.deque] double ended queue containing N objects
+        :param obj: object to copy
+        :type obj: any
+        :return unit_out: placeholder unit_out
+        :rtype: None
+        """        
+        for _v in self.output.values():
+            _v.append(copy.deepcopy(obj))
+        unit_out = None
+        return unit_out
+    
+    def _capture_unit_out(self, unit_out):
+        """_capture_unit_out for ForkWyrm
 
-        :: OUTPUT ::
-        :return y: [dict] of [collections.deque] clones of contents popped from `x`
-                with dictionary keys corresponding to queue_names elements.
-        """
-        if not isinstance(x, deque):
-            raise TypeError('x must be type deque')
-        for _ in range(self.max_pulse_size):
-            if len(x) == 0:
-                break
-            _x = x.popleft()
-            for _q in self.queues.values():
-                _q.append(copy.deepcopy(_x))
-            del _x
-        y = self.queues
-        return y
+        pass - placeholder
+
+        Capture is handled in _unit_process
+
+        :param unit_out: placeholder, unused
+        :type unit_out: any
+        """        
+        pass

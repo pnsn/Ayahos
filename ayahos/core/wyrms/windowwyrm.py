@@ -48,6 +48,7 @@ class WindowWyrm(Wyrm):
         reference_sampling_rate=100.0,
         reference_npts=6000,
         reference_overlap=1800,
+        fnfilter=None,
         pulse_type='network',
         max_pulse_size=1,
         **options
@@ -71,9 +72,13 @@ class WindowWyrm(Wyrm):
         :type reference_npts: int, optional
         :param reference_overlap: target number of overlapping samples between windows after preprocessing, defaults to 1800
         :type reference_overlap: int, optional
+        :param fnfilter: fnmatch filter string to use for subsetting channel inputs, default is None
+        :type fnfilter: None or str
+            also see ayahos.core.stream.dictstream.DictStream.fnselect()
         :param pulse_type: style of running pulse, defaults to 'network'
             Supported values:
                 'network' - attempt to create one window from each instrument per pulse
+                vv NOT IMPLEMENTED vv
                 'site' - create a window/windows for a given site per pulse iteration, tracking
                         which site last generated windowed data. Permits for list wrapping  
                 'instrument' - under development       
@@ -145,7 +150,13 @@ class WindowWyrm(Wyrm):
         else:
             raise TypeError('reference_overlap must be type int')
 
-    
+        if isinstance(fnfilter, str):
+            self.fnfilter = fnfilter
+        elif fnfilter is None:
+            self.fnfilter = '*'
+        else:
+            raise TypeError('fnfilter must be type str or NoneType')
+
         self.ref = {'sampling_rate': refsr, 'overlap': refo, 'npts': refn, 'component': refc, 'threshold': reft}
          # Set Defaults and Derived Attributes
         # Calculate window length, window advance, and blinding size in seconds
@@ -156,45 +167,154 @@ class WindowWyrm(Wyrm):
         # Create dict for holding instrument window starttime values
         self.window_tracker = {}
 
-    def unit_process(self, x, i_):
-        nnew = 0
-        if self.pulse_type == 'network':
-            # Iterate across each site
-            for site, _sv in self.window_tracker.items():
-                # Iterate across each instrument at a site
-                for inst, _ssv in _sv.items():
-                    # Skip non-instrument entries
-                    if isinstance(_ssv, dict):
-                        # Iterate across model-weight codes (usually just one)
-                        for mod in _ssv.keys():
-                            # Sample a new window
-                            nnew += self._sample_window(x, site, inst, mod)
-            self._update_window_tracker(x)
-            if nnew == 0:
-                status = False
-            else:
-                status = True
+    #######################################
+    # Parameterization Convenience Method #
+    #######################################
+        
+    def update_from_seisbench(self, model):
+        """
+        Helper method for (re)setting the window-defining attributes for this
+        WindowWyrm object from a seisbench.models.WaveformModel object:
 
-        elif self.pulse_type == 'site':
-            raise NotImplementedError('under development')
-            # sites = list(self.window_tracker.keys())
-            # for site in sites:
-            #     if self.next_code is None:
-            #         self.next_code = site
-            #     if site == self.next_code:
-            #         pass
-            #     else:
-                    # continue
-        elif self.pulse_type == 'instrument':
-            raise NotImplementedError('under development')
-    
+            self.model_name = model.name
+            self.ref['sampling_rate'] = model.sampling_rate
+            self.ref['npts'] = model.in_samples
+            self.ref['overlap'] = model._annotate_args['overlap'][1]
+        
+        :param model: seisbench model to scrape windowing parameters from
+        :type model: seisbench.models.WaveformModel
+        """
+        if not isinstance(model, sbm.WaveformModel):
+            raise TypeError
+        elif model.name != 'WaveformModel':
+            if model.sampling_rate is not None:
+                self.ref.update({'sampling_rate': model.sampling_rate})
+            if model.in_samples is not None:
+                self.ref.update({'npts': model.in_samples})
+            self.ref.update({'overlap': model._annotate_args['overlap'][1]})
+            self.model_name = model.name
+        else:
+            raise TypeError('seisbench.models.WaveformModel base class does not provide the necessary update information')
+
+    #################################
+    # PULSE POLYMORPHIC SUBROUTINES #
+    #################################
+
+    def _continue_iteration(self, stdin, iterno):
+        """_continue_iteration for WindowWyrm
+
+        unconditional pass - early stopping is handled in _unit_process
+
+        :param stdin: standard input
+        :type stdin: ayahos.core.stream.dictstream.DictStream
+        :param iterno: iteration number, unused
+        :type iterno: int
+        :return status: should iterations continue in pulse, always True
+        :rtype: bool
+        """        
+        status = True
         return status
+    
+    def _get_obj_from_input(self, stdin):
+        """_get_obj_from_input for WindowWyrm
 
-    # INHERIT PULSE FROM WYRM
+        obj is a view of stdin
+
+        :param stdin: standard input
+        :type stdin: ayahos.core.stream.dictstream.DictStream
+        :return: _description_
+        :rtype: _type_
+        """
+        if isinstance(stdin, DictStream):
+            obj = stdin
+            return obj
+        else:
+            self.logger.error('TypeError - stdin is not type DictStream')
+            raise TypeError
+    
+    def _unit_process(self, obj):
+        """_unit_process for WindowWyrm
+
+        Update the window_tracker with the contents of obj and then
+        generate one window for each instrument in obj that has a 'ready'
+        flag in window_tracker
+
+        Newly generated windows are appended to WindowWyrm.output
+
+        :param obj: input object from which windows are generated
+        :type obj: ayahos.core.stream.dictstream.DictStream
+        """        
+        nnew = 0
+        # Update window tracker
+        self.__update_window_tracker(obj)
+        # Conduct network-wide pulse
+        # Iterate across site-level dictionary entries
+        for site, site_dict in self.window_tracker.items():
+            # Iterate across inst-level dictionary entries
+            for inst, inst_dict in site_dict.items():
+                # skip the t0:UTCDateTime entry
+                if isinstance(inst_dict, dict):
+                    # Iterate across mod-level dictionary entries
+                    for mod, value in inst_dict.items():
+                        # If this instrument record is ready to produce a window
+                        if value['ready']:
+                            fnstring = f'{site}.{inst}?.{mod}'
+                            self.logger.info(f'generating window for {fnstring}')
+                            next_window_ti = value['ti']
+                            next_window_tf = next_window_ti + self.window_sec
+                            # Subset to all traces for this instrument
+                            _dst = obj.fnselect(fnstring)
+                            # Create copies of trimmed views of MLTrace(Buffers)
+                            traces = []
+                            # Iterate over tracebuffers
+                            for _mltb in _dst:
+                                # Create copies
+                                mlt = _mltb.trimmed_copy(
+                                    starttime = next_window_ti,
+                                    endtime = next_window_tf,
+                                    pad=True,
+                                    fill_value=None
+                                )
+                                # Update stats with the model name relevant to the windowing
+                                mlt.stats.model = self.model_name
+                                # Append mlt to traces
+                                traces.append(mlt)
+                            # Populate windowstream traces and metadata
+                            wst = WindowStream(
+                                traces = traces,
+                                header = {'reference_starttime': next_window_ti,
+                                          'reference_sampling_rate': self.ref['sampling_rate'],
+                                          'reference_npts': self.ref['npts']},
+                                ref_component=self.ref['component']
+                            )
+                            # Append windowstream to output
+                            self.output.append(wst)
+                            # Advance window start time in window_tracker
+                            self.window_tracker[site][inst][mod]['ti'] += self.advance_sec
+                            # Set ready flag to false for this site
+                            self.window_tracker[site][inst][mod].update({'ready': False})
+                            # Increment nnew
+                            nnew += 1
+        unit_out = nnew
+        return unit_out
+
+                        
+    def _capture_unit_out(self, unit_out):
+        """_capture_unit_out for WindowWyrm
+
+        data capture is handled in _unit_process
+
+        This method signals early stopping to pulse() if _unit_process
+        did not generate new windows (i.e., unit_out == 0)
+        
+        :param unit_out: number of new windows generated in _unit_process
+        :type unit_out: int
+        """        
+        if unit_out == 0:
+            break
 
 
-
-    def _update_window_tracker(self, dst):
+    def __update_window_tracker(self, dst):
         """
         PRIVATE METHOD
 
@@ -208,7 +328,10 @@ class WindowWyrm(Wyrm):
         :param dst: [wyrm.data.WyrmStream.WyrmStream] containing 
                         wyrm.data.mltrace.MLTrace type objects
         """
-        for mltr in dst.traces.values():
+        # Subset using fnfilter
+        fdst = dst.fnselect(self.fnfilter)
+        # Iterate across subset
+        for mltr in fdst.traces.values():
             if not isinstance(mltr, MLTrace):
                 raise TypeError('this build of WindowWyrm only works with wyrm.data.mltrace.MLTrace objects')
             # Get site, instrument, mod, and component codes from MLTrace
@@ -290,100 +413,10 @@ class WindowWyrm(Wyrm):
                             if fv >= self.ref['threshold']:
                                 self.window_tracker[site][inst][mod].update({'ready': True})
                         # Otherwise preserve dis-approval of window generation (ready = False) for now
-                                
 
-    def _sample_window(self, dst, site, inst, mod):
-        """
-        PRIVATE METHOD
-        """
-        nnew = 0
-        _ssv = self.window_tracker[site][inst][mod]
-        if _ssv['ready']:
-            # if self._timestamp:
-            #     start_entry = ['WindowWyrm','_sample_window','start',time.time()]
-            self.logger.info(f'generating window for {site}.{inst}?.{mod}')
-
-            next_window_ti = _ssv['ti']
-            next_window_tf = next_window_ti + self.window_sec
-            # Subset data view
-            _dst = dst.fnselect(f'{site}.{inst}?.{mod}')
-            # Copy/trim traces from view
-            traces = []
-            for _mltb in _dst.traces.values():
-                mlt = _mltb.trimmed_copy(starttime=next_window_ti,
-                                        endtime=next_window_tf,
-                                        pad=True,
-                                        fill_value=None)
-                mlt.stats.model = self.model_name
-                traces.append(mlt)
-            # Compose WindowStream copy
-            cst = WindowStream(traces=traces,
-                                    header={'reference_starttime': next_window_ti,
-                                            'reference_sampling_rate': self.ref['sampling_rate'],
-                                            'reference_npts': self.ref['npts'],
-                                            'aliases': self.aliases},
-                                    ref_component=self.ref['component'])
-            # if self._timestamp:
-            #     # TODO: Figure out why this hard reset is needed for stats.processing...
-            #     cst.stats.processing = []
-            #     cst.stats.processing.append(start_entry)
-            #     cst.stats.processing.append(['WindowWyrm','_sample_window','end',time.time()])
-            # Append to queue
-            self.output.append(cst.copy())
-            del cst
-            # Update window with an advance for this instrument
-            self.window_tracker[site][inst][mod]['ti'] += self.advance_sec
-            # Set ready flag to False for this new window (_update_window_tracker will handle re-readying)
-            self.window_tracker[site][inst][mod].update({'ready': False})
-            # Add to nneww
-            nnew += 1
-        return nnew
-    
-    def _reset(self, attr='window_tracker', safety_catch=True):
-        if safety_catch:
-            if attr in ['window_tracker','queue']:
-                answer = input(f'About to delete contents of WindowWyrm.{attr} | Proceed? [Y]/[n]')
-            elif attr == 'both':
-                answer = input('About to delete contents of WindowWyrm.window_tracker and WindowWyrm.queue | Proceed? [Y]/[n]')
-            if answer == 'Y':
-                proceed = True
-            else:
-                proceed = False
-        else:
-            proceed = True
-        if proceed:
-            if attr in ['window_tracker', 'both']:
-                self.window_tracker = {}
-                if safety_catch:
-                    print('WindowWyrm.window_tracker reset to empty dictionary')
-            if attr in ['queue','both']:
-                self.output = deque()
-                if safety_catch:
-                    print('WindowWyrm.queue reset to empty deque')
+        print('WindowWyrm.queue reset to empty deque')
 
             
-    def update_from_seisbench(self, model):
-        """
-        Helper method for (re)setting the window-defining attributes for this
-        WindowWyrm object from a seisbench.models.WaveformModel object:
-
-            self.model_name = model.name
-            self.ref['sampling_rate'] = model.sampling_rate
-            self.ref['npts'] = model.in_samples
-            self.ref['overlap'] = model._annotate_args['overlap'][1]
-
-        """
-        if not isinstance(model, sbm.WaveformModel):
-            raise TypeError
-        elif model.name != 'WaveformModel':
-            if model.sampling_rate is not None:
-                self.ref.update({'sampling_rate': model.sampling_rate})
-            if model.in_samples is not None:
-                self.ref.update({'npts': model.in_samples})
-            self.ref.update({'overlap': model._annotate_args['overlap'][1]})
-            self.model_name = model.name
-        else:
-            raise TypeError('seisbench.models.WaveformModel base class does not provide the necessary update information')
 
     def __repr__(self):
         """
@@ -424,6 +457,129 @@ class WindowWyrm(Wyrm):
             rstr += 'Nothing'
             
         return rstr
+
+
+        # if self.pulse_type == 'network':
+        #     new_window_counts = self.__networkwise_window_sampling(obj)
+        #     # Extra early stopping clause that passes to pulse()
+        #     if new_window_counts == 0:
+        #         break
+        # else:
+        #     raise NotImplementedError
+        #     # if self.pulse_type == 'site':
+        #     #     new_window_counts = self.__sitewise_window_sampling(obj)
+        #     # elif self.pulse_type == 'instrument':
+        #     #     new_window_counts = self.__instrumentwise_window_sampling(obj)
+        #     # nnew += new_window_counts
+
+
+        
+
+    # def __networkwise_window_sampling(self, obj):
+    #     nnew = 0
+    #     # Iterate across each site
+    #     for site, _sv in self.window_tracker.items():
+    #         # Iterate across each instrument at a site
+    #         for inst, _ssv in _sv.items():
+    #             # Skip non-instrument entries
+    #             if isinstance(_ssv, dict):
+    #                 # Iterate across model-weight codes (usually just one)
+    #                 for mod in _ssv.keys():
+    #                     # Sample a new window
+    #                     nnew += self.__sample_window(obj, site, inst, mod)
+    #     self.__update_window_tracker(obj)
+    #     return nnew
+
+
+    #     elif self.pulse_type == 'site':
+    #         raise NotImplementedError('under development')
+    #         # sites = list(self.window_tracker.keys())
+    #         # for site in sites:
+    #         #     if self.next_code is None:
+    #         #         self.next_code = site
+    #         #     if site == self.next_code:
+    #         #         pass
+    #         #     else:
+    #                 # continue
+    #     elif self.pulse_type == 'instrument':
+    #         raise NotImplementedError('under development')
+    
+        
+
+    # # INHERIT PULSE FROM WYRM
+
+
+
+    
+
+    # def __sample_window(self, dst, site, inst, mod):
+    #     """
+    #     PRIVATE METHOD
+    #     """
+    #     nnew = 0
+    #     _ssv = self.window_tracker[site][inst][mod]
+    #     if _ssv['ready']:
+    #         # if self._timestamp:
+    #         #     start_entry = ['WindowWyrm','_sample_window','start',time.time()]
+    #         self.logger.info(f'generating window for {site}.{inst}?.{mod}')
+
+    #         next_window_ti = _ssv['ti']
+    #         next_window_tf = next_window_ti + self.window_sec
+    #         # Subset data view
+    #         _dst = dst.fnselect(f'{site}.{inst}?.{mod}')
+    #         # Copy/trim traces from view
+    #         traces = []
+    #         for _mltb in _dst.traces.values():
+    #             mlt = _mltb.trimmed_copy(starttime=next_window_ti,
+    #                                     endtime=next_window_tf,
+    #                                     pad=True,
+    #                                     fill_value=None)
+    #             mlt.stats.model = self.model_name
+    #             traces.append(mlt)
+    #         # Compose WindowStream copy
+    #         cst = WindowStream(traces=traces,
+    #                                 header={'reference_starttime': next_window_ti,
+    #                                         'reference_sampling_rate': self.ref['sampling_rate'],
+    #                                         'reference_npts': self.ref['npts'],
+    #                                         'aliases': self.aliases},
+    #                                 ref_component=self.ref['component'])
+    #         # if self._timestamp:
+    #         #     # TODO: Figure out why this hard reset is needed for stats.processing...
+    #         #     cst.stats.processing = []
+    #         #     cst.stats.processing.append(start_entry)
+    #         #     cst.stats.processing.append(['WindowWyrm','_sample_window','end',time.time()])
+    #         # Append to queue
+    #         self.output.append(cst.copy())
+    #         del cst
+    #         # Update window with an advance for this instrument
+    #         self.window_tracker[site][inst][mod]['ti'] += self.advance_sec
+    #         # Set ready flag to False for this new window (_update_window_tracker will handle re-readying)
+    #         self.window_tracker[site][inst][mod].update({'ready': False})
+    #         # Add to nneww
+    #         nnew += 1
+    #     return nnew
+    
+    # def _reset(self, attr='window_tracker', safety_catch=True):
+    #     if safety_catch:
+    #         if attr in ['window_tracker','queue']:
+    #             answer = input(f'About to delete contents of WindowWyrm.{attr} | Proceed? [Y]/[n]')
+    #         elif attr == 'both':
+    #             answer = input('About to delete contents of WindowWyrm.window_tracker and WindowWyrm.queue | Proceed? [Y]/[n]')
+    #         if answer == 'Y':
+    #             proceed = True
+    #         else:
+    #             proceed = False
+    #     else:
+    #         proceed = True
+    #     if proceed:
+    #         if attr in ['window_tracker', 'both']:
+    #             self.window_tracker = {}
+    #             if safety_catch:
+    #                 print('WindowWyrm.window_tracker reset to empty dictionary')
+    #         if attr in ['queue','both']:
+    #             self.output = deque()
+    #             if safety_catch:
+    #         
     
     # def __str__(self):
     #     """

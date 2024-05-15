@@ -18,7 +18,6 @@
     
 """
 
-import time
 from collections import deque
 import pandas as pd
 from ayahos.core.wyrms.wyrm import Wyrm
@@ -44,8 +43,6 @@ class MethodWyrm(Wyrm):
         pkwargs={'type': 'bandpass',
                  'freqmin': 1,
                  'freqmax': 45},
-        timestamp = False,
-        timestamp_method=None,
         max_pulse_size=10000,
         ):
         """
@@ -89,8 +86,8 @@ class MethodWyrm(Wyrm):
         self.queue = deque()
 
 
-    def core_process(self, x, i_):
-        """core_process for MethodWyrm
+    def unit_process(self, x, i_):
+        """unit_process for MethodWyrm
 
         Check if the input deque and iteration number
         meet iteration continuation criteria inherited from Wyrm
@@ -107,17 +104,23 @@ class MethodWyrm(Wyrm):
         :type i_: int
         :return: status - should iteration continue?
         :rtype: bool
-        """    
-        if super()._continue_iteration(x, i_):
+        """ 
+        # Use inherited Wyrm()._continue_iteration() check to see if input deque has unassessed items
+        status = super()._continue_iteration(x, i_)
+        # if there are items in `x` to assess
+        if status:
+            # Detach the next item
             _x = x.popleft()
+            # Check that it matches pclass
             if isinstance(_x, self.pclass):
+                # Run inplace modification
                 getattr(_x, self.pmethod)(**self.pkwargs)
+                # Attach modified object to output
                 self.output.append(_x)
+            # If the object isnt type pclass, re-attach it to x
             else:
                 x.append(_x)
-            status = True
-        else:
-            status = False
+        # Return status for use in Wyrm().pulse() iteration continuation assessment
         return status
 
     
@@ -128,48 +131,6 @@ class MethodWyrm(Wyrm):
         return rstr
 
 
-class OutputWyrm(MethodWyrm):
-    def __init__(
-            self,
-            pclass=DictStream,
-            oclass=pd.DataFrame,
-            pmethod='prediction_trigger_report',
-            pkwargs={'thresh': 0.1, 'blinding': (500,500),
-                     'stats_pad': 20,
-                     'extra_quantiles':[0.025, 0.159, 0.25, 0.75, 0.841, 0.975]},
-            max_pulse_size=10000,
-            debug=False):
-        super().__init__(pclass=pclass, pmethod=pmethod, pkwargs=pkwargs, max_pulse_size=max_pulse_size, debug=debug)
-        if not isinstance(oclass, type):
-            raise ValueError
-        else:
-            self.oclass = oclass
-    
-    def core_process(self, x, i_):
-        """core_process for OutputWyrm
-
-        This method appends the stdout of the pclass.pmethod(**kwargs) to
-        the output attribute, as opposed to the core_process
-
-        :param x: input collection of objects
-        :type x: collections.deque of pclass-type objects
-        :param i_: iteration number
-        :type i_: int
-        :return status: should process continue to next iteration?
-        :rtype: bool
-        """        
-        if super()._continue_iteration(x, i_):
-            _x = x.popleft()
-            if isinstance(_x, self.pclass):
-                _y = getattr(_x, self.pmethod)(**self.pkwargs)
-                self.output.append(_y)
-            else:
-                x.append(_x)
-            status = True
-        else:
-            status = False
-        return status
-    
 
 
     # def pulse(self, x):

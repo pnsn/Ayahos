@@ -1,6 +1,8 @@
+import seisbench.models as sbm
 from ayahos.core.wyrms.heartwyrm import HeartWyrm
 from ayahos.core.wyrms.ringwyrm import RingWyrm
 from ayahos.core.wyrms.bufferwyrm import BufferWyrm
+from ayahos.core.wyrms.windowwyrm import WindowWyrm
 import logging
 
 logging.basicConfig(level=logging.INFO,
@@ -22,9 +24,13 @@ iringwyrm = RingWyrm(module = heartwyrm.module,
                      max_pulse_size=1000)
 
 buffwyrm = BufferWyrm()
-# windwyrm_EWT = WindowWyrm()
+windwyrm = WindowWyrm(model_name="PhaseNet",
+                          reference_npts=3001,
+                          reference_overlap=500)
 # we
 # string together input and output rings in heartwyrm
-heartwyrm.update({'iring': iringwyrm, 'buffer': buffwyrm})
+heartwyrm.update({'iring': iringwyrm,
+                  'buffer': buffwyrm,
+                  'window': windwyrm})
 # Run module
 heartwyrm.run()

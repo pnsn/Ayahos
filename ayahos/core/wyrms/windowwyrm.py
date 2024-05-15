@@ -419,7 +419,6 @@ class WindowWyrm(Wyrm):
                                 self.window_tracker[site][inst][mod].update({'ready': True})
                         # Otherwise preserve dis-approval of window generation (ready = False) for now
 
-        print('WindowWyrm.queue reset to empty deque')
 
             
 
@@ -584,7 +583,8 @@ class WindowWyrm(Wyrm):
     #         if attr in ['queue','both']:
     #             self.output = deque()
     #             if safety_catch:
-    #         
+    #   print('WindowWyrm.queue reset to empty deque')
+
     
     # def __str__(self):
     #     """

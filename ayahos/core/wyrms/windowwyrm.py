@@ -156,7 +156,7 @@ class WindowWyrm(Wyrm):
         # Create dict for holding instrument window starttime values
         self.window_tracker = {}
 
-    def core_process(self, x, i_):
+    def unit_process(self, x, i_):
         nnew = 0
         if self.pulse_type == 'network':
             # Iterate across each site
@@ -299,8 +299,10 @@ class WindowWyrm(Wyrm):
         nnew = 0
         _ssv = self.window_tracker[site][inst][mod]
         if _ssv['ready']:
-            if self._timestamp:
-                start_entry = ['WindowWyrm','_sample_window','start',time.time()]
+            # if self._timestamp:
+            #     start_entry = ['WindowWyrm','_sample_window','start',time.time()]
+            self.logger.info(f'generating window for {site}.{inst}?.{mod}')
+
             next_window_ti = _ssv['ti']
             next_window_tf = next_window_ti + self.window_sec
             # Subset data view
@@ -321,11 +323,11 @@ class WindowWyrm(Wyrm):
                                             'reference_npts': self.ref['npts'],
                                             'aliases': self.aliases},
                                     ref_component=self.ref['component'])
-            if self._timestamp:
-                # TODO: Figure out why this hard reset is needed for stats.processing...
-                cst.stats.processing = []
-                cst.stats.processing.append(start_entry)
-                cst.stats.processing.append(['WindowWyrm','_sample_window','end',time.time()])
+            # if self._timestamp:
+            #     # TODO: Figure out why this hard reset is needed for stats.processing...
+            #     cst.stats.processing = []
+            #     cst.stats.processing.append(start_entry)
+            #     cst.stats.processing.append(['WindowWyrm','_sample_window','end',time.time()])
             # Append to queue
             self.output.append(cst.copy())
             del cst

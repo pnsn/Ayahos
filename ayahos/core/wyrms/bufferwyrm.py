@@ -11,7 +11,6 @@
 
 import logging
 from numpy import isfinite
-from collections import deque
 from ayahos.core.wyrms.wyrm import Wyrm, add_class_name_to_docstring
 from ayahos.core.trace.mltrace import MLTrace
 from ayahos.core.trace.mltracebuffer import MLTraceBuffer
@@ -134,21 +133,30 @@ class BufferWyrm(Wyrm):
                 
     # Direct Inheritance from Wyrm
     # def _continue_iteration - input is non-empty deque and iterno + 1 < len(stdin)
-
+    def pulse(self, stdin):
+        stdout, nproc = super().pulse(stdin)
+        if nproc > 0:
+        #     Logger.info('nothing new buffered')
+        # else:
+            Logger.info(f'{nproc} tracebuff2 messages buffered')
+        return stdout, nproc
 
     def _get_obj_from_input(self, stdin):
         """_get_obj_from_input for BufferWyrm
 
-        :param stdin: _description_
-        :type stdin: _type_
-        :return: _description_
-        :rtype: _type_
+        :param stdin: collection of MLTrace-like objects
+        :type stdin: collections.deque of ayahos.core.trace.mltrace.MLTrace or list-like thereof
+        :return obj: input object for _unit_process
+        :rtype obj: list of ayahos.core.trace.mltrace.MLTrace
         """        
         obj = stdin.popleft()
-        if not isinstance(obj, (MLTrace, DictStream)):
-            self.logger.critical(f'type mismatch {type(obj)} != MLTrace or DictStream')
-        elif isinstance(obj, MLTrace):
+        if isinstance(obj, MLTrace):
             obj = [obj]
+        # if listlike, convert to list
+        elif all(isinstance(x, MLTrace) for x in obj):
+            obj = [x for x in obj]
+        else:
+            raise TypeError('stdin is not type MLTrace or a list-like thereof')
         return obj
 
     def _unit_process(self, obj):

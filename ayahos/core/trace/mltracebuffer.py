@@ -11,6 +11,9 @@
         Additionally, this class provides some additional safety catch options to guard against
         appending data with spurious timing information and functionalities to use the machine learning
         "stack" style appends used on predicted values.
+
+TODO:   Stiffen **add_kwargs ingestion to check against __add__ inputs
+        Remove option to pass other **kwargs to MLTraceBuffer().append()
 """
 import numpy as np
 from obspy import Trace

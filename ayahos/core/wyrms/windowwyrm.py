@@ -17,6 +17,9 @@
                         input: WyrmStream holding (ML)Trace(Buffer) objects
                         output: deque holding WindowStream objects
 
+TODO: For future releases
+ - 
+
 """
 
 import time
@@ -200,7 +203,7 @@ class WindowWyrm(Wyrm):
     # PULSE POLYMORPHIC SUBROUTINES #
     #################################
 
-    def _continue_iteration(self, stdin, iterno):
+    def _continue_iteration(self, stdin, stdin_measure, iterno):
         """_continue_iteration for WindowWyrm
 
         unconditional pass - early stopping is handled in _unit_process

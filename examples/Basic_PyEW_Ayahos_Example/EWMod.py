@@ -66,7 +66,7 @@ mwyrm_norm = MethodWyrm(
 mldetwyrm = MLDetectWyrm(
     model=sbm.PhaseNet(),
     weight_names=['instance','stead'],
-    devicetype='mps',
+    devicetype='cpu',
     compiled=False,
     max_pulse_size=256
 )

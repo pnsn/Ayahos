@@ -196,7 +196,7 @@ class MLTraceBuffer(MLTrace):
                 if other.stats.starttime - self.max_length < self.stats.endtime:
                     # Conduct future append (always unrestricted)
                     self._slide_buffer(other.stats.endtime, reference_type='endtime')
-                    self.__add__(self, other, **self.add_kwargs)
+                    self.__add__(other, **self.add_kwargs)
                     # self.enforce_max_length(reference='endtime')
                 # If other starts later that self end + max_length - big gap
                 else:

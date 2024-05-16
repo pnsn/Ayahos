@@ -1,5 +1,9 @@
 # Python.gitignore from https://github.com/github/gitignore
 # Accessed 9 May 2024 under Creative Commons 1.0 Universal License
+
+# Local options
+examples/Ayahos_Pick/pnsn_params
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

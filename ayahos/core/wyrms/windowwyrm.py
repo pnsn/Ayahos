@@ -22,7 +22,7 @@ TODO: For future releases
 
 """
 
-import time
+import time, logging
 import seisbench.models as sbm
 from collections import deque
 from ayahos.core.trace.mltrace import MLTrace
@@ -31,6 +31,7 @@ from ayahos.core.stream.dictstream import DictStream
 from ayahos.core.stream.windowstream import WindowStream
 from ayahos.util.input import bounded_floatlike, bounded_intlike
 
+Logger = logging.getLogger(__name__)
 
 class WindowWyrm(Wyrm):
     """
@@ -203,6 +204,10 @@ class WindowWyrm(Wyrm):
     # PULSE POLYMORPHIC SUBROUTINES #
     #################################
 
+    def pulse(self, stdin):
+        stdout, nproc = super().pulse(stdin)
+        return stdout, nproc
+
     def _continue_iteration(self, stdin, stdin_measure, iterno):
         """_continue_iteration for WindowWyrm
 
@@ -232,7 +237,7 @@ class WindowWyrm(Wyrm):
             obj = stdin
             return obj
         else:
-            self.logger.error('TypeError - stdin is not type DictStream')
+            Logger.error('TypeError - stdin is not type DictStream')
             raise TypeError
     
     def _unit_process(self, obj):
@@ -262,7 +267,7 @@ class WindowWyrm(Wyrm):
                         # If this instrument record is ready to produce a window
                         if value['ready']:
                             fnstring = f'{site}.{inst}?.{mod}'
-                            self.logger.info(f'generating window for {fnstring}')
+                            Logger.info(f'generating window for {fnstring}')
                             next_window_ti = value['ti']
                             next_window_tf = next_window_ti + self.window_sec
                             # Subset to all traces for this instrument
@@ -528,7 +533,7 @@ class WindowWyrm(Wyrm):
     #     if _ssv['ready']:
     #         # if self._timestamp:
     #         #     start_entry = ['WindowWyrm','_sample_window','start',time.time()]
-    #         self.logger.info(f'generating window for {site}.{inst}?.{mod}')
+    #         Logger.info(f'generating window for {site}.{inst}?.{mod}')
 
     #         next_window_ti = _ssv['ti']
     #         next_window_tf = next_window_ti + self.window_sec

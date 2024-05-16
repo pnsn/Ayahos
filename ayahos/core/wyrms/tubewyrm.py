@@ -17,9 +17,12 @@
               y = wyrmN.pulse(...pulse(wyrm1.pulse(wyrm0.pulse(x))))
 
 """
+import logging
 import numpy as np
 from collections import deque
 from ayahos.core.wyrms.wyrm import Wyrm, add_class_name_to_docstring
+
+Logger = logging.getLogger(__name__)
 
 # @add_class_name_to_docstring
 class TubeWyrm(Wyrm):
@@ -216,6 +219,10 @@ class TubeWyrm(Wyrm):
     #############################
     # PULSE POLYMORPHIC METHODS #
     #############################
+    def pulse(self, stdin):
+        stdout, nproc = super().pulse(stdin)
+        return stdout, nproc
+    
     def _continue_iteration(self, stdin, stdin_measure, iterno):
         """ _continue_iteration for TubeWyrm
         POLYMORPHIC
@@ -266,10 +273,13 @@ class TubeWyrm(Wyrm):
         """        
         for j_, (name, wyrm_) in enumerate(self.wyrm_dict.items()):
             if j_ == 0:
-                y = wyrm_.pulse(obj)
-                self.logger.debug(f'{name}.output length: {len(y)}')
+                y, nproc = wyrm_.pulse(obj)
+                if nproc > 0:
+                    Logger.debug(f'{name}.output length: {nproc}')
             else:
-                y = wyrm_.pulse(y)
+                y, nproc = wyrm_.pulse(y)
+                if nproc > 0:
+                    Logger.debug(f'{name}.output length: {nproc}')
         unit_out = True
         return unit_out
 
@@ -312,7 +322,7 @@ class TubeWyrm(Wyrm):
     #     for j_, (name, wyrm_) in enumerate(self.wyrm_dict.items()):
     #         if j_ == 0:
     #             y = wyrm_.pulse(x)
-    #             self.logger.debug(f'{name}.output length {len}')
+    #             Logger.debug(f'{name}.output length {len}')
     #         else:
     #             y = wyrm_.pulse(y)
     #     return True

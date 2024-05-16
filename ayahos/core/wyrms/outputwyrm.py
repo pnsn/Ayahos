@@ -17,10 +17,12 @@
                         output: deque of objects
     
 """
-
+import logging
 import pandas as pd
 from ayahos.core.wyrms.methodwyrm import MethodWyrm, add_class_name_to_docstring
 from ayahos.core.stream.dictstream import DictStream
+
+Logger = logging.getLogger(__name__)
 
 ###################################################################################
 # METHOD WYRM CLASS DEFINITION - FOR EXECUTING CLASS METHODS IN A PULSED MANNER ###
@@ -105,7 +107,7 @@ class OutputWyrm(MethodWyrm):
             status = super()._capture_unit_out(unit_out)
             return status
         else:
-            self.logger.critical(f'unit_out type mismatch {self.oclass} != {type(unit_out)}')
+            Logger.critical(f'unit_out type mismatch {self.oclass} != {type(unit_out)}')
             raise TypeError
         
 

@@ -17,7 +17,7 @@
                         output: deque of objects
     
 """
-
+import logging
 from collections import deque
 import pandas as pd
 from ayahos.core.wyrms.wyrm import Wyrm, add_class_name_to_docstring
@@ -27,6 +27,8 @@ from ayahos.core.stream.windowstream import WindowStream
 ###################################################################################
 # METHOD WYRM CLASS DEFINITION - FOR EXECUTING CLASS METHODS IN A PULSED MANNER ###
 ###################################################################################
+
+Logger = logging.getLogger(__name__)
 
 # @add_class_name_to_docstring
 class MethodWyrm(Wyrm):
@@ -97,7 +99,7 @@ class MethodWyrm(Wyrm):
         if isinstance(obj, self.pclass):
             return obj
         else:
-            self.logger.critical(f'object popped from stdin mismatch {self.pclass} != {type(obj)}')
+            Logger.critical(f'object popped from stdin mismatch {self.pclass} != {type(obj)}')
             raise TypeError
         
     def _unit_process(self, obj):

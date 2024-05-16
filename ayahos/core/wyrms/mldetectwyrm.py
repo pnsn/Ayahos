@@ -16,7 +16,7 @@
                         output: deque of MLTrace objects
 """
 
-import torch, copy
+import torch, copy, logging
 import numpy as np
 import seisbench.models as sbm
 from collections import deque
@@ -25,7 +25,7 @@ from ayahos.core.stream.dictstream import DictStream
 from ayahos.core.stream.windowstream import WindowStream
 from ayahos.core.wyrms.wyrm import Wyrm, add_class_name_to_docstring
 
-
+Logger = logging.getLogger(__name__)
 ###################################################################################
 # MLDETECT WYRM CLASS DEFINITION - FOR BATCHED PREDICTION IN A PULSED MANNER ####
 ###################################################################################
@@ -149,10 +149,10 @@ class MLDetectWyrm(Wyrm):
 
         self.cmods = {}
         for wname in self.weight_names:
-            self.logger.debug(f'Loading {self.model.name} - {wname}')
+            Logger.debug(f'Loading {self.model.name} - {wname}')
             cmod = self.model.from_pretrained(wname)
             if compiled:
-                self.logger.debug(f'...pre compiling model on device type "{self.device.type}"')
+                Logger.debug(f'...pre compiling model on device type "{self.device.type}"')
                 cmod = torch.compile(cmod.to(self.device))
             else:
                 cmod = cmod.to(self.device)
@@ -214,7 +214,7 @@ class MLDetectWyrm(Wyrm):
             if status:
                 _x = stdin.popleft()
                 if not isinstance(_x, WindowStream):
-                    self.logger.critical('type mismatch')
+                    Logger.critical('type mismatch')
                     raise TypeError
                 # Check if windowstream is ready for conversion to torch.Tensor
                 if _x.ready_to_burn(self.model):
@@ -231,7 +231,7 @@ class MLDetectWyrm(Wyrm):
                     batch_fold.append(_fold)
                     batch_meta.append(_meta)
                 else:
-                    self.logger.error(f'WindowStream for {_x.stats.common_id} is not sufficiently processed - skipping')
+                    Logger.error(f'WindowStream for {_x.stats.common_id} is not sufficiently processed - skipping')
                     self.junk_drawer.append(_x)
                     pass
             # If we've run out of objects to assess, stop creating batch
@@ -256,7 +256,7 @@ class MLDetectWyrm(Wyrm):
         batch_data, batch_fold, batch_meta = obj
         # If we have at least one tensor to predict on, proceed
         if len(batch_data) > 0:
-            self.logger.info(f'prediction on batch of {len(batch_data)} windows')
+            Logger.info(f'prediction on batch of {len(batch_data)} windows')
             # Convert list of 2d numpy.ndarrays into a 3d numpy.ndarray
             batch_data = np.array(batch_data)
             # Catch case where we have a single window (add the window axis)
@@ -344,7 +344,7 @@ class MLDetectWyrm(Wyrm):
             else:
                 detached_batch_preds = batch_preds.detach().numpy()
         else:
-            self.logger.critical(f'model "{self.model.name}" prediction initial unpacking not yet implemented')
+            Logger.critical(f'model "{self.model.name}" prediction initial unpacking not yet implemented')
             raise NotImplementedError
         # breakpoint()
         # # Check if output predictions are presented as some list-like of torch.Tensors

@@ -12,15 +12,11 @@
     CloneWyrm - a submodule class for producing cloned deques of objects in
                 a pulsed manner.
 """
-import time, threading, copy
-#import PyEW
-import numpy as np
-import pandas as pd
+import copy, logging
 from collections import deque
 from ayahos.core.wyrms.wyrm import Wyrm
-from ayahos.core.trace.mltrace import MLTrace
-from ayahos.core.trace.mltracebuffer import MLTraceBuffer
-from ayahos.core.stream.dictstream import WyrmStream
+
+Logger = logging.getLogger(__name__)
 
 class ForkWyrm(Wyrm):
     """

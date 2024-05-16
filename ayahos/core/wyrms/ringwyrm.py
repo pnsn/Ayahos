@@ -27,6 +27,7 @@ from collections import deque
 from ayahos.core.wyrms.wyrm import Wyrm, add_class_name_to_docstring
 from ayahos.util.pyew import wave2mltrace, trace2wave
 
+Logger = logging.getLogger(__name__)
 
 # @add_class_name_to_docstring
 class RingWyrm(Wyrm):   
@@ -105,7 +106,7 @@ class RingWyrm(Wyrm):
                 self.msg_type = 19
         self._core_args = [self.conn_id, self.msg_type]
 
-        self.logger.info('RingWyrm method {0} for message type {1}'.format(self.pulse_method, self.msg_type))
+        Logger.info('RingWyrm method {0} for message type {1}'.format(self.pulse_method, self.msg_type))
 
     def _is_empty_message(self, msg):
         """based on the input msg, determine if the `get` method returned an empty message

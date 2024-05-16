@@ -10,7 +10,7 @@ import pandas as pd
 #     else:
 #         os.system(f'export EW_HOME={Earthworm_Root}')
 
-
+Logger = logging.getLogger(__name__)
 ###################################################################################
 # HEART WYRM CLASS DEFINITION #####################################################
 ###################################################################################
@@ -70,7 +70,7 @@ class HeartWyrm(TubeWyrm):
                 os.environ['EW_HOME']
             # If not, exit on code 1
             except KeyError:
-                self.logger.critical('Environmental varible $EW_HOME not mapped - cannot proceed')
+                Logger.critical('Environmental varible $EW_HOME not mapped - cannot proceed')
                 sys.exit(1)
         else:
             os.system(f'source {ew_env_file}')
@@ -78,7 +78,7 @@ class HeartWyrm(TubeWyrm):
                 os.environ['EW_HOME']
             # If not, exit on code 1
             except KeyError:
-                self.logger.critical(f'Environmental varible $EW_HOME not mapped with environment {ew_home}')
+                Logger.critical(f'Environmental varible $EW_HOME not mapped with environment {ew_home}')
                 sys.exit(1)      
 
         # Compatability check for default_ring_id          
@@ -134,7 +134,7 @@ class HeartWyrm(TubeWyrm):
                     if _k not in self.connections.keys():
                         self.add_connection(_k, _v)
                     else:
-                        self.logger.critical(f'Ring Name {_k} already assigned')
+                        Logger.critical(f'Ring Name {_k} already assigned')
                         sys.exit(1)
         # Allow the module to run when self.run is next called
         self.runs = True
@@ -164,7 +164,7 @@ class HeartWyrm(TubeWyrm):
             elif ans.lower().startswith("n"):
                 user_continue = False
             else:
-                self.logger.critical("Invalid input -> exiting")
+                Logger.critical("Invalid input -> exiting")
                 sys.exit(1)
         else:
             user_continue = True
@@ -174,18 +174,18 @@ class HeartWyrm(TubeWyrm):
                 try:
                     self.module = PyEW.EWModule(**self.module_init_kwargs)
                 except RuntimeError:
-                    self.logger.error("HeartWyrm: There is already a EWModule running!")
+                    Logger.error("HeartWyrm: There is already a EWModule running!")
             elif isinstance(self.module, PyEW.EWModule):
-                self.logger.error("HeartWyrm: Module already assigned to self.module")
+                Logger.error("HeartWyrm: Module already assigned to self.module")
             else:
-                self.logger.critical(
+                Logger.critical(
                     f"HeartWyrm.module is type {type(self.module)}\
                      incompatable!!!"
                 )
                 sys.exit(1)
             self.add_connection('DEFAULT', self.module_init_kwargs['def_ring'])
         else:
-            self.logger.critical("User canceled module initialization -> exiting politely")
+            Logger.critical("User canceled module initialization -> exiting politely")
             sys.exit(0)
 
     def add_connection(self, name, ring_id):
@@ -256,20 +256,20 @@ class HeartWyrm(TubeWyrm):
         :param stdin: standard input for the pulse() method of the first wyrm in HeartWyrm.wyrm_dict, default None
         :type stdin: varies, optional
         """
-        self.logger.critical("Starting Module Operation")        
+        Logger.critical("Starting Module Operation")        
         while self.runs:
-            self.logger.debug('running main pulse')
-            stdout = super().pulse(stdin)
+            Logger.debug('running main pulse')
+            stdout, nproc = super().pulse(stdin)
             if self.module.mod_sta() is False:
                 break
         # Gracefully shut down
         self.module.goodbye()
         # Note shutdown in logging
-        self.logger.critical("Shutting Down Module")     
+        Logger.critical("Shutting Down Module")     
 
     def pulse(self):
-        self.logger.error("pulse() method disabled for ayahos.core.wyrms.heartwyrm.Heartwyrm")
-        self.logger.error("Use HeartWyrm.run() to start module operation")
+        Logger.error("pulse() method disabled for ayahos.core.wyrms.heartwyrm.Heartwyrm")
+        Logger.error("Use HeartWyrm.run() to start module operation")
 
     # def run(self):
     #     """

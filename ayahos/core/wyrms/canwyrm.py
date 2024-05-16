@@ -10,11 +10,10 @@
     CanWyrm - 
 
 """
-from copy import deepcopy
-from collections import deque
-from ayahos.core.wyrms.wyrm import Wyrm
+import logging
 from ayahos.core.wyrms.tubewyrm import TubeWyrm
 
+Logger = logging.getLogger(__name__)
 
 class CanWyrm(TubeWyrm):
     """CanWyrm - child class of TubeWyrm - grandchild class of Wyrm
@@ -102,8 +101,8 @@ class CanWyrm(TubeWyrm):
         :type i_: _type_
         """
         for name, wyrm_ in self.wyrm_dict.items():
-            wyrm_.pulse(obj)
-            self.logger.debug(f'{name}.output length: {len()}')
+            y, nproc = wyrm_.pulse(obj)
+            Logger.debug(f'{name}.output length: {nproc}')
         
         unit_out = True
         return unit_out

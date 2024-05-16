@@ -117,6 +117,13 @@ source </path/to/your/ew_env.bash>
 pip install git+https://github.com/Boritech-Solutions/PyEarthworm
 ```
 
+## Adding Visualization Tools for `class DictStream` (For Experienced Users)  
+Ayahos includes data visualization methods for the `DictStream` class that use elements of the [Pyrocko](https://pyrocko.org) project, namely `snuffler`. To add these tools to the environment described above, install the Pyrocko library following their instructions [here](https://pyrocko.org/docs/current/install/). These functionalities are not required for typical module operation with Ayahos, but users may find them handy.  
+
+```
+conda install -c pyrocko pyrocko
+```
+
 # Documentation (Work In Progress)  
 Sphinx documentation in ReadTheDocs formatting is under construction - stay tuned!  
 Resource: https://sphinx-rtd-tutorial.readthedocs.io/en/latest/  
@@ -137,13 +144,14 @@ Nathan T. Stevens
 email: ntsteven (at) uw.edu  
 org: Pacific Northwest Seismic Network
 
-## Key Project Dependencies & Resources
-`Earthworm`: http://www.earthwormcentral.org  
-`NumPy`: https://numpy.org  
-`ObsPy`: https://docs.obspy.org  
-`SeisBench`: https://github.com/seisbench/seisbench  
-`PyEarthworm`: https://github.com/Boritech-Solutions/PyEarthworm; https://github.com/Fran89/PyEarthworm_Workshop
-
+## Project Dependencies & Resources
+[`Earthworm`](http://www.earthwormcentral.org)  
+[`NumPy`](https://numpy.org)  
+[`ObsPy`](https://docs.obspy.org)  
+[`PyEarthworm`](https://github.com/Boritech-Solutions/PyEarthworm)  
+[`PyEarthworm Workshop`](https://github.com/Fran89/PyEarthworm_Workshop)  
+[`Pyrocko`](https://pyrocko.org)  
+[`SeisBench`](https://github.com/seisbench/seisbench)  
 
 ## Branching Plan/Development Notes
 

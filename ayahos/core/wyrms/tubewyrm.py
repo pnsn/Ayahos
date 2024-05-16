@@ -216,7 +216,7 @@ class TubeWyrm(Wyrm):
     #############################
     # PULSE POLYMORPHIC METHODS #
     #############################
-    def _continue_iteration(self, stdin, iterno):
+    def _continue_iteration(self, stdin, stdin_measure, iterno):
         """ _continue_iteration for TubeWyrm
         POLYMORPHIC
 

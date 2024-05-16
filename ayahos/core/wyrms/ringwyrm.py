@@ -125,7 +125,7 @@ class RingWyrm(Wyrm):
     # POLYMORPHIC METHODS FOR PULSE #
     #################################
 
-    def _continue_iteration(self, stdin, iterno):
+    def _continue_iteration(self, stdin, stdin_measure, iterno):
         """_continue_iteration for RingWyrm
 
         For "put" pulse_method, use Wyrm's _continue_iteration() inherited method
@@ -146,7 +146,7 @@ class RingWyrm(Wyrm):
         # If passing messages from deque to ring, check if there are messages to pass
         if 'put' in self.pulse_method:
             # Use Wyrm._continue_iteration() method
-            status = super()._continue_iteration(stdin, iterno)
+            status = super()._continue_iteration(stdin, stdin_measure, iterno)
         # If passing messages from ring to deque, default to True
         elif 'get' in self.pulse_method:
             status = True

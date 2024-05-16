@@ -102,9 +102,10 @@ class Wyrm(object):
         """ 
         # Iterate across 
         self.logger.debug(f'{self.__class__.__name__} pulse firing')
+        stdin_measure = self._measure_stdin(stdin)
         for iterno in range(self.max_pulse_size):
             # Check if iterations should continue
-            status1 = self._continue_iteration(stdin, iterno)
+            status1 = self._continue_iteration(stdin, stdin_measure, iterno)
             # If iterations should continue
             if status1:
                 # get single object for unit_process
@@ -126,7 +127,21 @@ class Wyrm(object):
         stdout = self.output
         return stdout
 
-    def _continue_iteration(self, stdin, iterno):
+    def _measure_stdin(self, stdin):
+        """reference measurement for stdin
+
+        :param stdin: standard input
+        :type stdin: varies, deque here
+        :return stdin_measure: representative measure of stdin
+        :rtype: int-like
+        """        
+        if stdin is None:
+            stdin_measure = self.max_pulse_size
+        else:
+            stdin_measure = len(stdin)
+        return stdin_measure
+
+    def _continue_iteration(self, stdin, stdin_measure, iterno):
         """Iteration continuation criteria for {class_name_camel}
         POLYMORPHIC
 
@@ -142,15 +157,14 @@ class Wyrm(object):
         :return status: continue to next iteration?
         :rtype status: bool
         """
+        status = False
+        # if stdin is deque
         if isinstance(stdin, deque):
-            if len(stdin) == 0:
-                status = False
-            elif iterno + 1 > len(stdin):
-                status = False
-            else:
-                status = True
-        else:
-            status = False
+            # and stdin is non-empty
+            if len(stdin) > 0:
+                # and iterno +1 is l.e. length of stdin
+                if iterno + 1 <= stdin_measure:
+                    status = True
         return status
     
     def _get_obj_from_input(self, stdin):

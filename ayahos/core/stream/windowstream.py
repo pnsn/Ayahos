@@ -458,6 +458,8 @@ class WindowStream(DictStream):
                                 with trace component codes (columns) and 
                                 attribute names (index)
         :type mode: str
+        :param sample_tol: fraction of a sample used for timing mismatch tolerance, default is 0.1
+        :type sample_tol: float
         :return status: [bool] - for mode='summary'
                         [dict] - for mode='trace' or 'attribute'
                         [DataFrame] - for mode='full'
@@ -489,6 +491,9 @@ class WindowStream(DictStream):
         for _tr in self.traces.values():
             line = []
             for _k, _v in ref.items():
+                # if _k == 'starttime':
+                #     line.append(abs(getattr(_tr.stats,_k) - _v) <= sample_tol*ref['sampling_rate'])
+                # else:
                 line.append(getattr(_tr.stats,_k) == _v)
             line.append(not np.ma.is_masked(_tr.data))
             holder.append(line)
@@ -560,7 +565,7 @@ class WindowStream(DictStream):
                 breakpoint()
 
     
-    def sync_to_reference(self, fill_value=0., **kwargs):
+    def sync_to_reference(self, fill_value=0., sample_tol=0.05, **kwargs):
         """Use a combination of trim and interpolate functions to synchronize
         the sampling of traces contained in this WindowWyrm
 
@@ -573,7 +578,11 @@ class WindowStream(DictStream):
         :raises ValueError: _description_
         :return: _description_
         :rtype: _type_
-        """        
+        """ 
+        if not isinstance(sample_tol, float):
+            raise TypeError('sample_tol must be float')
+        elif not 0 <= sample_tol < 0.1:
+            raise ValueError('sample_tol must be a small float value \in [0, 0.1)')
         starttime = self.stats.reference_starttime
         if starttime is None:
             raise ValueError('reference_starttime must be specified in this WindowStream\'s `stats`')
@@ -593,9 +602,18 @@ class WindowStream(DictStream):
             for _tr in self:
                 _tr.sync_to_window(starttime=starttime, endtime=endtime, fill_value=fill_value, **kwargs)
 
-        # Extra sanity check
+        # Extra sanity check if timing is ever so slightly off
         if not self.check_windowing_status(mode='summary'):
-            breakpoint()
+            asy = self.check_windowing_status(mode='attribute')
+            # If it is just a starttime rounding error
+            if not asy['starttime'] and asy['sampling_rate'] and asy['npts'] and asy['mask_free']:
+                # Iterate across traces
+                for tr in self:
+                    # If misfit is \in (0, tol_sec], just reassign trace starttime as reference
+                    if 0 < abs(tr.stats.starttime - starttime) <= sample_tol/sampling_rate:
+                        tr.stats.starttime = starttime
+            else:
+                breakpoint()
 
         return self
 

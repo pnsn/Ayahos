@@ -33,7 +33,7 @@ class BufferWyrm(Wyrm):
             blinding=None,
             method=1,
             max_pulse_size=10000,
-            **append_kwargs):
+            **add_kwargs):
         """Initialize a BufferWyrm object
 
         :param buffer_key: MLTrace attribute to use for the DictStream keys, defaults to 'id'
@@ -62,6 +62,9 @@ class BufferWyrm(Wyrm):
         :type method: int or str, optional
         :param max_pulse_size: maximum number of items to pull from source deque (x) for a single .pulse(x) call for this BufferWyrm, defaults to 10000
         :type max_pulse_size: int, optional
+        :param **add_kwargs: key word argument collector to pass to MLTraceBuffer's initialization **kwargs that in turn pass to __add__
+                NOTE: add_kwargs with matching keys to pre-specified values will be ignored to prevent multiple call errors
+        :type **add_kwargs: kwargs
         :raises TypeError: _description_
         :raises TypeError: _description_
         :raises ValueError: _description_
@@ -98,16 +101,18 @@ class BufferWyrm(Wyrm):
             raise TypeError
         else:
             self.mltb_kwargs.update({'blinding': blinding})
-        # Create holder for add_kwargs to pass to 
-        self.append_kwargs = append_kwargs
+
         if method in [0,'dis','discard',
                           1,'int','interpolate',
                           2,'max','maximum',
                           3,'avg','average']:
-            self.append_kwargs.update({'method': method})
+            self.mltb_kwargs.update({'method': method})
         else:
             raise ValueError(f'method {method} not supported. See ayahos.trace.mltrace.MLTrace.__add__()')
-        
+
+        for _k, _v in add_kwargs:
+            if _k not in self.mltb_kwargs:
+                self.mltb_kwargs.update({_k: _v})                
 
 
     def add_new_buffer(self, other):
@@ -118,13 +123,12 @@ class BufferWyrm(Wyrm):
         """        
         if isinstance(other, MLTrace):
             if other.id not in self.output.traces.keys():
-                # Initialize an MLTraceBuffer Object
-                mltb = MLTraceBuffer(**self.mltb_kwargs,
-                                     **self.append_kwargs)
+                # Initialize an MLTraceBuffer Object with pre-specified append kwargs
+                mltb = MLTraceBuffer(**self.mltb_kwargs)
                 mltb.append(other)
                 self.output.extend(mltb)
     
-
+    #################################
     # PULSE POLYMORPHIC SUBROUTINES #
     #################################
                 
@@ -167,7 +171,10 @@ class BufferWyrm(Wyrm):
             if _key not in self.output.traces.keys():
                 self.add_new_buffer(_tr)
             else:
-                self.output[_key].append(_tr, **self.append_kwargs)
+                try:
+                    self.output[_key].append(_tr)
+                except TypeError:
+                    breakpoint()
         unit_out = None
         return unit_out
     

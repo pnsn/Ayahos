@@ -24,6 +24,8 @@ def add_class_name_to_docstring(cls):
                                                    class_name_upper=cls.__name__.upper())
     return cls
 
+Logger = logging.getLogger(__name__)
+
 # @add_class_name_to_docstring
 class Wyrm(object):
     """Fundamental base class template all other *Wyrm classes with the following
@@ -45,7 +47,6 @@ class Wyrm(object):
         :raises ValueError: for non-positive number argument for max_pulse_size
         :raises TypeError: for non-int-like or non-NoneType argument for max_pulse_size
         """
-        self.logger = logging.getLogger(__name__)
         # Logger.debug('Initializing a Wyrm object')
         # Compatability check for max_pulse_size
         if isinstance(max_pulse_size, (int, float)):
@@ -101,10 +102,11 @@ class Wyrm(object):
         :rtype stdout: collections.deque of objects
         """ 
         # Iterate across 
-        self.logger.debug(f'{self.__class__.__name__} pulse firing')
+        Logger.debug(f'{self.__class__.__name__} pulse firing')
         stdin_measure = self._measure_stdin(stdin)
+        nproc = 0
         for iterno in range(self.max_pulse_size):
-            # Check if iterations should continue
+            # Check if this iteration should proceed
             status1 = self._continue_iteration(stdin, stdin_measure, iterno)
             # If iterations should continue
             if status1:
@@ -112,7 +114,8 @@ class Wyrm(object):
                 obj = self._get_obj_from_input(stdin)
                 # Execute unit process
                 unit_out = self._unit_process(obj)
-                # Attach
+                nproc += 1
+                # Capture output and check if early stopping should occur at the end of this iteration
                 try:
                     status2 = self._capture_unit_out(unit_out)
                 except:
@@ -125,7 +128,7 @@ class Wyrm(object):
                 break
         # Get alias of self.output as stdout
         stdout = self.output
-        return stdout
+        return stdout, nproc
 
     def _measure_stdin(self, stdin):
         """reference measurement for stdin
@@ -185,7 +188,7 @@ class Wyrm(object):
             obj = stdin.popleft()
             return obj
         else:
-            self.logger.error(f'stdin object was incorrect type')
+            Logger.error(f'stdin object was incorrect type')
             raise TypeError
         
 

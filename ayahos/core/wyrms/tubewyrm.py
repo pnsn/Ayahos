@@ -16,6 +16,9 @@
 
               y = wyrmN.pulse(...pulse(wyrm1.pulse(wyrm0.pulse(x))))
 
+TODO: Turn status from _capture_unit_out into a representation of nproc
+    idea is to say "keep going" if the tubewyrm is conducting any processes
+
 """
 import logging
 import numpy as np
@@ -270,17 +273,24 @@ class TubeWyrm(Wyrm):
         :type obj: varies
         :return unit_out: standard unit output, fixed as None
         :rtype: None
-        """        
+        """ 
+        nproc = 0       
         for j_, (name, wyrm_) in enumerate(self.wyrm_dict.items()):
             if j_ == 0:
-                y, nproc = wyrm_.pulse(obj)
-                if nproc > 0:
+                y, inproc = wyrm_.pulse(obj)
+                if inproc > 0:
                     Logger.debug(f'{name}.output length: {nproc}')
             else:
-                y, nproc = wyrm_.pulse(y)
-                if nproc > 0:
+                y, inproc = wyrm_.pulse(y)
+                if inproc > 0:
                     Logger.debug(f'{name}.output length: {nproc}')
-        unit_out = True
+            nproc += inproc
+        # TODO: Placeholder unconditional True - eventually want to pass a True/False
+        # up the line to say if there should be early stopping
+        if nproc > 0:
+            unit_out = True
+        else:
+            unit_out = True
         return unit_out
 
     def _capture_unit_out(self, unit_out):

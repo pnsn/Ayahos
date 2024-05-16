@@ -248,18 +248,18 @@ class HeartWyrm(TubeWyrm):
         status = super().pulse(x)
         return status
 
-    def run(self, stdin=None):
+    def run(self, input=None):
         """
         Run the PyEW.EWModule housed by this HeartWyrm with the option
         of an initial input
 
-        :param stdin: standard input for the pulse() method of the first wyrm in HeartWyrm.wyrm_dict, default None
-        :type stdin: varies, optional
+        :param input: standard input for the pulse() method of the first wyrm in HeartWyrm.wyrm_dict, default None
+        :type input: varies, optional
         """
         Logger.critical("Starting Module Operation")        
         while self.runs:
             Logger.debug('running main pulse')
-            stdout, nproc = super().pulse(stdin)
+            output, nproc = super().pulse(input)
             if self.module.mod_sta() is False:
                 break
         # Gracefully shut down

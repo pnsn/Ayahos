@@ -138,7 +138,7 @@ class BufferWyrm(Wyrm):
         if nproc > 0:
         #     Logger.info('nothing new buffered')
         # else:
-            Logger.info(f'{nproc} tracebuff2 messages buffered')
+            Logger.info(f'{nproc} tracebuff2 messages appended to {len(self.output)} buffers')
         return stdout, nproc
 
     def _get_obj_from_input(self, stdin):

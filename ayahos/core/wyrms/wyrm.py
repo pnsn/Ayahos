@@ -84,7 +84,7 @@ class Wyrm(object):
         """
         return deepcopy(self)
 
-    def pulse(self, stdin):
+    def pulse(self, input):
         """
         Run up to max_pulse_size iterations of _unit_process()
         for ayahos.core.wyrms.{class_name_lower}.{class_name_camel}
@@ -93,25 +93,25 @@ class Wyrm(object):
             _continue_iteration: check if iteration should continue
             _get_obj_from_input: get input object for _unit_process
             _unit_process: run core process
-            _capture_stdout: attach _unit_process output to {class_name_camel}.output
+            _capture_output: attach _unit_process output to {class_name_camel}.output
 
-        :param stdin: standard input
-        :type stdin: collections.deque
+        :param input: standard input
+        :type input: collections.deque
             see ayahos.core.wyrms.wyrm.Wyrm._get_obj_from_input()
-        :return stdout: aliased access to {class_name_camel}.output
-        :rtype stdout: collections.deque of objects
+        :return output: aliased access to {class_name_camel}.output
+        :rtype output: collections.deque of objects
         """ 
         # Iterate across 
         Logger.debug(f'{self.__class__.__name__} pulse firing')
-        stdin_measure = self._measure_stdin(stdin)
+        input_measure = self._measure_input(input)
         nproc = 0
         for iterno in range(self.max_pulse_size):
             # Check if this iteration should proceed
-            status1 = self._continue_iteration(stdin, stdin_measure, iterno)
+            status1 = self._continue_iteration(input, input_measure, iterno)
             # If iterations should continue
             if status1:
                 # get single object for unit_process
-                obj = self._get_obj_from_input(stdin)
+                obj = self._get_obj_from_input(input)
                 # Execute unit process
                 unit_out = self._unit_process(obj)
                 nproc += 1
@@ -126,69 +126,69 @@ class Wyrm(object):
             else:
                 # end iterations
                 break
-        # Get alias of self.output as stdout
-        stdout = self.output
-        return stdout, nproc
+        # Get alias of self.output as output
+        output = self.output
+        return output, nproc
 
-    def _measure_stdin(self, stdin):
-        """reference measurement for stdin
+    def _measure_input(self, input):
+        """reference measurement for input
 
-        :param stdin: standard input
-        :type stdin: varies, deque here
-        :return stdin_measure: representative measure of stdin
+        :param input: standard input
+        :type input: varies, deque here
+        :return input_measure: representative measure of input
         :rtype: int-like
         """        
-        if stdin is None:
-            stdin_measure = self.max_pulse_size
+        if input is None:
+            input_measure = self.max_pulse_size
         else:
-            stdin_measure = len(stdin)
-        return stdin_measure
+            input_measure = len(input)
+        return input_measure
 
-    def _continue_iteration(self, stdin, stdin_measure, iterno):
+    def _continue_iteration(self, input, input_measure, iterno):
         """Iteration continuation criteria for {class_name_camel}
         POLYMORPHIC
 
         Criteria:
-         - stdin is type collections.deque
-         - len(stdin) > 0
-         - iterno + 1 <= len(stdin)
+         - input is type collections.deque
+         - len(input) > 0
+         - iterno + 1 <= len(input)
         
-        :param stdin: input data object collection
-        :type stdin: collections.deque
+        :param input: input data object collection
+        :type input: collections.deque
         :param iterno: iteration number
         :type iterno: int
         :return status: continue to next iteration?
         :rtype status: bool
         """
         status = False
-        # if stdin is deque
-        if isinstance(stdin, deque):
-            # and stdin is non-empty
-            if len(stdin) > 0:
-                # and iterno +1 is l.e. length of stdin
-                if iterno + 1 <= stdin_measure:
+        # if input is deque
+        if isinstance(input, deque):
+            # and input is non-empty
+            if len(input) > 0:
+                # and iterno +1 is l.e. length of input
+                if iterno + 1 <= input_measure:
                     status = True
         return status
     
-    def _get_obj_from_input(self, stdin):
+    def _get_obj_from_input(self, input):
         """_get_obj_from_input for Wyrm
         POLYMORPHIC
 
         Get the input object for this Wyrm's _unit_process
 
-        :param stdin: standard input object
-        :type stdin: collections.deque
-        :return obj: object popleft'd from stdin
+        :param input: standard input object
+        :type input: collections.deque
+        :return obj: object popleft'd from input
         :rtype obj: any
         
-        :raises TypeError: if stdin is not expected type
+        :raises TypeError: if input is not expected type
         
         """        
-        if isinstance(stdin, deque):
-            obj = stdin.popleft()
+        if isinstance(input, deque):
+            obj = input.popleft()
             return obj
         else:
-            Logger.error(f'stdin object was incorrect type')
+            Logger.error(f'input object was incorrect type')
             raise TypeError
         
 

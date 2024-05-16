@@ -53,6 +53,7 @@ buffwyrm = BufferWyrm()
 windwyrm = WindowWyrm(model_name="PhaseNet",
                           reference_npts=3001,
                           reference_overlap=500,
+                          reference_sampling_rate=100.,
                           max_pulse_size=1)
 
 # Initialize MethodWyrms for pre-processing steps

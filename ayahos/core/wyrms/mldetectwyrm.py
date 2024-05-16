@@ -60,6 +60,7 @@ class MLDetectWyrm(Wyrm):
                       'stead'],
         devicetype='cpu',
         compiled=True,
+        min_batch_size=1,
         max_batch_size=256,
         max_pulse_size=1):
         """
@@ -96,6 +97,14 @@ class MLDetectWyrm(Wyrm):
                 raise ValueError(f'max_batch_size {max_batch_size} falls out of bounds should be \in(0, 2**15]')
         else:
             raise TypeError(f'max_batch_size must be type int, not {type(max_batch_size)}')
+
+        if isinstance(min_batch_size, int):
+            if 0 < min_batch_size < self.max_batch_size:
+                self.min_batch_size = min_batch_size
+            else:
+                raise ValueError(f'min_batch_size {min_batch_size} not \in (0, {max_batch_size})')
+        else:
+            raise TypeError(f'min_batch_size must be type int, not {type(max_batch_size)}')
 
         # model compatability checks
         if not isinstance(model, sbm.WaveformModel):
@@ -149,6 +158,7 @@ class MLDetectWyrm(Wyrm):
                 cmod = cmod.to(self.device)
             self.cmods.update({wname: cmod})
 
+        self.junk_drawer = deque()
 
     # def __str__(self):
     #     rstr = f'ayahos.core.wyrms.mldetectwyrm.MLDetectWyrm('
@@ -167,6 +177,18 @@ class MLDetectWyrm(Wyrm):
     # Inherit from Wyrm
     # _continue_iteration() - stdin must be a non-empty deque and iterno +1 < len(stdin)
 
+    def _continue_iteration(self, stdin, stdin_measure, iterno):
+        status = False
+        # if stdin is deque
+        if isinstance(stdin, deque):
+            # and stdin has at least min_batch_size elements
+            if len(stdin) >= self.min_batch_size:
+                # and iteration number + 1 is l.e. the length of stdin
+                if iterno + 1 <= stdin_measure:
+                    # Then proceed with iteration
+                    status = True
+        return status
+
     def _get_obj_from_input(self, stdin):
         """ _get_obj_from_input method for MLDetectWyrm
 
@@ -184,9 +206,10 @@ class MLDetectWyrm(Wyrm):
         batch_fold = []
         batch_meta = []
         # Compose Batch
+        measure = len(stdin)
         for j_ in range(self.max_batch_size):
             # Check if there are still objects to assess (inherited from Wyrm)
-            status = super()._continue_iteration(stdin, j_)
+            status = super()._continue_iteration(stdin, measure, j_)
             # If there are 
             if status:
                 _x = stdin.popleft()
@@ -209,6 +232,7 @@ class MLDetectWyrm(Wyrm):
                     batch_meta.append(_meta)
                 else:
                     self.logger.error(f'WindowStream for {_x.stats.common_id} is not sufficiently processed - skipping')
+                    self.junk_drawer.append(_x)
                     pass
             # If we've run out of objects to assess, stop creating batch
             else:
@@ -248,6 +272,8 @@ class MLDetectWyrm(Wyrm):
                 batch_pred = self.__run_prediction(weighted_model, batch_data, batch_meta)
                 # Reassociate metadata
                 self.__batch2dst_dict(wname, batch_pred, batch_fold, batch_meta, unit_out)
+        else:
+            unit_out = None
         return unit_out
     
     def _capture_unit_out(self, unit_out): 
@@ -259,14 +285,15 @@ class MLDetectWyrm(Wyrm):
         (status = False) to pass to pulse()
 
         :param unit_out: unit output from _unit_out
-        :type unit_out: dict of ayahos.core.stream.dictstream.DictStream objects
-        :return status: should pulse iterations continue?
+        :type unit_out: dict of ayahos.core.stream.dictstream.DictStream objects or None
+        :return status: should pulse iterations continue? Unconditional True
         :rtype status: bool
         """                       
-        # Attach DictStreams to output
-        status = len(unit_out) == self.max_batch_size
-        for _v in unit_out.values():
-            self.output.append(_v)    
+        # Attach DictStreams to output if there are data
+        status = True
+        if isinstance(unit_out, dict):
+            for _v in unit_out.values():
+                self.output.append(_v)    
         return status
 
     #############################

@@ -3,7 +3,7 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "wyrm"
+name = "Ayahos"
 version = "0.0.0"
 authors = [{name="Nathan T. Stevens", email="ntsteven@uw.edu"}]
 requires-python = ">=3.9"
@@ -24,4 +24,4 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["wyrm*"]
+include = ["ayahos*"]

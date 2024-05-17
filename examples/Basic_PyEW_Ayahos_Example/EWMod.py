@@ -1,13 +1,8 @@
 import logging, torch, os
 import seisbench.models as sbm
 from ayahos.core.ayahos import Ayahos
-from ayahos.wyrms.ringwyrm import RingWyrm
-from ayahos.wyrms.bufferwyrm import BufferWyrm
-from ayahos.wyrms.windowwyrm import WindowWyrm
-from ayahos.wyrms.methodwyrm import MethodWyrm
-from ayahos.wyrms.sbmwyrm import SBMWyrm
-from ayahos.core.windowstream import WindowStream
-
+from ayahos.wyrms import RingWyrm, BufferWyrm
+from ayahos.submodules import SBMTubeWyrm
 
 # Set Up Logging
 logging.basicConfig(level=logging.INFO,
@@ -23,7 +18,7 @@ try:
 except KeyError:
     os.system(f'source {ew_env_file}')
 
-# Initialize HeartWyrm (and the PyEW.EWModule therein) but don't start the module yet
+# Initialize Ayahos (and the PyEW.EWModule therein) but don't start the module yet
 ayahos = Ayahos(ew_env_file=ew_env_file,
                       default_ring_id=1000,
                       module_id=200,
@@ -49,57 +44,77 @@ oringwyrm = RingWyrm(module = ayahos.module,
 # Initialize a default BufferWyrm
 buffwyrm = BufferWyrm()
 
-# Initialize a WindowWyrm for PhaseNet input windows
-windwyrm = WindowWyrm(model_name="PhaseNet",
-                          reference_npts=3001,
-                          reference_overlap=500,
-                          reference_sampling_rate=100.,
+# Initialize a PhaseNet processing submodule
+sbmtubewyrm = SBMTubeWyrm(model=sbm.PhaseNet(),
+                          weight_names=['instance','stead','diting'],
+                          devicetype='cpu',
+                          compiled=False,
+                          fill_rule='zeros',
+                          min_batch_size=1,
                           max_pulse_size=1)
 
-# Initialize MethodWyrms for pre-processing steps
-# Handle incomplete data (compound method: filtering, resampling, tapering, gap filling/padding)
-mwyrm_gaps = MethodWyrm(
-    pclass=WindowStream,
-    pmethod='treat_gaps',
-    pkwargs={}
-)
-# Synchronize sampling (align data points of all traces)
-mwyrm_sync = MethodWyrm(
-    pclass=WindowStream,
-    pmethod='sync_to_reference',
-    pkwargs={'fill_value': 0}
-)
-# Fill insufficiently full/missing channels
-mwyrm_fill = MethodWyrm(
-    pclass=WindowStream,
-    pmethod='apply_fill_rule',
-    pkwargs={'rule': 'zeros'}
-)
-# Normalize trace data
-mwyrm_norm = MethodWyrm(
-    pclass=WindowStream,
-    pmethod='normalize_traces',
-    pkwargs={'norm_type': 'std'}
-)
+# String together complete module sequence inside Ayahos
+ayahos.update({'InRing': iringwyrm,
+               'Buffer': buffwyrm,
+               'SBMTube': sbmtubewyrm})
 
-# Initialize predicting Wyrm submodule
-mldetwyrm = MLDetectWyrm(
-    model=sbm.PhaseNet(),
-    weight_names=['instance','stead'],
-    devicetype='cpu',
-    compiled=False,
-    max_pulse_size=256
-)
-
-# string together sub-modules in ayahos
-ayahos.update({'iring': iringwyrm,
-                  'buffer': buffwyrm,
-                  'window': windwyrm,
-                  'gaps': mwyrm_gaps,
-                  'sync': mwyrm_sync,
-                  'fill': mwyrm_fill,
-                  'norm': mwyrm_norm,
-                  'detect': mldetwyrm})
-
-# Run module!
+# RUN THE MODULE!
 ayahos.run()
+
+
+# Parts that are handled by SBMTubeWyrm now
+
+# # Initialize a WindowWyrm for PhaseNet input windows
+# windwyrm = WindowWyrm(model_name="PhaseNet",
+#                           reference_npts=3001,
+#                           reference_overlap=500,
+#                           reference_sampling_rate=100.,
+#                           max_pulse_size=1)
+
+# # Initialize MethodWyrms for pre-processing steps
+# # Handle incomplete data (compound method: filtering, resampling, tapering, gap filling/padding)
+# mwyrm_gaps = MethodWyrm(
+#     pclass=WindowStream,
+#     pmethod='treat_gaps',
+#     pkwargs={}
+# )
+# # Synchronize sampling (align data points of all traces)
+# mwyrm_sync = MethodWyrm(
+#     pclass=WindowStream,
+#     pmethod='sync_to_reference',
+#     pkwargs={'fill_value': 0}
+# )
+# # Fill insufficiently full/missing channels
+# mwyrm_fill = MethodWyrm(
+#     pclass=WindowStream,
+#     pmethod='apply_fill_rule',
+#     pkwargs={'rule': 'zeros'}
+# )
+# # Normalize trace data
+# mwyrm_norm = MethodWyrm(
+#     pclass=WindowStream,
+#     pmethod='normalize_traces',
+#     pkwargs={'norm_type': 'std'}
+# )
+
+# # Initialize predicting Wyrm submodule
+# mldetwyrm = MLDetectWyrm(
+#     model=sbm.PhaseNet(),
+#     weight_names=['instance','stead'],
+#     devicetype='cpu',
+#     compiled=False,
+#     max_pulse_size=256
+# )
+
+# # string together sub-modules in ayahos
+# ayahos.update({'iring': iringwyrm,
+#                   'buffer': buffwyrm,
+#                   'window': windwyrm,
+#                   'gaps': mwyrm_gaps,
+#                   'sync': mwyrm_sync,
+#                   'fill': mwyrm_fill,
+#                   'norm': mwyrm_norm,
+#                   'detect': mldetwyrm})
+
+# # Run module!
+# ayahos.run()

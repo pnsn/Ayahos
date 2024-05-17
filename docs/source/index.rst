@@ -40,10 +40,11 @@ Ayahos builds on popular Python APIs used in the seismological research communit
 routine data processing (ObsPy_ and NumPy_) and ML enhanced analysis tasks 
 (SeisBench_ and PyTorch_). It uses the PyEarthworm_ API to broker in-memory data
 transfers between Earthworm and Python. Through this development philosophy, we
-seek to provide a familiar, modular Python API that can:
+seek to provide a familiar, modular Python API that can adapt to:
 
-   1) adapt to meet Earthworm installation operators' needs 
-   2) enable rapid integration and testing of emerging ML tools with Earthworm
+   1) operate on streaming data across scales
+   2) meet Earthworm installation operators' needs and resources
+   3) enable rapid integration of emerging ML tools with Earthworm
 
 
 System Overview
@@ -51,7 +52,7 @@ System Overview
 
 
 Regarding Names 
-_______________
+---------------
 This project was developed in the Puget Sound, where the ʔayahus is associated
 with several earthquake-related landforms and considered one of the most powerful,
 and dangerous, personal spirit powers in native oral traditions of the region.

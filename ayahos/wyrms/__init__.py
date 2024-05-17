@@ -1,27 +1,25 @@
-# # Common Wyrm Ancestor
-# from wyrm.core.wyrm.wyrm import Wyrm
-# # Lineage - TubeWyrm
-# from wyrm.core.wyrm.tubewyrm import TubeWyrm
-# from wyrm.core.wyrm.canwyrm import CanWyrm
-# from wyrm.core.wyrm.heartwyrm import HeartWyrm
-# # Lineage - MethodWyrm
-# from wyrm.core.wyrm.methodwyrm import MethodWyrm
-# from wyrm.core.wyrm.outputwyrm import OutputWyrm
-# # Lineage - RingWyrm
-# from wyrm.core.wyrm.ringwyrm import RingWyrm
-# from wyrm.core.wyrm.earwyrm import EarWyrm
-# # ^^ Do not change order! ^^ Class Inheritance Load Order Matters
+# Common Wyrm Ancestor
+from ayahos.wyrms.wyrm import Wyrm
+# Lineage - TubeWyrm
+from ayahos.wyrms.tubewyrm import TubeWyrm
+from ayahos.wyrms.canwyrm import CanWyrm
+# Lineage - MethodWyrm
+from ayahos.wyrms.methodwyrm import MethodWyrm
+from ayahos.wyrms.outputwyrm import OutputWyrm
+# Lineage - RingWyrm
+from ayahos.wyrms.ringwyrm import RingWyrm
+# ^^ Do not change order! ^^ Class Inheritance Load Order Matters
 
-# from wyrm.core.wyrm.bufferwyrm import BufferWyrm
-# from wyrm.core.wyrm.windowwyrm import WindowWyrm
-# from wyrm.core.wyrm.mldetectwyrm import MLDetectWyrm
+from ayahos.wyrms.bufferwyrm import BufferWyrm
+from ayahos.wyrms.windowwyrm import WindowWyrm
+from ayahos.wyrms.sbmwyrm import SBMWyrm
 
 
 
-# __all__ = ["Wyrm",
-#            "TubeWyrm","CanWyrm","HeartWyrm",
-#            "RingWyrm", "EarWyrm",
-#            "BufferWyrm",
-#            "WindowWyrm", 
-#            "MethodWyrm","OutputWyrm",
-#            "MLDetectWyrm"]
+__all__ = ["Wyrm",
+           "TubeWyrm","CanWyrm",
+           "RingWyrm",
+           "BufferWyrm",
+           "WindowWyrm", 
+           "MethodWyrm","OutputWyrm",
+           "SBMWyrm"]

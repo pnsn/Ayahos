@@ -1,3 +1,11 @@
+"""
+Module for handling Ayahos :class: `~ayahos.core.ayahos.Ayahos` objects
+
+:author: Nathan T. Stevens
+:org: Pacific Northwest Seismic Network
+:email: ntsteven (at) uw.edu
+:license: AGPL-3.0
+"""
 import threading, logging, time, os, sys
 import PyEW
 from ayahos.wyrms.tubewyrm import TubeWyrm

@@ -184,6 +184,7 @@ class WindowWyrm(Wyrm):
             self.ref['sampling_rate'] = model.sampling_rate
             self.ref['npts'] = model.in_samples
             self.ref['overlap'] = model._annotate_args['overlap'][1]
+            self.reference_completeness_threshold = (model.in_samples - model._blinding[1][0])/model.in_samples
         
         :param model: seisbench model to scrape windowing parameters from
         :type model: seisbench.models.WaveformModel
@@ -197,6 +198,7 @@ class WindowWyrm(Wyrm):
                 self.ref.update({'npts': model.in_samples})
             self.ref.update({'overlap': model._annotate_args['overlap'][1]})
             self.model_name = model.name
+            self.ref['threshold'] = (model.in_samples - model._annotate_args['blinding'][1][0])/model.in_samples
         else:
             raise TypeError('seisbench.models.WaveformModel base class does not provide the necessary update information')
 

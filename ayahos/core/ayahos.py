@@ -1,7 +1,6 @@
 import threading, logging, time, os, sys
 import PyEW
 from ayahos.core.wyrms.tubewyrm import TubeWyrm
-import pandas as pd
 
 # def add_earthworm_to_path(Earthworm_Root='/usr/local/earthworm'):
 #     ew_home = os.getenv('EW_HOME')
@@ -12,18 +11,17 @@ import pandas as pd
 
 Logger = logging.getLogger(__name__)
 ###################################################################################
-# HEART WYRM CLASS DEFINITION #####################################################
+# AYAHOS CLASS DEFINITION #########################################################
 ###################################################################################
-class HeartWyrm(TubeWyrm):
+class Ayahos(TubeWyrm):
     """
-    This class encapsulates a PyEW.EWModule object and provides the `run`,
+    The Ayahos class encapsulates a PyEW.EWModule object and provides the `run`,
     `start` and `stop` class methods required for running a continuous
     instance of a PyEW.EWModule interface between a running instance
     of Earthworm.
 
-    This class inherits the pulse method from wyrm.core.base_wyrms.TubeWyrm
-    and adds the functionality of setting a "wait_sec" that acts as a pause
-    between instances of triggering pulses to allow data accumulation.
+    This class inherits from wyrm.core.wyrms.tubewyrm.TubeWyrm to house 
+    and orchestrate sequenced operations of wyrm submodules
     """
 
     def __init__(
@@ -38,7 +36,7 @@ class HeartWyrm(TubeWyrm):
         conn_dict = {},
         wyrm_dict={}
     ):
-        """Create a HeartWyrm object
+        """Create a Ayahos object
         Inherits the wyrm_dict attribute and pulse() method from TubeWyrm
 
         :param ew_env_file: filepath for the desired EW environment to source, defaults to None
@@ -147,7 +145,7 @@ class HeartWyrm(TubeWyrm):
     def _initialize_module(self, user_check=False):
         """private method: _initialize_module
         Wraps ```PyEW.EWModule.__init__(**self.module_init_kwargs)```
-        to initialize the self.module object contained in this HeartWyrm
+        to initialize the self.module object contained in this Ayahos
 
         :param user_check: _description_, defaults to True
         :type user_check: bool, optional
@@ -174,13 +172,12 @@ class HeartWyrm(TubeWyrm):
                 try:
                     self.module = PyEW.EWModule(**self.module_init_kwargs)
                 except RuntimeError:
-                    Logger.error("HeartWyrm: There is already a EWModule running!")
+                    Logger.error("There is already a EWModule running!")
             elif isinstance(self.module, PyEW.EWModule):
-                Logger.error("HeartWyrm: Module already assigned to self.module")
+                Logger.error("Module already assigned to self.module")
             else:
                 Logger.critical(
-                    f"HeartWyrm.module is type {type(self.module)}\
-                     incompatable!!!"
+                    f"module is type {type(self.module)} - incompatable!!!"
                 )
                 sys.exit(1)
             self.add_connection('DEFAULT', self.module_init_kwargs['def_ring'])
@@ -189,8 +186,8 @@ class HeartWyrm(TubeWyrm):
             sys.exit(0)
 
     def add_connection(self, name, ring_id):
-        """add a connection to the self.module (EWModule) object attached to this HeartWyrm
-        and update information in the self.connections attribute
+        """add a connection to the self.module (EWModule) object 
+        attached to Ayahos and update information in the self.connections attribute
 
         :param name: human-readable name to use as a key in self.connections
         :type name: any, recommend str or int
@@ -232,7 +229,7 @@ class HeartWyrm(TubeWyrm):
 
     def unit_process(self, x):
         """
-        unit_process for HeartWyrm inherited from TubeWyrm.unit_process()
+        unit_process for Ayahos inherited from TubeWyrm.unit_process()
 
         1) wait for self.wait_sec
         2) execute y = TubeWyrm(...).pulse(x)
@@ -250,10 +247,10 @@ class HeartWyrm(TubeWyrm):
 
     def run(self, input=None):
         """
-        Run the PyEW.EWModule housed by this HeartWyrm with the option
+        Run the PyEW.EWModule housed by this Ayahos with the option
         of an initial input
 
-        :param input: standard input for the pulse() method of the first wyrm in HeartWyrm.wyrm_dict, default None
+        :param input: standard input for the pulse() method of the first wyrm in Ayahos.wyrm_dict, default None
         :type input: varies, optional
         """
         Logger.critical("Starting Module Operation")        
@@ -268,8 +265,13 @@ class HeartWyrm(TubeWyrm):
         Logger.critical("Shutting Down Module")     
 
     def pulse(self):
-        Logger.error("pulse() method disabled for ayahos.core.wyrms.heartwyrm.Heartwyrm")
-        Logger.error("Use HeartWyrm.run() to start module operation")
+        Logger.error("pulse() method disabled for ayahos.core.ayahos.Ayahos")
+        Logger.error("Use Ayahos.run() to start module operation")
+
+    ########################
+    # CONSTRUCTION METHODS #
+    def init_from_config(self, config_file):
+        raise NotImplementedError("Work in progress. GOAL: populate whole modules from a single configparser.ConfigParser compliant config file")
 
     # def run(self):
     #     """
@@ -283,4 +285,4 @@ class HeartWyrm(TubeWyrm):
     #         self.pulse()  # conn_in = conn_in, conn_out = conn_out)
     #     # Polite shut-down of module
     #     self.module.goodbye()
-    #     print("Exiting HeartWyrm Instance")
+    #     print("Exiting Ayahos Instance")

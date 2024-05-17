@@ -1,6 +1,6 @@
 import logging, torch, os
 import seisbench.models as sbm
-from ayahos.core.wyrms.heartwyrm import HeartWyrm
+from ayahos.core.ayahos import Ayahos
 from ayahos.core.wyrms.ringwyrm import RingWyrm
 from ayahos.core.wyrms.bufferwyrm import BufferWyrm
 from ayahos.core.wyrms.windowwyrm import WindowWyrm
@@ -24,7 +24,7 @@ except KeyError:
     os.system(f'source {ew_env_file}')
 
 # Initialize HeartWyrm (and the PyEW.EWModule therein) but don't start the module yet
-heartwyrm = HeartWyrm(ew_env_file=ew_env_file,
+ayahos = Ayahos(ew_env_file=ew_env_file,
                       default_ring_id=1000,
                       module_id=200,
                       installation_id=6,
@@ -33,15 +33,15 @@ heartwyrm = HeartWyrm(ew_env_file=ew_env_file,
                       wait_sec=0.001)
 
 # Initialize a EW->Py RingWyrm for waves
-iringwyrm = RingWyrm(module = heartwyrm.module,
-                     conn_id = heartwyrm.connections['DEFAULT'][0],
+iringwyrm = RingWyrm(module = ayahos.module,
+                     conn_id = ayahos.connections['DEFAULT'][0],
                      pulse_method='get_wave',
                      msg_type=19,
                      max_pulse_size=1000)
 
 # Initialize a Py->EW RingWyrm for waves (currently unused)
-oringwyrm = RingWyrm(module = heartwyrm.module,
-                     conn_id = heartwyrm.connections['PICK'][0],
+oringwyrm = RingWyrm(module = ayahos.module,
+                     conn_id = ayahos.connections['PICK'][0],
                      pulse_method='put_wave',
                      msg_type=19,
                      max_pulse_size=1000)
@@ -82,7 +82,7 @@ mwyrm_norm = MethodWyrm(
     pkwargs={'norm_type': 'std'}
 )
 
-# Initialize predicting Wyrm
+# Initialize predicting Wyrm submodule
 mldetwyrm = MLDetectWyrm(
     model=sbm.PhaseNet(),
     weight_names=['instance','stead'],
@@ -91,8 +91,8 @@ mldetwyrm = MLDetectWyrm(
     max_pulse_size=256
 )
 
-# string together input and output rings in heartwyrm
-heartwyrm.update({'iring': iringwyrm,
+# string together sub-modules in ayahos
+ayahos.update({'iring': iringwyrm,
                   'buffer': buffwyrm,
                   'window': windwyrm,
                   'gaps': mwyrm_gaps,
@@ -102,4 +102,4 @@ heartwyrm.update({'iring': iringwyrm,
                   'detect': mldetwyrm})
 
 # Run module!
-heartwyrm.run()
+ayahos.run()

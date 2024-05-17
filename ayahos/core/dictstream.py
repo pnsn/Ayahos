@@ -7,7 +7,7 @@ from obspy.core.stream import Stream, read
 from obspy.core.trace import Trace
 from obspy.core.util.attribdict import AttribDict
 from obspy.core import compatibility
-from ayahos.core.trace.mltrace import MLTrace, read_mltrace
+from ayahos.core.mltrace import MLTrace, read_mltrace
 from ayahos.util.pyew import wave2mltrace
 from ayahos.util.semblance import ensemble_semblance #, weighted_ensemble_semblance
 
@@ -78,6 +78,15 @@ class DictStreamStats(AttribDict):
               'max_endtime': (type(None), UTCDateTime)}
 
     def __init__(self, header={}):
+        """Initialize a DictStreamStats object
+
+        A container for additional header information of an Ayahos
+        :class: `~ayahos.core.dictstream.DictStream` object
+
+
+        :param header: _description_, defaults to {}
+        :type header: dict, optional
+        """        
         """
         Initialize a DictStreamStats object
 

@@ -20,10 +20,10 @@ import torch, copy, logging
 import numpy as np
 import seisbench.models as sbm
 from collections import deque
-from ayahos.core.trace.mltrace import MLTrace
-from ayahos.core.stream.dictstream import DictStream
-from ayahos.core.stream.windowstream import WindowStream
-from ayahos.core.wyrms.wyrm import Wyrm, add_class_name_to_docstring
+from ayahos.core.mltrace import MLTrace
+from ayahos.core.dictstream import DictStream
+from ayahos.core.windowstream import WindowStream
+from ayahos.wyrms.wyrm import Wyrm
 
 Logger = logging.getLogger(__name__)
 ###################################################################################
@@ -31,7 +31,7 @@ Logger = logging.getLogger(__name__)
 ###################################################################################
 
 # @add_class_name_to_docstring
-class MLDetectWyrm(Wyrm):
+class SBMWyrm(Wyrm):
     """
     Conduct ML model predictions on preprocessed data ingested as a deque of
     WindowStream objects using one or more pretrained model weights. Following

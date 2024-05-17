@@ -27,5 +27,5 @@ dependencies = [
 include = ["ayahos*"]
 
 [project.urls]
-GitHub = "https://github.com/pnsn/Ayahos
-PNSN = "https://pnsn.org
+GitHub = "https://github.com/pnsn/Ayahos"
+PNSN = "https://pnsn.org"

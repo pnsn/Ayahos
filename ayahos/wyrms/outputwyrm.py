@@ -19,8 +19,8 @@
 """
 import logging
 import pandas as pd
-from ayahos.core.wyrms.methodwyrm import MethodWyrm, add_class_name_to_docstring
-from ayahos.core.stream.dictstream import DictStream
+from ayahos.wyrms.methodwyrm import MethodWyrm, add_class_name_to_docstring
+from ayahos.core.dictstream import DictStream
 
 Logger = logging.getLogger(__name__)
 

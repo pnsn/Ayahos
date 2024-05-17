@@ -11,10 +11,10 @@
 
 import logging
 from numpy import isfinite
-from ayahos.core.wyrms.wyrm import Wyrm, add_class_name_to_docstring
-from ayahos.core.trace.mltrace import MLTrace
-from ayahos.core.trace.mltracebuffer import MLTraceBuffer
-from ayahos.core.stream.dictstream import DictStream
+from ayahos.wyrms.wyrm import Wyrm, add_class_name_to_docstring
+from ayahos.core.mltrace import MLTrace
+from ayahos.core.mltracebuffer import MLTraceBuffer
+from ayahos.core.dictstream import DictStream
 
 Logger = logging.getLogger(__name__)
 

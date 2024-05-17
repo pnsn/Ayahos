@@ -1,12 +1,12 @@
 import logging, torch, os
 import seisbench.models as sbm
 from ayahos.core.ayahos import Ayahos
-from ayahos.core.wyrms.ringwyrm import RingWyrm
-from ayahos.core.wyrms.bufferwyrm import BufferWyrm
-from ayahos.core.wyrms.windowwyrm import WindowWyrm
-from ayahos.core.wyrms.methodwyrm import MethodWyrm
-from ayahos.core.wyrms.mldetectwyrm import MLDetectWyrm
-from ayahos.core.stream.windowstream import WindowStream
+from ayahos.wyrms.ringwyrm import RingWyrm
+from ayahos.wyrms.bufferwyrm import BufferWyrm
+from ayahos.wyrms.windowwyrm import WindowWyrm
+from ayahos.wyrms.methodwyrm import MethodWyrm
+from ayahos.wyrms.sbmwyrm import SBMWyrm
+from ayahos.core.windowstream import WindowStream
 
 
 # Set Up Logging

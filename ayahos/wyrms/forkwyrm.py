@@ -14,7 +14,7 @@
 """
 import copy, logging
 from collections import deque
-from ayahos.core.wyrms.wyrm import Wyrm
+from ayahos.wyrms.wyrm import Wyrm
 
 Logger = logging.getLogger(__name__)
 

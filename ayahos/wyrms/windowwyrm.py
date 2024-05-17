@@ -25,10 +25,10 @@ TODO: For future releases
 import time, logging
 import seisbench.models as sbm
 from collections import deque
-from ayahos.core.trace.mltrace import MLTrace
-from ayahos.core.wyrms.wyrm import Wyrm
-from ayahos.core.stream.dictstream import DictStream
-from ayahos.core.stream.windowstream import WindowStream
+from ayahos.core.mltrace import MLTrace
+from ayahos.core.dictstream import DictStream
+from ayahos.core.windowstream import WindowStream
+from ayahos.wyrms.wyrm import Wyrm
 from ayahos.util.input import bounded_floatlike, bounded_intlike
 
 Logger = logging.getLogger(__name__)

@@ -1,6 +1,6 @@
 import threading, logging, time, os, sys
 import PyEW
-from ayahos.core.wyrms.tubewyrm import TubeWyrm
+from ayahos.wyrms.tubewyrm import TubeWyrm
 
 # def add_earthworm_to_path(Earthworm_Root='/usr/local/earthworm'):
 #     ew_home = os.getenv('EW_HOME')
@@ -76,7 +76,7 @@ class Ayahos(TubeWyrm):
                 os.environ['EW_HOME']
             # If not, exit on code 1
             except KeyError:
-                Logger.critical(f'Environmental varible $EW_HOME not mapped with environment {ew_home}')
+                Logger.critical(f'Environmental varible $EW_HOME not mapped with environment {ew_env_file}')
                 sys.exit(1)      
 
         # Compatability check for default_ring_id          

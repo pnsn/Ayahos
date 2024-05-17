@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 import seisbench.models as sbm
 from obspy import Trace, Stream, UTCDateTime
-from ayahos.core.stream.dictstream import DictStream, DictStreamStats
-from ayahos.core.trace.mltrace import MLTrace
+from ayahos.core.dictstream import DictStream, DictStreamStats
+from ayahos.core.mltrace import MLTrace
 
 ###############################################################################
 # WindowStreamStats Class Definition ##########################################
@@ -200,8 +200,7 @@ class WindowStream(DictStream):
     # FILL RULE METHODS ###########################################################
     ###############################################################################
     def apply_fill_rule(self, rule='zeros', ref_thresh=0.9, other_thresh=0.8):
-        """Summative class method for assessing if channels have enough data,
-        and applying the specified channel fill `rule`
+        """Summative class method for assessing if channels have enough data, and applying the specified channel fill `rule`
 
         The thresh(olds) values in this method are compared against a given
         wyrm.core.trace.mltrace.MLTrace object's .get_fvalid_subset() output
@@ -253,8 +252,7 @@ class WindowStream(DictStream):
             raise ValueError(f'rule {rule} not supported. Supported values: "zeros", "clone_ref", "clone_other"')
 
     def _apply_zeros(self, thresh_dict): 
-        """
-        Apply the channel filling rule "zero" (e.g., Retailleau et al., 2022)
+        """Apply the channel filling rule `zeros` (e.g., Retailleau et al., 2022)
         where both "other" (horzontal) components are set as zero-valued traces
         if one or both are missing/overly gappy.
 
@@ -289,7 +287,6 @@ class WindowStream(DictStream):
                 # Update 
                 self.traces.update({_k: tr0})
 
-    # @_add_processing_info
     def _apply_clone_ref(self, thresh_dict):
         """
         Apply the channel filling rule "clone reference" (e.g., Ni et al., 2023)
@@ -327,8 +324,6 @@ class WindowStream(DictStream):
                 # Update zero-fold copies as new "other" component(s)
                 self.traces.update({_k: trC})
 
-
-    # @_add_processing_info    
     def _apply_clone_other(self, thresh_dict):
         """
         Apply the channel filling rule "clone other" (e.g., Lara et al., 2023)
@@ -340,14 +335,11 @@ class WindowStream(DictStream):
         Cloned traces are assigned fold values of 0 to reflect the absence of
         additional information contributed by this trace.
 
-        :: INPUTS ::
         :param thresh_dict: dictionary with keys matching keys in 
                         self.traces.keys() (i.e., alised component characters)
                         and values \in [0, 1] representing fractional completeness
                         thresholds below which the associated component is rejected
         :type thresh_dict: dict
-
-        :raise
         """
         ref_comp = self.stats.ref_component
         # Run through each component and see if it passes thresholds

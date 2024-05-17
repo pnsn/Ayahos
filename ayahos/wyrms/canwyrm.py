@@ -11,7 +11,7 @@
 
 """
 import logging
-from ayahos.core.wyrms.tubewyrm import TubeWyrm
+from ayahos.wyrms.tubewyrm import TubeWyrm
 
 Logger = logging.getLogger(__name__)
 

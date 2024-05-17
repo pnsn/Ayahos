@@ -24,7 +24,7 @@
 import logging
 import PyEW
 from collections import deque
-from ayahos.core.wyrms.wyrm import Wyrm, add_class_name_to_docstring
+from ayahos.wyrms.wyrm import Wyrm, add_class_name_to_docstring
 from ayahos.util.pyew import wave2mltrace, trace2wave
 
 Logger = logging.getLogger(__name__)

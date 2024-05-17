@@ -17,7 +17,7 @@ TODO:   Stiffen **add_kwargs ingestion to check against __add__ inputs
 """
 import numpy as np
 from obspy import Trace
-from ayahos.core.trace.mltrace import MLTrace
+from ayahos.core.mltrace import MLTrace
 from ayahos.util.input import bounded_floatlike
     
 class MLTraceBuffer(MLTrace):

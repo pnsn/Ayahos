@@ -1,5 +1,5 @@
 import seisbench.models as sbm
-from wyrm import *
+from ayahos.core.wyrms import *
 
 def compose_mldetect_tube(
         model=sbm.EQTransformer(),

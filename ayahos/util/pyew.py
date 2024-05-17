@@ -11,7 +11,7 @@
 """
 import numpy as np
 from obspy import UTCDateTime, Trace
-from ayahos.core.trace.mltrace import MLTrace
+from ayahos.core.mltrace import MLTrace
 
 
 def npy2strdtype(dtype):

@@ -23,7 +23,7 @@ TODO: Turn status from _capture_unit_out into a representation of nproc
 import logging
 import numpy as np
 from collections import deque
-from ayahos.core.wyrms.wyrm import Wyrm, add_class_name_to_docstring
+from ayahos.wyrms.wyrm import Wyrm, add_class_name_to_docstring
 
 Logger = logging.getLogger(__name__)
 

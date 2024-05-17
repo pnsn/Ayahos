@@ -20,9 +20,9 @@
 import logging
 from collections import deque
 import pandas as pd
-from ayahos.core.wyrms.wyrm import Wyrm, add_class_name_to_docstring
-from ayahos.core.stream.dictstream import DictStream
-from ayahos.core.stream.windowstream import WindowStream
+from ayahos.wyrms.wyrm import Wyrm, add_class_name_to_docstring
+from ayahos.core.dictstream import DictStream
+from ayahos.core.windowstream import WindowStream
 
 ###################################################################################
 # METHOD WYRM CLASS DEFINITION - FOR EXECUTING CLASS METHODS IN A PULSED MANNER ###

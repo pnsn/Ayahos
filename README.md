@@ -23,9 +23,9 @@ This project is distributed under a GNU Affero General Public License (AGPL-3.0)
 
 ### Whats in a name?  
 **ʔayahos (Ayahos), for where we stand**  
-This is a product of the Puget Sound, where oral traditions of Lushootseed speaking peoples associate earthquake activity with the supernatural spirit ʔayahus, who can take the form of a monsterous two headed serpent.
+This project was developed in the Puget Sound, where oral traditions of its peoples associate earthquake activity to the supernatural spirit power, ʔayahos, who may take the form of a monsterous two headed serpent.
 * [PNSN Outreach: Serpent Spirit-power Stories along the Seattle Fault](https://pnsn.org/outreach/native-american-stories/serpent-spirit-power/native-american-serpent-spirit-power-stories)
-* [Ludiwin et al. (2005, SRL)](https://doi.org/10.1785/gssrl.76.5.526)
+* [Ludiwin et al. (2005, SRL)](https://doi.org/10.1785/gssrl.76.4.426)
 
 **Wyrm, for shorthand**  
 The project was initially named Wyrm as its key dependencies `Earthworm` and `PyTorch` echo descriptions of Wyrms in European folklore: subterranean, fire-breathing serpents. This naming convention persists for building-block submodule classes (i.e., `ayahos.core.wyrms`) as a nod to uniqueness in these oral traditions - there are many Wyrms, but only one ʔayahos. 

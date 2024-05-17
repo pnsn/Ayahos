@@ -3,7 +3,7 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "Ayahos"
+name = "ayahos"
 version = "0.0.0"
 authors = [{name="Nathan T. Stevens", email="ntsteven@uw.edu"}]
 requires-python = ">=3.9"
@@ -25,3 +25,7 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 include = ["ayahos*"]
+
+[project.urls]
+GitHub = "https://github.com/pnsn/Ayahos
+PNSN = "https://pnsn.org

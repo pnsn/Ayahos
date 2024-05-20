@@ -198,11 +198,16 @@ class Ayahos(TubeWyrm):
         attached to Ayahos and update information in the self.connections attribute
 
         :param name: human-readable name to use as a key in self.connections
-        :type name: any, recommend str or int
+        :type name: str or int
         :param ring_id: earthworm ring ID (value falls in the range [0, 9999])
         :type ring_id: int
         """
         # === RUN COMPATABILITY CHECKS ON INPUT VARIABLES === #
+        if not isinstance(name, (str, int)):
+            raise TypeError(f'name must be type str or int, not {type(name)}')
+        elif name in self.connections.keys():
+            raise KeyError(f'name {name} is already claimed as a key for a connection in this module')
+        
         # Enforce integer RING_ID type
         if not isinstance(ring_id, int):
             raise TypeError
@@ -235,23 +240,23 @@ class Ayahos(TubeWyrm):
         """
         self.runs = False
 
-    def unit_process(self, x):
-        """
-        unit_process for Ayahos inherited from TubeWyrm.unit_process()
+    # def unit_process(self, x):
+    #     """
+    #     unit_process for Ayahos inherited from TubeWyrm.unit_process()
 
-        1) wait for self.wait_sec
-        2) execute y = TubeWyrm(...).pulse(x)
+    #     1) wait for self.wait_sec
+    #     2) execute y = TubeWyrm(...).pulse(x)
 
-        also see ayahos.core.wyrms.tubewyrm.TubeWyrm
+    #     also see ayahos.core.wyrms.tubewyrm.TubeWyrm
 
-        :param x: input collection of objects for first wyrm_ in self.wyrm_dict, defaults to None
-        :type x: Varies, optional
-        """
-        # Sleep for wait_sec
-        time.sleep(self.wait_sec)
-        # Then run TubeWyrm unit_process
-        status = super().pulse(x)
-        return status
+    #     :param x: input collection of objects for first wyrm_ in self.wyrm_dict, defaults to None
+    #     :type x: Varies, optional
+    #     """
+    #     # Sleep for wait_sec
+    #     time.sleep(self.wait_sec)
+    #     # Then run TubeWyrm unit_process
+    #     status = super().pulse(x)
+    #     return status
 
     def run(self, input=None):
         """

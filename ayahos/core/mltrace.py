@@ -519,11 +519,22 @@ class MLTrace(Trace):
                 self.fold[-blinding:] = 0
         return self
     
-    @_add_processing_info
+    # @_add_processing_info
     def to_zero(self, method='both'):
         """
-        Convert this MLTrace IN-PLACE to a 0-valued vector for self.data and self.fold
-        with the same shape and dtype
+        Convert this MLTrace 0-valued vector for self.data and/or self.fold
+        with the same shape and dtype.
+
+        This is a key subroutine for applying channel fill rules in
+        :meth: `~ayahos.core.windowstream.WindowStream.apply_fill_rule`
+
+        :param method: method for zeroing out trace
+            Supported 'both' - convert mlt.fold and mlt.data to 0-vectors
+                        Generally used for 0-fill traces passed to ML prediction
+                      'data' - convert mlt.data only to a 0-vector
+                        Rarely used, here for completeness
+                      'fold' - convert mlt.fold only to a 0-vector
+                        Generally used for cloned traces passed to ML prediction
         """
         if method not in ['both','data','fold']:
             raise ValueError(f'method {method} not supported. Supported: "both", "data", "fold"')
@@ -537,33 +548,23 @@ class MLTrace(Trace):
             self.fold = v0
         return self
 
-    def enforce_zero_mask(self, **options):
+    def enforce_zero_mask(self):
         """
-        Enforce equivalence of masking in data to 0-values in fold
-        
-                    BUT
-
-        Do not enforce the reciprocal
-            WHY:
-            For example, this would result in cloned/filled traces 
-            associated with ComponentStream objects to become
-            fully masked, which is undesireable
+        Enforce equivalence of masking in data to 0-values in fold but not the reciprocal
+        used as the standard syntax for MLTraces. Enforced in place
 
         In short, 
             all masked values are 0-fold
             not all 0-fold values are masked
 
-        e.g., 
+        ..rubric: Toy Example for a :class: `~ayahos.core.mltrace.MLTrace` object 
 
         data ->   1, 3, 4, 5, 2, 6, 7      --, 3, 4,--, 2, 6, 7
         mask ->   F, F, F, T, F, F, F  ==>  F, F, F, T, F, F, F
         fold ->   0, 1, 1, 1, 1, 1, 1       0, 1, 1, 0, 1, 1, 1
         notice:   *        *                *        *
                                         no change   change
-        :: INPUTS ::
-        :param **options: [kwargs] optional inputs to pass to np.ma.masked_array
-                        in the event that the input data is not masked, but the
-                        input fold has 0-valued elements.
+
         """
         # Update any places with masked values to 0 fold
         if isinstance(self.data, np.ma.MaskedArray):
@@ -577,6 +578,15 @@ class MLTrace(Trace):
 
     
     def __repr__(self, id_length=None):
+        """Provide a human readable string describing the contents of this
+        :class: `~ayahos.core.mltrace.MLTrace` object
+
+        :param id_length: opional maximum ID length passed to the inherited
+            :meth: `~obspy.core.trace.Trace.__str__` method, defaults to None
+        :type id_length: None or int, optional
+        :return rstr: representative string
+        :rtype: str
+        """        
         rstr = super().__str__(id_length=id_length)
         if self.stats.npts > 0:
             rstr += f' | Fold:'
@@ -595,8 +605,12 @@ class MLTrace(Trace):
         MLTrace's header:
             via self.id: network, station, location, channel, model, weight
             via self.stats: starttime, sampling_rate, npts, calib
-        And assesses matches between self.data and self.fold and these
-        attributes in other
+        And assesses matches between self.data and self.fold
+
+        :param other: other object to check agains this MLTrace
+        :type other: any, seeking ayahos.core.mltrace.MLTrace
+        :return: are the objects equivalent?
+        :rtype: bool
         """
         if not isinstance(other, MLTrace):
             return False
@@ -635,49 +649,27 @@ class MLTrace(Trace):
         method 3 - stacking using the 'avg' rule wherein the value of an overlapping point
                     is calculated as the fold-weighted mean of input values
 
+        TODO: add a method that does a quadriture based interpolation approach (discussion with JRHartog)
+
         In all cases, overlapping samples resulting in a new sample are assigned a fold equal
         to the sum of the contributing samples' fold, and eliminated samples are assigned
         a fold of 0.
 
-        :: INPUTS ::
-        :param trace: [obspy.core.trace.Trace] or child-class object to add to this MLTrace
-        :param method: [str] or [int] see above
-        :param fill_value: [int], [float], [None] - gap filling behavior.
-                        (default) None value produces masked, 0-fold values in gaps
-                        also see obspy.core.trace.Trace.__add__
-        :param sanity_checks: [bool] - run sanity checks on metadata before attempting to merge data?
+        :param trace: Trace-like object to add to this MLTrace
+        :type trace: obspy.core.trace.Trace or child class thereof
+        :param method: method to use for merging traces see above, defaults to 1
+        :type method: str or int, optional
+        :param fill_value: value to fill gaps with, defaults to None
+                        also see :meth: `~obspy.core.trace.Trace.__add__`
+                                 :meth: `~obspy.core.trace.Trace.trim`
+                                 :meth: `~ayahos.core.mltrace.MLTrace.view_copy`
+        :type fill_value: int, float, or NoneType
+        :param sanity_checks: run checks on metadata before attempting to merge data?, defaults to True
+        :type sanity_checks: bool, optional
+        :param dtype: data type to use as the reference data type, defaults to numpy.float32
+        :type: type, optional
 
-        Conduct a "max" or "avg" stacking of a new trace into this MLTrace object under the
-        following assumptions
-            1) Both self and trace represent prediction traces output by the same continuous 
-                predicting model with the same pretrained weights. 
-                i.e., stats.model and stats.weight are not the default value and they match.
-            2) The the prediction window inserted into this trace when it was initialized
-                also had blinding applied to it
-        
-        :: INPUTS ::
-        :param trace: [wyrm.core.trace.MLTrace] trace to append to this MLTrace
-        :param blinding_samples: [int] number of samples to blind on either side of `trace`
-                        prior to stacking
-        :param method: [str] stacking method flag
-                        'interpolate' - 
-                        'avg' - (recursive) average stacking
-                            new_data[t] = (self.data[t]*self.fold[t] + trace.data[t]*trace.fold[t])/
-                                            (self.fold[t] + trace.fold[t])
-                        'max' - maximum value stacking
-                            new_data[t] = max([self.data[t], trace.data[t]])
-                        for time-indexed sample "t"
-        :param fill_value: [None] or [float-like] - fill_value to assign to a
-                        numpy.ma.masked_array in the event that the stacking
-                        operation produces a gap
-        :param sanity_checks: [bool] should sanity checks be run on self and trace?
-        :param dtype: [type] data type to use as the default for all data/fold in this
-                    operation
-                      None - use the native data formats
-                        DEFAULT: numpy.float32 allows use of NaN values
-                    NOTE: use of 'int' datatypes converts NaN values used in the merging
-                        methods into 0's, which creates a bug.
-        
+        TODO: Split different methods into private sub-methods to boost readability?
         """
         if dtype is None:
             # Ensure fold matches data dtype
@@ -836,15 +828,14 @@ class MLTrace(Trace):
         of the first and last samples of self and other on a uniformly
         sampled time index vector
 
-        :: INPUTS ::
-        :param other: [obspy.core.trace.Trace] or child class
-        
-        :: OUTPUT ::
-        :return index: [list] with 4 elements
+        :param other: Trace-like object being added
+        :type other: obspy.core.trace.Trace-like
+        :return index: list with 4 elements
                         index[0] = relative position of self.data[0]
                         index[1] = relative position of self.data[1]
                         index[2] = relative position of other.data[0]
                         index[3] = relative position of other.data[1]
+        :rtype index: list of int
         """
         if not isinstance(other, Trace):
             raise TypeError
@@ -881,6 +872,20 @@ class MLTrace(Trace):
         Run the obspy.core.trace.Trace._ltrim() method on this MLTrace and trim
         the start of the fold array if starttime > self.stats.endtime or pad the end
         of the fold array if starttime < self.stats.endtime and pad = True
+
+         see :meth: `~obspy.core.trace.Trace._ltrim` for nearest_sample
+         and pad behaviors
+
+        :param starttime: starttime for left trim
+        :type starttime: obspy.core.utcdatetime.UTCDateTime
+        :param pad: should extra samples be padded?, defaults to False
+        :type pad: bool, optional
+        :param nearest_sample: passed to nearest_sample in inherited Trace._ltrim
+        :type nearest_sample: bool, optional
+        :param fill_value: fill_value passed to inherited Trace._ltrim
+        :type fill_value: NoneType, int, float
+        :return: view of self
+        :rtype: ayahos.core.mltrace.MLTrace
         """
         old_fold = self.fold
         old_npts = self.stats.npts
@@ -903,6 +908,20 @@ class MLTrace(Trace):
         Run the obspy.core.trace.Trace._rtrim() method on this MLTrace and trim
         the end of the fold array if endtime < self.stats.endtime or pad the end
         of the fold array if endtime > self.stats.endtime and pad = True
+
+         see :meth: `~obspy.core.trace.Trace._rtrim` for nearest_sample
+         and pad behaviors
+
+        :param endtime: endtime for left trim
+        :type endtime: obspy.core.utcdatetime.UTCDateTime
+        :param pad: should extra samples be padded?, defaults to False
+        :type pad: bool, optional
+        :param nearest_sample: passed to nearest_sample in inherited Trace._ltrim
+        :type nearest_sample: bool, optional
+        :param fill_value: fill_value passed to inherited Trace._ltrim
+        :type fill_value: NoneType, int, float
+        :return: view of self
+        :rtype: ayahos.core.mltrace.MLTrace
         """
         old_fold = self.fold
         old_npts = self.stats.npts
@@ -923,7 +942,9 @@ class MLTrace(Trace):
         """
         Slight modification to the obspy.core.trace.Trace.split() method
         wherein a Stream of MLTrace objects are returned, which includes 
-        a trimmed version of the MLTrace.fold attribute
+        a trimmed version of the MLTrace.fold attribute.
+
+        also see :meth: `~obspy.core.trace.Trace.split`
         """
         # Not a masked array.
         if not isinstance(self.data, np.ma.masked_array):
@@ -965,7 +986,8 @@ class MLTrace(Trace):
                 'std': standard deviation of trace data
                     aliases: 'standard'
         
-        :return self: [ayahos.core.trace.mltrace.MLTrace] enable cascading.
+        :return: view of this MLTrace object
+        :rtype: ayahos.core.mltrace.MLTrace
         """
         if norm_type.lower() in ['max','minmax','peak']:
             scalar = np.nanmax(np.abs(self.data))
@@ -1001,19 +1023,24 @@ class MLTrace(Trace):
         for data pre-processing prior to forming tensor for M/L prediction.
 
         :: INPUTS ::
-        :param filterkw: [False] - disable filtering
-                         [dict] - keyword arguments to pass to (ML)Trace.filter()
-                                  that differ from default argument(s)
-        :param detrendkw: [False] - disable detrending
+        :param filterkw: non-default arguments to pass to (ML)Trace.filter(), defaults to None.
+            None signals to not apply fltering
+        :type filterkw: dict or NoneType
+        :param detrendkw: non-default arguments to pass to :meth: `~ayahos.core.mltrace.MLTrace.detrend`,
+            defaults to None.
+            None signals to not apply filtering
                          [dict] - keyword arguments to pass to (ML)Trace.detrend()
                                   that differ from default argument(s)
+        :type detrendkw: dict or bool
         :param resample_method: [False] - disable resampling
                               [str] name of resampling method to use
                                     'resample'
                                     'interpolate'
                                     'decimate'
+        :type resample_method: str or bool
         :param resamplekw: [dict] - keyword arguments to pass to 
                             getattr((ML)Trace, resample_method)(**resamplekw)
+        :
         :param taperkw: [False] - disable tapering
                         [dict] - keyword arguments to pass to (ML)Trace.taper()
                                 that differ from default arguemnts(s)
@@ -1022,6 +1049,7 @@ class MLTrace(Trace):
         :param trimkw: [False] - disable trim
                         [dict] - keyword arguments to pass to (ML)Trace.trim()
                                 that differ from default argument(s)
+        :TODO: Need to clean up the split/merge handling at the end
         """
         # See if splitting is needed
         if isinstance(self.data, np.ma.MaskedArray):
@@ -1030,32 +1058,44 @@ class MLTrace(Trace):
             st = obspy.Stream([self])
         # Apply trace(segment) processing
         for tr in st:
-            if filterkw:
+            if isinstance(filterkw, dict):
                 tr = tr.filter(**filterkw)
-            if detrendkw:
+            elif filterkw is not None:
+                raise TypeError('filterkw must be type dict or NoneType')
+            if isinstance(detrendkw, dict):
                 tr = tr.detrend(**detrendkw)
-            if resample_method:
+            elif detrendkw is not None:
+                raise TypeError('detrendk kw myst be type dict or NoneType')
+            if isinstance(resample_method, str):
                 if resample_method in [func for func in dir(tr) if callable(getattr(tr, func))]:
                     if self.stats.sampling_rate != resamplekw['sampling_rate']:
                         tr = getattr(tr,resample_method)(**resamplekw)
                 else:
                     raise TypeError(f'resample_method "{resample_method}" is not supported by {self.__class__}')
-            if taperkw:
+            elif resample_method is not None:
+                raise TypeError('resample_method must be type str or NoneType')
+            if isinstance(taperkw, dict):
                 tr = tr.taper(**taperkw)
-            # print(st)
+            elif taperkw is not None:
+                raise TypeError('taperkw must be type dict or NoneType')
+            
+        # If there is more than one trace, sequentailly re-stitch into a single trace
         if len(st) > 1:
             for _i, tr in enumerate(st):
                 if _i == 0:
                     first_tr = tr
                 else:
                     first_tr.__add__(tr, **mergekw)
+        # If we have one trace, just pull it out f the stream
         elif len(st) == 1:
             first_tr = st[0]
-        # If input is a fully masked MLTrace, resample
+        # If input is a fully masked MLTrace, such that split() produced an empty Stream
         else:
+            raise NotImplementedError('handling for all-masked trace is under review')
+            # Resample 
             getattr(self, resample_method)(**resamplekw)
             self.to_zero(method='both')
-            
+        # If we have a valid output stream  
         if len(st) > 0:
             self.stats = first_tr.stats
             self.data = first_tr.data
@@ -1076,6 +1116,64 @@ class MLTrace(Trace):
                            stats_pad=20,
                            decimals=6,
                            include_processing_info=False):
+        """Conduct triggering on what is assumed to be the output of a continuous time-series
+        output from a ML classifier (e.g., PhaseNet). This method estimatesstatistical measures
+        of a trigger returned by :meth: `~obspy.signal.trigger.trigger_onset`
+        assuming the samples of the trigger represent a data distribution y(x).
+
+
+        :param thresh: triggering threshold, typically \in (0, 1)
+        :type thresh: float
+        :param blinding: left and right blinding samples, defaults to (None, None)
+        :type blinding: tuple of int, optional
+        :param min_len: minimum trigger length in samples, defaults to 5
+        :type min_len: int-like, optional
+        :param max_len: maximum trigger length in samples, defaults to 9e99
+        :type max_len: int-like, optional
+        :param extra_quantiles: additional quantiles to estimate, defaults to [0.159, 0.25, 0.75, 0.841]
+            in addition to Q = 0.5 (the median)
+        :type extra_quantiles: list, optional
+        :param stats_pad: number of samples to pad outward from the trigger onset and offset samples to
+            use for calculating statistical measures of a trigger, defaults to 20
+        :type stats_pad: int, optional
+
+        :TODO: Obsolite these two arguments and underlying subroutines
+        :param decimals: precision of values, defaults to 6
+        :type decimals: int, optional
+        :param include_processing_info: Should processing information from the MLTrace , defaults to False
+        :type include_processing_info: bool, optional
+
+        :return: _description_
+        :rtype: _type_
+
+        report fields:
+        network     - network code of this MLTrace
+        station     - station code
+        location    - location code
+        channel     - channel code (component replaced with label)
+        model       - model name
+        weight      - weight name
+        label       - label code
+        t0          - reference starttime (in epoch)
+        SR          - sampling rate (Hz)
+        npts        - number of samples in this MLTrace
+        lblind      - number of samples blinded on the left end of trace
+        rblind      - number of samples blinded on the right end of trace
+        stats_pad   - number of samples added to either side of trigger(s) for estimating statistics
+        thrON       - threshold ON value = thresh
+        iON         - sample index of trigger onset
+        thrOFF      - threshold OFF value = thresh
+        iOFF        - sample index of trigger conclusion
+        pMAX        - maximum value of trigger
+        iMAX        - sample index of the maximum value in trigger
+        imean       - sample index of the mean of the trigger
+        istd        - estimated standard deviation in number of samples 
+        iskew       - estimated skew in number of samples
+        ikurt       - estimated kurtosis in number of samples
+        pQ?         - trigger value at the ? quantile
+        iQ?         - position of the ? quantile value
+
+        """        
         if self.stats.model == self.stats.defaults['model']:
             raise ValueError('model is unassigned - not working on a prediction trace')
         elif self.stats.weight == self.stats.defaults['weight']:
@@ -1151,11 +1249,7 @@ class MLTrace(Trace):
             else:
                 return df_out
         else:
-            return None
-                
-
-                
-                        
+            return None            
 
         
     ###############################################################################
@@ -1167,7 +1261,19 @@ class MLTrace(Trace):
         the self.fold attribute with numpy.interp using relative times to the original
         MLTrace.stats.starttime value
 
-        also see obpsy.core.trace.Trace.resample
+        see indepth description in :meth: `~obpsy.core.trace.Trace.resample`
+
+        :param sampling_rate: new sampling rate in samples per second
+        :type sampling_rate: float
+        :param window: window type to use, defaults to 'hann'
+        :type window: str, optional
+        :param no_filter: do not apply prefiltering, defaults to True
+        :type no_filter: bool, optional
+        :param strict_length: leave traces unchanged for which the endtime of the MLTrace
+            would change, defaults to False
+        :type strict_length: bool, optional
+        :return: view of this MLTrace
+        :rtype: ayahos.core.mltrace.MLTrace
         """
         tmp_fold = self.fold
         tmp_times = self.times()
@@ -1194,22 +1300,26 @@ class MLTrace(Trace):
         the self.fold attribute using relative times if `starttime` is None or POSIX times
         if `starttime` is specified using numpy.interp
 
-        also see obspy.core.trace.Trace.interpolate for detailed descriptions of inputs
+        also see :meth `~obspy.core.trace.Trace.interpolate` for detailed descriptions of inputs
 
         :: INPUTS ::
-        :param sampling_rate: [float] new sampling rate
-        :param method: [str] interpolation method - default is 'weighted_average_slopes'
-                            also see obspy.core.trace.Trace.interpolate for other options
-        :param starttime: [None] or [obspy.core.utcdatetime.UTCDateTime]
+        :param sampling_rate: new sampling rate in samples per second
+        :type sampling_rate: float
+        :param method: interpolation method - default is 'weighted_average_slopes'
+        :type method: str
+        :param starttime: alternative start time for interpolation that is within the
+                bounds of this MLTrace's starttime and endtime
+        :type starttime: NoneType or obspy.core.utcdatetime.UTCDateTime
                           alternative starttime for interpolation (must be in the current
                           bounds of the original MLTrace)
-        :param npts: [None] or [int] new number of samples to interpolate to
-        :param time_shift: [float] seconds to shift the self.stats.starttime metadata by
-                        prior to interpolation
-        :param *args: [args] additional positional arguments to pass to the interpolator
-                        in obspy.core.trace.Trace.interpolate
-        :param **kwargs: [kwargs] additional key word arguments to pass to the interpolator
-                        in obspy.core.trace.Trace.interpolate
+        :param npts: new number of samples to interpolate to
+        :type npts: int or NoneType
+        :param time_shift: seconds to shift the starttime metadata by prior to interpolation
+        :type time_shift: float
+        :param *args: dditional positional arguments to pass to the interpolator in :meth `~obspy.core.trace.Trace.interpolate`
+        :type *args: list-like
+        :param **kwargs: additional key word arguments to pass to the interpolator in :meth: `~obspy.core.trace.Trace.interpolate`
+        :type **kwargs: kwargs
         """
         tmp_fold = self.fold
         if starttime is None:
@@ -1267,9 +1377,8 @@ class MLTrace(Trace):
         :param **kwargs:    [kwargs] key word argument collector passed
                             to (ML)Trace.interpolate()
         :type **kwargs: key-word arguments
-
-        :: OUTPUT ::
-        :return self: [ayahos.core.trace.mltrace.MLTrace] - enables cascading
+        :return: view of this object
+        :rtype: ayahos.core.trace.mltrace.MLTrace
         """                 
         if starttime is not None:
             try:
@@ -1321,10 +1430,19 @@ class MLTrace(Trace):
     def decimate(self, factor, no_filter=False, strict_length=False):
         """
         Run the obspy.core.trace.Trace.decimate() method on this MLTrace, interpolating
-        the self.fold attribute with numpy.interp using relative times to the original
-        MLTrace.stats.starttime value
+        its `fold` attribute with :meth: `~numpy.interp` using relative times to the original
+        `stats.starttime` value
 
-        also see obpsy.core.trace.Trace.decimate
+        see :meth: `~obpsy.core.trace.Trace.decimate` for details on parameters
+        and specific behaviors.
+
+        :param factor: decimation factor
+        :type factor: float
+        :param no_filter: do not apply contextual prefilter? Defaults to False
+        :type no_filter: bool, optional
+        :param strict_length: maintain strict length for output trace? Defaults to False
+        :type strict_length: bool, optional
+        
         """
         tmp_fold = self.fold
         tmp_times = self.times()
@@ -1347,17 +1465,18 @@ class MLTrace(Trace):
         Convert this MLTrace into an obspy.core.trace.Trace,
         masking values that have fold less than fold_threshold
 
-        :: INPUTS ::
-        :param fold_threshold: [int-like] threshold value, below which
-                        samples are masked
-        :param output_mod: [bool] should the model and weight strings
-                        be included in the output?
-
-        :: OUTPUT ::
-        :return tr: [obspy.core.trace.Trace] trace copy with fold_threshold 
-                        applied for masking
-        :return model: [str] (if output_mod == True) model name
-        :return weight: [str] (if output_mod == True) weight name
+        :param fold_threshold: minimum fold value to consider as "valid" data, all
+            datapoints with fold lower than fold_threshold are converted to masked
+            values, defaults to 0
+        :type fold_threshold: int-like
+        :param output_mod: should the model and weight names be included in the output?, defaults to False
+        :type output_mod: bool, optional
+        :return tr: trace copy with fold_threshold applied for masking
+        :rtype tr: obspy.core.trace.Trace
+        :return model: (if output_mod == True) model name
+        :rtype model: str
+        :return weight: (if output_mod == True) weight name
+        :rtype weight: str
         """
         tr = Trace()
         for _k in tr.stats.keys():
@@ -1375,6 +1494,14 @@ class MLTrace(Trace):
         return tr
     
     def read(file_name):
+        """Read a MSEED file that was generated by :meth: `~ayahos.core.mltrace.MLTrace.write`
+        to reconstitute a new MLTrace object
+
+        :param file_name: file to read
+        :type file_name: str
+        :return mlt: reconstituted MLTrace 
+        :rtype: ayahos.core.mltrace.MLTrace
+        """        
         # Get dictionary of pretrained model-weight combinations
         ptd = pretrained_dict()
         # read input file and merge in case data saved were gappy
@@ -1407,6 +1534,17 @@ class MLTrace(Trace):
 
 
     def _prep_fold_for_mseed(self):
+        """PRIVATE METHOD
+
+        conduct processing steps to convert a copy of the fold,
+        model-code, and weight-code attributes contained in this
+        MLTrace object to compose a MSEED compliant trace that
+        can be saved with the :meth: `~obspy.core.stream.Stream.write`
+        method
+
+        :return fold_trace: fold trace
+        :rtype fold_trace: obspy.core.trace.Trace
+        """        
         fold_trace = self.copy()
         fold_trace.data = self.fold
         # Shoehorn Model and Weight info into NSLC strings
@@ -1419,13 +1557,29 @@ class MLTrace(Trace):
     def write(self, file_name, pad=False, fill_value=None, **options):
         """
         Write the contents of this MLTrace object to a miniSEED file comprising two
-        trace types:
+        trace types to preserve added labeling attributes 'model' and 'weight' in the
+        MLStats object attached to this MLTrace and the fold attribute contents of this MLTrace
         DATA:
             Net.Sta.Loc.Chan trace - with self.data as the data
         AUX:
             FO.Model.LD.Wgt - with self.fold as the data
         Where the Net 'FO' and location 'LD' are fixed strings used as a flag that
-        this is an auxillary trace providing
+        this is an auxillary trace providing. 
+
+        This method wraps the :meth: `~obspy.core.stream.Stream.write` method and
+        forces the format "MSEED"
+
+        :param file_name: file name to save this MLTrace to
+        :type file_name: str
+        :param pad: should padding be applied to treat gaps?, defaults to False
+        :type pad: bool, optional
+        :param fill_value: fill_value to pass to padding (if pad is True), defaults to None
+        :type fill_value: NoneType, int, or float, optional
+        :param **options: key word argument gatherer to pass to :meth: `~obspy.core.stream.Stream.write`
+            Note: will automatically remove `fmt` inputs
+        :type **options: kwargs
+        :return st: the formatted stream saved to disk
+        :rtype st: obspy.core.stream.Stream
         """
         st = Stream()
         # Convert data vector from MLTrace into
@@ -1448,7 +1602,10 @@ class MLTrace(Trace):
                     for mlt in split_copy:
                         st += mlt.to_trace(attach_mod_to_loc=False)
                         st += mlt._prep_fold_for_mseed()
-                    
+        # Safety catch against fmt being specified in options
+        if 'fmt' in options:
+            options.pop('fmt')   
+        # Write to disk       
         st.write(file_name, fmt='MSEED', **options)
         return st
 
@@ -1457,6 +1614,10 @@ class MLTrace(Trace):
     ###############################################################################
 
     def get_site(self):
+        """return the site code (Network.Station) of this MLTrace
+        :return site: site code
+        :rtype site: str
+        """        
         hdr = self.stats
         site = f'{hdr.network}.{hdr.station}'
         return site
@@ -1464,6 +1625,12 @@ class MLTrace(Trace):
     site = property(get_site)
 
     def get_inst(self):
+        """return the instrument code (Band Character + Instrument Character)
+        from this MLTrace's channel code
+
+        :return inst: instrument code
+        :rtype: str
+        """        
         hdr = self.stats
         if len(hdr.channel) > 0:
             inst = f'{hdr.location}.{hdr.channel[:-1]}'
@@ -1474,6 +1641,15 @@ class MLTrace(Trace):
     inst = property(get_inst)
 
     def get_comp(self):
+        """get the component character for this MLTrace object
+
+        NOTE:
+        Ayahos uses the component code to denote ML model prediction
+        labels (e.g. Detection in EQTransformer becomes comp = 'D')
+
+        :return comp: component/label character
+        :rtype comp: str
+        """        
         hdr = self.stats
         if len(hdr.channel) > 0:
             comp = hdr.channel[-1]
@@ -1482,17 +1658,36 @@ class MLTrace(Trace):
         return comp
     
     def set_comp(self, other):
+        """convenience method for changing the component code of this MLTrace
+
+        :param other: new character to assign to the component character
+        :type other: str
+        """        
         char = str(other).upper()[0]
         self.stats.channel = self.stats.channel[:-1] + char            
     
     comp = property(get_comp)
 
     def get_mod(self):
+        """Get the MOD code (Model.Weight) for this MLTrace
+
+        :return mod: MOD code
+        :rtype mod: str
+        """        
         hdr = self.stats
         mod = f'{hdr.model}.{hdr.weight}'
         return mod
     
     def set_mod(self, model=None, weight=None):
+        """Set the MOD code (Model.Weight) for this MLTrace
+
+        :param model: new model code, defaults to None
+            None input does not modify the stats.model attribute
+        :type model: str or NoneType, optional
+        :param weight: new weight code, defaults to None
+            None input does not modify the stats.weight attribute
+        :type weight: str or NoneType, optional
+        """        
         if model is not None:
             self.stats.model = model
         if weight is not None:
@@ -1501,18 +1696,38 @@ class MLTrace(Trace):
     mod = property(get_mod)
 
     def get_id(self):
+        """Get the full id of this MLTrace Object
+        id = Network.Station.Location.Channel.Model.Weight
+
+        :return id: id string
+        :rtype id: str
+        """        
         id = f'{self.site}.{self.inst}{self.comp}.{self.mod}'
         return id
 
     id = property(get_id)
 
     def get_instrument_id(self):
+        """Get the instrument id (NSLC minus component code) of this MLTrace
+
+        :return id: instrument id code
+        :rtype id: str
+        """        
         id = f'{self.site}.{self.inst}'
         return id
     
     instrument = property(get_instrument_id)
 
     def get_valid_fraction(self, thresh=1):
+        """Convenience method for getting the valid fraction for this whole MLTrace
+
+        compare to :meth: `~ayahos.core.mltrace.MLTrace.get_fvalid_subset`
+
+        :param thresh: fold threshold, defaults to 1
+        :type thresh: int, optional
+        :return: fraction of data that are "valid"
+        :rtype: float
+        """        
         npts = self.stats.npts
         nv = np.sum(self.fold >= thresh)
         return nv/npts
@@ -1520,6 +1735,11 @@ class MLTrace(Trace):
     fvalid = property(get_valid_fraction)
 
     def get_id_element_dict(self):
+        """Get a dictionary of commonly used trace naming attributes
+
+        :return key_opts: dictionary of attribute names and values 
+        :rtype key_opts: dict
+        """        
         key_opts = {'id': self.id,
                     'instrument': self.instrument,
                     'site': self.site,

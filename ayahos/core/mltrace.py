@@ -111,12 +111,16 @@ def read_mltrace(data_file, **obspy_read_kwargs):
 ###################################################################################
 
 class MLStats(Stats):
-    """
-    This child class of the obspy.core.trace.Stats class adds in trace
-    ID labels 'model' and 'weight' to capture different ML model architecture
-    and pretrained weight names in the course of data processing. It also
-    adjusts the default 'location' value to '--' to conform with Earthworm
-    conventions for no-location channel codes.
+    """An ObsPy :class: `~obspy.core.trace.Stats` child class that
+    has modified and extended default values relative to ObsPy's Stats
+    to encapsulate additional metadata associated with the Ayahos
+    :class: `~ayahos.core.mltrace.MLTrace` class.
+
+    Added/modified defaults are:
+    'location' = '--'
+    'model' - name of the ML model associated with a MLTrace
+    'weight' - name of the ML model weights associated with a MLTrace
+
     """
     # set of read only attrs
     readonly = ['endtime']
@@ -137,8 +141,11 @@ class MLStats(Stats):
     })
 
     def __init__(self, header={}):
-        """
-        """
+        """Create a :class: `~ayahos.core.mltrace.MLStats object
+
+        :param header: Initial values to overwrite default values, defaults to {}
+        :type header: dict, optional
+        """        
         super(Stats, self).__init__(header)
         if self.location == '':
             self.location = self.defaults['location']
@@ -190,17 +197,26 @@ def _add_processing_info(func, *args, **kwargs):
 ###################################################################################
 
 class MLTrace(Trace):
-    """
-    Extension of the obspy.core.trace.Trace class that adds in a 
-    "fold" data attribute that records the number of obersvations contributing
-    to a particular sample of the same index in the "data" attribute. Additionally
-    it uses the MLStats class above in the place of the obspy.core.trace.Stats
-    class to track additional information regarding ML model architectures and
-    pretrained weights 
+    """An ObsPy :class: `~obspy.core.trace.Trace` child class that adds a `fold`
+    attribute that tracks the number of observations assocaited with a given datapoint
+    in the Trace.data. 
 
-    This class provides updated definitions for the following obspy.core.trace.Trace
-    methods to include an update to the "fold" attribute to match changes in the scaling
-    of the "data" attribute
+    The `fold` attribute defaults to a value of 1 for all unmasked data and 0 for
+    all masked data. Throughout processing if a datapoint becomes masked, its fold
+    is set to 0, however, if fold is set to 0 (called blinding), the corresponding
+    sample(s) in the `data` attribute are preserved.
+
+    `fold` conveys observation density/importance for sample(s) (added Ayahos syntax)
+    `masked` conveys data gaps (standard syntax in ObsPy)
+
+    :param data: data vector to write to this MLTrace, defaults to empty numpy array
+    :type data: numpy.ndarray
+    :param fold: vector conveying the number of observations associated with each
+            data point in `data` array. Defaults to None, resulting in a fold vector
+            that equals numpy.ones(shape=data.shape)
+    :type fold: NoneType or numpy.ndarray
+    :param header: initial values for the MLStats object
+    :type header: dict or NoneType, optional
 
     :: UPDATED METHODS ::
     .__add__     - aliases to the .merge() method that is similar to, albiet with fewer options,
@@ -226,9 +242,10 @@ class MLTrace(Trace):
                               3) fold-weighted average value of overlapping data samples
     .blind - set npts values on either end of self.fold to 0
     .as_trace - 
+
     :: UPDATED PROPERTIES ::
-    .id     - "NET.STA.LOC.CHAN.MODEL.WEIGHT"
-    .site   - "NET.STA"
+    .id     - "NETWORK.STATION.LOCATION.CHANNEL.MODEL.WEIGHT"
+    .site   - "NETWORK.STATION"
     .inst   - "LOC.BandInstrument" (channel, minus the component code)
     .mod    - "MODEL.WEIGHT"
     """
@@ -237,19 +254,14 @@ class MLTrace(Trace):
         """
         Initialize an MLTrace object
         
-        :: INPUTS ::
-        :param data: [numpy.ndarray] data vector to write to this MLTrace
-        :param header: [None] or [dict] initialization data for the
-                        MLTrace.stats attribute, which is an MLStats object
-        
-        :: ATTRIBUTES ::
-        :attr data: data vector, same as obspy.core.trace.Trace
-        :attr fold: fold vector, same size as self.data, denotes the number of
-                    observtions associated with a given element in MLTrace.data
-
-                    This becomes important when using the MLTrace.merge() method
-                    when conducting stacking (method = 2 or 3)
-        :attr stats: obspy.core.trace.Stats child-class MLStats object
+        :param data: data vector to write to this MLTrace, defaults to empty numpy array
+        :type data: numpy.ndarray
+        :param fold: vector conveying the number of observations associated with each
+                data point in `data` array. Defaults to None, resulting in a fold vector
+                that equals numpy.ones(shape=data.shape)
+        :type fold: NoneType or numpy.ndarray
+        :param header: initial values for the MLStats object
+        :type header: dict or NoneType, optional
         """
         # If a trace is passed as data, do super().__init__ with it's data & header
         if type(data) == Trace:
@@ -286,13 +298,48 @@ class MLTrace(Trace):
 
     ###############################################################################
     def utcdatetime_to_nearest_index(self, utcdatetime):
+        """get the index of the nearest sample in `data` to a provided
+        UTCDateTime time calculated as
+
+        index = (utcdatetime - starttime)*sampling_rate
+
+        :param utcdatetime: reference datetime
+        :type utcdatetime: obspy.core.utcdatetime.UTCDateTime
+        :return: index number
+        :rtype: int
+        """        
         return round((utcdatetime - self.stats.starttime)*self.stats.sampling_rate)
 
     def is_utcdatetime_in_sampling(self, utcdatetime):
+        """check if a given utcdatetime timestamp aligns
+        with the sampling mesh of this MLTrace
+
+        :param utcdatetime: reference datetime
+        :type utcdatetime: obspy.core.utcdatetime.UTCDateTime
+        :return: is this `utcdatetime` in the sampling mesh?
+        :rtype: bool
+        """        
         npts = (utcdatetime - self.stats.starttime)*self.stats.sampling_rate
         return npts == int(npts)
             
     def get_subset_view(self, starttime=None, endtime=None):
+        """Fetch a subset view of the contents of this MLTrace's
+        data and fold attributes
+
+        NOTE: View means that any modifications made to the outputs
+        affect the source data.
+
+        :param starttime: reference starttime, defaults to None
+            None results in using the starttime of this MLTrace
+        :type starttime: None or obspy.core.utcdatetime.UTCDateTime, optional
+        :param endtime: reference endtime, defaults to None
+            None results in using the endtime of this MLTrace
+        :type endtime: None or obspy.cre.utcdatetime.UTCDateTime, optional
+        :return data_view: view of the data attribute
+        :rtype data_view: numpy.ndarray
+        :return fold_view: view of the fold attribute
+        :rtype fold_view: numpy.ndarray
+        """        
         # Get indicies of initial sample
         if starttime is None:
             ii = 0
@@ -318,15 +365,30 @@ class MLTrace(Trace):
         return data_view, fold_view
 
 
-    def trimmed_copy(self, starttime=None, endtime=None, pad=False, fill_value=None):
+    def view_copy(self, starttime=None, endtime=None, pad=False, fill_value=None):
         """
-        Return a subset view of the data and/or fold arrays using basic 
-        numpy indexing, such that the view of the underlying data.
-        I.e., the view is not a copy of the data
+        Create a trimmed copy of this MLTrace where the subset data are fetched
+        as a view and then coppied into a new :class: `~ayahos.core.mltrace.MLTrace`
+        object.
 
-        This is highly beneficial for reducing memory overhead when sampling small
+        This is beneficial for reducing memory overhead when sampling small
         segments of long traces (i.e., window generation from MLTraceBuffer objects)
         where the source trace data cannot be altered.
+
+        :param starttime: reference starttime, defaults to None
+                None uses the starttime for this MLTrace
+        :type starttime: NoneType or obspy.core.utcdatetime.UTCDateTime
+        :param endtime: reference endtime, defaults to None
+                None uses the endtime for this MLTrace
+        :type endtime: NoneType or obspy.core.utcdatetime.UTCDateTime
+        :param pad: Should the output trace be padded (i.e. filled gaps/padded edges)?, defaults to False
+        :type pad; bool
+        :param fill_value: fill value to use with padding, defaults to None
+        :type fill_value: NoneType, int, float
+            also see :meth: `~obspy.core.trace.Trace.trim`
+                     :meth: `~ayahos.core.mltrace.MLTrace.trim`
+        :return mlt: new MLTrace conataining copied data (and fold) information
+        :rtype: ayahos.core.mltrace.MLTrace
         """
         data_view, fold_view = self.get_subset_view(starttime=starttime, endtime=endtime)
         ii = self.utcdatetime_to_nearest_index(starttime)
@@ -361,6 +423,19 @@ class MLTrace(Trace):
 
     
     def get_fvalid_subset(self, starttime=None, endtime=None, threshold=1):
+        """Get the fraction of valid (non-masked & fold >= threshold) data
+        contained in this trace (or a subset view thereof)
+
+        :param starttime: optional alternative starttime for creating a view, defaults to None
+        :type starttime: obspy.core.utcdatetime.UTCDateTime, optional
+        :param endtime: optional alternative endtime for creating a view, defaults to None
+        :type endtime: obspy.core.utcdatetime.UTCDateTime, optional
+            also see :meth: `~ayahos.core.mltrace.MLTrace.get_subset_view`
+        :param threshold: minimum fold value to consider a datapoint "valid", defaults to 1
+        :type threshold: int, optional
+        :return fvalid: fraction of data that are valid
+        :rtype: float
+        """        
         _, fold_view = self.get_subset_view(starttime=starttime, endtime=endtime)
         num = sum(fold_view >= threshold)
         if starttime is None:
@@ -380,11 +455,6 @@ class MLTrace(Trace):
             fvalid = 0
         return fvalid
 
-
-
-
-
-
     ###############################################################################
     # FOLD METHODS ################################################################
     ###############################################################################        
@@ -392,9 +462,14 @@ class MLTrace(Trace):
 
     def get_fold_trace(self):
         """
-        Return an obspy.core.trace.Trace object with data=fold vector for this MLTrace,
+        Return an :class: `~obspy.core.trace.Trace` object with data=fold vector for this MLTrace,
         replacing the componet character with an 'f' and discarding additional properties
         in the trace stats
+
+        i.e., the mltrace.stats.model and mltrace.stats.weight are discarded
+
+        :return ft: fold trace
+        :rtype ft: obspy.core.trace.Trace
         """
         header = Stats()
         for _k in header.defaults.keys():
@@ -410,13 +485,12 @@ class MLTrace(Trace):
         setting `blinding` samples on either end of the fold
         array to 0
 
-        :: INPUT ::
-        :param blinding: [2-tuple] of [int-like] or [int-like]
-                        2-tuple: positive int-like number of samples to
+        :param blinding: 2-tuple: positive int-like number of samples to
                                 blind on the left (blinding[0]) and 
                                 right (blinding[1]) ends of fold
-                        int-like: positive number of samples to blind
+                         int: positive number of samples to blind
                                 on either end of fold
+        :type blinding: [2-tuple] of int values, or int
         """
         if isinstance(blinding, (list, tuple)):
             if len(blinding) != 2:

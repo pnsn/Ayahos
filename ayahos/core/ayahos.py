@@ -30,6 +30,22 @@ class Ayahos(TubeWyrm):
 
     This class inherits from wyrm.core.wyrms.tubewyrm.TubeWyrm to house 
     and orchestrate sequenced operations of wyrm submodules
+
+    :param ew_env_file: filepath for the desired EW environment to source, defaults to None
+    :type ew_env_file: str or None, optional
+    :param wait_sec: number of seconds to wait between pulses, defaults to 0
+    :type wait_sec: int, optional
+    :param default_ring_id: default ring ID to assign to EWModule, defaults to 1000
+    :type default_ring_id: int, optional
+    :param module_id: module ID that Earthworm will see for this EWModule, defaults to 200
+    :type module_id: int, optional
+    :param installation_id: installation ID, defaults to 255 - anonymous/nonexchanging installation
+    :type installation_id: int, optional
+    :param heartbeat_period: send heartbeat message to Earthworm every X seconds, defaults to 15
+    :type heartbeat_period: int, optional
+    :param wyrm_dict: dictionary of ayahos.core.wyrms-type objects that will be executed in a chain , defaults to {}
+    :type wyrm_dict: dict, optional
+        also see ayahos.core.wyrms.tubewyrm.TubeWyrm
     """
 
     def __init__(
@@ -155,9 +171,9 @@ class Ayahos(TubeWyrm):
         Wraps ```PyEW.EWModule.__init__(**self.module_init_kwargs)```
         to initialize the self.module object contained in this Ayahos
 
-        :param user_check: _description_, defaults to True
+        :param user_check: should the pre-initialization user input check occur? Defaults to True
         :type user_check: bool, optional
-        :raises RuntimeError: _description_
+        :raises RuntimeError: Raisese error if the EWModule is already running
         """        
         if user_check:
             cstr = "About to initialize the following PyEW.EWModule\n"
@@ -201,6 +217,8 @@ class Ayahos(TubeWyrm):
         :type name: str or int
         :param ring_id: earthworm ring ID (value falls in the range [0, 9999])
         :type ring_id: int
+        :return connections: a view of the connections attribute of this Ayahos object
+        :rtype connections: dict
         """
         # === RUN COMPATABILITY CHECKS ON INPUT VARIABLES === #
         if not isinstance(name, (str, int)):
@@ -220,6 +238,7 @@ class Ayahos(TubeWyrm):
         self.module.add_ring(ring_id)
         idx = len(self.connections)
         self.connections.update({name: (idx, ring_id)})
+        return self.connections
 
 
     ######################################
@@ -278,8 +297,12 @@ class Ayahos(TubeWyrm):
         Logger.critical("Shutting Down Module")     
 
     def pulse(self):
+        """Overwrites the inherited :meth: `~ayahos.wyrms.tubewyrm.Tubewyrm.pulse` method
+        that broadcasts a pair of logging errors and then returns None, None
+        """        
         Logger.error("pulse() method disabled for ayahos.core.ayahos.Ayahos")
         Logger.error("Use Ayahos.run() to start module operation")
+        return None, None
 
     ########################
     # CONSTRUCTION METHODS #

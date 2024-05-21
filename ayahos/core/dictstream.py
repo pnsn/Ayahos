@@ -656,6 +656,7 @@ class DictStream(Stream):
         :: INPUTS ::
         :param base_path: [str] path to the directory that will contain the save file structure. If it does
                     not exist, a directory (structure) will be created
+        :type base_path: str
         :param path_structure: [None] - no intermediate path structure
                                 [str] - format string based on the metadata of individual MLTrace objects contained
                                         in this DictStream. In addition to standard kwargs in the MLTrace.stats
@@ -670,6 +671,8 @@ class DictStream(Stream):
                                             inst - Loc.Chan (minus the component character) code string
                                             mod - Mod.Wgt code string
                                             instrument - site.inst (as defined above) code string
+        :type path_structure: str or NoneType
+                                        
         :param name_structure: [str] - format string with the opions as described for path_structure
         :param **options: [kwargs] optional key word argument collector for 
 
@@ -954,7 +957,7 @@ class DictStream(Stream):
              nearest_sample=True,
              fill_value=None):
         """
-        Slight adaptation of obspy.core.stream.Stream.trim() to facilitate the dict-type self.traces
+        Slight adaptation of :meth: `~obspy.core.stream.Stream.trim` to accommodate to facilitate the dict-type self.traces
         attribute syntax.
 
         see obspy.core.stream.Stream.trim() for full explanation of the arguments and behaviors
@@ -1009,7 +1012,13 @@ class DictStream(Stream):
         self.stats.common_id = self.get_common_id()
         return self
     
-    def normalize_traces(self, norm_type:str ='peak'):
+    def normalize_traces(self, norm_type ='peak'):
+        """Normalize traces in this DictStream using a specified
+        norm_type and :meth: `~ayahos.core.mltrace.MLTrace.normalize`
+
+        :param norm_type: _description_, defaults to 'peak'
+        :type norm_type: str, optional
+        """        
         for tr in self:
             tr.normalize(norm_type=norm_type)
     
@@ -1018,6 +1027,17 @@ class DictStream(Stream):
     # VISUALIZATION TOOLS #  
     #######################
     def _to_vis_stream(self, fold_threshold=0, normalize_src_traces=True, attach_mod_to_loc=True):
+        """PRIVATE METHOD - prepare a copy of the traces in this DictStream for visualization
+
+        :param fold_threshold: _description_, defaults to 0
+        :type fold_threshold: int, optional
+        :param normalize_src_traces: _description_, defaults to True
+        :type normalize_src_traces: bool, optional
+        :param attach_mod_to_loc: _description_, defaults to True
+        :type attach_mod_to_loc: bool, optional
+        :return: _description_
+        :rtype: _type_
+        """        
         st = obspy.Stream()
         for mltr in self:
             tr = mltr.copy()
@@ -1029,6 +1049,9 @@ class DictStream(Stream):
         return st
 
     def plot(self, fold_threshold=0, attach_mod_to_loc=True, normalize_src_traces=False, **kwargs):
+        """Plot the contents of this DictStream using the obspy.core.stream.Stream.plot backend
+        
+        """
         st = self._to_vis_stream(fold_threshold=fold_threshold,
                                  normalize_src_traces=normalize_src_traces,
                                  attach_mod_to_loc=attach_mod_to_loc)
@@ -1036,6 +1059,20 @@ class DictStream(Stream):
         return outs
     
     def snuffle(self, fold_threshold=0, attach_mod_to_loc=True, normalize_src_traces=True,**kwargs):
+        """Launch a snuffler instance on the contents of this DictStream
+
+        NOTE: Imports from Pyrocko and runs :meth: `~pyrocko.obspy_compat.plant()`
+
+        :param fold_threshold: fold_threshold for "valid" data (invalid data are masked), defaults to 0
+        :type fold_threshold: float, optional
+        :param attach_mod_to_loc: should model and weight names be appended to the trace's location string, defaults to True
+        :type attach_mod_to_loc: bool, optional
+        :param normalize_src_traces: normalized traces for traces that have default weight codes, defaults to True
+        :type normalize_src_traces: bool, optional
+        :return: standard output from :meth: `obspy.core.stream.Stream.snuffle` which is added to Stream
+            via :class: `pyrocko.obspy_compat`
+        :rtype: tuple
+        """        
         if 'obspy_compat' not in dir():
             from pyrocko import obspy_compat
             obspy_compat.plant()
@@ -1052,6 +1089,22 @@ class DictStream(Stream):
     ####################
 
     def prediction_trigger_report(self, thresh, exclude_list=None, **kwargs):
+        """Wrapper around the :meth: `~ayahos.core.mltrace.MLTrace.prediction_trigger_report`
+        method. This method executes the Trace-level method on each trace it contains using
+        shared inputs
+
+        :TODO: Update to the `notin` method (develop notin from the code in here)
+
+        :param thresh: trigger threshold value
+        :type thresh: float
+        :param exclude_list: :meth: `~ayahos.core.dictstream.DictStream.notin` compliant strings
+                        to exclude from trigger processing, defaults to None
+        :type exclude_list: list of str, optional
+        :param **kwargs: gatherer for key word arguments to pass to :meth: `~ayahos.core.mltrace.MLTrace.prediction_trigger_report`
+        :type **kwargs: key word arguments, optional
+        :return df_out: trigger report
+        :rtype df_out: pandas.core.dataframeDataFrame
+        """        
         df_out = pd.DataFrame()
         if 'include_processing_info' in kwargs.keys():
             include_proc = kwargs['include_processing_info']

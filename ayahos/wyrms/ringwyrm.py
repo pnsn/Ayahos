@@ -25,7 +25,7 @@ import logging
 import PyEW
 from collections import deque
 from ayahos.wyrms.wyrm import Wyrm, add_class_name_to_docstring
-from ayahos.util.pyew import wave2mltrace, trace2wave
+from ayahos.util.pyew import wave2mltrace, is_empty_message
 
 Logger = logging.getLogger(__name__)
 
@@ -108,126 +108,138 @@ class RingWyrm(Wyrm):
 
         Logger.info('RingWyrm method {0} for message type {1}'.format(self.pulse_method, self.msg_type))
 
-    def _is_empty_message(self, msg):
-        """based on the input msg, determine if the `get` method returned an empty message
 
-        :param msg: message from PyEW.EWModule.get_*
-        :type msg: dict, str, or tuple
-        :return status: does this look like an empty PyEW message?
-        :rtype: bool
-        """
-        if msg in ['', (0,0), {}]:
-            status = True
-        else:
-            status = False
-        return status
 
     #################################
     # POLYMORPHIC METHODS FOR PULSE #
     #################################
 
-    def _continue_iteration(self, stdin, stdin_measure, iterno):
-        """_continue_iteration for RingWyrm
+    def _should_this_iteration_run(self, input, input_size, iter_number):
+        """
+        POLYMORPHIC
+        Last updated with :class: `~ayahos.wyrms.ringwyrm.RingWyrm`
 
         For "put" pulse_method, use Wyrm's _continue_iteration() inherited method
-        to see if there are unassessed objects in stdin
+        to see if there are unassessed objects in input
 
         For "get" pulse_method, assume iteration 0 should proceed,
         for all subsequent iterations, check if the last message appended
         to RingWyrm().output was an empty message. If so
 
         Inputs and outputs for "put" pulse_method:
-        :param stdin: standard input collection of objects (put)
-        :type stdin: collections.deque (put) None (get)
-        :param iterno: iteration number
-        :type iterno: int
+        :param input: standard input collection of objects (put)
+        :type input: collections.deque (put) None (get)
+        :param iter_number: iteration number
+        :type iter_number: int
         :return status: should iteration in pulse continue?
         :rtype status: bool
         """        
         # If passing messages from deque to ring, check if there are messages to pass
         if 'put' in self.pulse_method:
-            # Use Wyrm._continue_iteration() method
-            status = super()._continue_iteration(stdin, stdin_measure, iterno)
+            # Use Wyrm._should_this_iteration_run() method
+            status = super()._should_this_iteration_run(input, input_size, iter_number)
         # If passing messages from ring to deque, default to True
         elif 'get' in self.pulse_method:
             status = True
             # NOTE: This relies on the 'break' clause in _capture_stdout
         return status
 
-    def _get_obj_from_input(self, stdin):
-        """_get_obj_from_input method for TubeWyrm
+    def _unit_input_from_input(self, input):
+        """
+        POLYMORPHIC
+        Last updated with :class: `~ayahos.wyrms.ringwyrm.RingWyrm`
 
-        If using a "get" pulse_method, stdin is unused and returns None
+        If using a "get" pulse_method, input is unused and returns None
         
         If using a "put" pulse_method, inputs and outputs are:
 
-        :param stdin: standard input object collection
-        :type stdin: collections.deque
-        :return obj: object retrieved from stdin
+        :param input: standard input object collection
+        :type input: collections.deque
+        :return unit_input: object retrieved from input
         :rtype: PyEW message-like object
         """
         # Input object for "get" methods is None by default        
         if 'get' in self.pulse_method:
-            obj = None
+            unit_input = None
         # Input object for "put" methods is a PyEW message-formatted object
         elif 'put' in self.pulse_method:
-            obj = super()._get_obj_from_input(stdin)
-        return obj
+            unit_input = super()._get_obj_from_input(input)
+        return unit_input
     
-    def _unit_process(self, obj):
-        """_unit_process for RingWyrm
+    def _unit_process(self, unit_input):
+        """
+        POLYMORPHIC
+        Last updated with :class: `~ayahos.wyrms.ringwyrm.RingWyrm`
 
         "get" pulse_methods fetch a message from the specified EW RING
-        "put" pulse_methods put obj onto the specified EW RING
+        "put" pulse_methods put unit_input onto the specified EW RING
 
-        :param obj: message object input for "put" pulse_methods
-        :type obj: PyEW message-formatted object (get) or None (put)
-        :return unit_out: message object output from "get" pulse_methods
-        :rtype unit_out: PyEW message-formatted object (get) or None (put)
+        :param unit_input: message to "put" onto an Earthworm memory ring, or None for "get" methods
+        :type unit_input: PyEW message-formatted object (get) or None (put)
+        :return unit_output: message object output from "get" pulse_methods
+        :rtype unit_output: PyEW message-formatted object (get) or None (put)
         """        
         if 'get' in self.pulse_method:
             if self.pulse_method == 'get_wave':
-                unit_out = getattr(self.module, self.pulse_method)(self._core_args[0])
+                unit_output = getattr(self.module, self.pulse_method)(self._core_args[0])
             else:
-                unit_out = getattr(self.module, self.pulse_method)(*self._core_args)
+                unit_output = getattr(self.module, self.pulse_method)(*self._core_args)
         elif 'put' in self.pulse_method:
             if self.pulse_method == 'put_wave':
-                getattr(self.module, self.pulse_method)(self._core_args[0], obj)
+                getattr(self.module, self.pulse_method)(self._core_args[0], unit_input)
             else:
-                getattr(self.module, self.pulse_method)(*self._core_args, obj)
-            unit_out = None
-        return unit_out
+                getattr(self.module, self.pulse_method)(*self._core_args, unit_input)
+            unit_output = None
+        return unit_output
     
-    def _capture_unit_out(self, unit_out):
-        """_capture_unit_out for RingWyrm
+    def _capture_unit_out(self, unit_output):
+        """
+        POLYMORPHIC
+        Last updated with :class: `~ayahos.wyrms.ringwyrm.RingWyrm`
 
-        "get" pulse_methods use Wyrm's _capture_unit_out()
+        "get" pulse_methods use Wyrm's _capture_unit_output()
         "put" pulse_methods do nothing (pass)
 
-        :param unit_out: standard output object from _unit_process
-        :type unit_out: PyEW message-formatted object or None
-        :return status: continue iterating in pulse?
-        :rtype status: bool
+        :param unit_output: standard output object from _unit_process
+        :type unit_output: PyEW message-formatted object or None
+        :return: None
+        :rtype: None
         """
         # For "get" methods, capture messages        
         if 'get' in self.pulse_method:
-            # If unit_out is an empty message
-            if self._is_empty_message(unit_out):
-                # send break message to the for-loop in *Wyrm().pulse()
-                status = False
-            # If unit_out is not empty
-            else:
-                status = True
-                # If get_wave pulse_method, convert into MLTrace
+            # If unit_output is an empty message
+            if not is_empty_message(unit_output):
                 if self.pulse_method == 'get_wave':
-                    unit_out = wave2mltrace(unit_out)
-                # For all "get" methods, use Wyrm._capture_unit_out()
-                super()._capture_unit_out(unit_out)
+                    unit_output = wave2mltrace(unit_output)
+                # For all "get" methods, use Wyrm._capture_unit_output()
+                super()._capture_unit_output(unit_output)
+        return None
+    
+    def _should_next_iteration_run(self, unit_output):
+        """
+        POLYMORPHIC
+        Last updated with :class: `~ayahos.wyrms.ringwyrm.RingWyrm`
 
-        # For "put" methods, capture nothing
-        elif 'put' in self.pulse_method:
-            # And provide unconditional continue iteration flag (let _continue_iteration handle early stopping)
-            status = True
+        Do not start next iteration if unit_output looks like an
+        empty message for "get" type pulse_method
+
+        :param unit_output: unit output from :meth: `~ayahos.wyrms.ringwyrm.RingWyrm._unit_process`
+        :type unit_output: dict, tuple, or list, depends on pulse_method
+        :return status: Should the next iteration be run, based on unit_output?
+        :rtype status: bool
+        """
+        if is_empty_message(unit_output):
+            if 'get' in self.pulse_method:
+                status = False
+            else:
+                Logger.error("We shouldn't have gotten here (empty message with a 'put' method)")
+                status = False
+        else:
+            if 'get' in self.pulse_method:
+                status = True
+            else:
+                Logger.error("We shouldn't have gotten here (empty message with a 'put' method)")
+                status = False
         return status
 
     # def __repr__(self):

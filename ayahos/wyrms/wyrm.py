@@ -32,11 +32,11 @@ class Wyrm(object):
     template methods
 
     Wyrm().pulse() - performs multiple iterations of the following polymorphic subroutines
-        Wyrm()._run_this_iteration() - check if this iteration in pulse should be run
+        Wyrm()._should_this_iteration_run() - check if this iteration in pulse should be run
         Wyrm()._unit_input_from_input() - get the object input for _unit_process()
         Wyrm()._unit_process() - execute a single operation on the input object
         Wyrm()._capture_unit_output() - do something to save the output of _unit_process
-        Wyrm()._run_next_iteration() - decide if the next iteration should be run
+        Wyrm()._should_next_iteration_run() - decide if the next iteration should be run
 
     Wyrm.output - collector of outputs from core_process(). Should be modified along with
                 Wyrm().core_process() to meet your needs.
@@ -84,7 +84,7 @@ class Wyrm(object):
     
     def copy(self):
         """
-        Return a deepcopy of this wyrm
+        Return a deepcopy of this Wyrm-like object
 
         :return: copy of this {class_name_camel} object
         :rtype: ayahos.core.wyrms.{class_name_lower}.{class_name_camel}
@@ -93,15 +93,18 @@ class Wyrm(object):
 
     def pulse(self, input):
         """
+        TEMPLATE METHOD
+         - Last altered with :class: `~ayahos.wyrms.wyrm.Wyrm`
+
         Run up to max_pulse_size iterations of _unit_process()
         for ayahos.core.wyrms.{class_name_lower}.{class_name_camel}
 
-        NOTE: Houses the following polymorphic methods
-            _run_this_iteration: check if iteration should continue (early stopping opportunity)
+        NOTE: Houses the following polymorphic methods that can be modified for decendent Wyrm-like classes
+            _should_this_iteration_run: check if iteration should continue (early stopping opportunity)
             _unit_input_from_input: get input object for _unit_process
             _unit_process: run core process
-            _capture_output: attach _unit_process output to {class_name_camel}.output
-            _run_next_iteration: check if the next iteration should occur (early stopping opportunity)
+            _capture_unit_output: attach _unit_process output to {class_name_camel}.output
+            _should_next_iteration_run: check if the next iteration should occur (early stopping opportunity)
 
         :param input: standard input
         :type input: collections.deque
@@ -111,11 +114,11 @@ class Wyrm(object):
         """ 
         # Iterate across 
         Logger.debug(f'{self.__class__.__name__} pulse firing')
-        input_measure = self._measure_input(input)
+        input_size = self._measure_input_size(input)
         nproc = 0
-        for iterno in range(self.max_pulse_size):
+        for iter_number in range(self.max_pulse_size):
             # Check if this iteration should proceed
-            run_this_iteration = self._run_this_iteration(input, input_measure, iterno)
+            run_this_iteration = self._should_this_iteration_run(input, input_size, iter_number)
             # If iterations should continue
             if run_this_iteration is False:
                 break
@@ -129,7 +132,7 @@ class Wyrm(object):
             # Capture output
             self._capture_unit_output(unit_output)
             #  Check if early stopping should occur at the end of this iteration
-            run_next_iteration = self._run_next_iteration(unit_output)
+            run_next_iteration = self._should_next_iteration_run(unit_output)
             if run_next_iteration is False:
                 break
             else:
@@ -138,9 +141,10 @@ class Wyrm(object):
         output = self.output
         return output, nproc
 
-    def _measure_input(self, input):
+    def _measure_input_size(self, input):
         """
-        POLYMORPHIC - last inheritance :class: `~ayahos.wyrms.wyrm.Wyrm`
+        POLYMORPHIC
+        Last updated with :class: `~ayahos.wyrms.wyrm.Wyrm`
 
         take a reference measurement for the input before starting
         iterations for :meth: `~ayahos.core.wyrm.Wyrm.pulse(input)` prior
@@ -150,30 +154,30 @@ class Wyrm(object):
 
         :param input: standard input
         :type input: varies, deque here
-        :return input_measure: representative measure of input
+        :return input_size: representative measure of input
         :rtype: int-like
         """        
         if input is None:
-            input_measure = self.max_pulse_size
+            input_size = self.max_pulse_size
         else:
-            input_measure = len(input)
-        return input_measure
+            input_size = len(input)
+        return input_size
 
-    def _run_this_iteration(self, input, input_measure, iterno):
+    def _should_this_iteration_run(self, input, input_size, iter_number):
         """
-        POLYMORPHIC - last inheritance :class: `~ayahos.wyrms.wyrm.Wyrm`
+        POLYMORPHIC - last updated with :class: `~ayahos.wyrms.wyrm.Wyrm`
 
         Should this iteration in :meth: `~ayahos.wyrms.wyrm.Wyrm.pulse()` be run?
         
         Criteria:
          - input is type collections.deque
          - len(input) > 0
-         - iterno + 1 <= len(input)
+         - iter_number + 1 <= len(input)
         
         :param input: input data object collection
         :type input: collections.deque
-        :param iterno: iteration number
-        :type iterno: int
+        :param iter_number: iteration number
+        :type iter_number: int
         :return status: continue to next iteration?
         :rtype status: bool
         """
@@ -182,14 +186,15 @@ class Wyrm(object):
         if isinstance(input, deque):
             # and input is non-empty
             if len(input) > 0:
-                # and iterno +1 is l.e. length of input
-                if iterno + 1 <= input_measure:
+                # and iter_number +1 is l.e. length of input
+                if iter_number + 1 <= input_size:
                     status = True
         return status
     
     def _unit_input_from_input(self, input):
         """
-        POLYMORPHIC - last inheritance :class: `~ayahos.wyrms.wyrm.Wyrm`
+        POLYMORPHIC
+        Last updated with :class: `~ayahos.wyrms.wyrm.Wyrm`
 
 
         Get the input object for this Wyrm's _unit_process
@@ -212,36 +217,42 @@ class Wyrm(object):
 
     def _unit_process(self, unit_input):
         """
-        POLYMORPHIC - last inheritance :class: `~ayahos.wyrms.wyrm.Wyrm`
+        POLYMORPHIC
+        Last updated with :class: `~ayahos.wyrms.wyrm.Wyrm`
 
         return unit_output = unit_input
 
         :param obj: input object
         :type obj: any
-        :return unit_out: output object
-        :rtype unit_out: any
+        :return unit_output: output object
+        :rtype unit_output: any
         """
-        unit_out = obj
-        return unit_out        
+        unit_output = unit_input
+        return unit_output        
     
     def _capture_unit_output(self, unit_output):
         """
-        POLYMORPHIC - last inheritance :class: `~ayahos.wyrms.wyrm.Wyrm`
+        POLYMORPHIC
+        Last updated with :class: `~ayahos.wyrms.wyrm.Wyrm`
 
         Append unit_output to self.output
 
-        run Wyrm().output.append(unit_out)
+        run Wyrm().output.append(unit_output)
 
-        :param unit_out: standard output object from unit_process
-        :type unit_out: any
+        :param unit_output: standard output object from unit_process
+        :type unit_output: any
+        :return: None
+        :rtype: None
         """        
         self.output.append(unit_output)
+        return None
         
-    def _run_next_iteration(self, unit_output):
+    def _should_next_iteration_run(self, unit_output):
         """
-        POLYMORPHIC - last inheritance :class: `~ayahos.wyrms.wyrm.Wyrm`
+        POLYMORPHIC
+        Last updated with :class: `~ayahos.wyrms.wyrm.Wyrm`
 
-        check if the next iteration should be run based on the unit_output
+        check if the next iteration should be run based on unit_output
 
         Returns status = True unconditionally
 

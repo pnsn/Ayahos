@@ -14,6 +14,22 @@ from obspy import UTCDateTime, Trace
 from ayahos.core.mltrace import MLTrace
 
 
+def is_empty_message(msg):
+    """
+    Check if msg looks like an empty message returned
+    by a PyEW.EWModule.get_* method
+
+    :param msg: message ovject
+    :type msg: dict, str, or tuple
+    :return status: does this look like an empty PyEW message?
+    :rtype: bool
+    """
+    if msg in ['', (0,0), {}]:
+        status = True
+    else:
+        status = False
+    return status
+
 def npy2strdtype(dtype):
     """
     Provide formatting checks for dtype for submitting data to Earthworm

@@ -35,7 +35,7 @@ from obspy import Stream, read, UTCDateTime
 from obspy.core.trace import Trace, Stats
 from obspy.core.util.misc import flat_not_masked_contiguous
 from ayahos.util.seisbench import pretrained_dict
-from ayahos.util.features import est_curve_quantiles, est_curve_normal_stats
+from ayahos.util.stats import est_curve_quantiles, est_curve_normal_stats
 
 Logger = logging.getLogger(__name__)
 

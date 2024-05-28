@@ -31,7 +31,7 @@ Logger = logging.getLogger(__name__)
 class TubeWyrm(Wyrm):
     """
     Wyrm child-class facilitating chained execution of pulse(x) class methods
-    for a sequence wyrm objects, with each wyrm.pulse(x) taking the prior
+    for a sequence wyrm unit_inputects, with each wyrm.pulse(x) taking the prior
     member's pulse(x) output as its input.
 
     The pulse method operates as follows
@@ -41,10 +41,10 @@ class TubeWyrm(Wyrm):
         Note that the dictionary ordering dictates the execution order!
     """
 
-    def __init__(self, wyrm_dict, wait_sec=0.0, max_pulse_size=1):
+    def __init__(self, wyrm_dict={}, wait_sec=0.0, mute_internal_logging=False, max_pulse_size=1):
         """
-        Create a TubeWyrm object
-        :param wyrm_dict: collection of [Wyrm-type] objects that are executed in their provided order. 
+        Create a TubeWyrm unit_inputect
+        :param wyrm_dict: collection of [Wyrm-type] unit_inputects that are executed in their provided order. 
                     dict-type entries allow for naming of component wyrms for user-friendly assessment. list, deque, and Wyrm-type
                     all other input types use a 0-indexed key.
         :type wyrm_dict: dict, list, or tuple
@@ -55,7 +55,8 @@ class TubeWyrm(Wyrm):
         """
         # Inherit from Wyrm
         super().__init__(max_pulse_size=max_pulse_size)
-
+        if isinstance(mute_internal_logging, bool):
+            self.mute_internal_logging = mute_internal_logging
         # wyrm_dict compat. checks
         if isinstance(wyrm_dict, Wyrm):
             self.wyrm_dict = {0: wyrm_dict}
@@ -73,7 +74,7 @@ class TubeWyrm(Wyrm):
             else:
                 raise TypeError('All elements in wyrm_dict must be type Wyrm')
         else:
-            raise TypeError('wyrm_dict must be a single Wyrm-type object or a list or dictionary thereof')
+            raise TypeError('wyrm_dict must be a single Wyrm-type unit_inputect or a list or dictionary thereof')
         
         # wait_sec compat. checks
         if not isinstance(wait_sec, (int, float)):
@@ -100,7 +101,7 @@ class TubeWyrm(Wyrm):
         at the end of self.wyrm_dict (same behavior as dict.update)
 
         :: INPUT ::
-        :param new_dict: dictionary of Wyrm-like objects
+        :param new_dict: dictionary of Wyrm-like unit_inputects
         :type new_dict: dict
 
         """
@@ -121,7 +122,7 @@ class TubeWyrm(Wyrm):
 
     def _alias_wyrm_dict_output(self):
         """
-        Alias the self.output attribute of the last wyrm-type object
+        Alias the self.output attribute of the last wyrm-type unit_inputect
         in this TubeWyrm's wyrm_dict to this TubeWyrm's output attribute
 
         i.e., 
@@ -138,7 +139,7 @@ class TubeWyrm(Wyrm):
 
         :: INPUT ::
         :param key: valid key in self.wyrm_dict.keys()
-        :type key: object
+        :type key: unit_inputect
 
         :: RETURN ::
         :return popped_item: popped (key, value) pair
@@ -222,19 +223,18 @@ class TubeWyrm(Wyrm):
     #############################
     # PULSE POLYMORPHIC METHODS #
     #############################
-    def pulse(self, stdin):
-        stdout, nproc = super().pulse(stdin)
-        return stdout, nproc
-    
-    def _continue_iteration(self, stdin, stdin_measure, iterno):
-        """ _continue_iteration for TubeWyrm
+
+    def _should_this_iteration_run(self, input, input_measure, iterno):
+        """
         POLYMORPHIC
+
+        Last updated with :class: `~ayahos.wyrms.tubewyrm.TubeWyrm`
 
         always return status = True
         Execute max_pulse_size iterations regardless of internal processes
 
-        :param stdin: Unused
-        :type stdin: any
+        :param input: Unused
+        :type input: any
         :param iterno: Unused
         :type iterno: any
         :return status: continue iteration - always True
@@ -243,41 +243,45 @@ class TubeWyrm(Wyrm):
         status = True
         return status
     
-    def _get_obj_from_input(self, stdin):
-        """_get_obj_from_input for TubeWyrm
+    def _unit_input_from_input(self, input):
+        """
+        POLYMORPHIC
+        Last updated with :class: `~ayahos.wyrms.tubewyrm.TubeWyrm` 
 
         Pass the standard input directly to the first wyrm in wyrm_dict
 
-        :param stdin: standard input object
-        :type stdin: varies, depending on stdin expected by first wyrm in wyrm_dict
-        :return obj: view of standard input object
-        :rtype obj: varies
+        :param input: standard input unit_inputect
+        :type input: varies, depending on input expected by first wyrm in wyrm_dict
+        :return unit_input: view of standard input unit_inputect
+        :rtype unit_input: varies
         """        
-        obj = stdin
-        return obj
+        unit_input = input
+        return unit_input
 
-    def _unit_process(self, obj):
-        """_unit_process for TubeWyrm
-
+    def _unit_process(self, unit_input):
+        """
         POLYMORPHIC
+        Last updated with :class: `~ayahos.wyrms.tubewyrm.TubeWyrm`
 
         Chain pulse() methods of wyrms in wyrm_dict
-        passing obj as the input to the first 
+        passing unit_input as the input to the first 
 
-            wyrm2.pulse(wyrm1.pulse(wyrm0.pulse(obj)))
+            wyrm2.pulse(wyrm1.pulse(wyrm0.pulse(unit_input)))
 
         In this example output is captured by wyrm2's pulse and
         TubeWyrm.output is a view of wyrm2.output
 
-        :param obj: standard input for the pulse method of the first wyrm in wyrm_dict
-        :type obj: varies
-        :return unit_out: standard unit output, fixed as None
-        :rtype: None
+        :param unit_input: standard input for the pulse method of the first wyrm in wyrm_dict
+        :type unit_input: varies
+        :return unit_output: sum of nproc output by each wyrm in wyrmdict for this iteration
+        :rtype: int
         """ 
         nproc = 0       
         for j_, (name, wyrm_) in enumerate(self.wyrm_dict.items()):
             if j_ == 0:
-                y, inproc = wyrm_.pulse(obj)
+                y, inproc = wyrm_.pulse(
+                    unit_input,
+                    mute_logging=self.mute_internal_logging)
                 if inproc > 0:
                     Logger.debug(f'{name}.output length: {nproc}')
             else:
@@ -287,31 +291,49 @@ class TubeWyrm(Wyrm):
             nproc += inproc
         # TODO: Placeholder unconditional True - eventually want to pass a True/False
         # up the line to say if there should be early stopping
-        if nproc > 0:
-            unit_out = True
-        else:
-            unit_out = True
-        return unit_out
+        unit_output = nproc
+        return unit_output
 
-    def _capture_unit_out(self, unit_out):
-        """_capture_unit_out for TubeWyrm
-
-        Return unconditional status = True : Continue iterating
-        
-        TubeWyrm.output is a view of the last wyrm in wyrm_dict's output,
-        so TubeWyrm().output is implicitly updated in _unit_process
-
-        :param unit_out: standard output from _unit_process, unused
-        :type unit_out: varies
+    def _capture_unit_output(self, unit_output):
         """
-        status = unit_out
+        POLYMORPHIC
+        Last updated by :class: `~ayahos.wyrms.tubewyrm.TubeWyrm`
+
+        Termination point - output capture is handled by the last
+        Wyrm-Type object in wyrm_dict and aliased to this TubeWyrm's
+        output attribute.
+
+        :param unit_output: sum of processes executed by the _unit_process call
+        :type unit_output: int
+        :return: None
+        :rtype: None
+        """
+        return None   
+
+    def _should_next_iteration_run(self, unit_output):
+        """
+        POLYMORPHIC
+        Last updated by :class: `~ayahos.wyrms.tubewyrm.TubeWyrm`
+
+        Signal early stopping (status = False) if unit_output == 0
+
+        :param unit_output: number of processes executed by _unit_process
+            Sum of pulse 
+        :type unit_output: int
+        :return status: should the next iteration be run?
+        :rtype status: bool
+        """
+        if unit_output == 0:
+            status = False
+        else:
+            status = True
         return status
 
 
     # def unit_process(self, x):
     #     """unit_process for ayahos.core.wyrms.tubewyrm.TubeWyrm
 
-    #     Execute a chained pulse of wyrm-type objects in the self.wyrm_dict
+    #     Execute a chained pulse of wyrm-type unit_inputects in the self.wyrm_dict
 
     #     i.e., wyrm_dict = {0: wyrm1, 1: wyrm2}
     #     y = wyrm2.pulse(wyrm1.pulse(x))
@@ -323,9 +345,9 @@ class TubeWyrm(Wyrm):
         
     #             NOTE: No _continue_iteration check used ehre
         
-    #     :param x: input expected by first wyrm-type objects' wyrm_.pulse() method in the self.wyrm_dict
+    #     :param x: input expected by first wyrm-type unit_inputects' wyrm_.pulse() method in the self.wyrm_dict
     #     :type x: varies, typically collections.deque or ayahos.core.streamdictstream.DictStream
-    #     :return y: output from wyrm_.pulse() for the last wyrm-type object in the self.wyrm_dict
+    #     :return y: output from wyrm_.pulse() for the last wyrm-type unit_inputect in the self.wyrm_dict
     #     :type y: varies, typically collections.deque or ayahos.core.stream.dictstream.DictStream
         
     #     """        
@@ -343,7 +365,7 @@ class TubeWyrm(Wyrm):
     #     Pulse method is a polymorphic execution of Wyrm.pulse()
     #     see TubeWyrm.core_process() for details
 
-    #     :param x: collection of input objects for the first wyrm in TubeWyrm.wyrm_dict
+    #     :param x: collection of input unit_inputects for the first wyrm in TubeWyrm.wyrm_dict
     #     :type x: varies
     #     :return y: alias to the output attribute of the last wyrm in TubeWyrm.wyrm_dict
     #     :rtype y: varies
@@ -367,10 +389,10 @@ class TubeWyrm(Wyrm):
     #     is a pause of self.wait_sec seconds.
 
     #     :: INPUT ::
-    #     :param x: Input `x` for the first Wyrm object in wyrm_dict
+    #     :param x: Input `x` for the first Wyrm unit_inputect in wyrm_dict
 
     #     :: OUTPUT ::
-    #     :param y: Output `y` from the last Wyrm object in wyrm_dict
+    #     :param y: Output `y` from the last Wyrm unit_inputect in wyrm_dict
     #     """
     #     if self.debug:
     #         start = time.time()

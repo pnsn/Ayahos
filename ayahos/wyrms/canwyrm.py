@@ -22,10 +22,10 @@ class CanWyrm(TubeWyrm):
         methods in parallel starting with a single input and returning
         a dictionary of each wyrm's output
 
-        id0: {id0: wyrm0.pulse(stdin) = stdout = {id0: wyrm0.output,
-              id1: wyrm1.pulse(stdin)             id1: wyrm1.output,
+        id0: {id0: wyrm0.pulse(input) = stdout = {id0: wyrm0.output,
+              id1: wyrm1.pulse(input)             id1: wyrm1.output,
               ...                                    ...
-              idN: wyrmN.pulse(stdin)}            idN: wyrmN.output}
+              idN: wyrmN.pulse(input)}            idN: wyrmN.output}
 
     DEV NOTE: 
     
@@ -33,7 +33,7 @@ class CanWyrm(TubeWyrm):
     be a good candidate class for orchestraing multiprocessing.
 
     Currently the polymorphic pulse() subroutines assume that each pulse
-    method does not alter the standard input (stdin). This is friendly with
+    method does not alter the standard input (input). This is friendly with
     wyrm classes like WindowWyrm and CopyWyrm that produce copies (partial 
     or complete) of their inputs without altering the initial input. 
     
@@ -72,44 +72,50 @@ class CanWyrm(TubeWyrm):
     #############################   
 
     # INHERITED FROM TUBEWYRM
-    # _continue_iteration
+    # _should_this_iteration_run
     # _capture_unit_out
     
-    def _get_obj_from_input(self, stdin):
-        """_get_obj_from_input for CanWyrm
+    def _unit_input_from_input(self, input):
+        """
+        POLYMORPHIC
+        Last updated with :class: `~ayahos.wyrms.canwyrm.CanWyrm
 
-        return obj = stdin
+        return unit_input = input
 
-        :param stdin: standard input object for all wyrms in wyrm_dict
-        :type stdin: varies
-        :return: deepcopy of stdin
+        :param input: standard input unit_inputect for all wyrms in wyrm_dict
+        :type input: varies
+        :return: view of input
         :rtype: varies
         """        
-        obj = stdin
-        return obj
+        unit_input = input
+        return unit_input
 
 
-    def _unit_process(self, obj):
-        """unit_process of CanWyrm
+    def _unit_process(self, unit_input):
+        """
+        POLYMORPHIC
+        Last updated with :class: `~ayahos.wyrms.canwyrm.CanWyrm`
 
-        This unit_process iterates across the wyrms in CanWyrm.wyrm_dict and
-        runs their pulse() methods on 
+        Iterate across the wyrms in .wyrm_dict and trigger their .pulse method with unit_input
 
-        :param x: _description_
-        :type x: _type_
+        :param unit_input: shared unit input object for each wyrm in wyrm_dict.
+            NOTE: This input should not be modified by the wyrms in wyrm_dict
+                  
+        :type unit_input: _type_
         :param i_: _description_
         :type i_: _type_
         """
+        nproc = 0
+        # Iterate across wyrms in wyrm_dict
         for name, wyrm_ in self.wyrm_dict.items():
-            y, nproc = wyrm_.pulse(obj)
-            Logger.debug(f'{name}.output length: {nproc}')
-        
-        unit_out = True
-        return unit_out
-
-
-        
-
+            y, inproc = wyrm_.pulse(
+                unit_input,
+                mute_logging=self.mute_interal_logging)
+            if self.mute_internal_logging:
+                Logger.debug(f'{name}: {inproc}')
+            nproc += inproc
+        unit_output = nproc
+        return unit_output
 
     # def pulse(self, x, **options):
     #     """

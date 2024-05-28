@@ -65,6 +65,16 @@ class Wyrm(object):
             raise TypeError('max_pulse_size must be positive int-like')
         self.output = deque()
 
+    def __name__(self):
+        """Return the camel-case name of this class without
+        the submodule extension
+
+        alias of self.__class__.__name__
+        :return: class name
+        :rtype: str
+        """        
+        return self.__class__.__name__
+    
     def __repr__(self):
         """
         Provide a string representation string of essential user data for this {class_name_camel}
@@ -91,7 +101,7 @@ class Wyrm(object):
         """
         return deepcopy(self)
 
-    def pulse(self, input):
+    def pulse(self, input, mute_logging=False):
         """
         TEMPLATE METHOD
          - Last altered with :class: `~ayahos.wyrms.wyrm.Wyrm`
@@ -112,31 +122,32 @@ class Wyrm(object):
         :return output: aliased access to {class_name_camel}.output
         :rtype output: collections.deque of objects
         """ 
-        # Iterate across 
-        Logger.debug(f'{self.__class__.__name__} pulse firing')
+        # Iterate across
+        if not mute_logging:
+            Logger.debug(f'{self.__name__} pulse firing')
         input_size = self._measure_input_size(input)
         nproc = 0
         for iter_number in range(self.max_pulse_size):
             # Check if this iteration should proceed
-            run_this_iteration = self._should_this_iteration_run(input, input_size, iter_number)
-            # If iterations should continue
-            if run_this_iteration is False:
-                break
-            else:
+            if self._should_this_iteration_run(input, input_size, iter_number):
                 pass
+            else:
+                break
             # get single object for unit_process
             unit_input = self._unit_input_from_input(input)
             # Execute unit process
             unit_output = self._unit_process(unit_input)
+            # Increase process counter
             nproc += 1
             # Capture output
             self._capture_unit_output(unit_output)
             #  Check if early stopping should occur at the end of this iteration
-            run_next_iteration = self._should_next_iteration_run(unit_output)
-            if run_next_iteration is False:
-                break
-            else:
+            if self._should_next_iteration_run(unit_output):
                 pass
+            else:
+                break
+        if not mute_logging:
+            Logger.debug(f'{self.__name__} {nproc} processes run (MAX: {self.max_pulse_size})')
         # Get alias of self.output as output
         output = self.output
         return output, nproc
@@ -196,20 +207,19 @@ class Wyrm(object):
         POLYMORPHIC
         Last updated with :class: `~ayahos.wyrms.wyrm.Wyrm`
 
-
         Get the input object for this Wyrm's _unit_process
 
         :param input: standard input object
         :type input: collections.deque
-        :return obj: object popleft'd from input
-        :rtype obj: any
+        :return unit_input: unit_input popleft'd from input
+        :rtype unit_input: any
         
         :raises TypeError: if input is not expected type
         
         """        
         if isinstance(input, deque):
-            obj = input.popleft()
-            return obj
+            unit_input = input.popleft()
+            return unit_input
         else:
             Logger.error(f'input object was incorrect type')
             raise TypeError

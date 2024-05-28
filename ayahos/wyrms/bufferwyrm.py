@@ -111,150 +111,107 @@ class BufferWyrm(Wyrm):
 
         for _k, _v in add_kwargs:
             if _k not in self.mltb_kwargs:
-                self.mltb_kwargs.update({_k: _v})                
+                self.mltb_kwargs.update({_k: _v})                      
 
-
-    def add_new_buffer(self, other):
-        """Add a new MLTraceBuffer object containing the contents of `other` to this BufferWyrm's .buffer attribute
-
-        :param other: Trace-like object to use as the source (meta)data
-        :type other: obspy.core.trace.Trace-like
-        """        
-        if isinstance(other, MLTrace):
-            if other.id not in self.output.traces.keys():
-                # Initialize an MLTraceBuffer Object with pre-specified append kwargs
-                mltb = MLTraceBuffer(**self.mltb_kwargs)
-                mltb.append(other)
-                self.output.extend(mltb)
     
     #################################
     # PULSE POLYMORPHIC SUBROUTINES #
     #################################
-                
-    # Direct Inheritance from Wyrm
-    # def _continue_iteration - input is non-empty deque and iterno + 1 < len(stdin)
-    def pulse(self, stdin):
-        stdout, nproc = super().pulse(stdin)
-        if nproc > 0:
-        #     Logger.info('nothing new buffered')
-        # else:
-            Logger.info(f'{nproc} tracebuff2 messages appended to {len(self.output)} buffers')
-        return stdout, nproc
 
-    def _get_obj_from_input(self, stdin):
-        """_get_obj_from_input for BufferWyrm
 
-        :param stdin: collection of MLTrace-like objects
-        :type stdin: collections.deque of ayahos.core.trace.mltrace.MLTrace or list-like thereof
-        :return obj: input object for _unit_process
-        :rtype obj: list of ayahos.core.trace.mltrace.MLTrace
+    def _unit_input_from_input(self, input):
+        """
+        POLYMORPHIC
+        Last updated with :class: `~ayahos.wyrms.bufferwyrm.BufferWyrm`
+
+        Claim the left-most object in `input` using popleft(), ensure it is a
+        :class: `~ayahos.core.mltrace.MLTrace` object, or a collection thereof
+        and convert single MLTrace objects into a 1-element list.
+
+        :param input: collection of MLTrace-like objects
+        :type input: collections.deque of ayahos.core.trace.mltrace.MLTrace or list-like thereof
+        :return unit_input: iterable list of MLTrace-like objects
+        :rtype unit_input: list of ayahos.core.trace.mltrace.MLTrace
         """        
-        obj = stdin.popleft()
-        if isinstance(obj, MLTrace):
-            obj = [obj]
+        unit_input = input.popleft()
+        if isinstance(unit_input, MLTrace):
+            unit_input = [unit_input]
         # if listlike, convert to list
-        elif all(isinstance(x, MLTrace) for x in obj):
-            obj = [x for x in obj]
+        elif all(isinstance(x, MLTrace) for x in unit_input):
+            unit_input = [x for x in unit_input]
         else:
-            raise TypeError('stdin is not type MLTrace or a list-like thereof')
-        return obj
+            Logger.error('input is not type MLTrace or list-like thereof')
+            raise TypeError('input is not type MLTrace or a list-like thereof')
+        return unit_input
 
-    def _unit_process(self, obj):
-        """_unit_process for BufferWyrm
+    def _unit_process(self, unit_input):
+        """
+        POLYMORPHIC
+        Last updated with :class: `~ayahos.wyrms.bufferwyrm.BufferWyrm`
 
-        iterate across MLTraces in `obj` and either generate new
+        Iterate across MLTraces in `unit_input` and either generate new
         MLTraceBuffers keyed by the MLTrace.id or append the MLTrace
         to an existing MLTraceBuffer with the same MLTrace.id.
 
         This method conducts output "capture" by generating new
         buffers or appending to existing buffers
 
-        :param obj: iterable set of MLTrace objects
-        :type obj: DictStream, list-like
+        :param unit_input: iterable set of MLTrace unit_inputects
+        :type unit_input: DictStream, list-like
         :return unit_output: standard output of _unit_process
         :rtype unit_output: None
-        """        
-        for _tr in obj:
-            _key = getattr(_tr, self.buffer_key)
+        """ 
+        nproc = 0      
+        for mlt in unit_input:
+            _key = getattr(mlt, self.buffer_key)
+            # Add new buffer if needed
             if _key not in self.output.traces.keys():
-                self.add_new_buffer(_tr)
+                # Initialize an MLTraceBuffer Object with pre-specified append kwargs
+                mltb = MLTraceBuffer(**self.mltb_kwargs)
+                mltb.append(mlt)
+                self.output.extend(mltb)
+            # Append to buffer if id's match
             else:
                 try:
-                    self.output[_key].append(_tr)
+                    self.output[_key].append(mlt)
                 except TypeError:
                     breakpoint()
-        unit_out = None
-        return unit_out
+            nproc += 1
+        unit_output = nproc
+        
+        return unit_output
     
-    def _capture_unit_out(self, unit_out):
-        """_capture_unit_out for BufferWyrm
+    def _capture_unit_output(self, unit_output):
+        """
+        POLYMORPHIC
+        Last updated with :class: `~ayahos.wyrms.bufferwyrm.BufferWyrm`
 
-        pass - output capture is handled by _unit_process for this class
+        Placeholder/termination
 
-        :param unit_out: unused
-        :type unit_out: None
-        :return status: unconditional True (do not trigger early stopping in pulse)
-        :rtype status: bool
+        :param unit_output: _description_
+        :type unit_output: _type_
+        """
+        if not isinstance(unit_output,int):
+            Logger.warning('Passing non-int object to BufferWyrm._capture_unit_output') 
+        else:
+            pass
+        return None
+
+    def _should_next_iteration_run(self, unit_output):
+        """
+        POLYMORPHIC
+        Last updated with :class: `~ayahos.bufferwyrm.BufferWyrm`
+
+        Signal early stopping (status = False) if unit_input = 0
+        i.e., no new trace segments buffered
+
+        :param unit_output: number of trace segments buffered by the last call of _unit_process()
+        :type unit_output: int
+        :return status: should the next iteration be run?
+        :rtype: bool
         """        
-        status=True
+        if unit_output > 0:
+            status = True
+        else:
+            status = False
         return status
-
-                    
-    # def __str__(self):
-    #     rstr = f'ayahos.core.wyrms.bufferwyrm.BufferWyrm()'
-    #     return rstr
-    
-
-
-
-
-    # def pulse(self, x):
-    #     """Conduct a pulse of this BufferWyrm for up to self.max_pulse_size items contained in `x`. This method conducts early stopping if there are no items in `x` or all items in `x` have been assessed.
-
-    #     items in `x` that are not consistent with expected inputs are re-appended to `x` using the `append()` method.
-
-    #     WARNING: 
-    #     As with most processing in Ayahos, this method removes items
-    #     from `x` using the `popleft()` method and conducts in-place changes 
-    #     on `y` (i.e., self.buffer). If you want to 
-
-    #     :param x: deque of Trace-like objects (or Stream-like collections thereof) to append to this BufferWyrm's self.buffer attribute
-    #     :type x: collections.deque of ayahos.core.trace.mltrace.MLTrace-like or ayahos.core.stream.dictstream.DictStream-like objects
-    #     :return y: aliased access to this BufferWyrm's self.buffer attribute
-    #     :rtype y: ayahos.core.stream.dictstream.DictStream
-    #     """        
-    #     # Kick error if input is not collections.deque object
-    #     if not isinstance(x, deque):
-    #         raise TypeError
-    #     # Get initial deque length
-    #     qlen = len(x)
-    #     # Iterate up to max_pulse_size times
-    #     for _i in range(self.max_pulse_size):
-    #         # Early stopping if no items in queue
-    #         if qlen == 0:
-    #             break
-    #         # Early stopping if next iteration would exceed
-    #         # the number of items in queue
-    #         elif _i + 1 > qlen:
-    #             break
-    #         # otherwise, popleft to get oldest item in queue
-    #         else:
-    #             _x = x.popleft()
-    #         # if not an MLTrace (or child) reappend to queue (safety catch)
-    #         if not isinstance(_x, (MLTrace, DictStream)):
-    #             x.append(_x)
-    #         #Otherwise get ID of MLTrace
-    #         elif isinstance(_x, MLTrace):
-    #             _x = [_x]
-        
-    #         for _xtr in _x:
-    #             _id = _xtr.id
-    #             # If the MLTrace ID is not in the WyrmStream keys, create new tracebuffer
-    #             if _id not in self.buffer.traces.keys():
-    #                 self.add_new_buffer(_xtr)
-    #             # If the MLTrace ID is in the WyrmStream keys, use the append method
-    #             else:
-    #                 self.buffer[_id].append(_xtr, **self.add_kwargs)
-    #     y = self.buffer
-    #     return y
-        

@@ -35,7 +35,7 @@ from obspy import Stream, read, UTCDateTime
 from obspy.core.trace import Trace, Stats
 from obspy.core.util.misc import flat_not_masked_contiguous
 from ayahos.util.seisbench import pretrained_dict
-from ayahos.util.stats import est_curve_quantiles, est_curve_normal_stats
+from ayahos.util.stats import estimate_quantiles, estimate_moments
 
 Logger = logging.getLogger(__name__)
 
@@ -111,16 +111,20 @@ def read_mltrace(data_file, **obspy_read_kwargs):
 ###################################################################################
 
 class MLStats(Stats):
-    """An ObsPy :class: `~obspy.core.trace.Stats` child class that
+    """An ObsPy :class:`~obspy.core.trace.Stats` child class that
     has modified and extended default values relative to ObsPy's Stats
     to encapsulate additional metadata associated with the Ayahos
-    :class: `~ayahos.core.mltrace.MLTrace` class.
+    :class:`~ayahos.core.mltrace.MLTrace` class.
 
     Added/modified defaults are:
     'location' = '--'
     'model' - name of the ML model associated with a MLTrace
     'weight' - name of the ML model weights associated with a MLTrace
 
+    :param header: initial values to populate this MLStats object with
+    :type header: dict
+    :return: self
+    :rtype: ayahos.core.mltrace.MLStats
     """
     # set of read only attrs
     readonly = ['endtime']
@@ -197,7 +201,7 @@ def _add_processing_info(func, *args, **kwargs):
 ###################################################################################
 
 class MLTrace(Trace):
-    """An ObsPy :class: `~obspy.core.trace.Trace` child class that adds a `fold`
+    """An ObsPy :class:`~obspy.core.trace.Trace` child class that adds a `fold`
     attribute that tracks the number of observations assocaited with a given datapoint
     in the Trace.data. 
 
@@ -256,12 +260,15 @@ class MLTrace(Trace):
         
         :param data: data vector to write to this MLTrace, defaults to empty numpy array
         :type data: numpy.ndarray
-        :param fold: vector conveying the number of observations associated with each
-                data point in `data` array. Defaults to None, resulting in a fold vector
-                that equals numpy.ones(shape=data.shape)
+        :param fold: vector conveying the number of observations associated with each data 
+            point in `data` array. Defaults to None, resulting in a fold vector that equals
+            numpy.ones(shape=data.shape).
         :type fold: NoneType or numpy.ndarray
-        :param header: initial values for the MLStats object
+        :param header: initial values for the MLStats object, defaults to None
         :type header: dict or NoneType, optional
+        :return: self
+        :rtype: ayahos.core.mltrace.MLTrace
+
         """
         # If a trace is passed as data, do super().__init__ with it's data & header
         if type(data) == Trace:
@@ -307,6 +314,7 @@ class MLTrace(Trace):
         :type utcdatetime: obspy.core.utcdatetime.UTCDateTime
         :return: index number
         :rtype: int
+        
         """        
         return round((utcdatetime - self.stats.starttime)*self.stats.sampling_rate)
 
@@ -316,8 +324,9 @@ class MLTrace(Trace):
 
         :param utcdatetime: reference datetime
         :type utcdatetime: obspy.core.utcdatetime.UTCDateTime
-        :return: is this `utcdatetime` in the sampling mesh?
+        :return: truth of "is this `utcdatetime` in the sampling mesh?"
         :rtype: bool
+
         """        
         npts = (utcdatetime - self.stats.starttime)*self.stats.sampling_rate
         return npts == int(npts)
@@ -326,19 +335,19 @@ class MLTrace(Trace):
         """Fetch a subset view of the contents of this MLTrace's
         data and fold attributes
 
-        NOTE: View means that any modifications made to the outputs
-        affect the source data.
-
         :param starttime: reference starttime, defaults to None
             None results in using the starttime of this MLTrace
         :type starttime: None or obspy.core.utcdatetime.UTCDateTime, optional
         :param endtime: reference endtime, defaults to None
             None results in using the endtime of this MLTrace
         :type endtime: None or obspy.cre.utcdatetime.UTCDateTime, optional
-        :return data_view: view of the data attribute
-        :rtype data_view: numpy.ndarray
-        :return fold_view: view of the fold attribute
-        :rtype fold_view: numpy.ndarray
+        :return: 
+            - **data_view** (*numpy.ndarray*) -- view of the data attribute
+            - **fold_view** (*numpy.ndarray*) -- view of the fold attribute
+
+        Notes: 
+            - "View" means that any modifications made to the outputs affect the source data.
+
         """        
         # Get indicies of initial sample
         if starttime is None:
@@ -387,8 +396,9 @@ class MLTrace(Trace):
         :type fill_value: NoneType, int, float
             also see :meth: `~obspy.core.trace.Trace.trim`
                      :meth: `~ayahos.core.mltrace.MLTrace.trim`
-        :return mlt: new MLTrace conataining copied data (and fold) information
-        :rtype: ayahos.core.mltrace.MLTrace
+        :return: 
+            - **mlt** (*ayahos.core.mltrace.MLTrace*) -- new MLTrace conataining copied data (and fold) information
+        
         """
         data_view, fold_view = self.get_subset_view(starttime=starttime, endtime=endtime)
         ii = self.utcdatetime_to_nearest_index(starttime)
@@ -435,6 +445,7 @@ class MLTrace(Trace):
         :type threshold: int, optional
         :return fvalid: fraction of data that are valid
         :rtype: float
+
         """        
         _, fold_view = self.get_subset_view(starttime=starttime, endtime=endtime)
         num = sum(fold_view >= threshold)
@@ -470,6 +481,7 @@ class MLTrace(Trace):
 
         :return ft: fold trace
         :rtype ft: obspy.core.trace.Trace
+
         """
         header = Stats()
         for _k in header.defaults.keys():
@@ -491,6 +503,7 @@ class MLTrace(Trace):
                          int: positive number of samples to blind
                                 on either end of fold
         :type blinding: [2-tuple] of int values, or int
+
         """
         if isinstance(blinding, (list, tuple)):
             if len(blinding) != 2:
@@ -535,6 +548,7 @@ class MLTrace(Trace):
                         Rarely used, here for completeness
                       'fold' - convert mlt.fold only to a 0-vector
                         Generally used for cloned traces passed to ML prediction
+
         """
         if method not in ['both','data','fold']:
             raise ValueError(f'method {method} not supported. Supported: "both", "data", "fold"')
@@ -586,6 +600,7 @@ class MLTrace(Trace):
         :type id_length: None or int, optional
         :return rstr: representative string
         :rtype: str
+
         """        
         rstr = super().__str__(id_length=id_length)
         if self.stats.npts > 0:
@@ -611,6 +626,7 @@ class MLTrace(Trace):
         :type other: any, seeking ayahos.core.mltrace.MLTrace
         :return: are the objects equivalent?
         :rtype: bool
+
         """
         if not isinstance(other, MLTrace):
             return False
@@ -670,6 +686,7 @@ class MLTrace(Trace):
         :type: type, optional
 
         TODO: Split different methods into private sub-methods to boost readability?
+
         """
         if dtype is None:
             # Ensure fold matches data dtype
@@ -836,6 +853,7 @@ class MLTrace(Trace):
                         index[2] = relative position of other.data[0]
                         index[3] = relative position of other.data[1]
         :rtype index: list of int
+
         """
         if not isinstance(other, Trace):
             raise TypeError
@@ -886,6 +904,7 @@ class MLTrace(Trace):
         :type fill_value: NoneType, int, float
         :return: view of self
         :rtype: ayahos.core.mltrace.MLTrace
+
         """
         old_fold = self.fold
         old_npts = self.stats.npts
@@ -922,6 +941,7 @@ class MLTrace(Trace):
         :type fill_value: NoneType, int, float
         :return: view of self
         :rtype: ayahos.core.mltrace.MLTrace
+
         """
         old_fold = self.fold
         old_npts = self.stats.npts
@@ -944,7 +964,8 @@ class MLTrace(Trace):
         wherein a Stream of MLTrace objects are returned, which includes 
         a trimmed version of the MLTrace.fold attribute.
 
-        also see :meth: `~obspy.core.trace.Trace.split`
+        also see :meth:`~obspy.core.trace.Trace.split`
+
         """
         # Not a masked array.
         if not isinstance(self.data, np.ma.masked_array):
@@ -988,6 +1009,7 @@ class MLTrace(Trace):
         
         :return: view of this MLTrace object
         :rtype: ayahos.core.mltrace.MLTrace
+
         """
         if norm_type.lower() in ['max','minmax','peak']:
             scalar = np.nanmax(np.abs(self.data))
@@ -1017,39 +1039,36 @@ class MLTrace(Trace):
         split -> filter -> detrend -> resample -> taper -> merge -> trim/pad
         (req.)   (opt.)    (opt.)     (opt.)      (opt.)   (req.)   (opt.)
 
-        The minimum processing could be accomplished using a method that wraps
-        Numpy's np.ma.MaskedArray.filled() method (e.g., MLTrace.trim()), however
+        The minimum processing could be accomplished using a method that wraps the
+        :meth:`~numpy.ma.MaskedArray.filled()` method (e.g., MLTrace.trim()), however
         the optional steps between split() and merge() represent typical steps
-        for data pre-processing prior to forming tensor for M/L prediction.
+        for data pre-processing prior to forming tensor for ML prediction.
 
-        :: INPUTS ::
-        :param filterkw: non-default arguments to pass to (ML)Trace.filter(), defaults to None.
-            None signals to not apply fltering
-        :type filterkw: dict or NoneType
-        :param detrendkw: non-default arguments to pass to :meth: `~ayahos.core.mltrace.MLTrace.detrend`,
-            defaults to None.
-            None signals to not apply filtering
-                         [dict] - keyword arguments to pass to (ML)Trace.detrend()
-                                  that differ from default argument(s)
+        :param filterkw: keyword arguments to pass to :meth:`~ayahos.core.mltrace.MLTrace.filter`
+            also see :meth:`~obspy.core.trace.Trace.filter
+        :type filterkw: dict or bool
+        :param detrendkw: keyword arguments to pass to :meth:`~ayahos.core.mltrace.MLTrace.detrend`,
         :type detrendkw: dict or bool
-        :param resample_method: [False] - disable resampling
-                              [str] name of resampling method to use
-                                    'resample'
-                                    'interpolate'
-                                    'decimate'
+        :param resample_method: name of the resampling method to use. Supported values
+                                    - 'resample' -- :meth:`~obspy.core.trace.Trace.resample`
+                                    - 'interpolate' -- :meth:`~obspy.core.trace.Trace.interpolate`
+                                    - 'decimate' -- :meth:`~obspy.core.trace.Trace.decimate`
         :type resample_method: str or bool
-        :param resamplekw: [dict] - keyword arguments to pass to 
-                            getattr((ML)Trace, resample_method)(**resamplekw)
-        :
-        :param taperkw: [False] - disable tapering
-                        [dict] - keyword arguments to pass to (ML)Trace.taper()
-                                that differ from default arguemnts(s)
-        :param mergekw: [dict] - keyword arguments to pass to (ML)Trace.merge()
-                                that differ from default argument(s)
-        :param trimkw: [False] - disable trim
-                        [dict] - keyword arguments to pass to (ML)Trace.trim()
-                                that differ from default argument(s)
-        :TODO: Need to clean up the split/merge handling at the end
+        :param resamplekw: keyword arguments to pass to getattr(MLTrace, resample_method)(**resamplekw)
+        :type resamplekw: dict or bool
+        :param taperkw: keyword arguments to pass to :meth:`~ayahos.core.mltrace.MLTrace.taper`
+                    also see :meth:`~obspy.core.trace.Trace.filter
+        :type taperkw: dict or bool
+        :param mergekw: keyword arguments to pass to :meth:`~ayahos.core.mltrace.MLTrace.merge`
+                    also see :meth:`~obspy.core.trace.Trace.filter
+        :type mergekw: dict or bool
+        :param trimkw: keyword arguments to pass to :meth: `~ayahos.core.mltrace.MLTrace.trim`
+                    also see :meth:`~obspy.core.trace.Trace.filter
+        :type trimkw: dict or bool
+        
+        
+        TODO: Need to clean up the split/merge handling at the end
+
         """
         # See if splitting is needed
         if isinstance(self.data, np.ma.MaskedArray):
@@ -1213,7 +1232,7 @@ class MLTrace(Trace):
                 trig_index = np.arange(trigger[0], trigger[1])
                 imax = trigger[0] + np.nanargmax(trig_data)
                 pmax = self.data[imax]
-                iq, pq = est_curve_quantiles(trig_index, trig_data, q=quantiles)
+                iq, pq = estimate_quantiles(trig_index, trig_data, q=quantiles)
                 line = [self.stats.network,
                         self.stats.station,
                         self.stats.location,
@@ -1228,7 +1247,7 @@ class MLTrace(Trace):
                         thresh,trigger[0] + stats_pad,
                         thresh,trigger[1] - stats_pad,
                         pmax,imax]
-                norm_stats = list(est_curve_normal_stats(trig_index, trig_data))
+                norm_stats = list(estimate_moments(trig_index, trig_data))
                 # breakpoint()
                 line += norm_stats
                 for _i, _p in zip(iq, pq):
@@ -1257,11 +1276,11 @@ class MLTrace(Trace):
     ###############################################################################
     def resample(self, sampling_rate, window='hann', no_filter=True, strict_length=False):
         """
-        Run the obspy.core.trace.Trace.resample() method on this MLTrace, interpolating
+        Run the :meth:`~obspy.core.trace.Trace.resample` method on this MLTrace, interpolating
         the self.fold attribute with numpy.interp using relative times to the original
         MLTrace.stats.starttime value
 
-        see indepth description in :meth: `~obpsy.core.trace.Trace.resample`
+        see indepth description in :meth:`~obpsy.core.trace.Trace.resample`
 
         :param sampling_rate: new sampling rate in samples per second
         :type sampling_rate: float
@@ -1296,11 +1315,11 @@ class MLTrace(Trace):
             **kwargs
     ):
         """
-        Run the obspy.core.trace.Trace.interpolate() method on this MLTrace, interpolating
+        Run the :meth:`~obspy.core.trace.Trace.interpolate` method on this MLTrace, interpolating
         the self.fold attribute using relative times if `starttime` is None or POSIX times
         if `starttime` is specified using numpy.interp
 
-        also see :meth `~obspy.core.trace.Trace.interpolate` for detailed descriptions of inputs
+        see :meth`~obspy.core.trace.Trace.interpolate` for detailed descriptions of inputs
 
         :: INPUTS ::
         :param sampling_rate: new sampling rate in samples per second
@@ -1320,6 +1339,7 @@ class MLTrace(Trace):
         :type *args: list-like
         :param **kwargs: additional key word arguments to pass to the interpolator in :meth: `~obspy.core.trace.Trace.interpolate`
         :type **kwargs: kwargs
+
         """
         tmp_fold = self.fold
         if starttime is None:
@@ -1379,6 +1399,7 @@ class MLTrace(Trace):
         :type **kwargs: key-word arguments
         :return: view of this object
         :rtype: ayahos.core.trace.mltrace.MLTrace
+
         """                 
         if starttime is not None:
             try:
@@ -1429,12 +1450,11 @@ class MLTrace(Trace):
 
     def decimate(self, factor, no_filter=False, strict_length=False):
         """
-        Run the obspy.core.trace.Trace.decimate() method on this MLTrace, interpolating
-        its `fold` attribute with :meth: `~numpy.interp` using relative times to the original
+        Run the :meth:`~obspy.core.trace.Trace.decimate` method on this MLTrace, interpolating
+        its `fold` attribute with :meth:`~numpy.interp` using relative times to the original
         `stats.starttime` value
 
-        see :meth: `~obpsy.core.trace.Trace.decimate` for details on parameters
-        and specific behaviors.
+        see :meth:`~obpsy.core.trace.Trace.decimate` for details on parameters and specific behaviors.
 
         :param factor: decimation factor
         :type factor: float
@@ -1462,8 +1482,8 @@ class MLTrace(Trace):
     
     def to_trace(self, fold_threshold=0, attach_mod_to_loc=False):
         """
-        Convert this MLTrace into an obspy.core.trace.Trace,
-        masking values that have fold less than fold_threshold
+        Convert this MLTrace into a :class:`~obspy.core.trace.Trace` object,
+        masking values that have fold less than `fold_threshold`
 
         :param fold_threshold: minimum fold value to consider as "valid" data, all
             datapoints with fold lower than fold_threshold are converted to masked
@@ -1471,12 +1491,9 @@ class MLTrace(Trace):
         :type fold_threshold: int-like
         :param output_mod: should the model and weight names be included in the output?, defaults to False
         :type output_mod: bool, optional
-        :return tr: trace copy with fold_threshold applied for masking
-        :rtype tr: obspy.core.trace.Trace
-        :return model: (if output_mod == True) model name
-        :rtype model: str
-        :return weight: (if output_mod == True) weight name
-        :rtype weight: str
+        :returns:
+            - **tr** (*obspy.core.trace.Trace*) -- trace object with data masked on samples with fold < fold_threshold
+            
         """
         tr = Trace()
         for _k in tr.stats.keys():
@@ -1494,8 +1511,9 @@ class MLTrace(Trace):
         return tr
     
     def read(file_name):
-        """Read a MSEED file that was generated by :meth: `~ayahos.core.mltrace.MLTrace.write`
-        to reconstitute a new MLTrace object
+        """
+        Read a MSEED file that was generated by :meth:`~ayahos.core.mltrace.MLTrace.write` to reconstitute a new MLTrace object from
+        a specificlly formatted MiniSEED file.
 
         :param file_name: file to read
         :type file_name: str
@@ -1534,7 +1552,8 @@ class MLTrace(Trace):
 
 
     def _prep_fold_for_mseed(self):
-        """PRIVATE METHOD
+        """
+        PRIVATE METHOD
 
         conduct processing steps to convert a copy of the fold,
         model-code, and weight-code attributes contained in this

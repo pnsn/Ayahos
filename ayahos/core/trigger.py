@@ -1,71 +1,203 @@
-from seisbench.util.annotations import Pick, Detection
-from ayahos.util.stats import est_curve_quantiles, fit_probability_peak
+# from seisbench.util.annotations import Pick, Detection
+from ayahos.util.stats import estimate_moments, fit_normal_pdf_curve
 import numpy as np
 from obspy import Trace
 
 class GaussianModel(object):
-    def __init__(self, mean=0, amplitude=1, stdev=1, skewness=0, kurtosis=3, kurt_type='Pearson'):
-        if not all(isinstance(x, float) for x in [mean, amplitude, stdev, skewness, kurtosis]):
-            raise TypeError
-        if not isinstance(kurt_type, str):
-            raise TypeError
-        
-        if np.isfinite(mean):
-            self.mean = mean
-        else:
-            raise ValueError
-        
-        if np.isfinite(amplitude):
-            self.amplitude = amplitude
-        else:
-            raise ValueError
-        
-        if np.isfinite(stdev):
-            self.stdev = stdev
-        else:
-            raise ValueError
-        
-        if np.isfinite(skewness):
-            self.skewness = skewness
-        else:
-            raise ValueError
-        
+    """An object hosting paramter fitting of a scaled gaussian model:
+
+    .. math::
+        y = p_0 e^{\\frac{(x - p_1)^2}{2p_2^2}}
+
+    to input data {x, y}, with model parameters:
+        - :math:`p_0 = A_{calc}`: prefactor, or amplitude
+        - :math:`p_1 = \\mu_{calc}`: central value, or mean
+        - :math:`p_2 = \\sigma_{calc}`: standard deviation
+
+    The model also includes the paramter covariance matrix and model-data residuals.
+     
+    Also calculates and holds empirical estimates of the statistical moments of input data {x, y},
+        - :math:`\\mu_{est}` -- central value or mean
+        - :math:`\\sigma_{est}` -- standard deviation
+        - :math:`\\mathcal{S}_{est}` -- skewness
+        - :math:`\\mathcal{K}_{est}` -- kurtosis (Pearson or Fisher)
+
+    :param kurt_type: type of kurtosis to use "Pearson" or "Fisher" (Pearson = Fisher + 3), defaults to Pearson
+    :type kurt_type: str, optional
+    :param dtype: specify alternative data type to use for all calculations, defaults to None
+    :type dtype: None or numpy.float32-like, optional
+    :assigns:
+        - **self.kurt_type** (*str*) -- 'pearson' or 'fisher' assigned
+        - **self.dtype** (*type* or *None*) -- type or none assigned, passed to :meth:`~ayahos.core.trigger.GaussianModel.estimate_moments`
+    """    
+    def __init__(self, kurt_type='Pearson', dtype=None):
+        """Initialize a GaussianModel object
+
+        :param kurt_type: type of kurtosis to use "Pearson" or "Fisher" (Pearson = Fisher + 3), defaults to Pearson
+        :type kurt_type: str, optional
+        :param dtype: specify alternative data type to use for all calculations, defaults to None
+        :type dtype: None or numpy.float32-like, optional
+        :assigns:
+            - **self.kurt_type** (*str*) -- 'pearson' or 'fisher' assigned
+            - **self.dtype** (*type* or *None*) -- type or none assigned, passed to :meth:`~ayahos.core.trigger.GaussianModel.estimate_moments`
+    
+        """        
         if kurt_type.lower() in ['fisher','pearson']:
             self.kurt_type = kurt_type.lower()
         else:
             raise ValueError
-
-        if np.isfinite(kurtosis):
-            self.kurtosis = kurtosis
+        if dtype is None:
+            self.dtype = dtype
         else:
-            raise ValueError
-        
-    def
+            try:
+                np.ones(shape=(30,), dtype=dtype)
+                self.dtype = dtype
+            except TypeError:
+                raise TypeError
+        self.p = None
+        self.cov = None
+        self.res = None
+        self.est_mean = None
+        self.est_stdev = None
+        self.est_skew = None
+        self.est_kurt = None
 
-class Trigger(object):
+
+    def fit_pdf_to_curve(self, x, y, threshold=0.1, mindata=30, p0=None):
+        """Fit a scaled gaussian probability density function to the curve y=f(x) using
+        the least squares fitting in :meth:`~ayahos.util.stats.fit_normal_pdf_curve`.
+
+        :param x: independent variable values
+        :type x: numpy.ndarray
+        :param y: dependent variable values
+        :type y: numpy.ndarray
+        :param threshold: minimum y value to use for fitting, defaults to 0.1
+        :type threshold: float, optional
+        :param mindata: minimum number of datapoints required for a fitting, defaults to 30
+        :type mindata: int, optional
+        :param p0: initial parameter estimates [Amp, mean, stdev], defaults to None
+        :type p0: 3-tuple-like or None, optional
+
+        :updates:
+            - **self.p** (*numpy.ndarray*) -- least squares best fit model parameters
+            - **self.cov** (*numpy.ndarray*) -- model parameter covariance matrix
+            - **self.res** (*numpy.ndarray*) -- model-data (:math:`y_{calc} - y`) residuals
+        
+        """        
+        outs = fit_normal_pdf_curve(x,y,threshold=threshold, mindata=mindata, p0=p0)
+        self.p = outs[0]
+        self.cov = outs[1]
+        self.res = outs[2]
+        if self.dtype is not None:
+            self.p = self.dtype(self.p)
+            self.cov = self.dtype(self.cov)
+            self.res = self.dtype(self.res)
+
+    def estimate_moments(self, x, y):
+        """Estimate first through fourth moments of the probability density function
+        y = f(x)
+
+        :param x: independent variable values
+        :type x: numpy.ndarray
+        :param y: dependent variable values
+        :type y: numpy.ndarray
+        :updates:
+            - **self.est_mean** (*float*) -- central value / mean
+            - **self.est_stdev** (*float*) -- standard deviation
+            - **self.est_skew** (*float*) -- skewness
+            - **self.est_kurt** (*float*) -- kurtosis (corresponding to **self.kurt_type**)
+        """        
+        if self.kurt_type == 'fisher':
+            fisher = True
+        else:
+            fisher = False
+        outs = estimate_moments(x, y, fisher=fisher, dtype=self.dtype)
+        self.est_mean = outs[0]
+        self.est_stdev = outs[1]
+        self.est_skew = outs[2]
+        self.est_kurt = outs[3]
+
+
+class GaussTrigger(object):
     """
     This class serves as an extended container for storing statistical representations of individual modeled probabily peaks from
-    probability time-series output by :class: `~seisbench.models.WaveformModel`-like objects. It is modeled after the
-    :class: `~seisbench.util.annotations.Pick` class and the underlying structure of `obspy` trigger objects. It adds statistical measures under the ansatz that the probability
+    probability time-series output by :class:`~seisbench.models.WaveformModel`-like objects. It is modeled after the
+    :class:`~seisbench.util.annotations.Pick` class and the underlying structure of `obspy` trigger objects. It adds statistical measures under the ansatz that the probability
     curve is the form of a normal distribution probability density function. 
 
-    :param trigger_trace: Trace-like object
+    :param source_trace: Trace-like object containing just data to be used for fitting to a :class:`~Ayahos.core.trigger.GaussianModel`
+    :type source_trace: ayahos.core.mltrace.MLTrace
+    :param trigger: trigger on and off indices (iON and iOFF), as generated by :meth:`~obspy.signal.trigger.trigger_onset` or wrapping methods
+    :type trigger: tuple of int
+    :param trigger_level: triggering level used to generate trigger
+    :type trigger_level: float
+    :param quantiles: quantiles to estimate with values expressed as  :math:`q\in(0,1)`, defaults to [0.159, 0.5, 0.841]
+    :type quantiles: list-like of float
+    :param **options: key word argument collector passed to :meth:`~ayahos.core.trigger.GaussianModel.estimate_moments`
+    :type **options: kwargs
+    
+    :updated:
+        - **self.starttime** (*obspy.core.utcdatetime.UTCDateTime) -- starting timestamp from **source_trace**
+        - **self.sampling_rate** (*float*) -- sampling rate from **source_trace**
+        - **self.id** (*str*) -- id attribute from **source_trace**
+        - **self.iON** (*int*) -- trigger ON index value
+        - **self.iOFF** (*int*) -- trigger OF index value
+        - **self.trigger_level** (*float*) -- triggering threshold
+        - **self.site** (*str*) -- site attribute from **source_trace**
+        - **self.max** (*2-tuple*) -- index and value of maximum data value in source_trace.data[iON, iOFF]
+        - **self.quantiles** (*dict of 2-tuple*) -- index and value of estimated quantiles, keyed by input quantile value
+    
+    :assigned:
+        - **self.clustered** (*bool*) -- flag if this trigger has been incorporated into a cluster
+
     """    
-    def __init__(self, trigger_trace, trigger_level, padding_samples=None, quantiles=[0.5]):
-        if isinstance(trigger_trace, Trace):
-            self.starttime = trigger_trace.stats.starttime
-            self.sampling_rate = trigger_trace.stats.sampling_rate
-            self.npts = trigger_trace.stats.npts
-            self.id = trigger_trace.id
-            self.site = trigger_trace.site
-            if isinstance(trigger_trace.data, np.ma.MaskedArray):
-                if not np.ma.is_masked(trigger_trace.data):
-                    self.data = trigger_trace.data.filled()
+    def __init__(self, source_trace, trigger, trigger_level, quantiles=[0.159, 0.5, 0.841], kurt_type='Pearson', **options):
+        """Initialize a GaussTrigger object
+
+        :param source_trace: _description_
+        :type source_trace: _type_
+        :param trigger: _description_
+        :type trigger: _type_
+        :param quantiles: _description_, defaults to [0.159, 0.5, 0.841]
+        :type quantiles: list, optional
+        :raises TypeError: _description_
+        :raises ValueError: _description_
+        :raises ValueError: _description_
+        :raises TypeError: _description_
+        :raises ValueError: _description_
+        :raises TypeError: _description_
+        :raises ValueError: _description_
+        :raises ValueError: _description_
+        :raises TypeError: _description_
+        """        
+        self.clustered = False
+        if isinstance(source_trace, Trace):
+            self.starttime = source_trace.stats.starttime
+            self.sampling_rate = source_trace.stats.sampling_rate
+            self.npts = source_trace.stats.npts
+            self.id = source_trace.id
+            self.site = source_trace.site
+            if isinstance(source_trace.data, np.ma.MaskedArray):
+                if not np.ma.is_masked(source_trace.data):
+                    self.data = source_trace.data.filled()
             else:
-                self.data = trigger_trace.data
+                self.data = source_trace.data
         else:
             raise TypeError
         
+        if isinstance(trigger, (list, tuple)):
+            if len(trigger) == 2: 
+                if trigger[0] < trigger[1]:
+                    self.iON = trigger[0]
+                    self.iOFF = trigger[1]
+                else:
+                    raise ValueError('trigger ON index is larger than OFF index')
+            else:
+                raise ValueError('trigger must be a 2-list or 2-tuple')
+        else:
+            raise TypeError('trigger must be type list or tuple')
+
+
         # Get maximum trigger level
         self.tmax = self.t0 + np.argmax(self.data)/self.sampling_rate
         self.pmax = np.max(self.data)
@@ -75,16 +207,6 @@ class Trigger(object):
                 self.trigger_level = trigger_level
             else:
                 raise ValueError
-        else:
-            raise TypeError
-        
-        if isinstance(padding_samples, int):
-            if padding_samples >= 0:
-                self.padding_samples = padding_samples
-            else:
-                raise ValueError
-        elif padding_samples is None:
-            self.padding_samples = 0
         else:
             raise TypeError
         
@@ -101,51 +223,53 @@ class Trigger(object):
         else:
             raise TypeError
         # Run fitting / estimation processes
-        self. = {'mean': None,
-                        'amp': None,
-                        'stdev': None,
-                        'skew': None,
-                        'kurt': None,
-                        'kurt_type': None}
-        self.nmod['mean']
-        self.gau_amp = None
-        self.gau_stdev = None
-        self.gau_skew = None
-        self.gau_kurt = None
-        self.fit_gaussian()
+        self.lsqmod = GaussianModel()
+        x = np.arange(self.iON, self.iOFF)/self.sampling_rate + self.starttime.timestamp
+        y = self.data
+        self.lsqmod.fit_pdf_to_curve(x, y, **options)
+        # Estimate the mean, stdev, skewness, and kurtosis 
+        self.lsqmod.estimate_moments(x, y)
 
-        # Get residuals and misfits
-        self.gau_res_l1 = None
-        self.gau_res_l2 = None
-        self.mean_peak_dt = None
-        self.get_gaussian_residuals()
-        self.quantile_values = [None]*len(self.quantiles)
-        self.get_quantiles()
     
-    def get_gaussian_representation(self, **options):
-        """Estimate the mean, standard deviation, skewness, and kurtosis of this trigger
-        treating the values in `self.data` as probability density values and their position as
-        bin values. Wraps :meth:`~ayahos.util.features.est_curve_normal_stats`.
+#     self.nmod['mean']
+#     self.gau_amp = None
+#     self.gau_stdev = None
+#     self.gau_skew = None
+#     self.gau_kurt = None
+#     self.fit_gaussian()
 
-        :param **options: key word argument collector to pass to est_curve_normal_stats
-        :type **options: kwargs
-        """        
-        x = np.arange(0, self.npts)
-        amp, mu, sig, skew, kurt = fit_probability_peak(x, self.data, **options)
-        self.gau_mean = mu/self.sampling_rate + self.starttime
-        self.gau_amp = amp
-        self.gau_stdev = sig/self.sampling_rate
-        self.gau_skew = skew
-        self.gau_kurt = kurt
-    
-    def get_gaussian_fit_residual(self, data):
-        y = data
-        x = np.arange(0, self.npts)
-        Gm = (2.*np.pi*self.gau_std**2)**-0.5 * np.exp((-1.*(x - self.gau_mean)**2)/(2.*self.gau_std**2))
-        rvect = Gm - y
-        self.res_l1 = np.linalg.norm(rvect, ord=1)
-        self.res_l2 = np.linalg.norm(rvect, ord=2)
+#     # Get residuals and misfits
+#     self.gau_res_l1 = None
+#     self.gau_res_l2 = None
+#     self.mean_peak_dt = None
+#     self.get_gaussian_residuals()
+#     self.quantile_values = [None]*len(self.quantiles)
+#     self.get_quantiles()
 
-    def get_quantiles(self, data):
-        y = data
-        x = np.arange(0, len(data))
+# def get_gaussian_representation(self, **options):
+#     """Estimate the mean, standard deviation, skewness, and kurtosis of this trigger
+#     treating the values in `self.data` as probability density values and their position as
+#     bin values. Wraps :meth:`~ayahos.util.features.est_curve_normal_stats`.
+
+#     :param **options: key word argument collector to pass to est_curve_normal_stats
+#     :type **options: kwargs
+#     """        
+#     x = np.arange(0, self.npts)
+#     amp, mu, sig, skew, kurt = fit_probability_peak(x, self.data, **options)
+#     self.gau_mean = mu/self.sampling_rate + self.starttime
+#     self.gau_amp = amp
+#     self.gau_stdev = sig/self.sampling_rate
+#     self.gau_skew = skew
+#     self.gau_kurt = kurt
+
+# def get_gaussian_fit_residual(self, data):
+#     y = data
+#     x = np.arange(0, self.npts)
+#     Gm = (2.*np.pi*self.gau_std**2)**-0.5 * np.exp((-1.*(x - self.gau_mean)**2)/(2.*self.gau_std**2))
+#     rvect = Gm - y
+#     self.res_l1 = np.linalg.norm(rvect, ord=1)
+#     self.res_l2 = np.linalg.norm(rvect, ord=2)
+
+# def get_quantiles(self, data):
+#     y = data
+#     x = np.arange(0, len(data))

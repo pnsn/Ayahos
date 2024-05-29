@@ -1,14 +1,12 @@
 """
-:module: wyrm.util.feature_extraction
+:module: wyrm.util.stats
 :auth: Nathan T Stevens
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network
 :license: AGPL-3.0
-:purpose: Provide extension of obspy.signal.trigger module
-          methods for pick onset probability predictions from
-          ML models (e.g., EQTransformer; Mousavi et al., 2020)
-          assuming peaks generally take the form of an normal
-          distribution
+:purpose: Provides supporting methods for fitting probability density functions to data curves
+    {x, y}, measuring statistical moments, calculating residuals, and estimating quantiles to 
+    provide compressed representations 
 """
 import numpy as np
 from obspy import UTCDateTime
@@ -54,7 +52,7 @@ def estimate_quantiles(x, y, q=[0.16, 0.5, 0.84]):
     return qx, qy
 
 
-def est_curve_normal_stats(x, y, fisher=False, dtype=None):
+def estimate_moments(x, y, fisher=False, dtype=None):
     """
     Estimate the mean and standard deviation of a population represented
     by a discrete, evenly sampled function y = f(x), using y as weights
@@ -135,23 +133,7 @@ def est_curve_normal_stats(x, y, fisher=False, dtype=None):
 
 
 
-def calc_overlap_coefficient(mean1, mean2, stdev1, stdev2):
-    """Calculate the overlap coefficient (:math:`\mathcal{OC}`) of two normal distributions (:math:`N(\mu_i, \sigma_i)`)
 
-    .. math::
-        \mathcal{OC} = \\frac{|\mu_1 - \mu_2|}{\sqrt{\sigma^2_1 + \sigma^2_2}}
-    
-    :param mean1: mean (center) of the first distribution
-    :type mean1: float or numpy.ndarray
-    :param mean2: mean (center) of the second distribution
-    :type mean2: float or numpy.ndarray
-    :param stdev1: standard deviation (scale) of the first distribution
-    :type stdev1: float or numpy.ndarray
-    :param stdev2: standard deviation (scale) of the first distribution
-    :type stdev2: float or numpy.ndarray
-    """
-    num = mean1 - mean2
-    den = np.sqrt(stdev1**2 + stdev2**2)
 
 
 #########################################################
@@ -205,7 +187,7 @@ def normal_pdf_error(p, x, y_obs):
     return y_err
 
 
-def fit_normal_distribution(x, y, threshold=0.1, mindata=30, p0=None):
+def fit_normal_pdf_curve(x, y, threshold=0.1, mindata=30, p0=None):
     """Fit a Gaussian (Normal) distribution to the PDF approximated as
     y = PDF(x) using data with values :math:`y>=threshold` and 
     :meth:`~scipy.optimize.leastsq` with parameter values :math:`p = {A, \\mu, \\sigma}`
@@ -254,254 +236,305 @@ def fit_normal_distribution(x, y, threshold=0.1, mindata=30, p0=None):
     res = normal_pdf_error(pout, xv, yv)
     return pout, pcov, res
 
+# SIMPLE GAUSSIAN MIXTURE MODEL - work in progress #
+
+def simple_gmm(xy_pairs, threshold, p0_sets=None, **options):
+    """Using a set of {x,y} pairs, create a 1-D Gaussian Mixture Model
     
 
-
-def fit_probability_peak(x, y, fit_thr_coef=0.1, mindata=30, p0=None):
+    :param xy_pairs: _description_
+    :type xy_pairs: _type_
+    :param threshold: _description_
+    :type threshold: _type_
+    :param p0_sets: _description_, defaults to None
+    :type p0_sets: _type_, optional
+    :return: _description_
+    :rtype: _type_
     """
-    Fit a normal distribution to a discretized probability density function represented by :math:`y = pdf(x)` using
-    a least-squares fitting with :meth:`~scipy.optimize.leastsq`
+    output = []
+    for i_, (x_, y_) in enumerate(xy_pairs):
+        if p0_sets is not None:
+            p0 = p0_sets[i_]
+        else:
+            p0 = None
+        output.append(fit_normal_pdf_curve(x_, y_, threshold=threshold, p0=p0, **options))
+    return output
+
+
+
+# TODO: METHODS FOR FITTING LÉVY STABLE DISTRIBUTIONS
+
+
+
+
+
+
+
+# GRAVEYARD #
+
+# def calc_overlap_coefficient(mean1, mean2, stdev1, stdev2):
+#     """Calculate the overlap coefficient (:math:`\mathcal{OC}`) of two normal distributions (:math:`N(\mu_i, \sigma_i)`)
+
+#     .. math::
+#         \mathcal{OC} = \\frac{|\mu_1 - \mu_2|}{\sqrt{\sigma^2_1 + \sigma^2_2}}
+    
+#     :param mean1: mean (center) of the first distribution
+#     :type mean1: float or numpy.ndarray
+#     :param mean2: mean (center) of the second distribution
+#     :type mean2: float or numpy.ndarray
+#     :param stdev1: standard deviation (scale) of the first distribution
+#     :type stdev1: float or numpy.ndarray
+#     :param stdev2: standard deviation (scale) of the first distribution
+#     :type stdev2: float or numpy.ndarray
+#     """
+#     num = mean1 - mean2
+#     den = np.sqrt(stdev1**2 + stdev2**2)
+
+# def fit_probability_peak(x, y, fit_thr_coef=0.1, mindata=30, p0=None):
+#     """
+#     Fit a normal distribution to a discretized probability density function represented by :math:`y = pdf(x)` using
+#     a least-squares fitting with :meth:`~scipy.optimize.leastsq`
         
-    :param prediction_trace: [obspy.core.trace.Trace]
-                                Trace object windowed to contain a single prediction peak
-                                with relevant metadata
-    :param obs_utcdatetime:  [datetime.datetime] or [None]
-                                Optional reference datetime to compare maximum probability
-                                timing for calculating delta_t. This generally is used
-                                for an analyst pick time.
-    :param treshold_coef:    [float]
-                                Threshold scaling value for the maximum data value used to
-                                isolating samples for fitting the normal distribution
-    :param mindata:           [int]
-                                Minimum number of data requred for extracting features
-    :param p0:                [array-like]
-                                Initial normal distribution fit values
-                                Default is None, which assumes
-                                - amplitude = nanmax(data),
-                                - mean = mean(epoch_times where data >= threshold)
-                                - std = 0.25*domain(epoch_times where data >= threshold)
+#     :param prediction_trace: [obspy.core.trace.Trace]
+#                                 Trace object windowed to contain a single prediction peak
+#                                 with relevant metadata
+#     :param obs_utcdatetime:  [datetime.datetime] or [None]
+#                                 Optional reference datetime to compare maximum probability
+#                                 timing for calculating delta_t. This generally is used
+#                                 for an analyst pick time.
+#     :param treshold_coef:    [float]
+#                                 Threshold scaling value for the maximum data value used to
+#                                 isolating samples for fitting the normal distribution
+#     :param mindata:           [int]
+#                                 Minimum number of data requred for extracting features
+#     :param p0:                [array-like]
+#                                 Initial normal distribution fit values
+#                                 Default is None, which assumes
+#                                 - amplitude = nanmax(data),
+#                                 - mean = mean(epoch_times where data >= threshold)
+#                                 - std = 0.25*domain(epoch_times where data >= threshold)
 
-    :: OUTPUTS ::
-    :return amp:            [float] amplitude of the model distribution
-                                IF ndata < mindata --> this is the maximum value observed
-    :return mean:           [float] mean of the model distribution in epoch time
-                                IF ndata < mindata --> this is the timestamp of the maximum observed value
-    :return std:            [float] standard deviation of the model distribution in seconds
-                                IF ndata < mindata --> np.nan
-    :return cov:            [numpy.ndarray] 3,3 covariance matrix for <amp, mean, std>
-                                IF ndata < mindata --> np.ones(3,3)*np.nan
-    :return err:            [float] L-2 norm of data-model residuals
-                                IF ndata < mindata --> np.nan
-    :return ndata:          [int] number of data used for model fitting
-                                IF ndata < mindata --> ndata
-    """
+#     :: OUTPUTS ::
+#     :return amp:            [float] amplitude of the model distribution
+#                                 IF ndata < mindata --> this is the maximum value observed
+#     :return mean:           [float] mean of the model distribution in epoch time
+#                                 IF ndata < mindata --> this is the timestamp of the maximum observed value
+#     :return std:            [float] standard deviation of the model distribution in seconds
+#                                 IF ndata < mindata --> np.nan
+#     :return cov:            [numpy.ndarray] 3,3 covariance matrix for <amp, mean, std>
+#                                 IF ndata < mindata --> np.ones(3,3)*np.nan
+#     :return err:            [float] L-2 norm of data-model residuals
+#                                 IF ndata < mindata --> np.nan
+#     :return ndata:          [int] number of data used for model fitting
+#                                 IF ndata < mindata --> ndata
+#     """
     
-    # Get data
-    data = prediction_trace.data
-    # Get thresholded index
-    ind = data >= fit_thr_coef * np.nanmax(data)
-    # Get epoch times of data
-    d_epoch = prediction_trace.times(type="timestamp")
-    # Ensure there are enough data for normal distribution fitting
-    if sum(ind) >= mindata:
-        x_vals = d_epoch[ind]
-        y_vals = data[ind]
-        # If no initial parameter values are provided by user, use default formula
-        if p0 is None:
-            p0 = [
-                np.nanmax(y_vals),
-                np.nanmean(x_vals),
-                0.25 * (np.nanmax(x_vals) - np.nanmin(x_vals)),
-            ]
-        outs = leastsq(normal_pdf_error, p0, args=(x_vals, y_vals), full_output=True)
-        amp, mean, std = outs[0]
-        cov = outs[1]
-        err = np.linalg.norm(normal_pdf_error(outs[0], x_vals, y_vals))
+#     # Get data
+#     data = prediction_trace.data
+#     # Get thresholded index
+#     ind = data >= fit_thr_coef * np.nanmax(data)
+#     # Get epoch times of data
+#     d_epoch = prediction_trace.times(type="timestamp")
+#     # Ensure there are enough data for normal distribution fitting
+#     if sum(ind) >= mindata:
+#         x_vals = d_epoch[ind]
+#         y_vals = data[ind]
+#         # If no initial parameter values are provided by user, use default formula
+#         if p0 is None:
+#             p0 = [
+#                 np.nanmax(y_vals),
+#                 np.nanmean(x_vals),
+#                 0.25 * (np.nanmax(x_vals) - np.nanmin(x_vals)),
+#             ]
+#         outs = leastsq(normal_pdf_error, p0, args=(x_vals, y_vals), full_output=True)
+#         amp, mean, std = outs[0]
+#         cov = outs[1]
+#         err = np.linalg.norm(normal_pdf_error(outs[0], x_vals, y_vals))
 
-        return amp, mean, std, cov, err, sum(ind)
+#         return amp, mean, std, cov, err, sum(ind)
 
-    else:
-        return (
-            np.nanmax(data),
-            float(d_epoch[np.argwhere(data == np.nanmax(data))]),
-            np.nan,
-            np.ones((3, 3)) * np.nan,
-            np.nan,
-            sum(ind),
-        )
+#     else:
+#         return (
+#             np.nanmax(data),
+#             float(d_epoch[np.argwhere(data == np.nanmax(data))]),
+#             np.nan,
+#             np.ones((3, 3)) * np.nan,
+#             np.nan,
+#             sum(ind),
+#         )
 
 
-def process_predictions(
-    prediction_trace,
-    et_obs=None,
-    thr_on=0.1,
-    thr_off=0.1,
-    fit_pad_sec=0.1,
-    fit_thr_coef=0.1,
-    ndata_bounds=[30, 9e99],
-    quantiles=[0.25, 0.5, 0.75],
-):
-    """Extract statistical fits of normal distributions to prediction peaks from
-    ML prediction traces that trigger above a specified threshold.
+# def process_predictions(
+#     prediction_trace,
+#     et_obs=None,
+#     thr_on=0.1,
+#     thr_off=0.1,
+#     fit_pad_sec=0.1,
+#     fit_thr_coef=0.1,
+#     ndata_bounds=[30, 9e99],
+#     quantiles=[0.25, 0.5, 0.75],
+# ):
+#     """Extract statistical fits of normal distributions to prediction peaks from
+#     ML prediction traces that trigger above a specified threshold.
 
-    :: INPUTS ::
-    :param prediction_trace:    [obspy.core.trace.Trace]
-        Trace containing phase onset prediction probability timeseries data
-    :param et_obs:              [None or list of epoch times]
-        Observed pick times in epoch time (timestamps) associated with the
-        station/phase-type for `prediction_trace`
-    :param thr_on:              [float] trigger-ON threshold value
-    :param thr_off:             [float] trigger-OFF threshold value
-    :param fit_pad_sec:         [float]
-        amount of padding on either side of data bounded by trigger ON/OFF
-        times for calculating Gaussian fits to the probability peak(s)
-    :param fit_thr_coef:    [float] Gaussian fit data
-    :param ndata_bounds:    [2-tuple of int]
-        minimum & maximum count of data for each trigger window
-    :param quantiles:       [list of float]
-        quantile values to assess within a trigger window under assumptions
-        stated in documentation of est_curve_quantiles()
-    :: OUTPUT ::
-    :return df_out:     [pandas.dataframe.DataFrame]
-        DataFrame containing the following metrics for each trigger
-        and observed pick:
-        'et_on'     - Trigger onset time [epoch]
-        'et_off'    - Trigger termination time [epoch]
-        'p_scale'   - Probability scale from Gaussian fit model \in [0,1]
-        'q_scale'   - Probability value at the estimated median (q = 0.5)
-        'm_scale'   - Maximum estimated probability value
-        'et_mean'   - Expectation peak time from Gaussian fit model [epoch]
-        'et_max'    - timestamp of the maximum probability [epoch]
-        'det_obs_prob' - delta time [seconds] of observed et_obs[i] - et_max
-                            Note: this will be np.nan if there are no picks in
-                                  the trigger window
-        'et_std'    - Standard deviation of Gaussian fit model [seconds]
-        'L2 res'    - L2 norm of data - model residuals for Gaussian fit
-        'ndata'     - number of data considered in the Gaussian model fit
-        'C_pp'      - variance of model fit for p_scale
-        'C_uu'      - variance of model fit for expectation peak time
-        'C_oo'      - variance of model fit for standard deviation
-        'C_pu'      - covariance of model fit for p & u
-        'C_po'      - covariance of model fit for p & o
-        'C_uo'      - covariance of model fit for u & o
-    """
-    # Define output column names
-    cols = [
-        "et_on",
-        "et_off",
-        "p_scale",
-        "q_scale",
-        "m_scale",
-        "et_mean",
-        "et_med",
-        "et_max",
-        "det_obs_prob",
-        "et_std",
-        "L2 res",
-        "ndata",
-        "C_pp",
-        "C_uu",
-        "C_oo",
-        "C_pu",
-        "C_po",
-        "C_uo",
-    ]
-    # Ensure median is included in quantiles
-    quantiles = list(quantiles)
-    med_ind = None
-    for _i, _q in enumerate(quantiles):
-        if _q == 0.5:
-            med_ind = _i
-    if med_ind is None:
-        quantiles.append(0.5)
-        med_ind = -1
+#     :: INPUTS ::
+#     :param prediction_trace:    [obspy.core.trace.Trace]
+#         Trace containing phase onset prediction probability timeseries data
+#     :param et_obs:              [None or list of epoch times]
+#         Observed pick times in epoch time (timestamps) associated with the
+#         station/phase-type for `prediction_trace`
+#     :param thr_on:              [float] trigger-ON threshold value
+#     :param thr_off:             [float] trigger-OFF threshold value
+#     :param fit_pad_sec:         [float]
+#         amount of padding on either side of data bounded by trigger ON/OFF
+#         times for calculating Gaussian fits to the probability peak(s)
+#     :param fit_thr_coef:    [float] Gaussian fit data
+#     :param ndata_bounds:    [2-tuple of int]
+#         minimum & maximum count of data for each trigger window
+#     :param quantiles:       [list of float]
+#         quantile values to assess within a trigger window under assumptions
+#         stated in documentation of est_curve_quantiles()
+#     :: OUTPUT ::
+#     :return df_out:     [pandas.dataframe.DataFrame]
+#         DataFrame containing the following metrics for each trigger
+#         and observed pick:
+#         'et_on'     - Trigger onset time [epoch]
+#         'et_off'    - Trigger termination time [epoch]
+#         'p_scale'   - Probability scale from Gaussian fit model \in [0,1]
+#         'q_scale'   - Probability value at the estimated median (q = 0.5)
+#         'm_scale'   - Maximum estimated probability value
+#         'et_mean'   - Expectation peak time from Gaussian fit model [epoch]
+#         'et_max'    - timestamp of the maximum probability [epoch]
+#         'det_obs_prob' - delta time [seconds] of observed et_obs[i] - et_max
+#                             Note: this will be np.nan if there are no picks in
+#                                   the trigger window
+#         'et_std'    - Standard deviation of Gaussian fit model [seconds]
+#         'L2 res'    - L2 norm of data - model residuals for Gaussian fit
+#         'ndata'     - number of data considered in the Gaussian model fit
+#         'C_pp'      - variance of model fit for p_scale
+#         'C_uu'      - variance of model fit for expectation peak time
+#         'C_oo'      - variance of model fit for standard deviation
+#         'C_pu'      - covariance of model fit for p & u
+#         'C_po'      - covariance of model fit for p & o
+#         'C_uo'      - covariance of model fit for u & o
+#     """
+#     # Define output column names
+#     cols = [
+#         "et_on",
+#         "et_off",
+#         "p_scale",
+#         "q_scale",
+#         "m_scale",
+#         "et_mean",
+#         "et_med",
+#         "et_max",
+#         "det_obs_prob",
+#         "et_std",
+#         "L2 res",
+#         "ndata",
+#         "C_pp",
+#         "C_uu",
+#         "C_oo",
+#         "C_pu",
+#         "C_po",
+#         "C_uo",
+#     ]
+#     # Ensure median is included in quantiles
+#     quantiles = list(quantiles)
+#     med_ind = None
+#     for _i, _q in enumerate(quantiles):
+#         if _q == 0.5:
+#             med_ind = _i
+#     if med_ind is None:
+#         quantiles.append(0.5)
+#         med_ind = -1
 
-    cols += [f"q{_q:.2f}" for _q in quantiles]
-    # Get pick indices with Obspy builtin method
-    triggers = trigger_onset(
-        prediction_trace.data,
-        thr_on,
-        thr_off,
-        max_len=ndata_bounds[1],
-        max_len_delete=True,
-    )
-    times = prediction_trace.times(type="timestamp")
-    # Iterate across triggers:
-    feature_holder = []
-    for _trigger in triggers:
-        _t0 = times[_trigger[0]]
-        _t1 = times[_trigger[1]]
-        # If there are observed time picks provided, search for picks
-        wind_obs = []
-        if isinstance(et_obs, list):
-            for _obs in et_obs:
-                if _t0 <= _obs <= _t1:
-                    wind_obs.append(_obs)
-        _tr = prediction_trace.copy().trim(
-            starttime=UTCDateTime(_t0) - fit_pad_sec,
-            endtime=UTCDateTime(_t1) + fit_pad_sec,
-        )
-        # Conduct gaussian fit
-        outs = fit_probability_peak(
-            _tr, fit_thr_coef=fit_thr_coef, mindata=ndata_bounds[0]
-        )
-        # Get timestamp of maximum observed data
-        et_max = _tr.times(type="timestamp")[np.argmax(_tr.data)]
+#     cols += [f"q{_q:.2f}" for _q in quantiles]
+#     # Get pick indices with Obspy builtin method
+#     triggers = trigger_onset(
+#         prediction_trace.data,
+#         thr_on,
+#         thr_off,
+#         max_len=ndata_bounds[1],
+#         max_len_delete=True,
+#     )
+#     times = prediction_trace.times(type="timestamp")
+#     # Iterate across triggers:
+#     feature_holder = []
+#     for _trigger in triggers:
+#         _t0 = times[_trigger[0]]
+#         _t1 = times[_trigger[1]]
+#         # If there are observed time picks provided, search for picks
+#         wind_obs = []
+#         if isinstance(et_obs, list):
+#             for _obs in et_obs:
+#                 if _t0 <= _obs <= _t1:
+#                     wind_obs.append(_obs)
+#         _tr = prediction_trace.copy().trim(
+#             starttime=UTCDateTime(_t0) - fit_pad_sec,
+#             endtime=UTCDateTime(_t1) + fit_pad_sec,
+#         )
+#         # Conduct gaussian fit
+#         outs = fit_probability_peak(
+#             _tr, fit_thr_coef=fit_thr_coef, mindata=ndata_bounds[0]
+#         )
+#         # Get timestamp of maximum observed data
+#         et_max = _tr.times(type="timestamp")[np.argmax(_tr.data)]
 
-        # Get times of quantiles:
-        qet, qmed, q = est_curve_quantiles(
-            _tr.times(type="timestamp"), _tr.data, q=quantiles
-        )
+#         # Get times of quantiles:
+#         qet, qmed, q = est_curve_quantiles(
+#             _tr.times(type="timestamp"), _tr.data, q=quantiles
+#         )
 
-        # Iterate across observed times, if provided
-        # First handle the null
-        if len(wind_obs) == 0:
-            _det_obs_prob = np.nan
-            feature_line = [
-                _t0,
-                _t1,
-                outs[0],
-                outs[1],
-                et_max,
-                _det_obs_prob,
-                outs[2],
-                outs[4],
-                outs[5],
-                outs[3][0, 0],
-                outs[3][1, 1],
-                outs[3][2, 2],
-                outs[3][0, 1],
-                outs[3][0, 2],
-                outs[3][1, 2],
-            ]
-            if quantiles:
-                feature_line += list(qet)
-            feature_holder.append(feature_line)
-        # Otherwise produce one line with each delta time calculation
-        elif len(wind_obs) > 0:
-            for _wo in wind_obs:
-                _det_obs_prob = _wo - et_max
-                feature_line = [
-                    _t0,
-                    _t1,
-                    outs[0],
-                    outs[1],
-                    et_max,
-                    _det_obs_prob,
-                    outs[2],
-                    outs[4],
-                    outs[5],
-                    outs[3][0, 0],
-                    outs[3][1, 1],
-                    outs[3][2, 2],
-                    outs[3][0, 1],
-                    outs[3][0, 2],
-                    outs[3][1, 2],
-                ]
-                if quantiles:
-                    feature_line += list(qouts)
+#         # Iterate across observed times, if provided
+#         # First handle the null
+#         if len(wind_obs) == 0:
+#             _det_obs_prob = np.nan
+#             feature_line = [
+#                 _t0,
+#                 _t1,
+#                 outs[0],
+#                 outs[1],
+#                 et_max,
+#                 _det_obs_prob,
+#                 outs[2],
+#                 outs[4],
+#                 outs[5],
+#                 outs[3][0, 0],
+#                 outs[3][1, 1],
+#                 outs[3][2, 2],
+#                 outs[3][0, 1],
+#                 outs[3][0, 2],
+#                 outs[3][1, 2],
+#             ]
+#             if quantiles:
+#                 feature_line += list(qet)
+#             feature_holder.append(feature_line)
+#         # Otherwise produce one line with each delta time calculation
+#         elif len(wind_obs) > 0:
+#             for _wo in wind_obs:
+#                 _det_obs_prob = _wo - et_max
+#                 feature_line = [
+#                     _t0,
+#                     _t1,
+#                     outs[0],
+#                     outs[1],
+#                     et_max,
+#                     _det_obs_prob,
+#                     outs[2],
+#                     outs[4],
+#                     outs[5],
+#                     outs[3][0, 0],
+#                     outs[3][1, 1],
+#                     outs[3][2, 2],
+#                     outs[3][0, 1],
+#                     outs[3][0, 2],
+#                     outs[3][1, 2],
+#                 ]
+#                 if quantiles:
+#                     feature_line += list(qouts)
 
-                feature_holder.append(feature_line)
+#                 feature_holder.append(feature_line)
 
-    df_out = DataFrame(feature_holder, columns=cols)
-    return df_out
+#     df_out = DataFrame(feature_holder, columns=cols)
+#     return df_out

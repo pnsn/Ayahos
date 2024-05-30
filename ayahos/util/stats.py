@@ -144,8 +144,8 @@ def scaled_normal_pdf(p, x):
     """
     Model a scaled normal distribution (Gaussian) with parameters:  
     p[0] = :math:`A`       - Amplitude of the distribution  
-    p[1] = :math:`\\mu`      - Mean of the distribution  
-    p[2] = sigma   - Standard deviation of the distribution  
+    p[1] = :math:`\\mu`    - Mean of the distribution  
+    p[2] = :math:`\\sigma^`- Variance of the distribution  
 
     .. math::
         y = A e^{-\\frac{(x - \\mu)^2}{2\sigma^2}}
@@ -159,7 +159,7 @@ def scaled_normal_pdf(p, x):
     :return y: modeled probability values
     :rtype y: numpy.ndarray
     """
-    y = p[0] * np.exp(-0.5 * ((x - p[1]) / p[2]) ** 2)
+    y = p[0] * np.exp((-1.*(x - p[1])**2)/(2*p[2]))
     return y
 
 
@@ -167,14 +167,15 @@ def normal_pdf_error(p, x, y_obs):
     """
     Calculate the misfit between an offset normal distribution (Gaussian)
     with parameters:
-    p[0] = A       - Amplitude of the distribution
-    p[1] = mu      - Mean of the distribution
-    p[2] = sigma   - Standard deviation of the distribution
+    :math:`p_0 = A`         - Amplitude of the distribution
+    :math:`p_1 = \\mu`      - Mean of the distribution
+    :math:`p_2 = \\sigma^2` - Variance of the distribution
 
     and X, y_obs data that may
 
     :: INPUTS ::
-    :param p: [array-like] see above
+    :param p: Model parameters
+    :type p: numpy.ndarray
     :param x: [array-like] independent variable, sample locations
     :param y_obs: [array-like] dependent variable at sample locations
 
@@ -196,7 +197,6 @@ def fit_normal_pdf_curve(x, y, threshold=0.1, mindata=30, p0=None):
     .. math::
         y = A e^{\\frac{-(x - \\mu)^2}{2\\sigma^2}}
 
-
     :param x: sample locations
     :type x: numpy.ndarray
     :param y: probability density values
@@ -208,9 +208,9 @@ def fit_normal_pdf_curve(x, y, threshold=0.1, mindata=30, p0=None):
     :param p0: initial parameter value guesses, defaults to None
     :type p0: array-like, optional
     :return: 
-        - **pout** (*numpy.ndarray*) - best fit parameter values :math:`A, \\mu, \\sigma`  
-        - **pcov** (*numpy.ndarray*) - best fit parameter covariance matrix  
-        - **res** (*numpy.ndarray*) - model-data residual vector  
+        - **pout** (*numpy.ndarray*) -- best-fit parameter values :math:`A, \\mu, \\sigma^2`  
+        - **pcov** (*numpy.ndarray*) -- best-fit parameter covariance matrix  
+        - **res** (*numpy.ndarray*) -- model-data residual vector  
     """    
     if np.ndim(x) == 1 and np.ndim(y) == 1 and x.shape == y.shape:
         pass
@@ -236,29 +236,29 @@ def fit_normal_pdf_curve(x, y, threshold=0.1, mindata=30, p0=None):
     res = normal_pdf_error(pout, xv, yv)
     return pout, pcov, res
 
-# SIMPLE GAUSSIAN MIXTURE MODEL - work in progress #
+# # SIMPLE GAUSSIAN MIXTURE MODEL - work in progress #
 
-def simple_gmm(xy_pairs, threshold, p0_sets=None, **options):
-    """Using a set of {x,y} pairs, create a 1-D Gaussian Mixture Model
+# def simple_gmm(xy_pairs, threshold, p0_sets=None, **options):
+#     """Using a set of {x,y} pairs, create a 1-D Gaussian Mixture Model
     
 
-    :param xy_pairs: _description_
-    :type xy_pairs: _type_
-    :param threshold: _description_
-    :type threshold: _type_
-    :param p0_sets: _description_, defaults to None
-    :type p0_sets: _type_, optional
-    :return: _description_
-    :rtype: _type_
-    """
-    output = []
-    for i_, (x_, y_) in enumerate(xy_pairs):
-        if p0_sets is not None:
-            p0 = p0_sets[i_]
-        else:
-            p0 = None
-        output.append(fit_normal_pdf_curve(x_, y_, threshold=threshold, p0=p0, **options))
-    return output
+#     :param xy_pairs: _description_
+#     :type xy_pairs: _type_
+#     :param threshold: _description_
+#     :type threshold: _type_
+#     :param p0_sets: _description_, defaults to None
+#     :type p0_sets: _type_, optional
+#     :return: _description_
+#     :rtype: _type_
+#     """
+#     output = []
+#     for i_, (x_, y_) in enumerate(xy_pairs):
+#         if p0_sets is not None:
+#             p0 = p0_sets[i_]
+#         else:
+#             p0 = None
+#         output.append(fit_normal_pdf_curve(x_, y_, threshold=threshold, p0=p0, **options))
+#     return output
 
 
 

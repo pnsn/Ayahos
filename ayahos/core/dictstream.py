@@ -402,7 +402,7 @@ class DictStream(Stream):
             key = index
         else:
             raise TypeError(f'index type {type(index)} not supported. Only int and str')
-        self.traces.update({key, trace})
+        self.traces.update({key: trace})
 
     def __delitem__(self, index):
         if isinstance(index, str):

@@ -1,7 +1,12 @@
 # from seisbench.util.annotations import Pick, Detection
 from ayahos.util.stats import estimate_moments, fit_normal_pdf_curve
 import numpy as np
-from obspy import Trace
+from ayahos import MLTrace
+from scipy.cluster.vq import *
+import logging
+from collections import deque
+
+Logger = logging.getLogger(__name__)
 
 class GaussianModel(object):
     """An object hosting paramter fitting of a scaled gaussian model:
@@ -139,11 +144,15 @@ class GaussTrigger(object):
     :updated:
         - **self.starttime** (*obspy.core.utcdatetime.UTCDateTime) -- starting timestamp from **source_trace**
         - **self.sampling_rate** (*float*) -- sampling rate from **source_trace**
-        - **self.id** (*str*) -- id attribute from **source_trace**
+        - **self.network** (*str*) -- network attribute from **source_trace.stats**
+        - **self.station** (*str*) -- station attribute from **source_trace.stats**
+        - **self.location** (*str*) -- location attribute from **source_trace.stats**
+        - **self.channel** (*str*) -- channel attribute from **source_trace.stats**
+        - **self.model** (*str*) -- model attribute from **source_trace.stats**
+        - **self.weight** (*str*) -- weight attribute from **source_trace.stats**
         - **self.iON** (*int*) -- trigger ON index value
         - **self.iOFF** (*int*) -- trigger OF index value
         - **self.trigger_level** (*float*) -- triggering threshold
-        - **self.site** (*str*) -- site attribute from **source_trace**
         - **self.max** (*2-tuple*) -- index and value of maximum data value in source_trace.data[iON, iOFF]
         - **self.quantiles** (*dict of 2-tuple*) -- index and value of estimated quantiles, keyed by input quantile value
     
@@ -171,12 +180,16 @@ class GaussTrigger(object):
         :raises TypeError: _description_
         """        
         self.clustered = False
-        if isinstance(source_trace, Trace):
+        if isinstance(source_trace, MLTrace):
             self.starttime = source_trace.stats.starttime
             self.sampling_rate = source_trace.stats.sampling_rate
             self.npts = source_trace.stats.npts
-            self.id = source_trace.id
-            self.site = source_trace.site
+            self.network = source_trace.stats.network
+            self.station = source_trace.stats.station
+            self.location = source_trace.stats.location
+            self.channel = source_trace.stats.channel
+            self.model = source_trace.stats.model
+            self.weight = source_trace.stats.weight
             if isinstance(source_trace.data, np.ma.MaskedArray):
                 if not np.ma.is_masked(source_trace.data):
                     self.data = source_trace.data.filled()
@@ -230,7 +243,97 @@ class GaussTrigger(object):
         # Estimate the mean, stdev, skewness, and kurtosis 
         self.lsqmod.estimate_moments(x, y)
 
+    def get_site(self):
+        rstr = f'{self.network}.{self.station}'
+        return rstr
     
+    site = property(get_site)
+
+    def get_id(self):
+        rstr = f'{self.network}.{self.station}.{self.location}.{self.channel}.{self.model}.{self.weight}'
+        return rstr
+    
+    id = property(get_id)
+
+    def get_label(self):
+        rstr = self.channel[-1]
+        return rstr
+    
+    label = property(get_label)
+
+
+class TriggerBuffer(deque):
+    """A collections.deque-like object that buffers :class:`~ayahos.core.trigger.GaussTrigger` objects that
+    fall within a specified time-range of the chronologically newest GaussTrigger object. This
+    class provides methods built on :mod:`~scipy.cluster.vq` methods for K-means clustering and
+    :mod:`~scipy.cluster.heirarchical` methods for agglomerative clustering. Both methods are shown
+    to be performant at scale, as illustrated here:
+
+    https://hdbscan.readthedocs.io/en/latest/performance_and_scalability.html
+
+    :param max_length: maximum buffer length in seconds, defaults to 1
+    :type max_length: float, optional
+    :param keys: what MLTrace ID naming components to use for key matching, defaults to site
+        Supported values: 'site' or 'id', which should match the hosting :class:`~ayahos.core.
+    :param parameter_set: name of parameter set from each GaussTrigger object to use for features, defaults to 'lsq'
+            Supported values:
+                - 'lsq' -- GaussianModel parameters :math:`\\mathcal{A}, \\mu, \\sigma^2`, and L-2 norm of residuals
+                - 'est' -- Estimated moments :math:`\\mu_{est}` and :math:`\\sigma^2`, maximum probability value :math:`\mathcal{P}_{max}` and location :math:`t_{max}`
+                - 'all' -- GaussianModel parameters (as in lsq) and empirical parameters (as in est)
+    :type parameter_set: str, optional
+    
+    """
+    def __init__ (
+            self,
+            max_length=1,
+            key='site',
+            label='P',
+            restrict_past_append=True,
+            parameter_set='lsq',
+            clustering_method='kmeans',
+            distance_metric='ttest',
+
+            ):
+        if isinstance(max_length, (float, int)):
+            if np.isfinite(max_length):
+                if 0 < max_length <= 1e3:
+                    self.max_length = max_length
+                elif max_length > 1e3:
+                    Logger.warn('max_length g.t. 1000 seconds, may be unnecessarily long')
+                    
+            
+        # Inherit from collections.deque
+        super().__init__()
+        self.id_counts = {}
+        self.max_timestamp = None
+        self.min_timestamp = None
+        self.cluster_centroids = {}
+        self.cluster_membership = []
+
+    def append(self, other, **options):
+        if isinstance(other, GaussTrigger):
+            pass
+        else:
+            raise TypeError('other must be type ayahos.core.trigger.GaussTrigger')
+        self.__iadd__(other, **options)
+
+
+    def _update_times(self):
+
+    def _
+
+    def _update_id_count(self):
+        for trigger in self.triggers:
+            _id = trigger.
+
+
+    def cluster(self):
+        if self.cluster_method = 'kmeans':
+            self.prewhiten()
+            centroids, distortion = kmeans(
+                self.pwfeatures,
+                )
+
 #     self.nmod['mean']
 #     self.gau_amp = None
 #     self.gau_stdev = None

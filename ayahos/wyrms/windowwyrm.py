@@ -206,57 +206,57 @@ class WindowWyrm(Wyrm):
     # PULSE POLYMORPHIC SUBROUTINES #
     #################################
 
-    def pulse(self, stdin):
-        stdout, nproc = super().pulse(stdin)
+    def pulse(self, input):
+        stdout, nproc = super().pulse(input)
         return stdout, nproc
 
-    def _continue_iteration(self, stdin, stdin_measure, iterno):
+    def _should_this_iteration_run(self, input, input_measure, iter_number):
         """_continue_iteration for WindowWyrm
 
         unconditional pass - early stopping is handled in _unit_process
 
-        :param stdin: standard input
-        :type stdin: ayahos.core.stream.dictstream.DictStream
-        :param iterno: iteration number, unused
-        :type iterno: int
+        :param input: standard input
+        :type input: ayahos.core.stream.dictstream.DictStream
+        :param iter_number: iteration number, unused
+        :type iter_number: int
         :return status: should iterations continue in pulse, always True
         :rtype: bool
         """        
         status = True
         return status
     
-    def _get_obj_from_input(self, stdin):
+    def _unit_input_from_input(self, input):
         """_get_obj_from_input for WindowWyrm
 
-        obj is a view of stdin
+        obj is a view of input
 
-        :param stdin: standard input
-        :type stdin: ayahos.core.stream.dictstream.DictStream
+        :param input: standard input
+        :type input: ayahos.core.stream.dictstream.DictStream
         :return: _description_
         :rtype: _type_
         """
-        if isinstance(stdin, DictStream):
-            obj = stdin
-            return obj
+        if isinstance(input, DictStream):
+            unit_input = input
+            return unit_input
         else:
-            Logger.error('TypeError - stdin is not type DictStream')
+            Logger.error('TypeError - input is not type DictStream')
             raise TypeError
     
-    def _unit_process(self, obj):
+    def _unit_process(self, unit_input):
         """_unit_process for WindowWyrm
 
-        Update the window_tracker with the contents of obj and then
-        generate one window for each instrument in obj that has a 'ready'
+        Update the window_tracker with the contents of unit_input and then
+        generate one window for each instrument in unit_input that has a 'ready'
         flag in window_tracker
 
         Newly generated windows are appended to WindowWyrm.output
 
-        :param obj: input object from which windows are generated
-        :type obj: ayahos.core.stream.dictstream.DictStream
+        :param unit_input: view of a DictStream containing waveforms
+        :type unit_input: ayahos.core.stream.dictstream.DictStream
         """        
         nnew = 0
         # Update window tracker
-        self.__update_window_tracker(obj)
+        self.__update_window_tracker(unit_input)
         # Conduct network-wide pulse
         # Iterate across site-level dictionary entries
         for site, site_dict in self.window_tracker.items():
@@ -273,7 +273,7 @@ class WindowWyrm(Wyrm):
                             next_window_ti = value['ti']
                             next_window_tf = next_window_ti + self.window_sec
                             # Subset to all traces for this instrument
-                            _dst = obj.fnselect(fnstring)
+                            _dst = unit_input.fnselect(fnstring)
                             # Create copies of trimmed views of MLTrace(Buffers)
                             traces = []
                             # Iterate over tracebuffers

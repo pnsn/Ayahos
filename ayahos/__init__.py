@@ -7,6 +7,7 @@ from ayahos.core.mltracebuffer import MLTraceBuffer
 from ayahos.core.dictstream import DictStream
 from ayahos.core.windowstream import WindowStream
 
+
 # PROCESSING CLASSES SECOND
 # Common Wyrm Ancestor
 from ayahos.wyrms.wyrm import Wyrm
@@ -19,6 +20,8 @@ from ayahos.wyrms.methodwyrm import MethodWyrm
 from ayahos.wyrms.outputwyrm import OutputWyrm
 # Lineage - RingWyrm
 from ayahos.wyrms.ringwyrm import RingWyrm
+# Lineage - PickWyrm
+from ayahos.wyrms.pickwyrm import PickWyrm
 # ^^ Do not change order! ^^ Class Inheritance Load Order Matters
 
 from ayahos.wyrms.bufferwyrm import BufferWyrm
@@ -33,5 +36,6 @@ __all__ = ["MLTrace","DictStream",
            "Ayahos", "RingWyrm",
            "EarWyrm", "BufferWyrm",
            "WindowWyrm", "MethodWyrm",
-           "SBMWyrm","OutputWyrm"]
+           "SBMWyrm","OutputWyrm",
+           "PickWyrm"]
 

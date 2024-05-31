@@ -236,6 +236,121 @@ def fit_normal_pdf_curve(x, y, threshold=0.1, mindata=30, p0=None):
     res = normal_pdf_error(pout, xv, yv)
     return pout, pcov, res
 
+
+class GaussianModel(object):
+    """An object hosting paramter fitting of a scaled gaussian model:
+
+    .. math::
+        y = p_0 e^{\\frac{(x - p_1)^2}{2p_2^2}}
+
+    to input data {x, y}, with model parameters:
+        - :math:`p_0 = A_{calc}`: prefactor, or amplitude
+        - :math:`p_1 = \\mu_{calc}`: central value, or mean
+        - :math:`p_2 = \\sigma_{calc}`: standard deviation
+
+    The model also includes the paramter covariance matrix and model-data residuals.
+     
+    Also calculates and holds empirical estimates of the statistical moments of input data {x, y},
+        - :math:`\\mu_{est}` -- central value or mean
+        - :math:`\\sigma_{est}` -- standard deviation
+        - :math:`\\mathcal{S}_{est}` -- skewness
+        - :math:`\\mathcal{K}_{est}` -- kurtosis (Pearson or Fisher)
+
+    :param kurt_type: type of kurtosis to use "Pearson" or "Fisher" (Pearson = Fisher + 3), defaults to Pearson
+    :type kurt_type: str, optional
+    :param dtype: specify alternative data type to use for all calculations, defaults to None
+    :type dtype: None or numpy.float32-like, optional
+    :assigns:
+        - **self.kurt_type** (*str*) -- 'pearson' or 'fisher' assigned
+        - **self.dtype** (*type* or *None*) -- type or none assigned, passed to :meth:`~ayahos.core.trigger.GaussianModel.estimate_moments`
+    """    
+    def __init__(self, kurt_type='Pearson', dtype=None):
+        """Initialize a GaussianModel object
+
+        :param kurt_type: type of kurtosis to use "Pearson" or "Fisher" (Pearson = Fisher + 3), defaults to Pearson
+        :type kurt_type: str, optional
+        :param dtype: specify alternative data type to use for all calculations, defaults to None
+        :type dtype: None or numpy.float32-like, optional
+        :assigns:
+            - **self.kurt_type** (*str*) -- 'pearson' or 'fisher' assigned
+            - **self.dtype** (*type* or *None*) -- type or none assigned, passed to :meth:`~ayahos.core.trigger.GaussianModel.estimate_moments`
+    
+        """        
+        if kurt_type.lower() in ['fisher','pearson']:
+            self.kurt_type = kurt_type.lower()
+        else:
+            raise ValueError
+        if dtype is None:
+            self.dtype = dtype
+        else:
+            try:
+                np.ones(shape=(30,), dtype=dtype)
+                self.dtype = dtype
+            except TypeError:
+                raise TypeError
+        self.p = None
+        self.cov = None
+        self.res = None
+        self.est_mean = None
+        self.est_stdev = None
+        self.est_skew = None
+        self.est_kurt = None
+
+
+    def fit_pdf_to_curve(self, x, y, threshold=0.1, mindata=30, p0=None):
+        """Fit a scaled gaussian probability density function to the curve y=f(x) using
+        the least squares fitting in :meth:`~ayahos.util.stats.fit_normal_pdf_curve`.
+
+        :param x: independent variable values
+        :type x: numpy.ndarray
+        :param y: dependent variable values
+        :type y: numpy.ndarray
+        :param threshold: minimum y value to use for fitting, defaults to 0.1
+        :type threshold: float, optional
+        :param mindata: minimum number of datapoints required for a fitting, defaults to 30
+        :type mindata: int, optional
+        :param p0: initial parameter estimates [Amp, mean, stdev], defaults to None
+        :type p0: 3-tuple-like or None, optional
+
+        :updates:
+            - **self.p** (*numpy.ndarray*) -- least squares best fit model parameters
+            - **self.cov** (*numpy.ndarray*) -- model parameter covariance matrix
+            - **self.res** (*numpy.ndarray*) -- model-data (:math:`y_{calc} - y`) residuals
+        
+        """        
+        outs = fit_normal_pdf_curve(x,y,threshold=threshold, mindata=mindata, p0=p0)
+        self.p = outs[0]
+        self.cov = outs[1]
+        self.res = outs[2]
+        if self.dtype is not None:
+            self.p = self.dtype(self.p)
+            self.cov = self.dtype(self.cov)
+            self.res = self.dtype(self.res)
+
+    def estimate_moments(self, x, y):
+        """Estimate first through fourth moments of the probability density function
+        y = f(x)
+
+        :param x: independent variable values
+        :type x: numpy.ndarray
+        :param y: dependent variable values
+        :type y: numpy.ndarray
+        :updates:
+            - **self.est_mean** (*float*) -- central value / mean
+            - **self.est_stdev** (*float*) -- standard deviation
+            - **self.est_skew** (*float*) -- skewness
+            - **self.est_kurt** (*float*) -- kurtosis (corresponding to **self.kurt_type**)
+        """        
+        if self.kurt_type == 'fisher':
+            fisher = True
+        else:
+            fisher = False
+        outs = estimate_moments(x, y, fisher=fisher, dtype=self.dtype)
+        self.est_mean = outs[0]
+        self.est_stdev = outs[1]
+        self.est_skew = outs[2]
+        self.est_kurt = outs[3]
+
 # # SIMPLE GAUSSIAN MIXTURE MODEL - work in progress #
 
 # def simple_gmm(xy_pairs, threshold, p0_sets=None, **options):

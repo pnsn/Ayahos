@@ -34,37 +34,33 @@ Logger = logging.getLogger(__name__)
 class MethodWyrm(Wyrm):
     """
     A submodule for applying a class method with specified key-word arguments to objects
-    sourced from an input deque and passed to an output deque (self.queue) following processing.
+    sourced from an input deque and passed to an output deque (self.output) following processing.
 
-    NOTE: This submodule assumes that applied class methods apply in-place alterations on data
-
+    Initialization Notes
+    - sanity checks are applied to ensure that pmethod is in the attributes and methods associated with pclass
+    - the only sanity check applied is that pkwargs is type dict. Users should refer to the documentation of their intended pclass.pmethod() to ensure keys and values are compatable.
+    
+    
     """
     def __init__(
         self,
-        pclass=WindowStream,
-        pmethod="filter",
-        pkwargs={'type': 'bandpass',
-                 'freqmin': 1,
-                 'freqmax': 45},
+        pclass,
+        pmethod,
+        pkwargs,
         max_pulse_size=10000,
         ):
         """
         Initialize a MethodWyrm object
 
         :: INPUTS ::
-        :param pclass: [type] class defining object (ComponentStream, MLStream, etc.)
-        :param pmethod: [str] name of class method to apply 
-                            NOTE: sanity checks are applied to ensure that pmethod is in the
-                                attributes and methods associated with pclass
-        :param pkwargs: [dict] dictionary of key-word arguments (and positional arguments
-                                stated as key-word arguments) for pclass.pmethod(**pkwargs)
-                            NOTE: only sanity check applied is that pkwargs is type dict.
-                                Users should refer to the documentation of their intended
-                                pclass.pmethod() to ensure keys and values are compatable.
-        :param max_pulse_size: [int] positive valued maximum number of objects to process
-                                during a call of MethodWyrm.pulse()
-        :param debug: [bool] should this Wyrm be run in debug mode?
-
+        :param pclass: expected class of unit_input objects passed to :meth:`~ayahos.wyrms.methodwyrm.MethodWyrm._unit_process`
+        :type pclass: type, e.g., WindowStream
+        :param pmethod: name of class method to apply to unit_input objects
+        :type pmethod: str, e.g., "filter"
+        :param pkwargs: key-word arguments (and positional arguments stated as key-word arguments) for pclass.pmethod(**pkwargs)
+        :type pkwargs: dict, e.g., {"type": "bandpass", "freqmin": 1, "freqmax": 45}
+        :param max_pulse_size: maximum number of iterations to conduct in a pulse, defaults to 10000.
+        :type max_pulse_size: int, optional
         """
 
         # Initialize/inherit from Wyrm
@@ -92,17 +88,17 @@ class MethodWyrm(Wyrm):
     # def _continue_iteration()
     # def _capture_unit_out()
         
-    def _get_obj_from_input(self, stdin):
-        # Use checks from Wyrm on stdin
-        obj = super()._get_obj_from_input(stdin)
+    def _unit_input_from_input(self, input):
+        # Use checks from Wyrm on input
+        unit_input = super()._unit_input_from_input(input)
         # Then apply checks from pclass
-        if isinstance(obj, self.pclass):
-            return obj
+        if isinstance(unit_input, self.pclass):
+            return unit_input
         else:
-            Logger.critical(f'object popped from stdin mismatch {self.pclass} != {type(obj)}')
+            Logger.critical(f'object popped from input mismatch {self.pclass} != {type(obj)}')
             raise TypeError
         
-    def _unit_process(self, obj):
+    def _unit_process(self, unit_input):
         """unit_process for MethodWyrm
 
         Check if the input deque and iteration number
@@ -114,15 +110,14 @@ class MethodWyrm(Wyrm):
 
             Match: Execute the in-place processing and append to MethodWyrm.output
 
-        :param obj: input object to be modified
-        :type obj: self.pclass
-
-        :return unit_out: modified obj
-        :rtype: self.pclass
+        :param unit_input: object to be modified with self.pmethod(**self.pkwargs)
+        :type unit_input: self.pclass
+        :returns:
+         - **unit_output** (*self.pclass*) -- modified object
         """ 
-        getattr(obj, self.pmethod)(**self.pkwargs)
-        unit_out = obj
-        return unit_out
+        getattr(unit_input, self.pmethod)(**self.pkwargs)
+        unit_output = unit_input
+        return unit_output
     
 
 

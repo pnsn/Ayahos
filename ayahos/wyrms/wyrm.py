@@ -12,7 +12,7 @@
 """
 from copy import deepcopy
 from collections import deque
-import logging
+import logging, sys
 
 # Logger = logging.getLogger(__name__)
 
@@ -222,6 +222,7 @@ class Wyrm(object):
             return unit_input
         else:
             Logger.error(f'input object was incorrect type')
+            sys.exit(1)
             raise TypeError
         
 
@@ -266,8 +267,8 @@ class Wyrm(object):
 
         Returns status = True unconditionally
 
-        :param unit_out: output _unit_process
-        :type unit_out: object
+        :param unit_output: output _unit_process
+        :type unit_output: object
         :return status: should the next iteration be run?
         :rtype: bool
         """

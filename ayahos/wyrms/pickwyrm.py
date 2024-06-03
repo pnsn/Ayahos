@@ -145,15 +145,13 @@ class PickWyrm(Wyrm):
         else:
             raise TypeError
                 
-        # Compatability check
-
-
-
+        # Compatability check for pick_method
         if pick_method.lower() in ['max', 'gau', 'med']:
             self.pick_method = pick_method.lower()
         else:
             raise ValueError(f'pick_method {pick_method} not supported')
         
+        # Compatability check for prob2qual_map
         if isinstance(prob2qual_map, dict):
             if all(_k in prob2qual_map.keys() for _k in [0,1,2,3,4]):
                 if all(prob2qual_map[i_] > prob2qual_map[i_+1] for i_ in range(4)):
@@ -165,6 +163,7 @@ class PickWyrm(Wyrm):
         else:
             raise TypeError('prob2qual_map must be type dict')
         
+        # Compatability check for phases_to_pick
         if isinstance(phases_to_pick, list):
             if all(isinstance(e, str) for e in phases_to_pick):
                 self.phases_to_pick = phases_to_pick
@@ -175,6 +174,7 @@ class PickWyrm(Wyrm):
         else:
             raise TypeError('phases_to_pick must be a single phase name string or a list of phase name strings')
         
+        # Compatability check for phase2comp_map
         if isinstance(phase2comp_map, dict):
             if all(_k in self.phases_to_pick for _k in phase2comp_map.keys()):
                 if all(isinstance(_v, str) for _v in phase2comp_map.values()):
@@ -189,24 +189,86 @@ class PickWyrm(Wyrm):
             
         # Capture kwargs
         self.trigger_opts = trigger_opts
-        # Create index
+        # Create index for tracking sequence numbers at each station
         self.index = {}
+        # Create _inner_index for tracking the index of the last station analyzed
+        self._inner_index = 0
 
 
     def _should_this_iteration_run(self, input, input_size, iter_number):
-        status = True
+        """
+        POLYMORPHIC
+        Last updated with :class:`~ayahos.wyrms.pickwyrm.PickWyrm`
+
+        Signal early stopping (status = False) if:
+         - type(input) != :class:`~ayahos.core.dictstream.DictStream
+         - input_size == 0
+         - iter_number < input_size
+
+        I.e., If input is a DictStream, 
+              there are MLTrace-like objects in input, 
+              and the iteration counter is less than the number of MLTrace-like objects
+
+        :param input: input DictStream
+        :type input: ayahos.core.dictstream.DictStream
+        :param input_size: number of MLTrace-like objects in dictstream (len(input))
+        :type input_size: int
+        :param iter_number: iteration number
+        :type iter_number: int
+        :returns:
+            - **status** (*bool*) -- should this iteration be run?
+        """
+        status = False
+        if input_size > 0:
+            if isinstance(input, DictStream):
+                if iter_number < input_size:
+                    status = True
+                    self._inner_index=iter_number
         return status
     
-    def _get_unit_input_from_input(self, input):
-        nnew = 0
+    def _unit_input_from_input(self, input):
+        """
+        POLYMORPHIC
+        Last update with :class:`~ayahos.wyrms.pickwyrm.PickWyrm`
+
+        Get a view of a single MLTrace-like object from input
+
+        :param input: input DictStream
+        :type input: ayahos.core.dictstream.DictStream
+        :returns:
+            - **unit_input** (*ayahos.core.mltrace.MLTrace) -- view of a single MLTrace-like object in input
+
+        """        
         if isinstance(input, DictStream):
-            unit_input = input
+            unit_input = input[self._inner_index]
             return unit_input
         else:
             Logger.critical('Passing non-DictStream object to PickWyrm - not allowed')
             sys.exit(1)
     
     def _unit_process(self, unit_input):
+        """
+        POLYMORPHIC
+        Last update with :class:`~ayahos.wyrms.pickwyrm.PickWyrm`
+
+        Iterate across each MLTrace-like object in **unit_input** and conduct triggering and picking
+        on traces with predicted probability labels that match self.phases_to_pick entries and do the 
+        following:
+            1) determine if there are any non-0-fold samples in the trace, if so, proceed
+            1) with :meth:`~obspy.signal.trigger.trigger_onset`, trigger using self.trigger_level = thresh1 = thresh2
+            2) for each trigger
+
+        The right-most self.leading_mute samples are ignored in this process, as described in the
+        :class:`~ayahos.wyrms.pickwyrm.PickWyrm` class docstring.
+
+
+
+        :param unit_input: input view of DictStream
+        :type unit_input: ayahos.core.dictstream.DictStream
+        :returns:
+            - **unit_output** (*)
+        :rtype: _type_
+        """        
         # Iterate across MLTrace objects
         for _id, _mlt in unit_input.traces.items():
             # Hard safety catch for required input type

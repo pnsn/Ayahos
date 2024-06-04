@@ -192,7 +192,8 @@ class PickWyrm(Wyrm):
         # Create index for tracking sequence numbers at each station
         self.index = {}
         # Create _inner_index for tracking the index of the last station analyzed
-        self._inner_index = 0
+        self._last_index = None
+        self._last_key = None
 
 
     def _should_this_iteration_run(self, input, input_size, iter_number):
@@ -239,12 +240,43 @@ class PickWyrm(Wyrm):
             - **unit_input** (*ayahos.core.mltrace.MLTrace) -- view of a single MLTrace-like object in input
 
         """        
-        if isinstance(input, DictStream):
-            unit_input = input[self._inner_index]
-            return unit_input
-        else:
-            Logger.critical('Passing non-DictStream object to PickWyrm - not allowed')
+        if not isinstance(input, DictStream):
+            Logger.critical('input for PickWyrm.pulse must be type ayahos.core.dictstream.DictStream')
             sys.exit(1)
+    
+        # If the next item would fall outside length of input, wrap
+        if len(input) == self._next_index:
+            self._next_index = 0
+
+        # Get MLTrace
+        _mlt = input[self._next_index]
+
+        # If MLTrace ID is in the index keys
+        if _mlt.id in self.index.keys():
+            # Pass as unit_output (already passed checks below)
+            unit_output = _mlt
+            # Increment up _next_index
+            self._next_index += 1
+            # Update _last_key
+            self._last_key = _mlt.id
+        # If this is an unrecognized ID where the component (predicted label)
+        # is in the phases_to_pick list
+        elif _mlt.comp in self.phases_to_pick:
+            # Create new index entry
+            self.index.update({_mlt.id: 0})
+            # Pass as unit_output
+            unit_output = _mlt
+            # Increment up _next_index
+            self._next_index += 1
+            # Update _last_key
+            self._last_key = _mlt.id
+        # If unrecognized ID and label is not a phase to pick
+        else:
+            unit_output = _mlt
+            self._next_index += 1
+
+        return unit_output
+
     
     def _unit_process(self, unit_input):
         """
@@ -268,7 +300,51 @@ class PickWyrm(Wyrm):
         :returns:
             - **unit_output** (*)
         :rtype: _type_
-        """        
+        """
+        # If unit_input ID was rejected due to mismatch label
+        if unit_input.id != self._last_key:
+            Logger.debug(f'Skipping mltrace ID {unit_input.id} - component code rejected')
+            return None
+        # If unit_input passed, but no data have non-0 fold
+        elif not any(unit_input.fold[:-self.leading_mute] > 0):
+            Logger.debug(f'Skipping mltrace ID {unit_input.id} - no non-zero, non-muted fold samples')
+            return None
+        else:
+            pass
+    
+        # Run Triggering
+        triggers = trigger_onset(
+            unit_input.data,
+            thresh1=self.trigger_level,
+            thresh2=self.trigger_level,
+            max_len=max(self.trigger_bounds),
+            max_len_delete=True
+        )
+        # Get index where muting begins
+        mute_index = unit_input.stats.npts - self.leading_mute
+        # Filter for additional trigger consideration requirements
+        accepted_triggers = []
+        for _t, trigger in enumerate(triggers):
+            if trigger[0] > mute_index or trigger[1] > mute_index:
+                Logger.debug(f'Skipping trigger {_t}/{len(triggers)} - touches mute area')
+                continue
+            elif trigger[1] - trigger[0] < min(self.trigger_bounds):
+                Logger.debug(f'Skipping trigger {_t}/{len(triggers)} - trigger duration too small')
+                continue
+            elif any(unit_input.fold[trigger[0]:trigger[1]] < self.fold_threshold):
+                Logger.debug(f'Skipping trigger {_t}/{len(triggers)} - insufficiently high fold')
+                continue
+            else:
+                trigger = self.TriggerClass(
+                    unit_input,
+                    trigger,
+                    self.trigger_level,
+                    **self.trigger_opts)
+                
+        ## WIP TODO: KEEP GOING
+        
+
+
         # Iterate across MLTrace objects
         for _id, _mlt in unit_input.traces.items():
             # Hard safety catch for required input type

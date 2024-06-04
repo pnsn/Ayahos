@@ -392,7 +392,7 @@ class GaussTrigger(Trigger):
 
 class QuantTrigger(Trigger):
 
-    def __init__(self, source_trace, trigger, trigger_level, padding_samples=10, quantiles=[0.159, 0.5, 0.841] **options)
+    def __init__(self, source_trace, trigger, trigger_level, padding_samples=10, quantiles=[0.159, 0.5, 0.841]):
 
         super().__init__(source_trace, trigger, trigger_level, padding_samples=padding_samples)
 

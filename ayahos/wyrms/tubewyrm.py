@@ -23,11 +23,10 @@ TODO: Turn status from _capture_unit_out into a representation of nproc
 import logging
 import numpy as np
 from collections import deque
-from ayahos.wyrms.wyrm import Wyrm, add_class_name_to_docstring
+from ayahos.wyrms.wyrm import Wyrm
 
 Logger = logging.getLogger(__name__)
 
-# @add_class_name_to_docstring
 class TubeWyrm(Wyrm):
     """
     Wyrm child-class facilitating chained execution of pulse(x) class methods
@@ -74,7 +73,7 @@ class TubeWyrm(Wyrm):
             else:
                 raise TypeError('All elements in wyrm_dict must be type Wyrm')
         else:
-            raise TypeError('wyrm_dict must be a single Wyrm-type unit_inputect or a list or dictionary thereof')
+            raise TypeError('wyrm_dict must be a single Wyrm-type unit_input or a list or dictionary thereof')
         
         # wait_sec compat. checks
         if not isinstance(wait_sec, (int, float)):
@@ -100,9 +99,12 @@ class TubeWyrm(Wyrm):
         This will update existing keyed entries and append new
         at the end of self.wyrm_dict (same behavior as dict.update)
 
-        :: INPUT ::
-        :param new_dict: dictionary of Wyrm-like unit_inputects
+        :param new_dict: dictionary of Wyrm-like unit_input
         :type new_dict: dict
+        :updates: 
+            - **self.wyrm_dict** - updates wyrm_dict as specified
+            - **self.names** - updates the list of keys in wyrm_dict
+            - **self.output** - re-aliases to the output attribute of the last wyrm in wyrm_dict
 
         """
         # Safety catches identical to those in __init__

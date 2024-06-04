@@ -54,10 +54,8 @@ class SBMWyrm(Wyrm):
 
     def __init__(
         self,
-        model=sbm.EQTransformer(),
-        weight_names=['pnw',
-                      'instance',
-                      'stead'],
+        model,
+        weight_names,
         devicetype='cpu',
         compiled=True,
         min_batch_size=1,
@@ -67,10 +65,10 @@ class SBMWyrm(Wyrm):
         Initialize a ayahos.core.wyrms.mldetectwyrm.MLDetectWyrm object
 
         :: INPUTS ::
-        :param model: seisbench WaveformModel child class object, default is seisbench.models.EQTransformer()
+        :param model: seisbench WaveformModel child class object, e.g., seisbench.models.EQTransformer()
         :type model: seisbench.models.WaveformModel
         :param weight_names: names of pretrained model weights included in the model.list_pretrained() output
-                        default is ['pnw','instance','stead']
+                        e.g., ['pnw','instance','stead']
                         NOTE: This object holds distinct, in-memory instances of
                             all model-weight combinations, allowing rapid cycling
                             across weights and storage of pre-compiled models
@@ -171,48 +169,54 @@ class SBMWyrm(Wyrm):
     # PULSE POLYMORPHIC SUBROUTINES #
     #################################
 
-    # def _continue_iteration(self, stdin, iterno):
-    #     if len(stdin) == 0:
+    # def _continue_iteration(self, input, iterno):
+    #     if len(input) == 0:
 
     # Inherit from Wyrm
-    # _continue_iteration() - stdin must be a non-empty deque and iterno +1 < len(stdin)
+    # _continue_iteration() - input must be a non-empty deque and iterno +1 < len(input)
 
-    def _continue_iteration(self, stdin, stdin_measure, iterno):
+    def _should_this_iteration_run(self, input, input_measure, iterno):
         status = False
-        # if stdin is deque
-        if isinstance(stdin, deque):
-            # and stdin has at least min_batch_size elements
-            if len(stdin) >= self.min_batch_size:
-                # and iteration number + 1 is l.e. the length of stdin
-                if iterno + 1 <= stdin_measure:
+        # if input is deque
+        if isinstance(input, deque):
+            # and input has at least min_batch_size elements
+            if len(input) >= self.min_batch_size:
+                # and iteration number + 1 is l.e. the length of input
+                if iterno + 1 <= input_measure:
                     # Then proceed with iteration
                     status = True
         return status
 
-    def _get_obj_from_input(self, stdin):
-        """ _get_obj_from_input method for MLDetectWyrm
+    def _unit_input_from_input(self, input):
+        """
+        POLYMORPHIC
+        Last update with :class:`~ayahos.wyrms.sbmwyrm.SBMWyrm`
 
         Create batched window data for input to ML prediction
 
-        :param stdin: collection of input objects
-        :type stdin: collections.deque of ayahos.core.stream.windowstream.WindowStream(s)
-        :return: batch_data, batch_fold, and batch_meta objects
+        :param input: collection of input objects
+        :type input: collections.deque of ayahos.core.stream.windowstream.WindowStream(s)
+        :returns: 
+            - **unit_input** (*3-tuple of lists*) -- tuple containing
+                - **batch_data** -- batch of windowed, preprocessed data tensors
+                - **batch_fold** -- fold information for each preprocessed data tensor window
+                - **batch_meta** -- metadata associated with each window in **batch_data**
         :rtype: 3-tuple
         """        
-        if not isinstance(stdin, deque):
+        if not isinstance(input, deque):
             raise TypeError('input `obj` must be type collections.deque')        
 
         batch_data = []
         batch_fold = []
         batch_meta = []
         # Compose Batch
-        measure = len(stdin)
+        measure = len(input)
         for j_ in range(self.max_batch_size):
             # Check if there are still objects to assess (inherited from Wyrm)
-            status = super()._continue_iteration(stdin, measure, j_)
+            status = super()._continue_iteration(input, measure, j_)
             # If there are 
             if status:
-                _x = stdin.popleft()
+                _x = input.popleft()
                 if not isinstance(_x, WindowStream):
                     Logger.critical('type mismatch')
                     raise TypeError
@@ -237,23 +241,25 @@ class SBMWyrm(Wyrm):
             # If we've run out of objects to assess, stop creating batch
             else:
                 break
-        obj = (batch_data, batch_fold, batch_meta)
-        return obj
+        unit_input = (batch_data, batch_fold, batch_meta)
+        return unit_input
     
-    def _unit_process(self, obj):
-        """unit_process of ayahos.core.wyrms.mldetectwyrm.MLDetectWyrm
+    def _unit_process(self, unit_input):
+        """
+        POLYMORPHIC
+        Last update with :class:`~ayahos.wyrms.sbmwyrm.SBMWyrm`
 
         This unit process batches data, runs predictions, reassociates
         predicted values and their source metadata, and attaches prediction
         containing objects to the output attribute
 
-        :param obj: tuple containing batched data, fold, and metadata objects
-        :type obj: 3-tuple
-        :return unit_out: unit process output
-        :rtype unit_out: dict of ayahos.core.stream.dictstream.DictStream objects
+        :param unit_input: tuple containing batched data, fold, and metadata objects
+        :type unit_input: (list of numpy.ndarray, list of numpy.ndarray, list of dict)
+        :returns
+            - **unit_output** (*dict of ayahos.core.stream.dictstream.DictStream*) -- output predictions reassociated with their fold-/meta-data
         """
-        # unpack obj
-        batch_data, batch_fold, batch_meta = obj
+        # unpack unit_input
+        batch_data, batch_fold, batch_meta = unit_input
         # If we have at least one tensor to predict on, proceed
         if len(batch_data) > 0:
             Logger.info(f'prediction on batch of {len(batch_data)} windows')
@@ -265,34 +271,34 @@ class SBMWyrm(Wyrm):
             # Convert int
             batch_data = torch.Tensor(batch_data)
             # Create output holder for all predictions
-            unit_out = {i_: DictStream() for i_ in range(len(batch_meta))}
+            unit_output = {i_: DictStream() for i_ in range(len(batch_meta))}
             # Iterate across preloaded (possibly precompiled) models
             for wname, weighted_model in self.cmods.items():
                 # RUN PREDICTION
                 batch_pred = self.__run_prediction(weighted_model, batch_data, batch_meta)
                 # Reassociate metadata
-                self.__batch2dst_dict(wname, batch_pred, batch_fold, batch_meta, unit_out)
+                self.__batch2dst_dict(wname, batch_pred, batch_fold, batch_meta, unit_output)
         else:
-            unit_out = None
-        return unit_out
+            unit_output = None
+        return unit_output
     
-    def _capture_unit_out(self, unit_out): 
-        """_capture_unit_out
+    def _capture_unit_output(self, unit_output): 
+        """_capture_unit_output
 
-        Iterate across DictStreams in unit_out and append each to the output attribute
+        Iterate across DictStreams in unit_output and append each to the output attribute
 
         If the batch_size is less than max_batch_size return an early breaking flag
         (status = False) to pass to pulse()
 
-        :param unit_out: unit output from _unit_out
-        :type unit_out: dict of ayahos.core.stream.dictstream.DictStream objects or None
+        :param unit_output: unit output from _unit_output
+        :type unit_output: dict of ayahos.core.stream.dictstream.DictStream objects or None
         :return status: should pulse iterations continue? Unconditional True
         :rtype status: bool
         """                       
         # Attach DictStreams to output if there are data
         status = True
-        if isinstance(unit_out, dict):
-            for _v in unit_out.values():
+        if isinstance(unit_output, dict):
+            for _v in unit_output.values():
                 self.output.append(_v)    
         return status
 
@@ -381,7 +387,7 @@ class SBMWyrm(Wyrm):
         :param batch_meta: metadata corresponding to input data for each prediction window
         :type batch_meta: list of wyrm.core.WindowStream.WindowStreamStats
         :param dst_dict: prediction output holder object that will house reassociated (meta)data
-        :type dst_dict: dict of ayahos.core.stream.dictstream.DictStream objects
+        :type dst_dict: dict of ayahos.core.dictstream.DictStream objects
 
         """
         # Reshape sanity check

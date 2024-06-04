@@ -298,6 +298,9 @@ class Trigger(object):
         else:
             raise TypeError
         
+        self.pref_pick_time = self.tmax
+        self.pref_pick_prob = self.pmax
+
         # Placeholder for pick obj
         self.pick2k = None
 
@@ -370,6 +373,9 @@ class GaussTrigger(Trigger):
         self.var = p[2]
         self.cov = cov
         self.res = res
+        # Overwrite reference inherited from Trigger
+        self.pref_pick_time = self.mean
+        self.pref_pick_prob = self.scale
     
     def get_l1(self):
         norm = np.linalg.norm(self.res, ord=1)
@@ -416,6 +422,8 @@ class QuantTrigger(Trigger):
         self.tmed = self.times[self.quantiles==0.5]
         self.pmed = self.probabilities[self.quantiles==0.5]
 
+        self.pref_pick_time = self.tmed
+        self.pref_pick_prob = self.pmed
         # Run fitting / estimation processes
 
         # # Estimate the mean, stdev, skewness, and kurtosis 

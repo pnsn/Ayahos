@@ -147,7 +147,9 @@ class PickWyrm(Wyrm):
                 
         # Compatability check for pick_method
         if pick_method.lower() in ['max', 'gau', 'med']:
-            self.pick_method = pick_method.lower()
+            self.TriggerClass = {'max': Trigger,
+                                 'gau': GaussTrigger,
+                                 'med': QuantTrigger}[pick_method]
         else:
             raise ValueError(f'pick_method {pick_method} not supported')
         
@@ -192,7 +194,7 @@ class PickWyrm(Wyrm):
         # Create index for tracking sequence numbers at each station
         self.index = {}
         # Create _inner_index for tracking the index of the last station analyzed
-        self._last_index = None
+        self._next_index = 0
         self._last_key = None
 
 
@@ -301,145 +303,72 @@ class PickWyrm(Wyrm):
             - **unit_output** (*)
         :rtype: _type_
         """
+        # initialize unit_output
+        unit_output = []
         # If unit_input ID was rejected due to mismatch label
         if unit_input.id != self._last_key:
             Logger.debug(f'Skipping mltrace ID {unit_input.id} - component code rejected')
-            return None
         # If unit_input passed, but no data have non-0 fold
         elif not any(unit_input.fold[:-self.leading_mute] > 0):
             Logger.debug(f'Skipping mltrace ID {unit_input.id} - no non-zero, non-muted fold samples')
-            return None
+        # Otherwise, proceed to triggering
         else:
-            pass
-    
-        # Run Triggering
-        triggers = trigger_onset(
-            unit_input.data,
-            thresh1=self.trigger_level,
-            thresh2=self.trigger_level,
-            max_len=max(self.trigger_bounds),
-            max_len_delete=True
-        )
-        # Get index where muting begins
-        mute_index = unit_input.stats.npts - self.leading_mute
-        # Filter for additional trigger consideration requirements
-        accepted_triggers = []
-        for _t, trigger in enumerate(triggers):
-            if trigger[0] > mute_index or trigger[1] > mute_index:
-                Logger.debug(f'Skipping trigger {_t}/{len(triggers)} - touches mute area')
-                continue
-            elif trigger[1] - trigger[0] < min(self.trigger_bounds):
-                Logger.debug(f'Skipping trigger {_t}/{len(triggers)} - trigger duration too small')
-                continue
-            elif any(unit_input.fold[trigger[0]:trigger[1]] < self.fold_threshold):
-                Logger.debug(f'Skipping trigger {_t}/{len(triggers)} - insufficiently high fold')
-                continue
-            else:
-                trigger = self.TriggerClass(
-                    unit_input,
-                    trigger,
-                    self.trigger_level,
-                    **self.trigger_opts)
-                
-        ## WIP TODO: KEEP GOING
-        
-
-
-        # Iterate across MLTrace objects
-        for _id, _mlt in unit_input.traces.items():
-            # Hard safety catch for required input type
-            if not isinstance(_mlt, MLTrace):
-                Logger.critical('Passing non-MLTrace object to PickWyrm - not allowed')
-                sys.exit(1)
-            # Filter for just prediction traces
-            if _mlt.comp not in self.phases_to_pick:
-                continue
-            else:
-                pass
-            # Run triggering on whole trace (quick & cheap)
-            crf = _mlt.data
+            # Run Triggering
             triggers = trigger_onset(
-                crf,
+                unit_input.data,
                 thresh1=self.trigger_level,
                 thresh2=self.trigger_level,
                 max_len=max(self.trigger_bounds),
                 max_len_delete=True
             )
-            # Get index of where muting begins
-            mute_samp = _mlt.stats.npts - self.leading_mute
-            # Iterate across triggers
-            for trigger in triggers:
-                trig_fold = _mlt.fold[self.iON: self.iOFF]
-                # Reject if trigger touches the mute zone
-                if trigger[0] > mute_samp or trigger[1] > mute_samp:
+            # Get index where muting begins
+            mute_index = unit_input.stats.npts - self.leading_mute
+            # Filter for additional trigger consideration requirements
+            for _t, trigger in enumerate(triggers):
+                # Skip trigger if any sample is in the mute zone
+                if trigger[0] > mute_index or trigger[1] > mute_index:
+                    Logger.debug(f'Skipping trigger {_t}/{len(triggers)} - touches mute area')
                     continue
-                # Reject if too small
-                if max(trigger) - min(trigger) < min(self.trigger_bounds):
+                # Skip trigger if it is too short (too-long triggers should be handled by trigger_onset)
+                elif trigger[1] - trigger[0] < min(self.trigger_bounds):
+                    Logger.debug(f'Skipping trigger {_t}/{len(triggers)} - trigger duration too small')
                     continue
-                # Reject if any fold is below threshold
-                if any(trig_fold < self.fold_threshold):
+                # Skip trigger if any samples in the trigger have fold below the specified threshold
+                elif any(unit_input.fold[trigger[0]:trigger[1]] < self.fold_threshold):
+                    Logger.debug(f'Skipping trigger {_t}/{len(triggers)} - insufficiently high fold')
                     continue
-                
-                # Convert trigger indices into Trigger object
-                if self.pick_method == 'max':
-                    trigger = Trigger(
-                        _mlt,
-                        trigger,
-                        self.trigger_level,
-                        **self.trigger_opts)
-                    tpick = trigger.tmax
-                    ppick = trigger.pmax
-                elif self.pick_method == 'gau':
-                    trigger = GaussTrigger(
-                        _mlt,
-                        trigger,
-                        self.trigger_level,
-                        **self.trigger_opts)
-                    tpick = self.mean
-                    ppick = self.scale
-                elif self.pick_method == 'med':
-                    trigger = QuantTrigger(
-                        _mlt,
-                        trigger,
-                        self.trigger_level,
-                        **self.trigger_opts
-                    )
-                    tpick = self.tmed
-                    ppick = self.pmed
-
+                # Continue with trigger object conversion otherise
                 else:
-                    raise NotImplementedError('self.pick_method somehow got altered after __init__...')
-                
-                # Check index for sequence number
-                if _id in self.index.keys():
-                    if self.index[_id] < 9999:
-                        self.index[_id] += 1
+                    # Convert into Specified TriggerClass
+                    trigger = self.TriggerClass(
+                        unit_input,
+                        trigger,
+                        self.trigger_level,
+                        **self.trigger_opts)
+                    
+                    # Generate Pick2KMsg object
+                    pickmsg = Pick2KMsg(
+                        mod_id = self.module_id,
+                        inst_id = self.installation_id,
+                        seq_no = self.index[self._last_key],
+                        net = unit_input.stats.network,
+                        sta = unit_input.stats.station,
+                        comp = self.get_comp(unit_input),
+                        phase = unit_input.comp,
+                        qual = self.get_qual(trigger.pref_pick_prob),
+                        time = trigger.pref_pick_time)
+                    # Attach Pick2KMsg message to trigger
+                    trigger.set_pick2k(pickmsg)
+                    # Append pick/trigger object to unit_output
+                    unit_output.append(trigger)
+                    # Increment sub-index for seq_no
+                    if self.index[unit_input.id] == 9999:
+                        self.index[unit_input.id] = 0
                     else:
-                        self.index[_id] = 0
-                        Logger.warning(f'resetting sequence index for {_id}')
-                else:
-                    self.index.update({_id:0})
-
-                # Generate Pick2KMsg object
-                pickmsg = Pick2KMsg(
-                    mod_id = self.module_id,
-                    inst_id = self.installation_id,
-                    seq_no = self.index[_id],
-                    net = _mlt.stats.network,
-                    sta = _mlt.stats.station,
-                    comp = self.get_comp(_mlt),
-                    phase = _mlt.comp,
-                    qual = self.get_qual(ppick),
-                    time = tpick
-                )
-                trigger.set_pick2k(pickmsg)
-                # Append to output
-                self.output.append(trigger)
-                nnew += 1
-            # Zero out fold in assessed region
-            _mlt.fold[:mute_samp] = 0
-        unit_output = nnew
+                        self.index[unit_input.id] += 1
         return unit_output
+
+
     
     def _capture_unit_output(self, unit_output):
         """
@@ -448,13 +377,17 @@ class PickWyrm(Wyrm):
 
         Return None - capture is handled in _unit_process
 
-        :param unit_output: output of 
-        :type unit_output: _type_
-        :return: _description_
-        :rtype: _type_
-        """        
-        return None
-    
+        :param unit_output: list-like set of :class:`~ayahos.core.pick.Trigger`-type objects
+        :type unit_output: list
+
+        """   
+        if len(unit_output) > 0:
+            if all(isinstance(e, Trigger) for e in unit_output):
+                self.output += unit_output
+            else:
+                Logger.critical('unit_process is outputting non-Trigger-type objects')
+                sys.exit(1)
+
     
     def get_comp(self, mlt):
         if isinstance(mlt, MLTrace):

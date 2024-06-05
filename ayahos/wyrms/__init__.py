@@ -13,7 +13,7 @@ from ayahos.wyrms.ringwyrm import RingWyrm
 from ayahos.wyrms.bufferwyrm import BufferWyrm
 from ayahos.wyrms.windowwyrm import WindowWyrm
 from ayahos.wyrms.sbmwyrm import SBMWyrm
-
+from ayahos.wyrms.pickwyrm import PickWyrm
 
 
 __all__ = ["Wyrm",
@@ -22,4 +22,4 @@ __all__ = ["Wyrm",
            "BufferWyrm",
            "WindowWyrm", 
            "MethodWyrm","OutputWyrm",
-           "SBMWyrm"]
+           "SBMWyrm", "PickWyrm"]

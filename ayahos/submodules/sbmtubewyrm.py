@@ -15,8 +15,8 @@ class SBMTubeWyrm(TubeWyrm):
 
     def __init__(
             self,
-            model=sbm.EQTransformer(),
-            weight_names=['pnw'],
+            model,
+            weight_names,
             devicetype='cpu',
             fill_rule='zeros',
             min_batch_size=1,
@@ -26,8 +26,8 @@ class SBMTubeWyrm(TubeWyrm):
         as the SeisBench.models.WaveformModel.annotate() API with the following
         elements
 
-            SBTubeWyrm
-        WindowWyrm -> MethodWyrm(s)-> SBMWyrm
+            SBMTubeWyrm
+        WindowWyrm -> MethodWyrm(s) -> SBMWyrm
                       - treat_gaps
                       - sync_traces
                       - apply_fill_rule

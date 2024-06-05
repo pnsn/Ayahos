@@ -19,7 +19,7 @@ class PickWyrm(Wyrm):
     """
     This :class:`~ayahos.wyrms.wyrm.Wyrm` child-class provides the following alterations:
 
-    :meth:`~ayahos.wyrms.pickwyrm.PickWyrm.unit_process` 
+    :meth:`~ayahos.wyrms.pickwyrm.PickWyrm._unit_process` 
         1) scans across each entry in a :class:`~ayahos.core.dictstream.DictStream`
         2) runs :meth:`~obspy.signal.trigger.trigger_onset` on samples with fold :math:`\\geq` threshold
         3) converts triggers to :class:`~ayahos.core.pick.Pick2KMsg` objects

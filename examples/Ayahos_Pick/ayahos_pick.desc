@@ -8,8 +8,8 @@
 #   All errors are logged to file statmgr.log.
 #   The file name must be in statmgr's config file using a "Descriptor" command
 #
-modName     ayahos_pick_py
-modId       MOD_AYAHOS_PICK_PY
+modName     ayahos_pick
+modId       MOD_AYAHOS_PICK
 instId      ${EW_INST_ID}
 #
 #   Heartbeat Specification - for triggering 

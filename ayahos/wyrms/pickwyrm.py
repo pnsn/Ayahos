@@ -7,7 +7,8 @@
 :purpose: Defines the PickWyrm class
 """
 import logging, sys
-from ayahos import Wyrm, DictStream, MLTrace
+from ayahos import DictStream, MLTrace
+from ayahos.wyrms import Wyrm
 from ayahos.core.pick import Trigger, GaussTrigger, QuantTrigger, Pick2KMsg
 from obspy.signal.trigger import trigger_onset
 import numpy as np

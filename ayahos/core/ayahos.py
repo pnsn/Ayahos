@@ -7,8 +7,8 @@ Module for handling Ayahos :class: `~ayahos.core.ayahos.Ayahos` objects
 :license: AGPL-3.0
 """
 import threading, logging, time, os, sys
-import PyEW
 from ayahos.wyrms.tubewyrm import TubeWyrm
+from ayahos.core.ayahosewmodule import AyahosEWModule
 
 # def add_earthworm_to_path(Earthworm_Root='/usr/local/earthworm'):
 #     ew_home = os.getenv('EW_HOME')
@@ -23,50 +23,50 @@ Logger = logging.getLogger(__name__)
 ###################################################################################
 class Ayahos(TubeWyrm):
     """
-    The Ayahos class encapsulates a PyEW.EWModule object and provides the `run`,
-    `start` and `stop` class methods required for running a continuous
-    instance of a PyEW.EWModule interface between a running instance
-    of Earthworm.
-
-    This class inherits from wyrm.core.wyrms.tubewyrm.TubeWyrm to house 
-    and orchestrate sequenced operations of wyrm submodules
-
-    :param ew_env_file: filepath for the desired EW environment to source, defaults to None
-    :type ew_env_file: str or None, optional
+    The Ayahos class comprises an extended :class:`~PyEW.EWModule` object
+    (:class:`~ayahos.core.ayahosewmodule.AyahosEWModule) and a sequence of 
+    :class:`~ayahos.wyrms.wyrm.Wyrm` sub-/base-modules that make an operational
+    python module that communicates with the Earthworm message transport system
+    
+    This class inherits its sequencing methods and attributes from :class:`~ayahos.wyrms.tubewyrm.TubeWyrm`
+     
     :param wait_sec: number of seconds to wait between pulses, defaults to 0
     :type wait_sec: int, optional
-    :param default_ring_id: default ring ID to assign to EWModule, defaults to 1000
+    :param default_ring_id: default ring ID to assign to AyahosEWModule, defaults to 1000
     :type default_ring_id: int, optional
-    :param module_id: module ID that Earthworm will see for this EWModule, defaults to 200
+    :param module_id: module ID that Earthworm will see for this AyahosEWModule, defaults to 193
     :type module_id: int, optional
     :param installation_id: installation ID, defaults to 255 - anonymous/nonexchanging installation
     :type installation_id: int, optional
-    :param heartbeat_period: send heartbeat message to Earthworm every X seconds, defaults to 15
+    :param heartbeat_period: time in seconds between heartbeat message sends from this module to Earthworm, defaults to 15
     :type heartbeat_period: int, optional
-    :param wyrm_dict: dictionary of ayahos.core.wyrms-type objects that will be executed in a chain , defaults to {}
-    :type wyrm_dict: dict, optional
-        also see ayahos.core.wyrms.tubewyrm.TubeWyrm
+    :param extra_connections: dictionary with {'NAME': RING_ID} formatting for additional Py<->EW connections
+        to make in addition to the 'DEFAULT': default_ring_id connection
+        defaults to {'WAVE': 1000, 'PICK': 1005}
+    :type: dict, optional
+    :param ewmodule_debug: should debugging level logging messages within the AyahosEWModule object
+        be included if logging level is set to DEBUG? Defaults to False.
+        (acts as an extra nit-picky layer for debugging)
+    :type ewmodule_debug: bool, optional
     """
 
     def __init__(
         self,
-        ew_env_file=None,
         wait_sec=0,
         default_ring_id=1000,
-        module_id=200,
+        module_id=193,
         installation_id=255,
         heartbeat_period=15,
-        module_debug = False,
-        conn_dict = {},
-        wyrm_dict={}
+        extra_connections = {'WAVE': 1000, 'PICK': 1005},
+        ewmodule_debug = False,
+        submodule_wait_sec=0
     ):
         """Create a Ayahos object
         Inherits the wyrm_dict attribute and pulse() method from TubeWyrm
 
-        :param ew_env_file: filepath for the desired EW environment to source, defaults to None
-        :type ew_env_file: str or None, optional
-        :param wait_sec: number of seconds to wait between pulses, defaults to 0
-        :type wait_sec: int, optional
+        :param wait_sec: number of seconds to wait between completion of one pulse sequence of
+            the Wyrm-like objects in self.wyrm_dict and the next, defaults to 0
+        :type wait_sec: float, optional
         :param default_ring_id: default ring ID to assign to EWModule, defaults to 1000
         :type default_ring_id: int, optional
         :param module_id: module ID that Earthworm will see for this EWModule, defaults to 200
@@ -78,168 +78,45 @@ class Ayahos(TubeWyrm):
         :param wyrm_dict: dictionary of ayahos.core.wyrms-type objects that will be executed in a chain , defaults to {}
         :type wyrm_dict: dict, optional
             also see ayahos.core.wyrms.tubewyrm.TubeWyrm
+        :param submodule_wait_sec: seconds to wait between execution of the **pulse** method of each
+            Wyrm-like object
         """
+
         # Initialize TubeWyrm inheritance
         super().__init__(
-            wyrm_dict=wyrm_dict,
-            wait_sec=wait_sec,
+            wait_sec=submodule_wait_sec,
             max_pulse_size=1)
-
-        # Check that earthworm is in path before initializing PyEW modules
-        if ew_env_file is None:
-            # Check if EW_HOME is in $PATH
-            try:
-                os.environ['EW_HOME']
-            # If not, exit on code 1
-            except KeyError:
-                Logger.critical('Environmental varible $EW_HOME not mapped - cannot proceed')
-                sys.exit(1)
-        else:
-            os.system(f'source {ew_env_file}')
-            try:
-                os.environ['EW_HOME']
-            # If not, exit on code 1
-            except KeyError:
-                Logger.critical(f'Environmental varible $EW_HOME not mapped with environment {ew_env_file}')
-                sys.exit(1)      
-
-        # Compatability check for default_ring_id          
-        if isinstance(default_ring_id, int):
-            if 0 <= default_ring_id < 1e5:
-                self._default_ring_id = default_ring_id
+        
+        # Safety catch on wait_sec
+        if isinstance(wait_sec, (float, int)):
+            if 0 <= wait_sec:
+                if wait_sec > 10:
+                    Logger.warning('wait_sec is set > 10 sec - did you mean to do this?')
+                self.outer_wait_sec = wait_sec
             else:
-                raise ValueError(f'default_ring_id must be an integer in [0, 10000). {default_ring_id} out of bounds')
+                Logger.warning('wait_sec is less than 0 sec - setting wait_sec = 0 sec')
+                self.outer_wait_sec = 0
         else:
-            raise TypeError(f'default_ring_id must be type int, not {type(default_ring_id)}')
-        
-        # Compatability check for module_id
-        if isinstance(module_id, int):
-            if 0 <=module_id < 1e5:
-                pass
-            else:
-                raise ValueError(f'module_id must be an integer in [0, 10000). {module_id} out of bounds')
-        else:
-            raise TypeError(f'module_id must be type int, not {type(module_id)}')
-        
-        # Compatability check for default_ring_id
-        if isinstance(default_ring_id, int):
-            if 0 <=default_ring_id < 1e5:
-                pass
-            else:
-                raise ValueError(f'default_ring_id must be an integer in [0, 10000). {default_ring_id} out of bounds')
-        else:
-            raise TypeError(f'default_ring_id must be type int, not {type(default_ring_id)}')
-        
-        # Create connection holder
-        self.connections = {}
+            Logger.error('wait_sec must be a float-like value')
+            sys.exit(1)
 
-        # Assemble module initialization kwargs
-        self.module_init_kwargs = {
-            'def_ring': default_ring_id,
-            'mod_id': module_id,
-            'inst_id' :installation_id,
-            'hb_time': heartbeat_period,
-            'db': module_debug}
-        
-        # Placeholder for module
-        self.module = False
-        # Initialize processing thread
+        # Intialize AyahosEWModule
+        self.module = AyahosEWModule(
+            default_ring_id=default_ring_id,
+            module_id=module_id,
+            installation_id=installation_id,
+            heartbeat_period=heartbeat_period,
+            module_debug = ewmodule_debug)
+
+        # Create a thread for this process
         self._thread = threading.Thread(target=self.run)
 
-        # Initialize EWModule object
-        self._initialize_module(user_check = True)
+        # Add additional connections
+        for _name, _id in extra_connections.items():
+            self.module.add_connection(_name, _id)
 
-        # Initialize module connections from conn_dict
-        if isinstance(conn_dict, dict):
-            if all(isinstance(_v, int) for _v in conn_dict.values()):
-                for _k, _v in conn_dict.items():
-                    if _k not in self.connections.keys():
-                        self.add_connection(_k, _v)
-                    else:
-                        Logger.critical(f'Ring Name {_k} already assigned')
-                        sys.exit(1)
-        # Allow the module to run when self.run is next called
-        self.runs = True
-
-
-    ##########################################
-    # MODULE INITIALIZATION HELPER FUNCTIONS #
-    ##########################################
-        
-    def _initialize_module(self, user_check=False):
-        """private method: _initialize_module
-        Wraps ```PyEW.EWModule.__init__(**self.module_init_kwargs)```
-        to initialize the self.module object contained in this Ayahos
-
-        :param user_check: should the pre-initialization user input check occur? Defaults to True
-        :type user_check: bool, optional
-        :raises RuntimeError: Raisese error if the EWModule is already running
-        """        
-        if user_check:
-            cstr = "About to initialize the following PyEW.EWModule\n"
-            for _k, _v in self.module_init_kwargs.items():
-                cstr += f'{_k}: {_v}\n'
-            cstr += "\n Do you want to continue? [(y)/n]"
-            ans = input(cstr)
-            if ans.lower().startswith("y") or ans == "":
-                user_continue = True
-            elif ans.lower().startswith("n"):
-                user_continue = False
-            else:
-                Logger.critical("Invalid input -> exiting")
-                sys.exit(1)
-        else:
-            user_continue = True
-        if user_continue:
-            # Initialize PyEarthworm Module
-            if not self.module:
-                try:
-                    self.module = PyEW.EWModule(**self.module_init_kwargs)
-                except RuntimeError:
-                    Logger.error("There is already a EWModule running!")
-            elif isinstance(self.module, PyEW.EWModule):
-                Logger.error("Module already assigned to self.module")
-            else:
-                Logger.critical(
-                    f"module is type {type(self.module)} - incompatable!!!"
-                )
-                sys.exit(1)
-            self.add_connection('DEFAULT', self.module_init_kwargs['def_ring'])
-        else:
-            Logger.critical("User canceled module initialization -> exiting politely")
-            sys.exit(0)
-
-    def add_connection(self, name, ring_id):
-        """add a connection to the self.module (EWModule) object 
-        attached to Ayahos and update information in the self.connections attribute
-
-        :param name: human-readable name to use as a key in self.connections
-        :type name: str or int
-        :param ring_id: earthworm ring ID (value falls in the range [0, 9999])
-        :type ring_id: int
-        :return connections: a view of the connections attribute of this Ayahos object
-        :rtype connections: dict
-        """
-        # === RUN COMPATABILITY CHECKS ON INPUT VARIABLES === #
-        if not isinstance(name, (str, int)):
-            raise TypeError(f'name must be type str or int, not {type(name)}')
-        elif name in self.connections.keys():
-            raise KeyError(f'name {name} is already claimed as a key for a connection in this module')
-        
-        # Enforce integer RING_ID type
-        if not isinstance(ring_id, int):
-            raise TypeError
-        elif ring_id < 0:
-            raise ValueError
-        elif ring_id > 10000:
-            raise ValueError
-        else:
-            pass
-        self.module.add_ring(ring_id)
-        idx = len(self.connections)
-        self.connections.update({name: (idx, ring_id)})
-        return self.connections
-
+        # Set default run status to True
+        self.run = True
 
     ######################################
     ### MODULE OPERATION CLASS METHODS ###
@@ -250,7 +127,11 @@ class Ayahos(TubeWyrm):
         Start Module Command
         runs ```self._thread.start()```
         """
-        self._thread.start()
+        if len(self.wyrm_dict) > 0:
+            self._thread.start()
+        else:
+            Logger.critical('No Wyrm-type sub-/base-modules contained in this Ayahos Module - exiting')
+            raise ModuleNotFoundError
 
     def stop(self):
         """
@@ -259,36 +140,22 @@ class Ayahos(TubeWyrm):
         """
         self.runs = False
 
-    # def unit_process(self, x):
-    #     """
-    #     unit_process for Ayahos inherited from TubeWyrm.unit_process()
-
-    #     1) wait for self.wait_sec
-    #     2) execute y = TubeWyrm(...).pulse(x)
-
-    #     also see ayahos.core.wyrms.tubewyrm.TubeWyrm
-
-    #     :param x: input collection of objects for first wyrm_ in self.wyrm_dict, defaults to None
-    #     :type x: Varies, optional
-    #     """
-    #     # Sleep for wait_sec
-    #     time.sleep(self.wait_sec)
-    #     # Then run TubeWyrm unit_process
-    #     status = super().pulse(x)
-    #     return status
-
     def run(self, input=None):
         """
         Run the PyEW.EWModule housed by this Ayahos with the option
-        of an initial input
+        of an initial input that is shown to the first wyrm in 
+        this Ayahos' wyrm_dict attribute.
 
-        :param input: standard input for the pulse() method of the first wyrm in Ayahos.wyrm_dict, default None
+        :param input: input for the pulse() method of the first wyrm in Ayahos.wyrm_dict, default None
         :type input: varies, optional
         """
         Logger.critical("Starting Module Operation")        
         while self.runs:
-            Logger.debug('running main pulse')
-            output, nproc = super().pulse(input)
+            time.sleep(self.outer_wait_sec)
+            if self.module.debug:
+                Logger.debug('running main pulse')
+            # Run 
+            _ = super().pulse(input)
             if self.module.mod_sta() is False:
                 break
         # Gracefully shut down
@@ -297,8 +164,10 @@ class Ayahos(TubeWyrm):
         Logger.critical("Shutting Down Module")     
 
     def pulse(self):
-        """Overwrites the inherited :meth: `~ayahos.wyrms.tubewyrm.Tubewyrm.pulse` method
-        that broadcasts a pair of logging errors and then returns None, None
+        """
+        Overwrites the inherited :meth:`~ayahos.wyrms.tubewyrm.Tubewyrm.pulse` method
+        that broadcasts a pair of logging errors pointing to use Ayahos.run()
+        as the operational 
         """        
         Logger.error("pulse() method disabled for ayahos.core.ayahos.Ayahos")
         Logger.error("Use Ayahos.run() to start module operation")
@@ -322,3 +191,83 @@ class Ayahos(TubeWyrm):
     #     # Polite shut-down of module
     #     self.module.goodbye()
     #     print("Exiting Ayahos Instance")
+
+
+
+       ##########################################
+    # MODULE INITIALIZATION HELPER FUNCTIONS #
+    ##########################################
+        
+    # def _initialize_module(self, user_check=False):
+    #     """private method: _initialize_module
+    #     Wraps ```PyEW.EWModule.__init__(**self.module_init_kwargs)```
+    #     to initialize the self.module object contained in this Ayahos
+
+    #     :param user_check: should the pre-initialization user input check occur? Defaults to True
+    #     :type user_check: bool, optional
+    #     :raises RuntimeError: Raisese error if the EWModule is already running
+    #     """        
+    #     if user_check:
+    #         cstr = "About to initialize the following PyEW.EWModule\n"
+    #         for _k, _v in self.module_init_kwargs.items():
+    #             cstr += f'{_k}: {_v}\n'
+    #         cstr += "\n Do you want to continue? [(y)/n]"
+    #         ans = input(cstr)
+    #         if ans.lower().startswith("y") or ans == "":
+    #             user_continue = True
+    #         elif ans.lower().startswith("n"):
+    #             user_continue = False
+    #         else:
+    #             Logger.critical("Invalid input -> exiting")
+    #             sys.exit(1)
+    #     else:
+    #         user_continue = True
+    #     if user_continue:
+    #         # Initialize PyEarthworm Module
+    #         if not self.module:
+    #             try:
+    #                 self.module = PyEW.EWModule(**self.module_init_kwargs)
+    #             except RuntimeError:
+    #                 Logger.error("There is already a EWModule running!")
+    #         elif isinstance(self.module, PyEW.EWModule):
+    #             Logger.error("Module already assigned to self.module")
+    #         else:
+    #             Logger.critical(
+    #                 f"module is type {type(self.module)} - incompatable!!!"
+    #             )
+    #             sys.exit(1)
+    #         self.add_connection('DEFAULT', self.module_init_kwargs['def_ring'])
+    #     else:
+    #         Logger.critical("User canceled module initialization -> exiting politely")
+    #         sys.exit(0)
+
+    # def add_connection(self, name, ring_id):
+    #     """add a connection to the self.module (EWModule) object 
+    #     attached to Ayahos and update information in the self.connections attribute
+
+    #     :param name: human-readable name to use as a key in self.connections
+    #     :type name: str or int
+    #     :param ring_id: earthworm ring ID (value falls in the range [0, 9999])
+    #     :type ring_id: int
+    #     :return connections: a view of the connections attribute of this Ayahos object
+    #     :rtype connections: dict
+    #     """
+    #     # === RUN COMPATABILITY CHECKS ON INPUT VARIABLES === #
+    #     if not isinstance(name, (str, int)):
+    #         raise TypeError(f'name must be type str or int, not {type(name)}')
+    #     elif name in self.connections.keys():
+    #         raise KeyError(f'name {name} is already claimed as a key for a connection in this module')
+        
+    #     # Enforce integer RING_ID type
+    #     if not isinstance(ring_id, int):
+    #         raise TypeError
+    #     elif ring_id < 0:
+    #         raise ValueError
+    #     elif ring_id > 10000:
+    #         raise ValueError
+    #     else:
+    #         pass
+    #     self.module.add_ring(ring_id)
+    #     idx = len(self.connections)
+    #     self.connections.update({name: (idx, ring_id)})
+    #     return self.connections

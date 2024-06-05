@@ -22,9 +22,9 @@
 
 """
 import logging
-import PyEW
+from ayahos.core.ayahosewmodule import AyahosEWModule
 from collections import deque
-from ayahos.wyrms.wyrm import Wyrm, add_class_name_to_docstring
+from ayahos.wyrms.wyrm import Wyrm
 from ayahos.util.pyew import wave2mltrace, is_empty_message
 
 Logger = logging.getLogger(__name__)
@@ -50,19 +50,17 @@ class RingWyrm(Wyrm):
     def __init__(
             self,
             module,
-            conn_id=0,
+            conn_name,
             pulse_method='get_wave',
             msg_type=19,
             max_pulse_size=10000
             ):
         """Initialize a RingWyrm object
 
-        :param module: Pre-initialized PyEarthworm module
-        :type module: PyEW.EWModule, optional
-        :param conn_id: connection ID number for target memory ring, defaults to 0
-        :type conn_id: int, optional
-            also see    PyEW.EWModule
-                        ayahos.core.wyrms.heartwyrm.HeartWyrm
+        :param module: Pre-initialized AyahosEWModule object with connections established
+        :type module: ayahos.core.ayahosewmodule.AyahosEWModule
+        :param conn_name: connection name of a valid connection in module.connection
+        :type conn_name: str
         :param pulse_method: name of PyEW.EWModule messaging method to use, defaults to 'get_wave'
         :type pulse_method: str, optional
             Supported: 'get_wave','put_wave','get_msg','put_msg','get_bytes','put_bytes'
@@ -75,19 +73,15 @@ class RingWyrm(Wyrm):
         """        
         Wyrm.__init__(self, max_pulse_size=max_pulse_size)
         # Compatability checks for `module`
-        if isinstance(module, PyEW.EWModule):
+        if isinstance(module, AyahosEWModule):
             self.module = module
         else:
             raise TypeError(f'module must be type PyEW.EWModule, not type {type(module)}')
         
-        if isinstance(conn_id, int):
-            if conn_id >= 0:
-                self.conn_id = conn_id
-            else:
-                raise ValueError('conn_id must be a non-negative iteger')
+        if conn_name not in module.connections.keys():
+            raise KeyError(f'conn_name {conn_name} is not a named connection in the input module')
         else:
-            raise TypeError('conn_id must be type int')
-
+            self.conn_name = conn_name
         # Compatability or pulse_method
         if pulse_method not in ['get_wave','put_wave','get_msg','put_msg','get_bytes','put_bytes']:
             raise ValueError(f'pulse_method {pulse_method} unsupported. See documentation')
@@ -104,7 +98,6 @@ class RingWyrm(Wyrm):
             # Hard set TYPE_TRACEBUFF2 for get/put_wave
             else:
                 self.msg_type = 19
-        self._core_args = [self.conn_id, self.msg_type]
 
         Logger.info('RingWyrm method {0} for message type {1}'.format(self.pulse_method, self.msg_type))
 
@@ -117,7 +110,7 @@ class RingWyrm(Wyrm):
     def _should_this_iteration_run(self, input, input_size, iter_number):
         """
         POLYMORPHIC
-        Last updated with :class: `~ayahos.wyrms.ringwyrm.RingWyrm`
+        Last updated with :class:`~ayahos.wyrms.ringwyrm.RingWyrm`
 
         For "put" pulse_method, use Wyrm's _continue_iteration() inherited method
         to see if there are unassessed objects in input
@@ -147,7 +140,7 @@ class RingWyrm(Wyrm):
     def _unit_input_from_input(self, input):
         """
         POLYMORPHIC
-        Last updated with :class: `~ayahos.wyrms.ringwyrm.RingWyrm`
+        Last updated with :class:`~ayahos.wyrms.ringwyrm.RingWyrm`
 
         If using a "get" pulse_method, input is unused and returns None
         
@@ -169,7 +162,7 @@ class RingWyrm(Wyrm):
     def _unit_process(self, unit_input):
         """
         POLYMORPHIC
-        Last updated with :class: `~ayahos.wyrms.ringwyrm.RingWyrm`
+        Last updated with :class:`~ayahos.wyrms.ringwyrm.RingWyrm`
 
         "get" pulse_methods fetch a message from the specified EW RING
         "put" pulse_methods put unit_input onto the specified EW RING
@@ -181,21 +174,21 @@ class RingWyrm(Wyrm):
         """        
         if 'get' in self.pulse_method:
             if self.pulse_method == 'get_wave':
-                unit_output = getattr(self.module, self.pulse_method)(self._core_args[0])
+                unit_output = getattr(self.module, self.pulse_method)(self.conn_name)
             else:
-                unit_output = getattr(self.module, self.pulse_method)(*self._core_args)
+                unit_output = getattr(self.module, self.pulse_method)(self.conn_name, self.msg_type)
         elif 'put' in self.pulse_method:
             if self.pulse_method == 'put_wave':
-                getattr(self.module, self.pulse_method)(self._core_args[0], unit_input)
+                getattr(self.module, self.pulse_method)(self.conn_name, unit_input)
             else:
-                getattr(self.module, self.pulse_method)(*self._core_args, unit_input)
+                getattr(self.module, self.pulse_method)(self.conn_name, unit_input, self.msg_type)
             unit_output = None
         return unit_output
     
     def _capture_unit_out(self, unit_output):
         """
         POLYMORPHIC
-        Last updated with :class: `~ayahos.wyrms.ringwyrm.RingWyrm`
+        Last updated with :class:`~ayahos.wyrms.ringwyrm.RingWyrm`
 
         "get" pulse_methods use Wyrm's _capture_unit_output()
         "put" pulse_methods do nothing (pass)
@@ -218,7 +211,7 @@ class RingWyrm(Wyrm):
     def _should_next_iteration_run(self, unit_output):
         """
         POLYMORPHIC
-        Last updated with :class: `~ayahos.wyrms.ringwyrm.RingWyrm`
+        Last updated with :class:`~ayahos.wyrms.ringwyrm.RingWyrm`
 
         Do not start next iteration if unit_output looks like an
         empty message for "get" type pulse_method

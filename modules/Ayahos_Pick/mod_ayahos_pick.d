@@ -16,7 +16,7 @@
 # Machine Learning Model
 [model]
     obj='sbm.EQTransformer()'
-    weight_names=['pnw','instance']
+    weight_names=['pnw']
     blinding=(500,500)
     overlap=3000
 

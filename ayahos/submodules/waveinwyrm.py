@@ -1,11 +1,10 @@
 from ayahos import BufferWyrm, RingWyrm, TubeWyrm
 
-class RWBWyrm(TubeWyrm):
-    """(Ring Wave Buffer) RWBWyrm
-
+class WaveInWyrm(TubeWyrm):
+    """
     This class provides a convenience combination of a RingWyrm set to get_wave for a specified Earthworm memory ring
     that feeds to a BufferWyrm, housed in a TubeWyrm-like object. The default parameters fed to the Ring and Buffer init
-    arguments set RWBTubeWyrm to pass a read message from the EW wave ring directly to the BufferWyrm, rather than
+    arguments set WaveInWyrm to pass a read message from the EW wave ring directly to the BufferWyrm, rather than
     aggregating numerous wave messages.
 
 
@@ -52,7 +51,7 @@ class RWBWyrm(TubeWyrm):
 
         # Form WyrmDict
         wyrm_dict = {'get_waves': ringwyrm,
-                     'buffer': bufferwyrm}
+                     'buffer_waves': bufferwyrm}
         # Initialize TubeWyrm inheritance
         super().__init__(
             wyrm_dict=wyrm_dict,

@@ -52,14 +52,13 @@ class Ayahos(TubeWyrm):
 
     def __init__(
         self,
-        wait_sec=0,
-        default_ring_id=1000,
-        module_id=193,
+        module_id=255,
         installation_id=255,
         heartbeat_period=15,
-        extra_connections = {'WAVE': 1000, 'PICK': 1005},
+        connections = {'WAVE': 1000, 'PICK': 1005},
+        log_pulse_summary=True,
         ewmodule_debug = False,
-        submodule_wait_sec=0
+        wait_sec=0.
     ):
         """Create a Ayahos object
         Inherits the wyrm_dict attribute and pulse() method from TubeWyrm
@@ -81,39 +80,32 @@ class Ayahos(TubeWyrm):
         :param submodule_wait_sec: seconds to wait between execution of the **pulse** method of each
             Wyrm-like object
         """
-
         # Initialize TubeWyrm inheritance
-        super().__init__(
-            wait_sec=submodule_wait_sec,
-            max_pulse_size=1)
-        
-        # Safety catch on wait_sec
-        if isinstance(wait_sec, (float, int)):
-            if 0 <= wait_sec:
-                if wait_sec > 10:
-                    Logger.warning('wait_sec is set > 10 sec - did you mean to do this?')
-                self.outer_wait_sec = wait_sec
-            else:
-                Logger.warning('wait_sec is less than 0 sec - setting wait_sec = 0 sec')
-                self.outer_wait_sec = 0
-        else:
-            Logger.error('wait_sec must be a float-like value')
+        try:
+            super().__init__(
+                wait_sec=wait_sec,
+                max_pulse_size=1,
+                log_pulse_summary=log_pulse_summary)
+        except:
+            Logger.critical('could not super() from TubeWyrm')
             sys.exit(1)
-
-        # Intialize AyahosEWModule
-        self.module = AyahosEWModule(
-            default_ring_id=default_ring_id,
-            module_id=module_id,
-            installation_id=installation_id,
-            heartbeat_period=heartbeat_period,
-            module_debug = ewmodule_debug)
-
+        # Intialize AyahosEWModule & Connections
+        try:
+            self.module = AyahosEWModule(
+                connections = connections,
+                module_id=module_id,
+                installation_id=installation_id,
+                heartbeat_period=heartbeat_period,
+                module_debug = ewmodule_debug)
+        except:
+            Logger.critical('could not initialize AyahosEWModule')
+            sys.exit(1)
         # Create a thread for this process
-        self._thread = threading.Thread(target=self.run)
-
-        # Add additional connections
-        for _name, _id in extra_connections.items():
-            self.module.add_connection(_name, _id)
+        try:
+            self._thread = threading.Thread(target=self.run)
+        except:
+            Logger.critical('Failed to start thread')
+            sys.exit(1)
 
         # Set default run status to True
         self.run = True
@@ -151,7 +143,7 @@ class Ayahos(TubeWyrm):
         """
         Logger.critical("Starting Module Operation")        
         while self.runs:
-            time.sleep(self.outer_wait_sec)
+            time.sleep(0.001)
             if self.module.debug:
                 Logger.debug('running main pulse')
             # Run 

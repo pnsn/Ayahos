@@ -40,7 +40,12 @@ class TubeWyrm(Wyrm):
         Note that the dictionary ordering dictates the execution order!
     """
 
-    def __init__(self, wyrm_dict={}, wait_sec=0.0, mute_internal_logging=False, max_pulse_size=1):
+    def __init__(
+            self,
+            wyrm_dict={},
+            log_pulse_summary=True,
+            wait_sec=0.0,
+            max_pulse_size=1):
         """
         Create a TubeWyrm unit_inputect
         :param wyrm_dict: collection of [Wyrm-type] unit_inputects that are executed in their provided order. 
@@ -54,8 +59,8 @@ class TubeWyrm(Wyrm):
         """
         # Inherit from Wyrm
         super().__init__(max_pulse_size=max_pulse_size)
-        if isinstance(mute_internal_logging, bool):
-            self.mute_internal_logging = mute_internal_logging
+        if isinstance(log_pulse_summary, bool):
+            self.log_pulse_summary = log_pulse_summary
         # wyrm_dict compat. checks
         if isinstance(wyrm_dict, Wyrm):
             self.wyrm_dict = {0: wyrm_dict}
@@ -284,12 +289,12 @@ class TubeWyrm(Wyrm):
                 y, inproc = wyrm_.pulse(
                     unit_input,
                     mute_logging=self.mute_internal_logging)
-                if inproc > 0:
-                    Logger.debug(f'{name}.output length: {nproc}')
+                if inproc > 0 and self.log_pulse_summary:
+                    Logger.info(f'{name} ({type(wyrm_)}) ran {nproc} processes')
             else:
                 y, inproc = wyrm_.pulse(y)
-                if inproc > 0:
-                    Logger.debug(f'{name}.output length: {nproc}')
+                if inproc > 0 and self.log_pulse_summary:
+                    Logger.info(f'{name} ({type(wyrm_)}) ran {nproc} processes')
             nproc += inproc
         # TODO: Placeholder unconditional True - eventually want to pass a True/False
         # up the line to say if there should be early stopping

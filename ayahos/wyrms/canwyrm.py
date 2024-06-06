@@ -46,7 +46,8 @@ class CanWyrm(TubeWyrm):
     def __init__(self,
                  wyrm_dict,
                  wait_sec=0.,
-                 max_pulse_size=1):
+                 max_pulse_size=1,
+                 mute_pulse_logging=True):
         """Initialize a CanWyrm object
 
         :param wyrm_dict: dictionary or list-like of Wyrm-like objects that accept the same input
@@ -62,7 +63,11 @@ class CanWyrm(TubeWyrm):
         :type max_pulse_size: positive int-like, optional
         """
         # Initialize from Wyrm inheritance
-        super().__init__(wyrm_dict=wyrm_dict, wait_sec=wait_sec, max_pulse_size=max_pulse_size)
+        super().__init__(
+            wyrm_dict=wyrm_dict,
+            wait_sec=wait_sec,
+            max_pulse_size=max_pulse_size,
+            mute_pulse_logging=mute_pulse_logging)
         # Modify output to be a dictionary with names pulled from the keys of wyrm_dict
         # and alias the outputs form each wyrm to self.output
         self.output = {_k: _v.output for _k, _v in self.wyrm_dict.items()}

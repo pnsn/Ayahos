@@ -14,7 +14,7 @@ class WaveInWyrm(TubeWyrm):
     def __init__(
             self,
             module,
-            conn_id=0,
+            conn_name='WAVE_RING',
             max_buffer_length=300,
             wait_sec=0.0,
             max_pulse_size=10000,
@@ -34,7 +34,7 @@ class WaveInWyrm(TubeWyrm):
         if 'conn_id' in ringwyrm_init.keys():
             raise KeyError
         else:
-            ringwyrm_init.update({"conn_id":conn_id})
+            ringwyrm_init.update({"conn_name":conn_name})
         ringwyrm = RingWyrm(**ringwyrm_init)
 
         # Initialize BufferWyrm object

@@ -32,6 +32,7 @@ class BufferWyrm(Wyrm):
             blinding=None,
             method=1,
             max_pulse_size=10000,
+            mute_pulse_logging = True,
             **add_kwargs):
         """Initialize a BufferWyrm object
 
@@ -69,7 +70,9 @@ class BufferWyrm(Wyrm):
         :raises ValueError: _description_
         """
         # Inherit from Wyrm
-        super().__init__(max_pulse_size=max_pulse_size)
+        super().__init__(
+            max_pulse_size=max_pulse_size,
+            mute_pulse_logging=mute_pulse_logging)
 
         # Initialize output of type ayahos.core.stream.dictstream.DictStream
         self.output = DictStream(key_attr=buffer_key)

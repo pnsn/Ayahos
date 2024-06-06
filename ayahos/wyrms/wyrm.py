@@ -46,7 +46,7 @@ class Wyrm(object):
     
     """
 
-    def __init__(self, max_pulse_size=10):
+    def __init__(self, max_pulse_size=10, mute_pulse_logging=True):
         """Initialize a {class_name_camel} object
 
         :param max_pulse_size: maximum , defaults to 10
@@ -63,7 +63,15 @@ class Wyrm(object):
                 raise ValueError('max_pulse_size must be g.e. 1 ')
         else:
             raise TypeError('max_pulse_size must be positive int-like')
+        
+        if isinstance(mute_pulse_logging, bool):
+            self.mute_pulse_logging = mute_pulse_logging
+        else:
+            Logger.warning('mute_pulse_logging is not type bool - defaulting to True')
+            self.mute_pulse_logging = True
+        
         self.output = deque()
+
 
     def __name__(self):
         """Return the camel-case name of this class without
@@ -123,7 +131,7 @@ class Wyrm(object):
         :rtype output: collections.deque of objects
         """ 
         # Iterate across
-        if not mute_logging:
+        if not self.mute_pulse_logging:
             Logger.debug(f'{self.__name__} pulse firing')
         input_size = self._measure_input_size(input)
         nproc = 0
@@ -146,8 +154,8 @@ class Wyrm(object):
                 pass
             else:
                 break
-        if not mute_logging:
-            Logger.debug(f'{self.__name__} {nproc} processes run (MAX: {self.max_pulse_size})')
+        if not self.mute_pulse_logging:
+            Logger.info(f'{self.__name__} {nproc} processes run (MAX: {self.max_pulse_size})')
         # Get alias of self.output as output
         output = self.output
         return output, nproc

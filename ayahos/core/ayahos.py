@@ -108,7 +108,7 @@ class Ayahos(TubeWyrm):
             sys.exit(1)
 
         # Set default run status to True
-        self.run = True
+        self.runs = True
 
     ######################################
     ### MODULE OPERATION CLASS METHODS ###

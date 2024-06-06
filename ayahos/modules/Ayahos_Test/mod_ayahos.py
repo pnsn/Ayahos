@@ -5,11 +5,8 @@ Ayahos_Test is an example Ayahos module
 import logging, argparse, os
 from logging.handlers import TimedRotatingFileHandler
 # Get the Module Constructor Class - 
-from ayahos.modules.Ayahos_Test.ayahos_get_waves import EWModuleConstructor
-# Imports required for base module initialization
-from ayahos.wyrms import *
-# Import required to initialize a SeisBench WaveformModel object specified in the *.ini file
-import seisbench.models as sbm
+from ayahos.modules.Ayahos_Test.ayahos_test import EWModuleConstructor
+
 
 # Setup argument parsing (command line arguments)
 parser = argparse.ArgumentParser(description="This is an example Ayahos module for developmental purposes")
@@ -44,6 +41,7 @@ logging.getLogger().setLevel(logging.DEBUG)
 # main program start
 if __name__ == '__main__':
     mod_ayahos = EWModuleConstructor(arguments.config)
+    breakpoint()
     try:
         mod_ayahos.start()
     except KeyboardInterrupt:

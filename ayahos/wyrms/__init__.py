@@ -14,7 +14,7 @@ from ayahos.wyrms.bufferwyrm import BufferWyrm
 from ayahos.wyrms.windowwyrm import WindowWyrm
 from ayahos.wyrms.sbmwyrm import SBMWyrm
 from ayahos.wyrms.pickwyrm import PickWyrm
-
+from ayahos.wyrms.echowyrm import EchoWyrm
 
 __all__ = ["Wyrm",
            "TubeWyrm","CanWyrm",
@@ -22,4 +22,5 @@ __all__ = ["Wyrm",
            "BufferWyrm",
            "WindowWyrm", 
            "MethodWyrm","OutputWyrm",
-           "SBMWyrm", "PickWyrm"]
+           "SBMWyrm", "PickWyrm",
+           "EchoWyrm"]

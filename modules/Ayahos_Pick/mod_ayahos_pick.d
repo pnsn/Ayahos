@@ -7,41 +7,40 @@
 
 # Earthworm Specific Parameters
 [Earthworm]
-    MOD_ID = 200
-    INST_ID = 2
-    HB = 30
+    MOD_ID = 193
+    INST_ID = 6
+    HB = 15
     WAVE_RING = 1000
-    PICK_RING = 1005
+    MLPICK_RING = 1005
 
 # Machine Learning Model
 [model]
-    obj='sbm.EQTransformer()'
-    weight_names=['pnw']
-    blinding=(500,500)
-    overlap=3000
+    obj = 'sbm.EQTransformer()'
+    weight_names = ['pnw']
+    blinding = (500,500)
+    overlap = 3000
 
 # Ayahos Module Initialzation Parameters
 [Ayahos]
-    default_ring_id = int(${Earthworm:WAVE_RING})
-    module_id = int(${Earthworm:MOD_ID})
-    installation_id = int(${Earthworm:INST_ID})
-    heartbeat_period = float(${Earthworm: HB})
-    extra_connections = {'WAVE_RING': ${Earthworm:IN_RING}, 'PICK_RING': ${Earthworm:OUT_RING}}
-    module_debug = 'False'
+    module_id = 193
+    installation_id = 6
+    heartbeat_period = float(15)
+    connections = {'WAVE_RING': 1000, 'PICK_RING': 1005}
 
 # Wyrm submodule initialization Parameters
 [WaveInWyrm]
-    conn_name =WAVE_RING
-    max_buffer_length = 300.
+    conn_name = 'WAVE_RING'
+    max_buffer_length = float(300)
 
 # Seisbench Model TubeWyrm init parameters
 [SBMTubeWyrm]
-    weight_names = ['pnw','instance']
+    model = sbm.EQTransformer()
+    weight_names = ['pnw']
 
 # Pickout init parameters
 [PickOutWyrm]
-    conn_name = PICK_RING
-    max_buffer_length = 120.
-    buffer_append_method=1
-    prestack_blinding=${model:blinding}
-    leading_mute=${model:overlap}
+    conn_name = 'PICK_RING'
+    max_buffer_length = float(120)
+    buffer_append_method = 1
+    prestack_blinding = (500,500)
+    leading_mute = 3000

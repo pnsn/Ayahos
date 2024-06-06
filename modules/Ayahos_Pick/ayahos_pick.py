@@ -45,7 +45,7 @@ class AyahosPick(Ayahos):
             phase picking, format picks into TYPE_PICK2K message formats and
             submit picks to the EW PICK RING.
             Base Modules:
-                - :class:`~ayahos.wyrms.bufferwyrm.Buffer`
+                - :class:`~ayahos.wyrms.bufferwyrm.BufferWyrm`
                 - :class:`~ayahos.wyrms.pickwyrm.PickWyrm`
                 - :class:`~ayahos.wyrms.ringwyrm.RingWyrm`
             housed in a :class:`~ayahos.wyrms.tubewyrm.TubeWyrm` object
@@ -65,21 +65,24 @@ class AyahosPick(Ayahos):
             sys.exit(1)
         else:
             pass
-
+        # Initialize Ayahos inheritance
         try:
-            super().__init__(self, **init_kwargs['Ayahos'])
+            super().__init__(**init_kwargs['Ayahos'])
         except:
             Logger.critical('Could not initialize super()')
             sys.exit(1)
+        # Initialize WaveInWyrm
         try:
             wiw = WaveInWyrm(self.module, **init_kwargs['WaveInWyrm'])
         except:
             Logger.critical('Could not initialize WaveInWyrm')
             sys.exit(1)
+        # Initialize SeisBenchModelTubeWyrm
         try:
             stw = SBMTubeWyrm(**init_kwargs['SBMTubeWyrm'])
         except:
             Logger.critical('Could not initialize SBMTubeWyrm')
+            sys.exit(1)
         try:
             pow = PickOutWyrm(self.module, **init_kwargs['PickOutWyrm - aborting'])
         except:
@@ -103,7 +106,6 @@ class AyahosPick(Ayahos):
             interpolation=configparser.ExtendedInterpolation()
         )
         self.config.read(config_file)
-        breakpoint()
         # Get kwargs for submodules
         init_kwargs = {'Ayahos': {},
                 'WaveInWyrm':{},
@@ -116,5 +118,13 @@ class AyahosPick(Ayahos):
         for _k in init_kwargs.keys():
             conf_items = dict(self.config[_k].items())
             for _k2, _v in conf_items.items():
-                init_kwargs[_k].update({_k2: eval(_v)})
+                if _v == 'False':
+                    eval_v = False
+                elif _v == 'True':
+                    eval_v = True
+                else:
+                    eval_v = eval(_v)
+
+                init_kwargs[_k].update({_k2: eval_v})
+
         return init_kwargs

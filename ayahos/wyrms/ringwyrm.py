@@ -99,7 +99,7 @@ class RingWyrm(Wyrm):
             else:
                 self.msg_type = 19
 
-        Logger.info('RingWyrm method {0} for message type {1}'.format(self.pulse_method, self.msg_type))
+        Logger.info('INIT RingWyrm: "{0}" for type {1}'.format(self.pulse_method, self.msg_type))
 
 
 

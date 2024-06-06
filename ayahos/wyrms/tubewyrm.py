@@ -209,7 +209,7 @@ class TubeWyrm(Wyrm):
         :rtype rstr: str
         """
         rstr = f'{super().__repr__()}\n'
-        rstr = "(wait: {self.wait_sec} sec)\n"
+        rstr = f"(wait: {self.wait_sec} sec)\n"
         for _i, (_k, _v) in enumerate(self.wyrm_dict.items()):
             # Provide index number
             rstr += f'({_i:<2}) '
@@ -288,7 +288,7 @@ class TubeWyrm(Wyrm):
             if j_ == 0:
                 y, inproc = wyrm_.pulse(
                     unit_input,
-                    mute_logging=self.mute_internal_logging)
+                    mute_logging=self.log_pulse_summary)
                 if inproc > 0 and self.log_pulse_summary:
                     Logger.info(f'{name} ({type(wyrm_)}) ran {nproc} processes')
             else:

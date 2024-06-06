@@ -4,6 +4,7 @@ TODO: Merge with Ayahos
 
 import configparser, logging, sys
 from ayahos import Ayahos
+from ayahos.wyrms import EchoWyrm
 # from ayahos.submodules import WaveInWyrm, SBMTubeWyrm, PickOutWyrm
 # import seisbench.models as sbm
 
@@ -37,8 +38,9 @@ class EWModuleConstructor(Ayahos):
                 ekwargs.update({'module': self.module})
             # Attempt to construct the module element
             try:
-                self.update({_ename: eclass(**ekwargs)})
+                self.update({_ename: eval(eclass)(**ekwargs)})
             except:
+                breakpoint()
                 Logger.critical(f'failed to initialize {_ename} (type {eclass})')
                 sys.exit(1)
 
@@ -61,7 +63,7 @@ class EWModuleConstructor(Ayahos):
         # Create holder for parsed config contents
         instructions = {}
         # Iterate across sections
-        for section, entries in self.config._sections:
+        for section, entries in self.config._sections.items():
             # If this is a new section
             if section not in instructions.keys():
                 instructions.update({section: {}})
@@ -71,13 +73,16 @@ class EWModuleConstructor(Ayahos):
             # Iterate across entries in this section
             for _k, _v in entries.items():
                 # Ensure 'class' is imported into this scope
-                if _k == 'class':
-                    if _k not in dir():
-                        Logger.critical(f'class {_k} not in scope')
-                        sys.exit(1)
+                # if _k == 'class':
+                #     if _v not in dir():
+                #         breakpoint()
+                #         Logger.critical(f'class {_v} not in scope')
+                #         sys.exit(1)
                 # If module is specified, put a placeholder in (the module isn't initialized yet)
                 if _k == 'module':
                     _val = "intentional placeholder"
+                elif _k == 'class':
+                    _val = _v
                 # If a boolean-like value is passed, use the getboolean special parser
                 elif _v in ['True','False','yes','no']:
                     _val = self.config.getboolean(section, _k)

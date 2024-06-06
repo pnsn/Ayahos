@@ -41,7 +41,8 @@ class AyahosEWModule(EWModule):
             formatted as {Connection_Name: Ring Number}, with the position of the connection 
     """
     def __init__(self,
-                 default_ring_id=1000,
+                 connections={'WAVE_RING':1000,
+                                     'PICK_RING':1005},
                  module_id=193,
                  installation_id=2,
                  heartbeat_period=30, 
@@ -65,15 +66,41 @@ class AyahosEWModule(EWModule):
             - **self.connections** (*dict*) - dictionary keeping track of unique connections to earthworm transport rings
                 formatted as {Connection_Name: Ring Number}, with the position of the connection 
         """
+        # Compatability checks on connections
+        if isinstance(connections, dict):
+            if all(isinstance(_k, str) and isinstance(_v, int) and 0 < _v < 10000 for _k, _v, in connections.items()):
+                default_ring_id = list(connections.values())[0]
+
         # Inherit from PyEW.EWModule
         super().__init__(default_ring_id,
                          module_id,
                          installation_id,
                          heartbeat_period,
                          module_debug)
-        # Add connections attribute
-        self.connections = {'DEFAULT': default_ring_id}
-    
+        # Capture input values
+        self.mod_id = module_id
+        self.inst_id = installation_id
+        self.hb_period = heartbeat_period
+        self.def_ring_id = default_ring_id
+        self.debug = module_debug
+
+        # Create holder for connections
+        self.connections = {}
+
+        # Make connections
+        for _name, _id in connections.items():
+            self.add_ring(_id, _name)
+
+    def __repr__(self):
+        rstr = 'Ayahos<->Earthworm Module\n'
+        rstr += f'MOD_ID: {self.mod_id} | INST_ID: {self.inst_id} | '
+        rstr += f'HB_PERIOD: {self.hb_period} | DEFAULT_RING: {self.def_ring_id}\n'
+        rstr += 'Connections\n      Name      |  ID  \n'
+        for _name, _id in self.connections.items():
+            rstr += f'{_name:>15} | {_id:<4} \n'
+        return rstr
+
+
     def add_ring(self, ring_id, conn_name):
         """
         Wraps the :meth:`~PyEW.EWModule.add_ring` method with 
@@ -92,7 +119,6 @@ class AyahosEWModule(EWModule):
         else:
             super().add_ring(ring_id)
             self.connections.update({conn_name: ring_id})
-            self._inv_conn.update({ring_id: conn_name})
 
     def update_conn_name(self, oldname, newname):
         """update the name of an entry in self.connections with a new,

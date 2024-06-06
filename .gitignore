@@ -3,6 +3,7 @@
 
 # Local options
 examples/Ayahos_Pick/pnsn_params
+examples/ayahos_memphis
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

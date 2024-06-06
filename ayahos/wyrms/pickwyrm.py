@@ -1,7 +1,7 @@
 """
 :module:`~ayahos.wyrms.pickwyrm`
 :auth: Nathan T. Stevens
-:email: ntsteve (at) uw.edu
+:email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network
 :license: AGPL-3.0
 :purpose: Defines the PickWyrm class

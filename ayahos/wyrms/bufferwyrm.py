@@ -15,6 +15,7 @@ from ayahos.wyrms.wyrm import Wyrm, add_class_name_to_docstring
 from ayahos.core.mltrace import MLTrace
 from ayahos.core.mltracebuffer import MLTraceBuffer
 from ayahos.core.dictstream import DictStream
+from ayahos.util.pyew import is_wave_msg, wave2mltrace
 
 Logger = logging.getLogger(__name__)
 
@@ -137,6 +138,9 @@ class BufferWyrm(Wyrm):
         :rtype unit_input: list of ayahos.core.trace.mltrace.MLTrace
         """        
         unit_input = input.popleft()
+        if isinstance(unit_input, dict):
+            if is_wave_msg(unit_input):
+                unit_input = [wave2mltrace(unit_input)]
         if isinstance(unit_input, MLTrace):
             unit_input = [unit_input]
         # if listlike, convert to list

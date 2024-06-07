@@ -279,7 +279,7 @@ class WindowWyrm(Wyrm):
                             # Iterate over tracebuffers
                             for _mltb in _dst:
                                 # Create copies
-                                mlt = _mltb.trimmed_copy(
+                                mlt = _mltb.view_copy(
                                     starttime = next_window_ti,
                                     endtime = next_window_tf,
                                     pad=True,

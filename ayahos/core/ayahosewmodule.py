@@ -33,8 +33,8 @@ class AyahosEWModule(EWModule):
     :type installation_id: int, optional
     :param heartbeat_period: how often to send heartbeat messages from this module (in seconds), defaults to 30.
     :type heartbeat_period: float, optional
-    :param module_debug: provide logging messages from within the PyEW.EWModule object? Defaults to False
-    :type module_debug: bool, optional
+    :param extended_debug: provide logging messages from within the PyEW.EWModule object? Defaults to False
+    :type extended_debug: bool, optional
 
     :additional attributes:
         - **self.connections** (*dict*) - dictionary keeping track of unique connections to earthworm transport rings
@@ -46,7 +46,7 @@ class AyahosEWModule(EWModule):
                  module_id=193,
                  installation_id=2,
                  heartbeat_period=30, 
-                 module_debug=False):    
+                 extended_debug=False):    
         """
         Initialize an AyahosEWModule object
 
@@ -59,8 +59,8 @@ class AyahosEWModule(EWModule):
         :type installation_id: int, optional
         :param heartbeat_period: how often to send heartbeat messages from this module (in seconds), defaults to 30.
         :type heartbeat_period: float, optional
-        :param module_debug: provide logging messages from within the PyEW.EWModule object? Defaults to False
-        :type module_debug: bool, optional
+        :param extended_debug: provide logging messages from within the PyEW.EWModule object? Defaults to False
+        :type extended_debug: bool, optional
 
         :additional attributes:
             - **self.connections** (*dict*) - dictionary keeping track of unique connections to earthworm transport rings
@@ -76,13 +76,13 @@ class AyahosEWModule(EWModule):
                          module_id,
                          installation_id,
                          heartbeat_period,
-                         module_debug)
+                         extended_debug)
         # Capture input values
         self.mod_id = module_id
         self.inst_id = installation_id
         self.hb_period = heartbeat_period
         self.def_ring_id = default_ring_id
-        self.debug = module_debug
+        self.debug = extended_debug
 
         # Create holder for connections
         self.connections = {}

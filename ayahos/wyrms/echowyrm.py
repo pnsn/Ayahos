@@ -10,5 +10,5 @@ class EchoWyrm(Wyrm):
     
     def _unit_process(self, unit_input):
         Logger.info(f'{unit_input}')
-        unit_output = unit_output
+        unit_output = unit_input
         return unit_output

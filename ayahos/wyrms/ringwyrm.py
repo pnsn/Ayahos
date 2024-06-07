@@ -206,7 +206,6 @@ class RingWyrm(Wyrm):
                     unit_output = wave2mltrace(unit_output)
                 # For all "get" methods, use Wyrm._capture_unit_output()
                 super()._capture_unit_output(unit_output)
-        return None
     
     def _should_next_iteration_run(self, unit_output):
         """
@@ -221,6 +220,7 @@ class RingWyrm(Wyrm):
         :return status: Should the next iteration be run, based on unit_output?
         :rtype status: bool
         """
+        status = True
         if is_empty_message(unit_output):
             if 'get' in self.pulse_method:
                 status = False

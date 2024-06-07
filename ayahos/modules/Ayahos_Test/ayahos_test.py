@@ -3,8 +3,9 @@ TODO: Merge with Ayahos
 """
 
 import configparser, logging, sys
-from ayahos import Ayahos
-from ayahos.wyrms import EchoWyrm
+from ayahos.core.ayahos import Ayahos
+from ayahos.wyrms import RingWyrm, EchoWyrm
+# from ayahos.wyrms.echowyrm import EchoWyrm
 # from ayahos.submodules import WaveInWyrm, SBMTubeWyrm, PickOutWyrm
 # import seisbench.models as sbm
 
@@ -37,12 +38,14 @@ class EWModuleConstructor(Ayahos):
             if 'module' in ekwargs.keys():
                 ekwargs.update({'module': self.module})
             # Attempt to construct the module element
-            try:
-                self.update({_ename: eval(eclass)(**ekwargs)})
-            except:
-                breakpoint()
-                Logger.critical(f'failed to initialize {_ename} (type {eclass})')
-                sys.exit(1)
+            # try:
+            exec(f'from ayahos.wyrms import {eclass}')
+            obj = eval(eclass)(**ekwargs)
+            self.update({_ename: obj})
+            # except:
+            #     breakpoint()
+            #     Logger.critical(f'failed to initialize {_ename} (type {eclass})')
+            #     sys.exit(1)
 
     def parse_config(self, config_file):
         """Parse a configparser-formatted config_file for input parameter

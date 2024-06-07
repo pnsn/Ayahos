@@ -6,7 +6,7 @@ Module for handling Ayahos :class: `~ayahos.core.ayahos.Ayahos` objects
 :email: ntsteven (at) uw.edu
 :license: AGPL-3.0
 """
-import threading, logging, time, os, sys
+import threading, logging, time, os, sys, configparser
 from ayahos.wyrms.tubewyrm import TubeWyrm
 from ayahos.core.ayahosewmodule import AyahosEWModule
 
@@ -50,16 +50,7 @@ class Ayahos(TubeWyrm):
     :type ewmodule_debug: bool, optional
     """
 
-    def __init__(
-        self,
-        module_id=255,
-        installation_id=255,
-        heartbeat_period=15,
-        connections = {'WAVE': 1000, 'PICK': 1005},
-        log_pulse_summary=True,
-        ewmodule_debug = False,
-        wait_sec=0.
-    ):
+    def __init__(self, config_file):
         """Create a Ayahos object
         Inherits the wyrm_dict attribute and pulse() method from TubeWyrm
 
@@ -80,35 +71,105 @@ class Ayahos(TubeWyrm):
         :param submodule_wait_sec: seconds to wait between execution of the **pulse** method of each
             Wyrm-like object
         """
-        # Initialize TubeWyrm inheritance
-        try:
-            super().__init__(
-                wait_sec=wait_sec,
-                max_pulse_size=1,
-                log_pulse_summary=log_pulse_summary)
-        except:
-            Logger.critical('could not super() from TubeWyrm')
+        # Initialize config parser
+        config = configparser.ConfigParser(
+            interpolation=configparser.ExtendedInterpolation()
+        )
+        # Read configuration file
+        self.cfg = config.read(config_file)
+
+        # Ensure minimum required fields are present for module initialization
+        demerits = 0
+        for _rs in ['Earthworm','EWModule','Connections','Ayahos']:
+            if _rs not in self.cfg._sections.keys():
+                Logger.critical(f'section {_rs} missing from config file! Will not initialize Ayahos')
+                demerits += 1
+        if demerits > 0:
             sys.exit(1)
-        # Intialize AyahosEWModule & Connections
+
+        # Get connections
+        connections = self.parse_config_section('Connections')
+
+        # Initialize AyahosPyEWModule Object
+        self.module = AyahosEWModule(
+            connections = connections,
+            module_id = self.cfg.getint('EWModule', 'module_id'),
+            installation_id = self.cfg.getint('EWModule', 'installation_id'),
+            heartbeat_period = self.cfg.getfloat('EWModule', 'heartbeat_period'),
+            extended_debug = self.cfg.getboolean('EWModule', 'extended_debug')
+        )        
+        # Create a thread for the module process
         try:
-            self.module = AyahosEWModule(
-                connections = connections,
-                module_id=module_id,
-                installation_id=installation_id,
-                heartbeat_period=heartbeat_period,
-                module_debug = ewmodule_debug)
-        except:
-            Logger.critical('could not initialize AyahosEWModule')
-            sys.exit(1)
-        # Create a thread for this process
-        try:
-            self._thread = threading.Thread(target=self.run)
+            self.module_thread = threading.Thread(target=self.run)
         except:
             Logger.critical('Failed to start thread')
             sys.exit(1)
 
-        # Set default run status to True
+        # Build submodules
+        wyrm_dict = {}
+        demerits = 0
+        if 'Build' in self.cfg._sections.keys():
+            # Iterate across submodule names and section names
+            for smname, smsect in self.cfg['Build']:
+                # Log if there are missing submodules
+                if smsect not in self.cfg._sections.keys():
+                    Logger.critical(f'submodule {smsect} not defined in config_file. Will not compile!')
+                    demerits += 1
+                # Construct if the submodule has a section
+                else:
+                    smclass, sminit = self.parse_config_section()
+                    # exec(f'from ayahos.wyrms import {smclass}')
+                    smobj = eval(smclass)(**sminit)
+                    wyrm_dict.update({smname: smobj})
+        # If there are any things that failed to compile, exit
+        if demerits > 0:
+            sys.exit(1)
+
+        super_tube_init = self.parse_config_section('Ayahos')
+        self.summary_interval = super_tube_init.pop('summary_interval')
+
+        self.last_report_sent = None
+
+        # Initialize tubewyrm inheritance
+        super().__init__(
+            wyrm_dict = wyrm_dict,
+            **self.parse_config_section('Ayahos'))
+
+        # Set runs flag to True
         self.runs = True
+        Logger.critical('ALL OK - Ayahos Initialized!')
+
+    ###########################################
+    ### MODULE CONFIGURATION PARSING METHOD ###
+    ###########################################
+        
+    def parse_config_section(self, section):
+        sminit = {}
+        smclass = None
+        for _k, _v in self.cfg[section]:
+            # Handle special case where class is passed
+            if _k == 'class':
+                # Ensure wyrm is imported
+                # TODO: See if this works...
+                exec(f'from ayahos.wyrms import {_k}')
+                smclass = _v
+            # Handle special case where module is passed
+            elif _k == 'module':
+                _val = self.module
+            # Handle case where the parameter value is bool-like    
+            elif _v in ['True', 'False', 'yes', 'no']:
+                _val = self.cfg.getboolean(section, _k)
+            # For everything else, use eval statements
+            else:
+                _val = eval(self.config.get(section, _k))
+            
+            if _k != 'class':
+                sminit.update({_k: _val})
+        
+        if smclass is None:
+            return sminit
+        else:
+            return smclass, sminit
 
     ######################################
     ### MODULE OPERATION CLASS METHODS ###
@@ -119,11 +180,9 @@ class Ayahos(TubeWyrm):
         Start Module Command
         runs ```self._thread.start()```
         """
-        if len(self.wyrm_dict) > 0:
-            self._thread.start()
-        else:
-            Logger.critical('No Wyrm-type sub-/base-modules contained in this Ayahos Module - exiting')
-            raise ModuleNotFoundError
+        if len(self.wyrm_dict) == 0:
+            Logger.warning('No Wyrm-type sub-/base-modules contained in this Ayahos Module')
+        self.module_thread.start()
 
     def stop(self):
         """
@@ -141,19 +200,24 @@ class Ayahos(TubeWyrm):
         :param input: input for the pulse() method of the first wyrm in Ayahos.wyrm_dict, default None
         :type input: varies, optional
         """
-        Logger.critical("Starting Module Operation")        
+        Logger.critical("Starting Module Operation")     
+        print('Im doing science')   
         while self.runs:
+            if self.module.mod_sta() is False:
+                break
             time.sleep(0.001)
             if self.module.debug:
                 Logger.debug('running main pulse')
-            # Run 
+            # Run pulse for 
             _ = super().pulse(input)
-            if self.module.mod_sta() is False:
-                break
+            super().update_summary_metrics()
+            if self.time_to_report_summary():
+                self.transmit_summary()
+        # Note shutdown in logging
+        Logger.critical("Shutting Down Module") 
         # Gracefully shut down
         self.module.goodbye()
-        # Note shutdown in logging
-        Logger.critical("Shutting Down Module")     
+    
 
     def pulse(self):
         """
@@ -164,13 +228,38 @@ class Ayahos(TubeWyrm):
         Logger.error("pulse() method disabled for ayahos.core.ayahos.Ayahos")
         Logger.error("Use Ayahos.run() to start module operation")
         return None, None
+    
+
+
+
+    ### REPORTING METHODS ###
+
+    def time_to_report_summary(self):
+        if self.last_report_time is None:
+            self.last_report_time = time.time()
+            answer = True
+        else:
+            now = time.time()
+            dt = now - self.last_report_time
+            if dt >= self.reporting_interval:
+                answer = True
+                self.last_report_time = now
+            else:
+                answer = False
+        return answer
+    
+    def transmit_summary(self):
+        for _k in self.wyrm_dict.keys():
+            summary_line = self.summary[_k]
+            Logging.info('Summary Report')
+            Logging.info()
 
     ########################
     # CONSTRUCTION METHODS #
-    def init_from_config(self, config_file):
-        raise NotImplementedError("Work in progress. GOAL: populate whole modules from a single configparser.ConfigParser compliant config file")
+    # def init_from_config(self, config_file):
+    #     raise NotImplementedError("Work in progress. GOAL: populate whole modules from a single configparser.ConfigParser compliant config file")
 
-    # def run(self):
+    # # def run(self):
     #     """
     #     Module Execution Command
     #     """

@@ -72,20 +72,22 @@ class Ayahos(TubeWyrm):
             Wyrm-like object
         """
         # Initialize config parser
-        config = configparser.ConfigParser(
+        self.cfg = configparser.ConfigParser(
             interpolation=configparser.ExtendedInterpolation()
         )
         # Read configuration file
-        self.cfg = config.read(config_file)
+        self.cfg.read(config_file)
 
         # Ensure minimum required fields are present for module initialization
         demerits = 0
-        for _rs in ['Earthworm','EWModule','Connections','Ayahos']:
+        for _rs in ['Earthworm','Ayahos','Connections','Build']:
             if _rs not in self.cfg._sections.keys():
                 Logger.critical(f'section {_rs} missing from config file! Will not initialize Ayahos')
                 demerits += 1
         if demerits > 0:
             sys.exit(1)
+        else:
+            Logger.debug('config file has all required sections')
 
         # Get connections
         connections = self.parse_config_section('Connections')
@@ -93,10 +95,10 @@ class Ayahos(TubeWyrm):
         # Initialize AyahosPyEWModule Object
         self.module = AyahosEWModule(
             connections = connections,
-            module_id = self.cfg.getint('EWModule', 'module_id'),
-            installation_id = self.cfg.getint('EWModule', 'installation_id'),
-            heartbeat_period = self.cfg.getfloat('EWModule', 'heartbeat_period'),
-            extended_debug = self.cfg.getboolean('EWModule', 'extended_debug')
+            module_id = self.cfg.getint('Earthworm', 'MOD_ID'),
+            installation_id = self.cfg.getint('Earthworm', 'INST_ID'),
+            heartbeat_period = self.cfg.getfloat('Earthworm', 'HB'),
+            deep_debug = self.cfg.getboolean('Ayahos', 'deep_debug')
         )        
         # Create a thread for the module process
         try:
@@ -104,23 +106,33 @@ class Ayahos(TubeWyrm):
         except:
             Logger.critical('Failed to start thread')
             sys.exit(1)
+        Logger.info('AyahosEWModule initialized')
 
         # Build submodules
         wyrm_dict = {}
         demerits = 0
-        if 'Build' in self.cfg._sections.keys():
-            # Iterate across submodule names and section names
-            for smname, smsect in self.cfg['Build']:
-                # Log if there are missing submodules
-                if smsect not in self.cfg._sections.keys():
-                    Logger.critical(f'submodule {smsect} not defined in config_file. Will not compile!')
-                    demerits += 1
-                # Construct if the submodule has a section
-                else:
-                    smclass, sminit = self.parse_config_section()
-                    # exec(f'from ayahos.wyrms import {smclass}')
-                    smobj = eval(smclass)(**sminit)
-                    wyrm_dict.update({smname: smobj})
+
+        # Iterate across submodule names and section names
+        for submod_name, submod_section in self.cfg['Build'].items():
+            # Log if there are missing submodules
+            if submod_section not in self.cfg._sections.keys():
+                Logger.critical(f'submodule {submod_section} not defined in config_file. Will not compile!')
+                demerits += 1
+            # Construct if the submodule has a section
+            else:
+                submod_class, submod_init_kwargs = \
+                    self.parse_config_section(submod_section)
+                try:
+                    exec(f'from ayahos.wyrms import {submod_class}')
+                except ModuleNotFoundError:
+                    try:
+                        exec(f'from ayahos.submodule import {submod_class}')
+                    except ModuleNotFoundError:
+                        Logger.critical(f'Cannot import class {submod_class} from ayahos.wyrms or ayahos.submodule shortcuts')
+                breakpoint()
+                submod_object = eval(submod_class)(**submod_init_kwargs)
+                wyrm_dict.update({submod_name: submod_object})
+                Logger.info(f'{submod_class} object initialized')
         # If there are any things that failed to compile, exit
         if demerits > 0:
             sys.exit(1)
@@ -144,15 +156,15 @@ class Ayahos(TubeWyrm):
     ###########################################
         
     def parse_config_section(self, section):
-        sminit = {}
-        smclass = None
-        for _k, _v in self.cfg[section]:
+        submod_init_kwargs = {}
+        submod_class = None
+        for _k, _v in self.cfg[section].items():
             # Handle special case where class is passed
             if _k == 'class':
                 # Ensure wyrm is imported
                 # TODO: See if this works...
-                exec(f'from ayahos.wyrms import {_k}')
-                smclass = _v
+                exec(f'from ayahos.wyrms import {_v}')
+                submod_class = _v
             # Handle special case where module is passed
             elif _k == 'module':
                 _val = self.module
@@ -161,15 +173,15 @@ class Ayahos(TubeWyrm):
                 _val = self.cfg.getboolean(section, _k)
             # For everything else, use eval statements
             else:
-                _val = eval(self.config.get(section, _k))
+                _val = eval(self.cfg.get(section, _k))
             
             if _k != 'class':
-                sminit.update({_k: _val})
+                submod_init_kwargs.update({_k: _val})
         
-        if smclass is None:
-            return sminit
+        if submod_class is None:
+            return submod_init_kwargs
         else:
-            return smclass, sminit
+            return submod_class, submod_init_kwargs
 
     ######################################
     ### MODULE OPERATION CLASS METHODS ###

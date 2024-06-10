@@ -77,7 +77,7 @@ StateFile                        # If this flag is specified (uncommented) a
 # fields, for example to request all stations from the TA network:
 
 #Stream  KM_KMI C1?.D
-Stream UW_ALKI HN?.D
+Stream UW_* HH?.D
 
 #(notes regarding "selectors" from a SeedLink configuration file)
 #

@@ -3,4 +3,4 @@ cython
 numpy
 obspy
 pandas
-ipytho
+ipython

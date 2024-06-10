@@ -5,7 +5,7 @@
 examples/Ayahos_Pick/pnsn_params
 examples/ayahos_memphis
 diagrams/*.svg
-
+*.state
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

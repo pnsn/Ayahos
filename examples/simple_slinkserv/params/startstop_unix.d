@@ -61,14 +61,14 @@
   Process          "copystatus WAVE_RING STATUS_RING"
   Class/Priority    OTHER 0
 #
-  Process          "copystatus SCN_RING STATUS_RING"
-  Class/Priority    OTHER 0
+#  Process          "copystatus SCN_RING STATUS_RING"
+#  Class/Priority    OTHER 0
 #
   Process          "copystatus PICK_RING STATUS_RING"
   Class/Priority    OTHER 0
 #
-  Process          "copystatus HYPO_RING STATUS_RING"
-  Class/Priority    OTHER 0
+#  Process          "copystatus HYPO_RING STATUS_RING"
+#  Class/Priority    OTHER 0
 #
   Process          "copystatus TEST_RING STATUS_RING"
   Class/Priority    OTHER 0

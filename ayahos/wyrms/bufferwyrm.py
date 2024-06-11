@@ -9,7 +9,7 @@
         MLTraceBuffer objects
 """
 
-import logging
+import logging, sys
 from numpy import isfinite
 from ayahos.wyrms.wyrm import Wyrm, add_class_name_to_docstring
 from ayahos.core.mltrace import MLTrace
@@ -33,7 +33,9 @@ class BufferWyrm(Wyrm):
             blinding=None,
             method=1,
             max_pulse_size=10000,
-            meta_memory_hrs = 1,
+            meta_memory=3600,
+            report_period=False,
+            max_output_size=1e5,
             **add_kwargs):
         """Initialize a BufferWyrm object
 
@@ -73,7 +75,9 @@ class BufferWyrm(Wyrm):
         # Inherit from Wyrm
         super().__init__(
             max_pulse_size=max_pulse_size,
-            meta_memory_hrs=meta_memory_hrs)
+            meta_memory=meta_memory,
+            report_period=report_period,
+            max_output_size=max_output_size)
 
         # Initialize output of type ayahos.core.stream.dictstream.DictStream
         self.output = DictStream(key_attr=buffer_key)
@@ -173,10 +177,14 @@ class BufferWyrm(Wyrm):
             _key = getattr(mlt, self.buffer_key)
             # Add new buffer if needed
             if _key not in self.output.traces.keys():
-                # Initialize an MLTraceBuffer Object with pre-specified append kwargs
-                mltb = MLTraceBuffer(**self.mltb_kwargs)
-                mltb.append(mlt)
-                self.output.extend(mltb)
+                if len(self.output) < self.max_output_size:
+                    # Initialize an MLTraceBuffer Object with pre-specified append kwargs
+                    mltb = MLTraceBuffer(**self.mltb_kwargs)
+                    mltb.append(mlt)
+                    self.output.extend(mltb)
+                else:
+                    Logger.critical('More traces than allowed by max_output_size - refusing to add new buffers')
+                    sys.exit(1)
             # Append to buffer if id's match
             else:
                 try:

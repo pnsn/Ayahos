@@ -6,7 +6,7 @@ Module for handling Ayahos :class: `~ayahos.core.ayahos.Ayahos` objects
 :email: ntsteven (at) uw.edu
 :license: AGPL-3.0
 """
-import threading, logging, time, os, sys, configparser
+import threading, logging, time, sys, configparser, inspect
 from ayahos.wyrms.tubewyrm import TubeWyrm
 from ayahos.core.ayahosewmodule import AyahosEWModule
 
@@ -29,7 +29,8 @@ class Ayahos(TubeWyrm):
     python module that communicates with the Earthworm message transport system
     
     This class inherits its sequencing methods and attributes from :class:`~ayahos.wyrms.tubewyrm.TubeWyrm`
-     
+    
+
     :param wait_sec: number of seconds to wait between pulses, defaults to 0
     :type wait_sec: int, optional
     :param default_ring_id: default ring ID to assign to AyahosEWModule, defaults to 1000
@@ -137,15 +138,17 @@ class Ayahos(TubeWyrm):
         if demerits > 0:
             sys.exit(1)
 
-        super_tube_init = self.parse_config_section('Ayahos')
-        self.summary_interval = super_tube_init.pop('summary_interval')
-
-        self.last_report_sent = None
+        
+        ayahos_init = self.parse_config_section('Ayahos')
+        tube_params = inspect.signature(TubeWyrm).parameters
+        tube_init = {'wyrm_dict': wyrm_dict}
+        for _k, _v in ayahos_init.items():
+            if _k in tube_params.keys():
+                tube_init.update({_k: _v})
+        breakpoint()
 
         # Initialize tubewyrm inheritance
-        super().__init__(
-            wyrm_dict = wyrm_dict,
-            **self.parse_config_section('Ayahos'))
+        super().__init__(**tube_init)
 
         # Set runs flag to True
         self.runs = True

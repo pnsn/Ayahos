@@ -290,21 +290,14 @@ class TubeWyrm(Wyrm):
         :rtype: int
         """ 
         nproc = 0       
-        for j_, (name, wyrm_) in enumerate(self.wyrm_dict.items()):
+        for j_, wyrm_ in self.wyrm_dict.items():
             if j_ == 0:
-                y, inproc = wyrm_.pulse(
-                    unit_input,
-                    mute_logging=self.log_pulse_summary)
-                if inproc > 0 and self.log_pulse_summary:
-                    Logger.info(f'{name} ({type(wyrm_)}) ran {nproc} processes')
+                y = wyrm_.pulse(unit_input)
             else:
-                y, inproc = wyrm_.pulse(y)
-                if inproc > 0 and self.log_pulse_summary:
-                    Logger.info(f'{name} ({type(wyrm_)}) ran {nproc} processes')
-            nproc += inproc
+                y = wyrm_.pulse(y)
         # TODO: Placeholder unconditional True - eventually want to pass a True/False
         # up the line to say if there should be early stopping
-        unit_output = nproc
+        unit_output = None
         return unit_output
 
     def _capture_unit_output(self, unit_output):
@@ -342,7 +335,7 @@ class TubeWyrm(Wyrm):
             status = True
         return status
 
-    def _update_report(self):
+    def _update_metadata(self):
         """
         POLYMORPHIC
         Last updated with :class:`~ayahos.wyrms.tubewyrm.TubeWyrm`
@@ -362,7 +355,7 @@ class TubeWyrm(Wyrm):
                 line.append(_w.meta_memory)
                 report_dict.update({f'{_n} {_m}': line})
         keys = self._keys_meta + ['p_rate','n_pulse','memory_sec']
-        self.report = pd.DataFrame(report_dict, index=keys)).T
+        self.report = pd.DataFrame(report_dict, index=keys).T
 
 
 

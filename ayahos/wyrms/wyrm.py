@@ -101,7 +101,8 @@ class Wyrm(object):
             if 0 < report_period <= self.meta_memory:
                 self.report_period = report_period
             else:
-                raise ValueError
+                Logger.critical(f'{self.__class__} | report_period greater than memory period!')
+                sys.exit(1)
         else:
             raise TypeError
         

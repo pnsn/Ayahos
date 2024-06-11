@@ -1,8 +1,13 @@
 # Get plain vanilla python stuff
-import logging, argparse, os
+import logging, argparse, os, warnings
 from logging.handlers import TimedRotatingFileHandler
 # Get the Module Constructor Class 
 from ayahos import Ayahos
+
+# Suppress warnings - just stick to logging
+with warnings.catch_warnings():
+    warnings.filterwarnings('ignore', r'All-NaN (slice|axis) encountered')
+
 
 # Setup argument parsing (command line arguments)
 parser = argparse.ArgumentParser(description="This is an example Ayahos module for developmental purposes")

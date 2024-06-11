@@ -27,7 +27,7 @@
 
 """
 
-import inspect, time ,os, copy, obspy, logging
+import inspect, time ,os, copy, obspy, logging, warnings
 import numpy as np
 import pandas as pd
 from decorator import decorator
@@ -254,6 +254,7 @@ class MLTrace(Trace):
     .mod    - "MODEL.WEIGHT"
     """
 
+
     def __init__(self, data=np.array([], dtype=np.float32), fold=None, header=None):
         """
         Initialize an MLTrace object
@@ -302,6 +303,10 @@ class MLTrace(Trace):
         if isinstance(self.data, np.ma.masked_array):
             if np.ma.is_masked(self.data):
                 self.fold[self.data.mask] = 0
+
+        # Ignore the warnings arising from MLTrace.__add__'s use of np.where
+        warnings.filterwarnings('ignore', r'All-NaN (slice|axis) encountered')
+
 
     ###############################################################################
     def utcdatetime_to_nearest_index(self, utcdatetime):
@@ -794,7 +799,8 @@ class MLTrace(Trace):
                     tmp_fold_array[1, :] = 0
 
             # For gaps, pad as np.nan, otherwise take nanmax for data
-            tmp_data = np.where(~gap_mask, np.nanmax(tmp_data_array, axis=0), np.nan);
+            tmp_data = np.where(~gap_mask, np.nanmax(tmp_data_array, axis=0), np.nan)
+            # breakpoint()
             # ...and nansum for fold
             tmp_fold = np.where(~gap_mask,np.nansum(tmp_fold_array, axis=0), 0)
             # For gaps or contiguous, use nansum to get 

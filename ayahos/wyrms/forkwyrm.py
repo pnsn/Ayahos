@@ -35,7 +35,9 @@ class ForkWyrm(Wyrm):
     def __init__(
             self,
             output_names=['A','B'],
-            max_pulse_size=1000000):
+            max_pulse_size=1000000,
+            meta_memory=3600,
+            report_period=None):
         """
         Initialize a ForkWyrm object
 
@@ -45,7 +47,9 @@ class ForkWyrm(Wyrm):
         :param max_pulse_size: maximum
         :param debug: [bool] - should this be run in debug mode?
         """
-        super().__init__(max_pulse_size=max_pulse_size)
+        super().__init__(max_pulse_size=max_pulse_size,
+                         meta_memory=meta_memory,
+                         report_period=report_period)
         self.output = {}
         for _k in output_names:
             self.output.update({_k: deque()})

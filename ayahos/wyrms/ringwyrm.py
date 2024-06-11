@@ -53,7 +53,9 @@ class RingWyrm(Wyrm):
             conn_name,
             pulse_method='get_wave',
             msg_type=19,
-            max_pulse_size=10000
+            max_pulse_size=10000,
+            meta_memory=3600,
+            report_period=None
             ):
         """Initialize a RingWyrm object
 
@@ -71,7 +73,9 @@ class RingWyrm(Wyrm):
         :param max_pulse_size: Maximum mumber of messages to transact in a single pulse, defaults to 10000
         :type max_pulse_size: int, optional
         """        
-        Wyrm.__init__(self, max_pulse_size=max_pulse_size)
+        Wyrm.__init__(self, max_pulse_size=max_pulse_size,
+                      meta_memory=meta_memory,
+                      report_period=report_period)
         # Compatability checks for `module`
         if isinstance(module, AyahosEWModule):
             self.module = module

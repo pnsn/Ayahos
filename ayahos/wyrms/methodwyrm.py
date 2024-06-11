@@ -48,6 +48,8 @@ class MethodWyrm(Wyrm):
         pmethod,
         pkwargs,
         max_pulse_size=10000,
+        meta_memory=3600,
+        report_period=None
         ):
         """
         Initialize a MethodWyrm object
@@ -64,7 +66,9 @@ class MethodWyrm(Wyrm):
         """
 
         # Initialize/inherit from Wyrm
-        super().__init__(max_pulse_size=max_pulse_size)
+        super().__init__(max_pulse_size=max_pulse_size,
+                         meta_memory=meta_memory,
+                         report_period=report_period)
 
         # pclass compatability checks
         if not isinstance(pclass,type):

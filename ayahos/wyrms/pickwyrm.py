@@ -68,13 +68,17 @@ class PickWyrm(Wyrm):
             phases_to_pick=['P','S'],
             phase2comp_map = {'P': 'Z', 'S':'E'},
             max_pulse_size=1,
+            meta_memory=3600,
+            report_period=None,
             **trigger_opts):
         """Initialize a PickWyrm object
 
   
         """        
         # Inherit from Wyrm
-        super().__init__(max_pulse_size=max_pulse_size)
+        super().__init__(max_pulse_size=max_pulse_size,
+                         meta_memory=meta_memory,
+                         report_period=report_period)
 
         # Compatability check for module_id
         if isinstance(module_id, int):

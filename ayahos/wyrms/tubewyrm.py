@@ -22,8 +22,10 @@ TODO: Turn status from _capture_unit_out into a representation of nproc
 """
 import logging
 import numpy as np
+import pandas as pd
 from collections import deque
 from ayahos.wyrms.wyrm import Wyrm
+
 
 Logger = logging.getLogger(__name__)
 
@@ -45,7 +47,9 @@ class TubeWyrm(Wyrm):
             wyrm_dict={},
             log_pulse_summary=True,
             wait_sec=0.0,
-            max_pulse_size=1):
+            max_pulse_size=1,
+            meta_memory=3600,
+            report_period=None):
         """
         Create a TubeWyrm unit_inputect
         :param wyrm_dict: collection of [Wyrm-type] unit_inputects that are executed in their provided order. 
@@ -58,7 +62,9 @@ class TubeWyrm(Wyrm):
         :type max_pulse_size: int
         """
         # Inherit from Wyrm
-        super().__init__(max_pulse_size=max_pulse_size)
+        super().__init__(max_pulse_size=max_pulse_size,
+                         meta_memory=meta_memory,
+                         report_period=report_period)
         if isinstance(log_pulse_summary, bool):
             self.log_pulse_summary = log_pulse_summary
         # wyrm_dict compat. checks
@@ -335,6 +341,30 @@ class TubeWyrm(Wyrm):
         else:
             status = True
         return status
+
+    def _update_report(self):
+        """
+        POLYMORPHIC
+        Last updated with :class:`~ayahos.wyrms.tubewyrm.TubeWyrm`
+
+        Get the mean value line for each wyrm and add information
+        on the pulserate, number of logged pulses, and memory period
+        for each wyrm.
+        """
+        report_dict = {}
+        for _n, _w in self.wyrm_dict.items():
+            _r = _w.report
+            _p = _w.pulse_rate
+            for _m in ['last','mean']:
+                line = _r.loc['mean'].values
+                line.append(_p)
+                line.append(len(_w._metadata))
+                line.append(_w.meta_memory)
+                report_dict.update({f'{_n} {_m}': line})
+        keys = self._keys_meta + ['p_rate','n_pulse','memory_sec']
+        self.report = pd.DataFrame(report_dict, index=keys)).T
+
+
 
 
     # def unit_process(self, x):

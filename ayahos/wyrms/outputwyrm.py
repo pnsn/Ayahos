@@ -52,7 +52,9 @@ class OutputWyrm(MethodWyrm):
             oclass,
             pmethod,
             pkwargs={},
-            max_pulse_size=10000
+            max_pulse_size=10000,
+            meta_memory=3600,
+            report_period=None
             ):
         """Initialize an OutputWyrm object
         
@@ -67,7 +69,14 @@ class OutputWyrm(MethodWyrm):
         :param max_pulse_size: maximum number of input objects to process per pulse, defaults to 10000
         :type max_pulse_size: int, optional
         """        
-        super().__init__(pclass=pclass, pmethod=pmethod, pkwargs=pkwargs, max_pulse_size=max_pulse_size)
+        super().__init__(
+            pclass=pclass,
+            pmethod=pmethod,
+            pkwargs=pkwargs,
+            max_pulse_size=max_pulse_size,
+            meta_memory=meta_memory,
+            report_period=report_period)
+        
         if not isinstance(oclass, type):
             raise ValueError
         else:

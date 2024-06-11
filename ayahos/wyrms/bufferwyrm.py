@@ -33,7 +33,7 @@ class BufferWyrm(Wyrm):
             blinding=None,
             method=1,
             max_pulse_size=10000,
-            mute_pulse_logging = True,
+            meta_memory_hrs = 1,
             **add_kwargs):
         """Initialize a BufferWyrm object
 
@@ -73,7 +73,7 @@ class BufferWyrm(Wyrm):
         # Inherit from Wyrm
         super().__init__(
             max_pulse_size=max_pulse_size,
-            mute_pulse_logging=mute_pulse_logging)
+            meta_memory_hrs=meta_memory_hrs)
 
         # Initialize output of type ayahos.core.stream.dictstream.DictStream
         self.output = DictStream(key_attr=buffer_key)

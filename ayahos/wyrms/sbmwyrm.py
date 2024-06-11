@@ -60,7 +60,8 @@ class SBMWyrm(Wyrm):
         compiled=True,
         min_batch_size=1,
         max_batch_size=256,
-        max_pulse_size=1):
+        max_pulse_size=1,
+        meta_memory=3600):
         """
         Initialize a ayahos.core.wyrms.mldetectwyrm.MLDetectWyrm object
 
@@ -85,7 +86,9 @@ class SBMWyrm(Wyrm):
         :param max_pulse_size: maximum number of iterations (batches) to run per pulse, default is 1
         :type max_pulse_size: int
         """
-        super().__init__(max_pulse_size=max_pulse_size)
+        super().__init__(max_pulse_size=max_pulse_size,
+                         meta_memory=meta_memory,
+                         report_period=report_period)
         
         # max_batch_size compatability checks
         if isinstance(max_batch_size, int):

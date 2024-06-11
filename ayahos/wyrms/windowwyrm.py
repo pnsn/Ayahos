@@ -55,8 +55,9 @@ class WindowWyrm(Wyrm):
         fnfilter=None,
         pulse_type='network',
         max_pulse_size=1,
-        **options
-    ):
+        meta_memory=3600,
+        report_period=None,
+        **options):
         """Initialize a WindowWyrm object that samples a WyrmStream of MLTraceBuffer
         objects and generates WindowStream copies of windowed data if a reference
         component for a given instrument in the WyrmStream is present and has
@@ -93,7 +94,9 @@ class WindowWyrm(Wyrm):
         :type **options: kwargs
         """
         # Initialize/inherit from Wyrm
-        super().__init__(max_pulse_size=max_pulse_size)
+        super().__init__(max_pulse_size=max_pulse_size,
+                         meta_memory=meta_memory,
+                         report_period=report_period)
 
 
         if pulse_type.lower() in ['network']: #,'site','instrument']:

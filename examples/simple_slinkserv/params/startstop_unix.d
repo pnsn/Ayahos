@@ -9,7 +9,7 @@
 #    Ring names are listed in file earthworm.h.
 #
   nRing               4
-  Ring   WAVE_RING   500
+  Ring   WAVE_RING   1024
 #  Ring    SCN_RING   500
   Ring   PICK_RING   128
 #  Ring   HYPO_RING   128

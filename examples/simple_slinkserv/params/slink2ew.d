@@ -78,6 +78,9 @@ StateFile                        # If this flag is specified (uncommented) a
 
 #Stream  KM_KMI C1?.D
 Stream UW_* HH?.D
+Stream UW_* HN?.D
+Stream UW_* EH?.D
+Stream UW_* BH?.D
 
 #(notes regarding "selectors" from a SeedLink configuration file)
 #

@@ -130,7 +130,6 @@ class Ayahos(TubeWyrm):
                         exec(f'from ayahos.submodule import {submod_class}')
                     except ModuleNotFoundError:
                         Logger.critical(f'Cannot import class {submod_class} from ayahos.wyrms or ayahos.submodule shortcuts')
-                breakpoint()
                 submod_object = eval(submod_class)(**submod_init_kwargs)
                 wyrm_dict.update({submod_name: submod_object})
                 Logger.info(f'{submod_class} object initialized')
@@ -145,7 +144,6 @@ class Ayahos(TubeWyrm):
         for _k, _v in ayahos_init.items():
             if _k in tube_params.keys():
                 tube_init.update({_k: _v})
-        breakpoint()
 
         # Initialize tubewyrm inheritance
         super().__init__(**tube_init)
@@ -223,11 +221,8 @@ class Ayahos(TubeWyrm):
             time.sleep(0.001)
             if self.module.debug:
                 Logger.debug('running main pulse')
-            # Run pulse for 
+            # Run pulse inherited from TubeWyrm
             _ = super().pulse(input)
-            super().update_summary_metrics()
-            if self.time_to_report_summary():
-                self.transmit_summary()
         # Note shutdown in logging
         Logger.critical("Shutting Down Module") 
         # Gracefully shut down
@@ -245,29 +240,8 @@ class Ayahos(TubeWyrm):
         return None, None
     
 
-
-
-    ### REPORTING METHODS ###
-
-    def time_to_report_summary(self):
-        if self.last_report_time is None:
-            self.last_report_time = time.time()
-            answer = True
-        else:
-            now = time.time()
-            dt = now - self.last_report_time
-            if dt >= self.reporting_interval:
-                answer = True
-                self.last_report_time = now
-            else:
-                answer = False
-        return answer
     
-    def transmit_summary(self):
-        for _k in self.wyrm_dict.keys():
-            summary_line = self.summary[_k]
-            Logging.info('Summary Report')
-            Logging.info()
+
 
     ########################
     # CONSTRUCTION METHODS #

@@ -55,7 +55,8 @@ class RingWyrm(Wyrm):
             msg_type=19,
             max_pulse_size=10000,
             meta_memory=3600,
-            report_period=None
+            report_period=None,
+            max_output_size=1e9
             ):
         """Initialize a RingWyrm object
 
@@ -75,7 +76,8 @@ class RingWyrm(Wyrm):
         """        
         Wyrm.__init__(self, max_pulse_size=max_pulse_size,
                       meta_memory=meta_memory,
-                      report_period=report_period)
+                      report_period=report_period,
+                      max_output_size=max_output_size)
         # Compatability checks for `module`
         if isinstance(module, AyahosEWModule):
             self.module = module

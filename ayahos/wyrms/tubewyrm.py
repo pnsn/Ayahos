@@ -289,8 +289,7 @@ class TubeWyrm(Wyrm):
         :return unit_output: sum of nproc output by each wyrm in wyrmdict for this iteration
         :rtype: int
         """ 
-        nproc = 0       
-        for j_, wyrm_ in self.wyrm_dict.items():
+        for j_, wyrm_ in enumerate(self.wyrm_dict.values()):
             if j_ == 0:
                 y = wyrm_.pulse(unit_input)
             else:
@@ -335,7 +334,7 @@ class TubeWyrm(Wyrm):
             status = True
         return status
 
-    def _update_metadata(self):
+    def _update_report(self):
         """
         POLYMORPHIC
         Last updated with :class:`~ayahos.wyrms.tubewyrm.TubeWyrm`
@@ -347,16 +346,16 @@ class TubeWyrm(Wyrm):
         report_dict = {}
         for _n, _w in self.wyrm_dict.items():
             _r = _w.report
-            _p = _w.pulse_rate
+            _p = _w._pulse_rate
             for _m in ['last','mean']:
-                line = _r.loc['mean'].values
+                line = list(_r.loc[_m].values)
                 line.append(_p)
                 line.append(len(_w._metadata))
                 line.append(_w.meta_memory)
-                report_dict.update({f'{_n} {_m}': line})
+                report_dict.update({f'{_n}({_m})': line})
         keys = self._keys_meta + ['p_rate','n_pulse','memory_sec']
         self.report = pd.DataFrame(report_dict, index=keys).T
-
+        self.report.index.name = 'submod (stat)'
 
 
 

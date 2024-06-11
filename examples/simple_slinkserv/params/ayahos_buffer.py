@@ -25,12 +25,19 @@ fh = TimedRotatingFileHandler(
     backupCount=3
 )
 # Set logging level for log file
-fh.setLevel(logging.DEBUG)
+fh.setLevel(logging.WARNING)
 # Set logging format
 fh.setFormatter(log_fmt)
+
+# Set logging level for the terminal
+ch = logging.StreamHandler()
+ch.setFormatter(log_fmt)
+ch.setLevel(logging.DEBUG)
+
 # Add handler to the root logger
 logging.getLogger().addHandler(fh)
-# Set root logger logging level
+logging.getLogger().addHandler(ch)
+# # Set root logger logging level
 logging.getLogger().setLevel(logging.DEBUG)
 
 # main program start

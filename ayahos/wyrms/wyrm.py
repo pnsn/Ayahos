@@ -10,6 +10,7 @@
     other *Wyrm classes -- "Wyrm" -- and serves as a template
     for the minimum required methods of each successor class. 
 """
+from numpy import nan
 import pandas as pd
 from copy import deepcopy
 from collections import deque
@@ -49,7 +50,7 @@ class Wyrm(object):
     
     """
 
-    def __init__(self, max_pulse_size=10, meta_memory=3600, report_period=None):
+    def __init__(self, max_pulse_size=10, meta_memory=3600, report_period=False, max_output_size=1e6):
         """Initialize a {class_name_camel} object
 
         :param max_pulse_size: maximum number of iterations to run for each call of :meth:`~ayahos.wyrms.wyrm.Wyrm.pulse`, defaults to 10
@@ -79,7 +80,7 @@ class Wyrm(object):
         # output holder
         self.output = deque()
         # Metadata keys for reporting
-        self._keys_meta = ['time', '# proc', 'runtime', 'isize', 'osize', 'exit']
+        self._keys_meta = ['time', '# proc', 'runtime', 'isize', 'osize', 'early_stop']
         # Metadata holder for reporting
         self._metadata = pd.DataFrame(columns=self._keys_meta)
         self.report = pd.DataFrame()
@@ -94,7 +95,7 @@ class Wyrm(object):
         else:
             raise TypeError
         
-        if report_period is None:
+        if report_period is False:
             self.report_period = False
         elif isinstance(report_period, (int, float)):
             if 0 < report_period <= self.meta_memory:
@@ -104,8 +105,17 @@ class Wyrm(object):
         else:
             raise TypeError
         
+        if max_output_size is None:
+            self.max_output_size = 1e12
+            Logger.critical(f'setting non-limited output size for {self.__class__.__name__} object to {self.max_output_size}')
+        elif isinstance(max_output_size, (int,float)):
+            if 0 < max_output_size < 1e12:
+                self.max_output_size = max_output_size
+        else:
+            raise TypeError
+
         self._last_report_time = pd.Timestamp.now().timestamp()
-        self._pulse_rate = None
+        self._pulse_rate = nan
 
     def __name__(self):
         """Return the camel-case name of this class without
@@ -196,14 +206,17 @@ class Wyrm(object):
         if _n + 1 == self.max_pulse_size:
             self._update_metadata(pulse_starttime, input_size, nproc, 0)
 
+        self._update_report()
+        self._update_pulse_rate()
+
         # Check if reporting is turned on
         if self.report_period:
             # If so, get the now-time
             nowtime = pd.Timestamp.now().timestamp()
             # If the elapsed time since the last report transmission is exceeded
-            if self.report_period > nowtime - self._last_report_time:
+            if self.report_period <= nowtime - self._last_report_time:
                 # Transmit report to logging
-                Logger.info(self._generate_report_string())
+                Logger.info(f'\n\n{self._generate_report_string()}\n')
                 # Update the last report time
                 self._last_report_time = nowtime
 
@@ -313,7 +326,12 @@ class Wyrm(object):
         :rtype: None
         """        
         self.output.append(unit_output)
-        return None
+        extra = len(self.output) - self.max_output_size
+        # if extra > 0:
+        #     Logger.info(f'{self.__class__.__name__} object reached max_output_size. Deleting {extra} oldest values')
+
+        while len(self.output) > self.max_output_size:
+            self.output.popleft()
         
     def _should_next_iteration_run(self, unit_output):
         """
@@ -332,7 +350,7 @@ class Wyrm(object):
         status = True
         return status
 
-    def _update_metadata(self, pulse_starttime, input_size, nproc, exit_code):
+    def _update_metadata(self, pulse_starttime, input_size, nproc, early_stop_code):
         """
         POLYMORPHIC
         Last updated with :class:`~ayahos.wyrms.wyrm.Wyrm`
@@ -348,15 +366,15 @@ class Wyrm(object):
         :type input_size: int
         :param nproc: number of unit processes completed in this pulse
         :type nproc: int
-        :param exit_code: integer standin for True (1) and False (0) if the pulse hit an early termination clause
-        :type exit_code: int
+        :param early_stop_code: integer standin for True (1) and False (0) if the pulse hit an early termination clause
+        :type early_stop_code: int
         """        
         # Calculate/capture new metadata values for this pulse
         timestamp = pd.Timestamp.now().timestamp()
         runtime = (timestamp - pulse_starttime)
         output_size = len(self.output)
         S_line = pd.DataFrame(dict(zip(self._keys_meta,
-                                       [timestamp, nproc, runtime, input_size, output_size, exit_code])),
+                                       [timestamp, nproc, runtime, input_size, output_size, early_stop_code])),
                                index=[0])
         # Append line to dataframe
         self._metadata = self._metadata._append(S_line, ignore_index=True)
@@ -365,18 +383,26 @@ class Wyrm(object):
         oldest_time = timestamp - self.meta_memory
         self._metadata = self._metadata[self._metadata.time >= oldest_time]
 
+    def _update_report(self):
         # Update Report       
         df_last = self._metadata[self._metadata.time == self._metadata.time.max()]
         df_last.index = ['last']
         self.report = df_last 
         self.report = pd.concat([self.report, self._metadata.agg(['mean','std','min','max'])], axis=0, ignore_index=False)
+        self.report.time = self.report.time.apply(lambda x: pd.Timestamp(x, unit='s'))
+    def _update_pulse_rate(self):
         # Calculate pulse rate
-        self.pulse_rate = len(self._metadata)/(self._metadata.time.max() - self._metadata.time.min())
+        nd = len(self._metadata)
+        if nd > 1:
+            dt = (self._metadata.time.max() - self._metadata.time.min())
+            if dt > 0:
+                self._pulse_rate = nd/dt
 
     def _generate_report_string(self):
-        header = f'pulse rate: {self.pulse_rate:.2e} Hz'
-        header += f'\nsample period: {self.meta_memory} sec'
-        return f'\n{header}\n{self.report}'
+        header = f'~~~~ {pd.Timestamp.now()} | {self.__class__.__name__} ~~~~\n'
+        header += f'pulse rate: {self._pulse_rate:.2e} Hz | max pulse size: {self.max_pulse_size}\n'
+        header += f'sample period: {self.meta_memory} sec | max output size: {self.max_output_size}'
+        return f'{header}\n{self.report}\n'
     
 # from ayahos import DictStream
 # from obspy import read

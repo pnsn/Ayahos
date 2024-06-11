@@ -22,14 +22,13 @@ TODO: For future releases
 
 """
 
-import time, logging
+import logging, sys
 import seisbench.models as sbm
 from collections import deque
 from ayahos.core.mltrace import MLTrace
 from ayahos.core.dictstream import DictStream
 from ayahos.core.windowstream import WindowStream
 from ayahos.wyrms.wyrm import Wyrm
-from ayahos.util.input import bounded_floatlike, bounded_intlike
 
 Logger = logging.getLogger(__name__)
 
@@ -57,6 +56,7 @@ class WindowWyrm(Wyrm):
         max_pulse_size=1,
         meta_memory=3600,
         report_period=None,
+        max_output_size=1e9,
         **options):
         """Initialize a WindowWyrm object that samples a WyrmStream of MLTraceBuffer
         objects and generates WindowStream copies of windowed data if a reference
@@ -96,7 +96,8 @@ class WindowWyrm(Wyrm):
         # Initialize/inherit from Wyrm
         super().__init__(max_pulse_size=max_pulse_size,
                          meta_memory=meta_memory,
-                         report_period=report_period)
+                         report_period=report_period,
+                         max_output_size=max_output_size)
 
 
         if pulse_type.lower() in ['network']: #,'site','instrument']:
@@ -120,13 +121,14 @@ class WindowWyrm(Wyrm):
             raise ValueError('reference_component does not appear as a key in component_aliases')
         
         # Compatability check for reference_completeness_threshold
-        reft = bounded_floatlike(
-            reference_completeness_threshold,
-            name = "reference_completeness_threshold",
-            minimum=0,
-            maximum=1,
-            inclusive=True
-        )
+        if isinstance(reference_completeness_threshold, (float, int)):
+            if 0 <= reference_completeness_threshold <= 1:
+                reft = reference_completeness_threshold
+            else:
+                raise ValueError
+        else:
+            raise TypeError
+
         if not isinstance(model_name, str):
             raise TypeError('model_name must be type str')
         else:
@@ -209,14 +211,14 @@ class WindowWyrm(Wyrm):
     # PULSE POLYMORPHIC SUBROUTINES #
     #################################
 
-    def pulse(self, input):
-        stdout, nproc = super().pulse(input)
-        return stdout, nproc
 
     def _should_this_iteration_run(self, input, input_measure, iter_number):
-        """_continue_iteration for WindowWyrm
+        """
+        POLYMORPHIC
+        Last updated with :class:`~ayahos.wyrms.windowwyrm.WindowWyrm`
 
-        unconditional pass - early stopping is handled in _unit_process
+        unconditional pass - early stopping is handled by
+        :meth:`~ayahos.wyrms.windowwyrm.WindowWyrm._should_next_iteration_run`
 
         :param input: standard input
         :type input: ayahos.core.stream.dictstream.DictStream
@@ -243,7 +245,7 @@ class WindowWyrm(Wyrm):
             return unit_input
         else:
             Logger.error('TypeError - input is not type DictStream')
-            raise TypeError
+            sys.exit(1)
     
     def _unit_process(self, unit_input):
         """_unit_process for WindowWyrm
@@ -257,7 +259,7 @@ class WindowWyrm(Wyrm):
         :param unit_input: view of a DictStream containing waveforms
         :type unit_input: ayahos.core.stream.dictstream.DictStream
         """        
-        nnew = 0
+        unit_output = deque()
         # Update window tracker
         self.__update_window_tracker(unit_input)
         # Conduct network-wide pulse
@@ -301,18 +303,15 @@ class WindowWyrm(Wyrm):
                                 ref_component=self.ref['component']
                             )
                             # Append windowstream to output
-                            self.output.append(wst)
+                            unit_output.append(wst)
                             # Advance window start time in window_tracker
                             self.window_tracker[site][inst][mod]['ti'] += self.advance_sec
                             # Set ready flag to false for this site
                             self.window_tracker[site][inst][mod].update({'ready': False})
-                            # Increment nnew
-                            nnew += 1
-        unit_out = nnew
-        return unit_out
+        return unit_output
 
                         
-    def _capture_unit_out(self, unit_out):
+    def _capture_unit_output(self, unit_output):
         """_capture_unit_out for WindowWyrm
 
         data capture is handled in _unit_process
@@ -324,13 +323,21 @@ class WindowWyrm(Wyrm):
         :type unit_out: int
         :return status: should iterations continue?
         :rtype status: bool
-        """        
-        if unit_out == 0:
-            status = False
-        else:
-            status = True
-        return status
+        """  
+        self.output += unit_output
+        extra = len(self.output) - self.max_output_size
+        # if extra > 0:
+        #     Logger.warning(f'{self.__class__.__name__} object reached max_output_size. Deleting {extra} oldest values')
+        while len(self.output) > self.max_output_size:
+            self.output.popleft()
 
+
+    def _should_next_iteration_run(self, unit_output):
+        if len(unit_output) > 0:
+            status = True
+        else:
+            status = False
+        return status
 
     def __update_window_tracker(self, dst):
         """

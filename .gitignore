@@ -9,6 +9,8 @@ diagrams/*.svg
 # Temporary Earthworm Files
 *.state
 *.lock
+*.log.202*
+*.log
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

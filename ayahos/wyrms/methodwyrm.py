@@ -49,7 +49,8 @@ class MethodWyrm(Wyrm):
         pkwargs,
         max_pulse_size=10000,
         meta_memory=3600,
-        report_period=None
+        report_period=False,
+        max_output_size=1e9
         ):
         """
         Initialize a MethodWyrm object
@@ -68,13 +69,21 @@ class MethodWyrm(Wyrm):
         # Initialize/inherit from Wyrm
         super().__init__(max_pulse_size=max_pulse_size,
                          meta_memory=meta_memory,
-                         report_period=report_period)
+                         report_period=report_period,
+                         max_output_size=max_output_size)
 
         # pclass compatability checks
-        if not isinstance(pclass,type):
-            raise TypeError('pclass must be a class defining object (type "type")')
-        else:
+        if isinstance(pclass,type):
             self.pclass = pclass
+        elif isinstance(pclass, str):
+            if '.' in pclass:
+                parts = pclass.split('.')
+                exec(f'from {'.'.join(parts[:-1])} import {parts[-1]}')
+                self.pclass = eval(parts[-1])
+            else:
+                raise SyntaxError('pclass should be a full class path (e.g., ayahos.core.dictstream.DictStream)')
+        else:
+            raise TypeError
         # pmethod compatability checks
         if pmethod not in [func for func in dir(self.pclass) if callable(getattr(self.pclass, func))]:
             raise ValueError(f'pmethod "{pmethod}" is not defined in {self.pclass} properties or methods')

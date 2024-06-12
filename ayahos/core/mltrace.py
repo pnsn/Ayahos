@@ -1116,10 +1116,14 @@ class MLTrace(Trace):
             first_tr = st[0]
         # If input is a fully masked MLTrace, such that split() produced an empty Stream
         else:
-            raise NotImplementedError('handling for all-masked trace is under review')
-            # Resample 
-            getattr(self, resample_method)(**resamplekw)
+            # Update data and fold to be 0-traces
             self.to_zero(method='both')
+            # And resample to target S/R
+            getattr(self, resample_method)(**resamplekw)
+            # raise NotImplementedError('handling for all-masked trace is under review')
+            # # Resample 
+            # getattr(self, resample_method)(**resamplekw)
+            # self.to_zero(method='both')
         # If we have a valid output stream  
         if len(st) > 0:
             self.stats = first_tr.stats

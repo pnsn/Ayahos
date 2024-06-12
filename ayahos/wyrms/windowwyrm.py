@@ -55,7 +55,7 @@ class WindowWyrm(Wyrm):
         pulse_type='network',
         max_pulse_size=1,
         meta_memory=3600,
-        report_period=None,
+        report_period=False,
         max_output_size=1e9,
         **options):
         """Initialize a WindowWyrm object that samples a WyrmStream of MLTraceBuffer
@@ -274,7 +274,7 @@ class WindowWyrm(Wyrm):
                         # If this instrument record is ready to produce a window
                         if value['ready']:
                             fnstring = f'{site}.{inst}?.{mod}'
-                            Logger.info(f'generating window for {fnstring}')
+                            # Logger.info(f'generating window for {fnstring}')
                             next_window_ti = value['ti']
                             next_window_tf = next_window_ti + self.window_sec
                             # Subset to all traces for this instrument
@@ -305,7 +305,10 @@ class WindowWyrm(Wyrm):
                             # Append windowstream to output
                             unit_output.append(wst)
                             # Advance window start time in window_tracker
+                            old_ti = self.window_tracker[site][inst][mod]['ti']
                             self.window_tracker[site][inst][mod]['ti'] += self.advance_sec
+                            new_ti = self.window_tracker[site][inst][mod]['ti']
+                            Logger.debug(f'New window for {wst.stats.common_id} at {old_ti} += next at {new_ti}')
                             # Set ready flag to false for this site
                             self.window_tracker[site][inst][mod].update({'ready': False})
         return unit_output
@@ -350,8 +353,8 @@ class WindowWyrm(Wyrm):
         (Network.Station.Location.BandInstrument{ref}) MLTraces are found
 
         :: INPUT ::
-        :param dst: [wyrm.data.WyrmStream.WyrmStream] containing 
-                        wyrm.data.mltrace.MLTrace type objects
+        :param dst: DictStream object containing :class:`~ayahos.core.mltrace.MLTrace`-type objects
+        :type dst: ayahos.core.dictstream.DictStream
         """
         # Subset using fnfilter
         fdst = dst.fnselect(self.fnfilter)
@@ -383,6 +386,7 @@ class WindowWyrm(Wyrm):
                                                          'ref': mltr.id,
                                                          'ready': False}},
                                                 't0': mltr.stats.starttime}})
+                Logger.info(f'Added buffer tree for {site} - triggered by {mltr.id}')
             # If site is in window_tracker
             else:
                 # If inst is not in this site subdictionary
@@ -392,6 +396,7 @@ class WindowWyrm(Wyrm):
                                                             {'ti': self.window_tracker[site]['t0'],
                                                              'ref': mltr.id,
                                                              'ready': False}}})
+                    Logger.info('Added buffer branch {inst} to {site} tree - triggered by {mltr.id}')
                 # If inst is in this site subdictionary
                 else:
                     # If mod is not in this inst sub-subdictionary
@@ -400,6 +405,7 @@ class WindowWyrm(Wyrm):
                                                                     {'ti': self.window_tracker[site]['t0'],
                                                                      'ref': mltr.id,
                                                                      'ready': False}})
+                        
                         
             ### WINDOW TRACKER TIME INDEXING/WINDOWING STATUS CHECK SECTION ###   
             # Get window edge times

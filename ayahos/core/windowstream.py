@@ -508,7 +508,7 @@ class WindowStream(DictStream):
                    detrendkw={'type': 'linear'},
                    resample_method='resample',
                    resamplekw={},
-                   taperkw={},
+                   taperkw={'max_percentage': None, 'max_length': 0.06},
                    mergekw={},
                    trimkw={'pad': True, 'fill_value':0}):
         """Execute a wyrm.core.trace.mltrace.MLTrace.treat_gaps() method on each trace

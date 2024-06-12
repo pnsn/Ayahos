@@ -15,11 +15,14 @@
 TODO:   Stiffen **add_kwargs ingestion to check against __add__ inputs
         Remove option to pass other **kwargs to MLTraceBuffer().append()
 """
+import logging
 import numpy as np
 from obspy import Trace
 from ayahos.core.mltrace import MLTrace
 from ayahos.util.input import bounded_floatlike
-    
+
+Logger = logging.getLogger(__name__)
+
 class MLTraceBuffer(MLTrace):
 
     def __init__(self,
@@ -195,7 +198,9 @@ class MLTraceBuffer(MLTrace):
                 # If other starts within buffer range of self end
                 if other.stats.starttime - self.max_length < self.stats.endtime:
                     # Conduct future append (always unrestricted)
+                    Logger.info(f'sliding buffer endtime from {self.stats.endtime} to {other.stats.endtime}')
                     self._slide_buffer(other.stats.endtime, reference_type='endtime')
+                    Logger.info(f'updated endtime {self.stats.endtime}')
                     self.__add__(other, **self.add_kwargs)
                     # self.enforce_max_length(reference='endtime')
                 # If other starts later that self end + max_length - big gap
@@ -393,7 +398,7 @@ class MLTraceBuffer(MLTrace):
                 self.fold[nshift:] = 0
 
             # Update starttime (which propagates to update endtime)
-            self.stats.starttime -= dt
+            self.stats.starttime += dt
         return self
 
     def to_mltrace(self):

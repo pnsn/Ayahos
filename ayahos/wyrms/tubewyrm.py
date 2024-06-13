@@ -49,7 +49,9 @@ class TubeWyrm(Wyrm):
             wait_sec=0.0,
             max_pulse_size=1,
             meta_memory=3600,
-            report_period=None):
+            report_period=False,
+            max_output_size=1e10,
+            report_fields=['last','mean']):
         """
         Create a TubeWyrm unit_inputect
         :param wyrm_dict: collection of [Wyrm-type] unit_inputects that are executed in their provided order. 
@@ -64,7 +66,8 @@ class TubeWyrm(Wyrm):
         # Inherit from Wyrm
         super().__init__(max_pulse_size=max_pulse_size,
                          meta_memory=meta_memory,
-                         report_period=report_period)
+                         report_period=report_period,
+                         max_output_size=max_output_size)
         if isinstance(log_pulse_summary, bool):
             self.log_pulse_summary = log_pulse_summary
         # wyrm_dict compat. checks
@@ -99,7 +102,15 @@ class TubeWyrm(Wyrm):
         if len(self.wyrm_dict) > 0:
             self._alias_wyrm_dict_output()
 
+        if isinstance(report_fields, str):
+            report_fields = [report_fields]
+        elif isinstance(report_fields, list):
+            pass
+        else:
+            raise TypeError
 
+        if all(e_ in ['last','mean','std','min','max'] for e_ in report_fields):
+            self.report_fields = report_fields
 
     def update(self, new_dict):
         """
@@ -347,7 +358,7 @@ class TubeWyrm(Wyrm):
         for _n, _w in self.wyrm_dict.items():
             _r = _w.report
             _p = _w._pulse_rate
-            for _m in ['last','mean']:
+            for _m in self.report_fields:
                 line = list(_r.loc[_m].values)
                 line.append(_p)
                 line.append(len(_w._metadata))

@@ -50,7 +50,12 @@ class Wyrm(object):
     
     """
 
-    def __init__(self, max_pulse_size=10, meta_memory=3600, report_period=False, max_output_size=1e6):
+    def __init__(
+        self,
+        max_pulse_size=10,
+        meta_memory=3600,
+        report_period=False,
+        max_output_size=1e6):
         """Initialize a {class_name_camel} object
 
         :param max_pulse_size: maximum number of iterations to run for each call of :meth:`~ayahos.wyrms.wyrm.Wyrm.pulse`, defaults to 10
@@ -110,7 +115,7 @@ class Wyrm(object):
             self.max_output_size = 1e12
             Logger.critical(f'setting non-limited output size for {self.__class__.__name__} object to {self.max_output_size}')
         elif isinstance(max_output_size, (int,float)):
-            if 0 < max_output_size < 1e12:
+            if 0 < max_output_size <= 1e12:
                 self.max_output_size = max_output_size
         else:
             raise TypeError

@@ -2,8 +2,9 @@
 # Accessed 9 May 2024 under Creative Commons 1.0 Universal License
 
 # Local options
-examples
 diagrams/*.svg
+examples/live_example/logs/*
+examples/live_example/data/*
 
 # Temporary Earthworm Files
 *.state

@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 import seisbench.models as sbm
 from obspy import Trace, Stream, UTCDateTime
-from ewflow.data.mlstream import MLStream, MLStreamStats
-from ewflow.data.mltrace import MLTrace
+from PULSE.data.mlstream import MLStream, MLStreamStats
+from PULSE.data.mltrace import MLTrace
 
 ###############################################################################
 # MLWindowStats Class Definition ##########################################

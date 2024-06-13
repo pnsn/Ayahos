@@ -10,10 +10,10 @@
     time picks for seismic body waves.
 """
 import logging
-from ewflow.util.stats import estimate_moments, fit_normal_pdf_curve, estimate_quantiles
+from PULSE.util.stats import estimate_moments, fit_normal_pdf_curve, estimate_quantiles
 import numpy as np
 from obspy import Trace, UTCDateTime
-from ewflow.data.mltrace import MLTrace
+from PULSE.data.mltrace import MLTrace
 from scipy.cluster.vq import *
 
 Logger = logging.getLogger(__name__)

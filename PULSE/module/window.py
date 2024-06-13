@@ -14,10 +14,10 @@ Classes
 import logging, sys
 import seisbench.models as sbm
 from collections import deque
-from ewflow.data.mltrace import MLTrace
-from ewflow.data.mlstream import MLStream
-from ewflow.data.mlwindow import MLWindow
-from ewflow.module._base import _BaseMod
+from PULSE.data.mltrace import MLTrace
+from PULSE.data.mlstream import MLStream
+from PULSE.data.mlwindow import MLWindow
+from PULSE.module._base import _BaseMod
 
 Logger = logging.getLogger(__name__)
 

@@ -40,14 +40,14 @@ import logging
 import numpy as np
 import pandas as pd
 from collections import deque
-from ewflow.module._base import _BaseMod
+from PULSE.module._base import _BaseMod
 
 
 Logger = logging.getLogger(__name__)
 
 class SequenceMod(_BaseMod):
     """
-    Wyrm child-class facilitating chained execution of pulse(x) class methods
+    Unit module class facilitating chained execution of pulse(x) class methods
     for a sequence module unit_inputects, with each module.pulse(x) taking the prior
     member's pulse(x) output as its input.
 
@@ -70,16 +70,16 @@ class SequenceMod(_BaseMod):
             report_fields=['last','mean']):
         """
         Create a SequenceMod unit_inputect
-        :param mod_dict: collection of [Wyrm-type] unit_inputects that are executed in their provided order. 
+        :param mod_dict: collection of modules that are executed in their provided order. 
                     dict-type entries allow for naming of component modules for user-friendly assessment. list, deque, and Wyrm-type
                     all other input types use a 0-indexed key.
         :type mod_dict: dict, list, or tuple
-        :param wait_sec: seconds to wait between execution of each Wyrm in mod_dict, default is 0.0
+        :param wait_sec: seconds to wait between execution of each *Mod in mod_dict, default is 0.0
         :type wait_sec: float
         :param max_pulse_size: number of times to run the sequence of pulses, default is 1
         :type max_pulse_size: int
         """
-        # Inherit from Wyrm
+        # Inherit from _BaseMod
         super().__init__(max_pulse_size=max_pulse_size,
                          meta_memory=meta_memory,
                          report_period=report_period,
@@ -87,23 +87,23 @@ class SequenceMod(_BaseMod):
         if isinstance(log_pulse_summary, bool):
             self.log_pulse_summary = log_pulse_summary
         # mod_dict compat. checks
-        if isinstance(mod_dict, Wyrm):
+        if isinstance(mod_dict, _BaseMod):
             self.mod_dict = {0: mod_dict}
         elif isinstance(mod_dict, dict):
-            if all(isinstance(_w, Wyrm) for _w in mod_dict.values()):
+            if all(isinstance(_w, _BaseMod) for _w in mod_dict.values()):
                 self.mod_dict = mod_dict
             else:
-                raise TypeError('All elements in mod_dict must be type Wyrm')
+                raise TypeError('All elements in mod_dict must be type _BaseMod')
             
         # Handle case where a list or deque are provided
         elif isinstance(mod_dict, (list, deque)):
-            if all(isinstance(_w, Wyrm) for _w in mod_dict):
+            if all(isinstance(_w, _BaseMod) for _w in mod_dict):
                 # Default keys are the sequence index of a given module
                 self.mod_dict = {_k: _v for _k, _v in enumerate(mod_dict)}
             else:
-                raise TypeError('All elements in mod_dict must be type Wyrm')
+                raise TypeError('All elements in mod_dict must be type _BaseMod')
         else:
-            raise TypeError('mod_dict must be a single Wyrm-type unit_input or a list or dictionary thereof')
+            raise TypeError('mod_dict must be a single _BaseMod-type unit_input or a list or dictionary thereof')
         
         # wait_sec compat. checks
         if not isinstance(wait_sec, (int, float)):
@@ -114,7 +114,7 @@ class SequenceMod(_BaseMod):
             self.wait_sec = wait_sec
         # Create a list representation of keys
         self.names = list(mod_dict.keys())
-        # Alias the output of the last module in mod_dict to self.output (inherited from Wyrm)
+        # Alias the output of the last module in mod_dict to self.output (inherited from _BaseMod)
         if len(self.mod_dict) > 0:
             self._alias_mod_dict_output()
 
@@ -137,7 +137,7 @@ class SequenceMod(_BaseMod):
         This will update existing keyed entries and append new
         at the end of self.mod_dict (same behavior as dict.update)
 
-        :param new_dict: dictionary of Wyrm-like unit_input
+        :param new_dict: dictionary of {name:*Mod} pairs to  
         :type new_dict: dict
         :updates: 
             - **self.mod_dict** - updates mod_dict as specified
@@ -148,8 +148,8 @@ class SequenceMod(_BaseMod):
         # Safety catches identical to those in __init__
         if not isinstance(new_dict, dict):
             raise TypeError('new_dict must be type dict')
-        elif not all(isinstance(_w, Wyrm) for _w in new_dict.values()):
-            raise TypeError('new_dict can only have values of type Wyrm')
+        elif not all(isinstance(_m, _BaseMod) for _m in new_dict.values()):
+            raise TypeError('new_dict can only have values of type ewflow.module._base._BaseMod')
         else:
             pass
         # Run updates on mod_dict

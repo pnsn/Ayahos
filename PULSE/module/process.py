@@ -1,5 +1,5 @@
 """
-:module: camper.module.unit.process
+:module: ewflow.module.unit.process
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
@@ -12,13 +12,13 @@
 
 Classes
 -------
-:class:`~camper.module.process.InPlaceMod`
-:class:`~camper.module.process.OutputMod`
+:class:`~ewflow.module.process.InPlaceMod`
+:class:`~ewflow.module.process.OutputMod`
 """
 
 import logging, sys
 from collections import deque
-from ewflow.module._base import _BaseMod
+from PULSE.module._base import _BaseMod
 
 Logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ class InPlaceMod(_BaseMod):
 
         :: INPUTS ::
         :param pclass: full import path and name of class this InPlaceMod will operate on
-        :type pclass: str, e.g., "camper.data.stream.Window"
+        :type pclass: str, e.g., "ewflow.data.stream.Window"
         :param pmethod: name of class method to apply to unit_input objects
         :type pmethod: str, e.g., "filter"
         :param pkwargs: key-word arguments (and positional arguments stated as key-word arguments) for pclass.pmethod(**pkwargs)
@@ -66,7 +66,7 @@ class InPlaceMod(_BaseMod):
 
         # pclass compatability checks
         self.pclass = self.import_class(pclass)
-
+        breakpoint()
         # pmethod compatability checks
         if pmethod not in [func for func in dir(self.pclass) if callable(getattr(self.pclass, func))]:
             raise ValueError(f'pmethod "{pmethod}" is not defined in {self.pclass} properties or methods')
@@ -80,6 +80,9 @@ class InPlaceMod(_BaseMod):
         # initialize output queue
         self.queue = deque()
 
+    # def import_class(self, class_path_str):
+    #     self.pclass = super().import_class(class_path_str)
+        
     # Inherited from _BaseMod
     # def _continue_iteration()
     # def _capture_unit_out()
@@ -179,7 +182,7 @@ class OutputMod(InPlaceMod):
     def _unit_process(self, unit_input):
         """
         POLYMORPHIC
-        Last update with :class:`~camper.module.process.OutputMod`
+        Last update with :class:`~ewflow.module.process.OutputMod`
 
         Run the specified class method (and kwargs) on the unit input
         and return the output of that class method

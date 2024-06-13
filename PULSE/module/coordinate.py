@@ -12,16 +12,16 @@ Classes
 :class:`~ewflow.ewflow.EWFlow`
 """
 import threading, logging, time, sys, configparser, inspect
-from ewflow.util.pyew import is_wave_msg
-from ewflow.module.bundle import SequenceMod
-from ewflow.module.transact import EWFlowModule
+from PULSE.util.pyew import is_wave_msg
+from PULSE.module.bundle import SequenceMod
+from PULSE.module.transact import EWFlowModule
 
 Logger = logging.getLogger(__name__)
 
 ###################################################################################
 # EWFLOW CLASS DEFINITION ########################################################
 ###################################################################################
-class EWFlow(SequenceMod):
+class CoordinateMod(SequenceMod):
     """
     The EWFlow class comprises an extended :class:`~PyEW.EWModule` object
     (:class:`~ewflow.util.ewflowewmodule.EWFlowule) and a sequence of ewflow modules
@@ -80,7 +80,7 @@ class EWFlow(SequenceMod):
 
         # Ensure minimum required fields are present for module initialization
         demerits = 0
-        for _rs in ['Earthworm','EWFlow','Build']:
+        for _rs in ['Earthworm','EWFlow','Sequence']:
             if _rs not in self.cfg._sections.keys():
                 Logger.critical(f'section {_rs} missing from config file! Will not initialize EWFlow')
                 demerits += 1
@@ -105,12 +105,12 @@ class EWFlow(SequenceMod):
             sys.exit(1)
         Logger.info('EWFlowModule initialized')
 
-        # Build submodules
+        # Sequence submodules
         mod_dict = {}
         demerits = 0
 
         # Iterate across submodule names and section names
-        for submod_name, submod_section in self.cfg['Build'].items():
+        for submod_name, submod_section in self.cfg['Sequence'].items():
             # Log if there are missing submodules
             if submod_section not in self.cfg._sections.keys():
                 Logger.critical(f'submodule {submod_section} not defined in config_file. Will not compile!')

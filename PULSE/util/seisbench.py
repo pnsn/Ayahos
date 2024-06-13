@@ -1,5 +1,5 @@
 import seisbench.models as sbm
-from ewflow.util.input import bounded_intlike
+from PULSE.util.input import bounded_intlike
 
 
 def pretrained_dict():

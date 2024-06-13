@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 from obspy import Trace
-from ewflow.data.mltrace import MLTrace
+from PULSE.data.mltrace import MLTrace
 
 Logger = logging.getLogger(__name__)
 
@@ -34,13 +34,15 @@ class MLTraceBuff(MLTrace):
         # Initialize as an MLTrace object
         super().__init__()
         # Compatability checks for max_length
-        self.max_length = bounded_floatlike(
-            max_length,
-            name='max_length',
-            minimum=0,
-            maximum=None,
-            inclusive=False
-        )
+        if isinstance(max_length, (int, float)):
+            if max_length > 0:
+                if max_length > 1200:
+                    Logger.warning('MLTraceBuff max_length > 1200 sec may take a lot of memory')
+                self.max_length = float(max_length)
+            else:
+                raise ValueError('max_length must be positive')
+        else:
+            raise TypeError('max_length must be float-like')
         # Blinding compatability
         if blinding is None or not blinding:
             self.blinding = False

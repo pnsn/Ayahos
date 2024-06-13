@@ -410,6 +410,7 @@ class _BaseMod(object):
         try:
             exec(f'from {path} import {clas}')
             obj = eval(f'{clas}')
+            return obj
         except ImportError:
             Logger.critical(f'failed to import {class_path_str}')
             sys.exit(1)

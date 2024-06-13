@@ -1,8 +1,8 @@
-#  EWFlow
-## EarthWormFlow: Connecting Python ML Seismic Analysis Tools to Earthworm  
+#  PULSED
+## Processing Utility for Live-streaming Seismic Event Data
 
 ## About  
-EWFlow is an open-source python project for connecting machine learning (ML) seismic analysis tools into the [`Earthworm`](http://www.earthwormcentral.org) automated seismic processing system. It builds on popular Python APIs used in the seismological research community for routine data processing ([`ObsPy`](https://docs.obspy.org) and [`NumPy`](https://numpy.org)) and ML enhanced analysis tasks ([`SeisBench`](https://seisbench.readthedocs.io/en/stable/) and [`PyTorch`](https://pytorch.org)). Through this project we seek to provide a familiar, modular python API that can be adapted to meet Earthworm installation operators' needs and enable rapid integration of emerging ML tools from the seismological research community into seismic networks' existing automated operations.  
+PULSED is an open-source python project for connecting machine learning (ML) seismic analysis tools into the [`Earthworm`](http://www.earthwormcentral.org) automated seismic processing system. It builds on popular Python APIs used in the seismological research community for routine data processing ([`ObsPy`](https://docs.obspy.org) and [`NumPy`](https://numpy.org)) and ML enhanced analysis tasks ([`SeisBench`](https://seisbench.readthedocs.io/en/stable/) and [`PyTorch`](https://pytorch.org)). Through this project we seek to provide a familiar, modular python API that can be adapted to meet Earthworm installation operators' needs and enable rapid integration of emerging ML tools from the seismological research community into seismic networks' existing automated operations.  
 
 This project relies upon the open-source [`PyEarthworm`](https://github.com/Boritech-Solutions/PyEarthworm) project for brokering in-memory data transfers between Earthworm and Python.  
 
@@ -15,7 +15,11 @@ This project is distributed under a GNU Affero General Public License (AGPL-3.0)
 
 # Getting Started
 
-EWFlow consists of a collection of single-task-oriented module classes `ewflow.module`, adapted obspy `Trace` and `Stream` classes for handling data, and the module construction and operation class `EWFlow`.  
+PULSED consists of a collection of single-task-oriented module classes housed in `PULSED.module`,
+modified ObsPy data classes housed in `PULSED.data`, and pre-composed sequences of modules housed
+in `PULSED.sequences`. Supporting python methods are housed in `PULSED.util`
+
+ Supporting methods
 
 ## For new users 
 We recommend installing `EWFlow` and working through the **Pure-Python Tutorials** first to get familiar with the python-side aspects of the API.  

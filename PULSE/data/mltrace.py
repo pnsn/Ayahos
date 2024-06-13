@@ -20,8 +20,8 @@ from decorator import decorator
 from obspy import Stream, read, UTCDateTime
 from obspy.core.trace import Trace, Stats
 from obspy.core.util.misc import flat_not_masked_contiguous
-from ewflow.util.seisbench import pretrained_dict
-from ewflow.util.stats import estimate_quantiles, estimate_moments
+from PULSE.util.seisbench import pretrained_dict
+from PULSE.util.stats import estimate_quantiles, estimate_moments
 
 Logger = logging.getLogger(__name__)
 

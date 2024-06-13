@@ -15,11 +15,11 @@ Classes
 """
 import logging, sys
 from numpy import isfinite
-from ewflow.module._base import _BaseMod
-from ewflow.data.mltrace import MLTrace
-from ewflow.data.mltracebuff import MLTraceBuff
-from ewflow.data.mlstream import MLStream
-from ewflow.util.pyew import is_wave_msg, wave2mltrace
+from PULSE.module._base import _BaseMod
+from PULSE.data.mltrace import MLTrace
+from PULSE.data.mltracebuff import MLTraceBuff
+from PULSE.data.mlstream import MLStream
+from PULSE.util.pyew import is_wave_msg, wave2mltrace
 
 Logger = logging.getLogger(__name__)
 

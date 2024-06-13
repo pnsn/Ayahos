@@ -129,7 +129,6 @@ class EWFlow(SequenceMod):
                 except ImportError:
                     Logger.critical(f'failed to import {submod_class}')
                     sys.exit(1)
-
                 submod_object = eval(clas)(**submod_init_kwargs)
                 # Attach object to mod_dict
                 mod_dict.update({submod_name: submod_object})

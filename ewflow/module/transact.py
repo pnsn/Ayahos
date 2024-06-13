@@ -22,7 +22,6 @@ from ewflow.util.pyew import wave2mltrace, is_empty_message, is_wave_msg
 
 Logger = logging.getLogger(__name__)
 
-# @add_class_name_to_docstring
 class TransactMod(_BaseMod):   
     """
     Class that facilitates transactions between memory rings in the Earthworm
@@ -68,7 +67,6 @@ class TransactMod(_BaseMod):
         :type max_pulse_size: int, optional
         """        
         super().__init__(
-            self,
             max_pulse_size=max_pulse_size,
             meta_memory=meta_memory,
             report_period=report_period,

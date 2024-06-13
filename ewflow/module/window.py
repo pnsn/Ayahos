@@ -1,5 +1,5 @@
 """
-:module: camper.module.window
+:module: ewflow.module.window
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
@@ -9,13 +9,14 @@
 
 Classes
 -------
-:class:`~camper.module.window.WindowMod`
+:class:`~ewflow.module.window.WindowMod`
 """
 import logging, sys
 import seisbench.models as sbm
 from collections import deque
-from ewflow.data.mltrace import Trace
-from ewflow.data.mlstream import Stream, Window
+from ewflow.data.mltrace import MLTrace
+from ewflow.data.mlstream import MLStream
+from ewflow.data.mlwindow import MLWindow
 from ewflow.module._base import _BaseMod
 
 Logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ class WindowMod(_BaseMod):
     The WindowMod class takes windowing information from an input
     seisbench.models.WaveformModel object and user-defined component
     mapping and data completeness metrics and provides a pulse method
-    that iterates across entries in an input Stream object and
+    that iterates across entries in an input MLStream object and
     generates Window copies of sampled data that pass data completeness
     requirements. 
     """
@@ -46,9 +47,9 @@ class WindowMod(_BaseMod):
         report_period=False,
         max_output_size=1e9,
         **options):
-        """Initialize a WindowMod object that samples a Mostreamream of TraceBuffer
+        """Initialize a WindowMod object that samples a Momlstreamream of TraceBuffer
         objects and generates Window copies of windowed data if a reference
-        component for a given instrument in the Mostreamream is present and has
+        component for a given instrument in the Momlstreamream is present and has
         sufficient data to meet windowing requirements
 
         :param component_aliases: aliases for standard component names used in SeisBench, defaults to {"Z": "Z3", "N": "N1", "E": "E2"}
@@ -67,7 +68,7 @@ class WindowMod(_BaseMod):
         :type reference_overlap: int, optional
         :param fnfilter: fnmatch filter string to use for subsetting channel inputs, default is None
         :type fnfilter: None or str
-            also see :meth:`~camper.data.stream.Stream.fnselect`
+            also see :meth:`~ewflow.data.mlstream.MLStream.fnselect`
         :param pulse_type: style of running pulse, defaults to 'network'
             Supported values:
                 'network' - attempt to create one window from each instrument per pulse
@@ -203,13 +204,13 @@ class WindowMod(_BaseMod):
     def _should_this_iteration_run(self, input, input_measure, iter_number):
         """
         POLYMORPHIC
-        Last updated with :class:`~camper.module.window.WindowMod`
+        Last updated with :class:`~ewflow.module.window.WindowMod`
 
         unconditional pass - early stopping is handled by
-        :meth:`~camper.module.window.WindowMod._should_next_iteration_run`
+        :meth:`~ewflow.module.window.WindowMod._should_next_iteration_run`
 
         :param input: standard input
-        :type input: camper.data.stream.Stream
+        :type input: ewflow.data.mlstream.MLStream
         :param iter_number: iteration number, unused
         :type iter_number: int
         :return status: should iterations continue in pulse, always True
@@ -224,15 +225,15 @@ class WindowMod(_BaseMod):
         obj is a view of input
 
         :param input: standard input
-        :type input: camper.data.stream.Stream
+        :type input: ewflow.data.mlstream.MLStream
         :return: _description_
         :rtype: _type_
         """
-        if isinstance(input, Stream):
+        if isinstance(input, MLStream):
             unit_input = input
             return unit_input
         else:
-            Logger.error('TypeError - input is not type Stream')
+            Logger.error('TypeError - input is not type MLStream')
             sys.exit(1)
     
     def _unit_process(self, unit_input):
@@ -244,8 +245,8 @@ class WindowMod(_BaseMod):
 
         Newly generated windows are appended to WindowMod.output
 
-        :param unit_input: view of a Stream containing waveforms
-        :type unit_input: camper.data.stream.Stream
+        :param unit_input: view of a MLStream containing waveforms
+        :type unit_input: ewflow.data.mlstream.MLStream
         """        
         unit_output = deque()
         # Update window tracker
@@ -266,11 +267,11 @@ class WindowMod(_BaseMod):
                             next_window_ti = value['ti']
                             next_window_tf = next_window_ti + self.window_sec
                             # Subset to all traces for this instrument
-                            _stream = unit_input.fnselect(fnstring)
+                            _mlstream = unit_input.fnselect(fnstring)
                             # Create copies of trimmed views of Trace(Buffers)
                             traces = []
                             # Iterate over tracebuffers
-                            for _mltb in _stream:
+                            for _mltb in _mlstream:
                                 # Create copies
                                 mlt = _mltb.view_copy(
                                     starttime = next_window_ti,
@@ -283,7 +284,7 @@ class WindowMod(_BaseMod):
                                 # Append mlt to traces
                                 traces.append(mlt)
                             # Populate window traces and metadata
-                            window = Window(
+                            window = MLWindow(
                                 traces = traces,
                                 header = {'reference_starttime': next_window_ti,
                                           'reference_sampling_rate': self.ref['sampling_rate'],
@@ -330,35 +331,35 @@ class WindowMod(_BaseMod):
             status = False
         return status
 
-    def __update_window_tracker(self, stream):
+    def __update_window_tracker(self, mlstream):
         """
         PRIVATE METHOD
 
-        Scan across Traces in an input Dictionary Stream 
+        Scan across Traces in an input MLStream 
         with a component code matching the self.ref['component']
         attribute of this WindowMod and populate new branches in
         the self.window_index attribute if new site.inst
         (Network.Station.Location.BandInstrument{ref}) Traces are found
 
         :: INPUT ::
-        :param stream: Stream object containing :class:`~camper.data.trace.Trace`-type objects
-        :type stream: camper.data.stream.Stream
+        :param mlstream: MLStream object containing :class:`~ewflow.data.trace.Trace`-type objects
+        :type mlstream: ewflow.data.mlstream.MLStream
         """
         # Subset using fnfilter
-        fstream = stream.fnselect(self.fnfilter)
+        fmlstream = mlstream.fnselect(self.fnfilter)
         # Iterate across subset
-        for trace in fstream.traces.values():
-            if not isinstance(trace, Trace):
-                raise TypeError('this build of WindowMod only works with camper.data.trace.Trace objects')
+        for mltrace in fmlstream.traces.values():
+            if not isinstance(mltrace, MLTrace):
+                raise TypeError('this build of WindowMod only works with ewflow.data.mltrace.Trace objects')
             # Get site, instrument, mod, and component codes from Trace
-            site = trace.site
-            inst = trace.inst
-            comp = trace.comp
-            mod = trace.mod
+            site = mltrace.site
+            inst = mltrace.inst
+            comp = mltrace.comp
+            mod = mltrace.mod
             ### WINDOW TRACKER NEW BRANCH SECTION ###
             # First, check if this is a reference component
             if comp not in self.ref['component']:
-                # If not a match, continue to next trace
+                # If not a match, continue to next mltrace
                 continue
             # Otherwise proceed
             else:
@@ -370,11 +371,11 @@ class WindowMod(_BaseMod):
                 self.window_tracker.update({site: 
                                                 {inst: 
                                                     {mod: 
-                                                        {'ti': trace.stats.starttime,
-                                                         'ref': trace.id,
+                                                        {'ti': mltrace.stats.starttime,
+                                                         'ref': mltrace.id,
                                                          'ready': False}},
-                                                't0': trace.stats.starttime}})
-                Logger.info(f'Added buffer tree for {site} - triggered by {trace.id}')
+                                                't0': mltrace.stats.starttime}})
+                Logger.info(f'Added buffer tree for {site} - triggered by {mltrace.id}')
             # If site is in window_tracker
             else:
                 # If inst is not in this site subdictionary
@@ -382,16 +383,16 @@ class WindowMod(_BaseMod):
                     self.window_tracker[site].update({inst:
                                                         {mod:
                                                             {'ti': self.window_tracker[site]['t0'],
-                                                             'ref': trace.id,
+                                                             'ref': mltrace.id,
                                                              'ready': False}}})
-                    Logger.info('Added buffer branch {inst} to {site} tree - triggered by {trace.id}')
+                    Logger.info('Added buffer branch {inst} to {site} tree - triggered by {mltrace.id}')
                 # If inst is in this site subdictionary
                 else:
                     # If mod is not in this inst sub-subdictionary
                     if mod not in self.window_tracker[site][inst].keys():
                         self.window_tracker[site][inst].update({mod:
                                                                     {'ti': self.window_tracker[site]['t0'],
-                                                                     'ref': trace.id,
+                                                                     'ref': mltrace.id,
                                                                      'ready': False}})
                         
                         
@@ -399,15 +400,15 @@ class WindowMod(_BaseMod):
             # Get window edge times
             next_window_ti = self.window_tracker[site][inst][mod]['ti']
             next_window_tf = next_window_ti + self.window_sec
-            # If the trace has reached or exceeded the endpoint of the next window
-            if next_window_tf <= trace.stats.endtime:
+            # If the mltrace has reached or exceeded the endpoint of the next window
+            if next_window_tf <= mltrace.stats.endtime:
                 # Get valid fraction for proposed window in Trace
-                fv = trace.get_fvalid_subset(starttime=next_window_ti, endtime=next_window_tf)
+                fv = mltrace.get_fvalid_subset(starttime=next_window_ti, endtime=next_window_tf)
                 # If threshold passes
                 if fv >= self.ref['threshold']:
                     # set (window) ready flag to True
                     self.window_tracker[site][inst][mod].update({'ready': True})
-                    # And continue to next trace
+                    # And continue to next mltrace
                     continue
                 # If threshold fails
                 else:
@@ -416,17 +417,17 @@ class WindowMod(_BaseMod):
                         self.window_tracker[site][inst][mod].update({'ready': False})
 
                     # If data start after the proposed window, increment window index to catch up
-                    if next_window_ti < trace.stats.starttime:
+                    if next_window_ti < mltrace.stats.starttime:
                         # Determine the number of advances that should be applied to catch up
-                        nadv = 1 + (trace.stats.starttime - next_window_ti)//self.advance_sec
+                        nadv = 1 + (mltrace.stats.starttime - next_window_ti)//self.advance_sec
                         # Apply advance
                         self.window_tracker[site][inst][mod]['ti'] += nadv*self.advance_sec
                         next_window_ti += nadv*self.advance_sec
                         next_window_tf += nadv*self.advance_sec
                         # If the new window ends inside the current data
-                        if trace.stats.endtime >= next_window_tf:
+                        if mltrace.stats.endtime >= next_window_tf:
                             # Consider re-approving the window for copying + trimming
-                            fv = trace.get_fvalid_subset(starttime=next_window_ti,
+                            fv = mltrace.get_fvalid_subset(starttime=next_window_ti,
                                                         endtime=next_window_tf)
                             # If window passes threshold, re-approve
                             if fv >= self.ref['threshold']:

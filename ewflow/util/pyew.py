@@ -11,7 +11,7 @@
 """
 import numpy as np
 from obspy import UTCDateTime, Trace
-from ayahos.core.mltrace import MLTrace
+from ewflow.data.mltrace import MLTrace
 
 
 def is_empty_message(msg):

@@ -89,12 +89,9 @@ class EWFlow(SequenceMod):
         else:
             Logger.debug('config file has all required sections')
 
-        # Get connections
-        connections = self.parse_config_section('Connections')
-
         # Initialize EWFlowPyEWModule Object
         self.module = EWFlowModule(
-            connections = connections,
+            connections = eval(self.cfg.get('EWFlow','connections')),
             module_id = self.cfg.getint('Earthworm', 'MOD_ID'),
             installation_id = self.cfg.getint('Earthworm', 'INST_ID'),
             heartbeat_period = self.cfg.getfloat('Earthworm', 'HB'),
@@ -129,12 +126,11 @@ class EWFlow(SequenceMod):
                 clas = parts[-1]
                 try:
                     exec(f'from {path} import {clas}')
-                    obj = eval(f'{clas}')
                 except ImportError:
                     Logger.critical(f'failed to import {submod_class}')
                     sys.exit(1)
 
-                submod_object = eval(submod_class)(**submod_init_kwargs)
+                submod_object = eval(clas)(**submod_init_kwargs)
                 # Attach object to mod_dict
                 mod_dict.update({submod_name: submod_object})
                 Logger.info(f'{submod_name} initialized')

@@ -18,7 +18,7 @@ import logging
 from collections import deque
 from PyEW import EWModule
 from ewflow.module._base import _BaseMod
-from ewflow.util.pyew import EWModule, wave2mltrace, is_empty_message, is_wave_msg
+from ewflow.util.pyew import wave2mltrace, is_empty_message, is_wave_msg
 
 Logger = logging.getLogger(__name__)
 

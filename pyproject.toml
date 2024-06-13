@@ -3,7 +3,7 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ayahos"
+name = "ewflow"
 version = "0.0.0"
 authors = [{name="Nathan T. Stevens", email="ntsteven@uw.edu"}]
 requires-python = ">=3.9"
@@ -24,8 +24,8 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["ayahos*"]
+include = ["ewflow*"]
 
 [project.urls]
-GitHub = "https://github.com/pnsn/Ayahos"
+GitHub = "https://github.com/pnsn/EWFlow"
 PNSN = "https://pnsn.org"

@@ -2,7 +2,7 @@
 import logging, argparse, os, warnings
 from logging.handlers import TimedRotatingFileHandler
 # Get the Module Constructor Class 
-from ewflow import EWFlow
+from ewflow.ewflow import EWFlow
 
 # Suppress warnings - just stick to logging
 with warnings.catch_warnings():

@@ -2,8 +2,7 @@
 # Accessed 9 May 2024 under Creative Commons 1.0 Universal License
 
 # Local options
-examples/Ayahos_Pick/pnsn_params
-examples/ayahos_memphis
+examples
 diagrams/*.svg
 
 # Temporary Earthworm Files

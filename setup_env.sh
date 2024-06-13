@@ -3,8 +3,8 @@
 # :email: ntsteven (at) uw.edu
 # :org: Pacific Northwest Seismic Network
 # :license: AGPL-3.0
-# :purpose: This script creates a conda environment and installs Ayahos and all its dependencies
-ENVNAME='Ayahos_Auto'
+# :purpose: This script creates a conda environment and installs EWFlow and all its dependencies
+ENVNAME='EWFlow'
 ACTIVATE="$CONDA_PREFIX/bin/activate"
 
 # Check if environment exists
@@ -27,6 +27,6 @@ fi
 
 # Install Ayahos and dependencies using pip backend
 if [[ "$CONDA_DEFAULT_ENV" == "$ENVNAME" ]]; then
-    echo "~~~~~~~ Installing Ayahos and dependencies from local copy ~~~~~~~"
+    echo "~~~~~~~ Installing EWFlow and dependencies from local copy ~~~~~~~"
     python -m pip install .
 fi

@@ -11,7 +11,7 @@
 import argparse, configparser, logging
 import numpy as np
 
-Logger = logging.getLogger('ayahos.util.earthworm.py')
+Logger = logging.getLogger(__name__)
 
 def read_config_file(conffile):
     config = configparser.ConfigParser()

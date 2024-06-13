@@ -1,16 +1,8 @@
-#  ʔayahos (Ayahos)
-## Connecting Python ML Seismic Analysis Tools to Earthworm  
-
-<a title="Depiction of the ʔayahos, Curtis Collection, Public Domain, via Wikimedia Commons" href="https://en.wikipedia.org/wiki/Ayahos">
-    <img width="448" alt="Ayahos3" src="https://upload.wikimedia.org/wikipedia/commons/4/41/Ayahos3.png">
-</a>  
-<a title="Pacific Northwest Seismic Network Logo" href="https://pnsn.org">
-    <img width="128" alt="PNSN_GitHub_Logo" src="https://avatars.githubusercontent.com/u/11384896?s=200&v=4">
-<a/>  
-<img width="50" alt="CC Public Domain Button" src="https://mirrors.creativecommons.org/presskit/buttons/88x31/svg/cc-zero.svg">
+#  EWFlow
+## EarthWormFlow: Connecting Python ML Seismic Analysis Tools to Earthworm  
 
 ## About  
-ʔayahos (Ayahos) is an open-source python project for connecting machine learning (ML) seismic analysis tools into the [`Earthworm`](http://www.earthwormcentral.org) automated seismic processing system. It builds on popular Python APIs used in the seismological research community for routine data processing ([`ObsPy`](https://docs.obspy.org) and [`NumPy`](https://numpy.org)) and ML enhanced analysis tasks ([`SeisBench`](https://seisbench.readthedocs.io/en/stable/) and [`PyTorch`](https://pytorch.org)). Through this project we seek to provide a familiar, modular python API that can be adapted to meet Earthworm installation operators' needs and enable rapid integration of emerging ML tools from the seismological research community into seismic networks' existing automated operations.  
+EWFlow is an open-source python project for connecting machine learning (ML) seismic analysis tools into the [`Earthworm`](http://www.earthwormcentral.org) automated seismic processing system. It builds on popular Python APIs used in the seismological research community for routine data processing ([`ObsPy`](https://docs.obspy.org) and [`NumPy`](https://numpy.org)) and ML enhanced analysis tasks ([`SeisBench`](https://seisbench.readthedocs.io/en/stable/) and [`PyTorch`](https://pytorch.org)). Through this project we seek to provide a familiar, modular python API that can be adapted to meet Earthworm installation operators' needs and enable rapid integration of emerging ML tools from the seismological research community into seismic networks' existing automated operations.  
 
 This project relies upon the open-source [`PyEarthworm`](https://github.com/Boritech-Solutions/PyEarthworm) project for brokering in-memory data transfers between Earthworm and Python.  
 
@@ -21,36 +13,20 @@ This project is distributed under a GNU Affero General Public License (AGPL-3.0)
     <img width="256" alt="AGPLv3 Logo" src="https://upload.wikimedia.org/wikipedia/commons/0/06/AGPLv3_Logo.svg">
 </a>  
 
-### Whats in a name?  
-**ʔayahos (Ayahos), for where we stand**  
-This project was developed in the Puget Sound, where oral traditions of its peoples associate earthquake activity to the supernatural spirit power, ʔayahos, who may take the form of a monsterous two headed serpent.
-* [PNSN Outreach: Serpent Spirit-power Stories along the Seattle Fault](https://pnsn.org/outreach/native-american-stories/serpent-spirit-power/native-american-serpent-spirit-power-stories)
-* [Ludiwin et al. (2005, SRL)](https://doi.org/10.1785/gssrl.76.4.426)
-
-**Wyrm, for shorthand**  
-The project was initially named Wyrm as its key dependencies `Earthworm` and `PyTorch` echo descriptions of Wyrms in European folklore: subterranean, fire-breathing serpents. This naming convention persists for building-block submodule classes (i.e., `ayahos.core.wyrms`) as a nod to uniqueness in these oral traditions - there are many Wyrms, but only one ʔayahos. 
-
-<a title="Richard Dybeck, Public domain, via Wikimedia Commons" href="https://en.wikipedia.org/wiki/Germanic_dragon  ">
-    <img width="128" alt="U 887, Skillsta" src="https://upload.wikimedia.org/wikipedia/commons/thumb/d/d1/U_887%2C_Skillsta.jpg/256px-U_887%2C_Skillsta.jpg">
-</a>  
-<img width="50" alt="CC Public Domain Button" src="https://mirrors.creativecommons.org/presskit/buttons/88x31/svg/cc-zero.svg">  
-
-
-
 # Getting Started
 
-Ayahos consists of a collection of single-task-oriented building-block classes `wyrms`, adapted obspy `Trace` and `Stream` classes for handling data, and pre-constructed `modules` based on examples from the [PyEarthworm Workshop](https://github.com/Fran89/PyEarthworm_Workshop).    
+EWFlow consists of a collection of single-task-oriented module classes `ewflow.module`, adapted obspy `Trace` and `Stream` classes for handling data, and the module construction and operation class `EWFlow`.  
 
 ## For new users 
-We recommend installing `Ayahos` and working through the **Pure-Python Tutorials** first to get familiar with the python-side aspects of the Ayahos API.  
+We recommend installing `EWFlow` and working through the **Pure-Python Tutorials** first to get familiar with the python-side aspects of the API.  
 Once you're comfortable with these parts of the project, proceed with installing `Earthworm`, a Test Suite dataset, and `PyEarthworm` and try out the **Earthworm-Integrated Tutorials**
 
 ### Installation Instructions  
 
-### Installing `Ayahos`
+### Installing `EWFlow`
 We recommend creating a `conda` environment with clean installs of `pip` and `git` for the current distribution:  
 ```
-conda create --name ayahos pip git
+conda create --name EWFlow pip git
 conda activate ayahos
 pip install git+https://github.com/pnsn/Ayahos.git@develop
 ``` 
@@ -102,13 +78,13 @@ pip install git+https://github.com/Boritech-Solutions/PyEarthworm
 
 ## Installation In A Nutshell (For Experienced Users)
 ```
-conda create --name Ayahos pip git
+conda create --name EWFlow pip git
 ```
 ```
-conda activate Ayahos
+conda activate EWFlow
 ```
 ```
-pip install git+https://github.com/pnsn/Ayahos@develop
+pip install git+https://github.com/pnsn/EWFlow@develop
 ```
 ```
 source </path/to/your/ew_env.bash>
@@ -118,7 +94,7 @@ pip install git+https://github.com/Boritech-Solutions/PyEarthworm
 ```
 
 ## Adding Visualization Tools for `class DictStream` (For Experienced Users)  
-Ayahos includes data visualization methods for the `DictStream` class that use elements of the [Pyrocko](https://pyrocko.org) project, namely `snuffler`. To add these tools to the environment described above, install the Pyrocko library following their instructions [here](https://pyrocko.org/docs/current/install/). These functionalities are not required for typical module operation with Ayahos, but users may find them handy.  
+EWFlow includes data visualization methods for the `DictStream` class that use elements of the [Pyrocko](https://pyrocko.org) project, namely `snuffler`. To add these tools to the environment described above, install the Pyrocko library following their instructions [here](https://pyrocko.org/docs/current/install/). These functionalities are not required for typical module operation with EWFlow, but users may find them handy.  
 
 ```
 conda install -c pyrocko pyrocko

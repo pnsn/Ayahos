@@ -86,7 +86,6 @@ class PulsedMod_EW(SequenceMod):
             for _k, _v in PULSED_init.items():
                 if _k in sequence_params.keys():
                     super_init_kwargs.update({_k: _v})
-            breakpoint()
             super().__init__(**super_init_kwargs)
         # Trigger safety catch that something is missing
         else:

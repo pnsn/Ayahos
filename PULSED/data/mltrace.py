@@ -1070,7 +1070,13 @@ class MLTrace(Trace):
         # Apply trace(segment) processing
         for tr in st:
             if isinstance(filterkw, dict):
-                tr = tr.filter(**filterkw)
+                if filterkw['type'] == 'bandpass':
+                    if tr.stats.sampling_rate/2 < filterkw['freqmax']:
+                        tr = tr.filter('highpass', freq=filterkw['freqmin'])
+                    else:
+                        tr = tr.filter(**filterkw)
+                else:
+                    tr = tr.filter(**filterkw)
             elif filterkw is not None:
                 raise TypeError('filterkw must be type dict or NoneType')
             if isinstance(detrendkw, dict):

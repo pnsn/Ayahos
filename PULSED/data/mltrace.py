@@ -1003,6 +1003,17 @@ class MLTrace(Trace):
         :rtype: ewflow.data.mltrace.MLTrace
 
         """
+        # Safety catch for all-0 or all-masked arrays
+        if np.all(self.data == 0):
+            return self
+        elif np.ma.is_masked(self.data):
+            if all(self.data.mask):
+                Logger.warning('encountered all masked array in normalize')
+                return self
+            else:
+                pass
+        else:
+            pass
         if norm_type.lower() in ['max','minmax','peak']:
             scalar = np.nanmax(np.abs(self.data))
             super().normalize(norm=scalar)
@@ -1092,6 +1103,8 @@ class MLTrace(Trace):
             elif resample_method is not None:
                 raise TypeError('resample_method must be type str or NoneType')
             if isinstance(taperkw, dict):
+                if tr.stats.npts * tr.stats.delta < taperkw['max_length']:
+                    taperkw.update({'max_length': tr.stats.npts * tr.stats.delta * 0.5})
                 tr = tr.taper(**taperkw)
             elif taperkw is not None:
                 raise TypeError('taperkw must be type dict or NoneType')

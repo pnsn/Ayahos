@@ -9,7 +9,7 @@
   nRing               4
   Ring   WAVE_RING   1024
 #  Ring    SCN_RING   500
-  Ring   PICK_RING   128
+  Ring   PICK_RING   1024
 #  Ring   HYPO_RING   128
   Ring   TEST_RING   128
   Ring STATUS_RING   128
@@ -56,54 +56,26 @@
 #    To comment out a line, preceed the line by #.
 #
 #
-  Process          "copystatus WAVE_RING STATUS_RING"
-  Class/Priority    OTHER 0
+ Process          "copystatus WAVE_RING STATUS_RING"
+ Class/Priority    OTHER 0
 #
-#  Process          "copystatus SCN_RING STATUS_RING"
-#  Class/Priority    OTHER 0
+ Process          "copystatus PICK_RING STATUS_RING"
+ Class/Priority    OTHER 0
 #
-  Process          "copystatus PICK_RING STATUS_RING"
-  Class/Priority    OTHER 0
+ Process          "copystatus TEST_RING STATUS_RING"
+ Class/Priority    OTHER 0
 #
-#  Process          "copystatus HYPO_RING STATUS_RING"
-#  Class/Priority    OTHER 0
-#
-  Process          "copystatus TEST_RING STATUS_RING"
-  Class/Priority    OTHER 0
-
  Process          "statmgr statmgr.d"
  Class/Priority    OTHER 0
 #
  Process          "slink2ew slink2ew.d"
  Class/Priority    OTHER 0
-
-# Process          "wave_serverV wave_serverV.d"
-# Class/Priority    OTHER 0
-
+#
  Process          "pick_ew pick_ew.d"
  Class/Priority    OTHER 0
+#
+ Process          "ew2file ew2file_pick_ew.d"
+ Class/Priority    OTHER 0
 
-# Process          "binder_ew binder_ew.d"
-# Class/Priority    OTHER 0
 
-# Process          "eqproc eqproc.d"
-# Class/Priority    OTHER 0
-
-# Process          "scn2scnl scn2scnl.d"
-# Class/Priority    OTHER 0
-
-# Process          "tankplayer tankplayer.d"
-# Class/Priority    OTHER 0
-
-# Process          "ew2file ew2file.d"
-# Class/Priority    OTHER 0
-
-# Process          "carlstatrig carlstatrig.d"
-# Class/Priority    OTHER 0
-
-# Process          "carlsubtrig carlsubtrig_nm.d"
-# Class/Priority    OTHER 0
-
-# Process	  "localmag localmag.d"
-# Class/Priority    OTHER 0
 

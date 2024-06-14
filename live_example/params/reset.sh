@@ -1,4 +1,4 @@
 #!/bin/bash/
-cd ../../../
+cd ../../
 python -m pip install .
-cd examples/live_example/params
+cd live_example/params

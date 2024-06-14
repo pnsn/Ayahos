@@ -21,7 +21,7 @@ Logger = logging.getLogger(__name__)
 ###################################################################################
 # PULSED CLASS DEFINITION ########################################################
 ###################################################################################
-class PULSED_EW(SequenceMod):
+class PulsedMod_EW(SequenceMod):
     """
     The PULSED_EW class comprises an extended :class:`~PyEW.EWModule` object
     (:class:`~PULSED.module.ew_transact.PyEWMod`) and a sequence of PULSED modules

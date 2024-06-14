@@ -98,7 +98,7 @@ class TransactMod(_BaseMod):
             else:
                 self.msg_type = 19
 
-        Logger.info('INIT TransactMod: "{0}" for type {1}'.format(self.pulse_method, self.msg_type))
+        self.Logger.info('INIT TransactMod: "{0}" for type {1}'.format(self.pulse_method, self.msg_type))
 
 
 
@@ -224,13 +224,13 @@ class TransactMod(_BaseMod):
             if 'get' in self.pulse_method:
                 status = False
             else:
-                Logger.error("We shouldn't have gotten here (empty message with a 'put' method)")
+                self.Logger.error("We shouldn't have gotten here (empty message with a 'put' method)")
                 status = False
         else:
             if 'get' in self.pulse_method:
                 status = True
             else:
-                Logger.error("We shouldn't have gotten here (empty message with a 'put' method)")
+                self.Logger.error("We shouldn't have gotten here (empty message with a 'put' method)")
                 status = False
         return status
     
@@ -309,7 +309,7 @@ class PyEWMod(EWModule):
         # Make connections
         for _name, _id in connections.items():
             self.add_ring(_id, _name.upper())
-            Logger.info(f'Attached to ring {_id}, index {len(self.connections)}, alias: {_name}')
+            self.Logger.info(f'Attached to ring {_id}, index {len(self.connections)}, alias: {_name}')
 
     def __repr__(self):
         rstr = 'EWFlow<->Earthworm Module\n'
@@ -334,8 +334,8 @@ class PyEWMod(EWModule):
         :type conn_name: _type_
         """        
         if conn_name in self.connections.keys():
-            Logger.warning(f'connection already exists under {conn_name} to ring_id {self.connections[conn_name]}')
-            Logger.warning(f'Connection renaming can be done using EWFlowule.update_conn_name')
+            self.Logger.warning(f'connection already exists under {conn_name} to ring_id {self.connections[conn_name]}')
+            self.Logger.warning(f'Connection renaming can be done using EWFlowule.update_conn_name')
         else:
             super().add_ring(ring_id)
             self.connections.update({conn_name: ring_id})
@@ -350,9 +350,9 @@ class PyEWMod(EWModule):
         :type newname: str
         """
         if newname in self.connections.keys():
-            Logger.error('newname already in connections names. Cannot apply update')
+            self.Logger.error('newname already in connections names. Cannot apply update')
         elif oldname not in self.connections.keys():
-            Logger.error('oldname is not in connections names. Cannot apply update')
+            self.Logger.error('oldname is not in connections names. Cannot apply update')
         else:
             tmp = {}
             for _k, _v in self.connections.items():
@@ -375,7 +375,7 @@ class PyEWMod(EWModule):
         """ 
         if conn_name not in self.connections.keys():
             if self.debug:
-                Logger.critical('conn_info not found in connections')
+                self.Logger.critical('conn_info not found in connections')
             return None
         else:
             for conn_idx, (_k, _v) in enumerate(self.connections.items()):
@@ -443,10 +443,10 @@ class PyEWMod(EWModule):
         conn_idx = self.get_conn_index(conn_name)
         if not is_wave_msg(wave):
             if self.debug:
-                Logger.critical('input wave is not formatted correctly')
+                self.Logger.critical('input wave is not formatted correctly')
         elif conn_name is None:
             if self.debug:
-                Logger.critical('input conn_name does not correspond to an active connection')
+                self.Logger.critical('input conn_name does not correspond to an active connection')
         else:
             super().put_wave(conn_idx, wave)
         return
@@ -465,16 +465,16 @@ class PyEWMod(EWModule):
         conn_idx = self.get_conn_index(conn_name)
         if not isinstance(msg, str):
             if self.debug:
-                Logger.critical('input msg is not type str')
+                self.Logger.critical('input msg is not type str')
         elif conn_name is None:
             if self.debug:
-                Logger.critical('conn_name does not correspond to an active connection')
+                self.Logger.critical('conn_name does not correspond to an active connection')
         elif not isinstance(msg_type, int):
             if self.debug:
-                Logger.critical('msg_type must be type int')
+                self.Logger.critical('msg_type must be type int')
         elif msg_type <= 0 or msg_type > 255:
             if self.debug:
-                Logger.critical('msg_type must be \in [1, 255]')
+                self.Logger.critical('msg_type must be \in [1, 255]')
         else:
             super().put_msg(conn_idx, msg, msg_type)
     
@@ -492,15 +492,15 @@ class PyEWMod(EWModule):
         conn_idx = self.get_conn_index(conn_name)
         if not isinstance(msg, bytes):
             if self.debug:
-                Logger.critical('input msg is not type bytes')
+                self.Logger.critical('input msg is not type bytes')
         elif conn_name is None:
             if self.debug:
-                Logger.critical('conn_name does not correspond to an active connection')
+                self.Logger.critical('conn_name does not correspond to an active connection')
         elif not isinstance(msg_type, int):
             if self.debug:
-                Logger.critical('msg_type must be type int')
+                self.Logger.critical('msg_type must be type int')
         elif msg_type <= 0 or msg_type > 255:
             if self.debug:
-                Logger.critical('msg_type must be \in [1, 255]')
+                self.Logger.critical('msg_type must be \in [1, 255]')
         else:
             super().put_bytes(conn_idx, msg, msg_type)  

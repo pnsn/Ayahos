@@ -92,7 +92,7 @@ class BufferMod(_BaseMod):
             if isfinite(max_length):
                 if 0 < max_length:
                     if max_length > 1e7:
-                        Logger.warning(f'max_length of {max_length} > 1e7 seconds. May be memory prohibitive')
+                        self.Logger.warning(f'max_length of {max_length} > 1e7 seconds. May be memory prohibitive')
                     self.mltb_kwargs.update({'max_length': max_length})
                 else:
                     raise ValueError('max_length must be non-negative')
@@ -155,7 +155,7 @@ class BufferMod(_BaseMod):
         elif all(isinstance(x, MLTrace) for x in unit_input):
             unit_input = [x for x in unit_input]
         else:
-            Logger.error('input is not type MLTrace or list-like thereof')
+            self.Logger.error('input is not type MLTrace or list-like thereof')
             raise TypeError('input is not type MLTrace or a list-like thereof')
         return unit_input
 
@@ -187,7 +187,7 @@ class BufferMod(_BaseMod):
                     mltb.append(mlt)
                     self.output.extend(mltb)
                 else:
-                    Logger.critical('More traces than allowed by max_output_size - refusing to add new buffers')
+                    self.Logger.critical('More traces than allowed by max_output_size - refusing to add new buffers')
                     sys.exit(1)
             # Append to buffer if id's match
             else:
@@ -211,7 +211,7 @@ class BufferMod(_BaseMod):
         :type unit_output: _type_
         """
         if not isinstance(unit_output,int):
-            Logger.warning('Passing non-int object to BufferMod._capture_unit_output') 
+            self.Logger.warning('Passing non-int object to BufferMod._capture_unit_output') 
         else:
             pass
         return None

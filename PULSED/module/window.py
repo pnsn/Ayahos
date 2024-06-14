@@ -1,5 +1,5 @@
 """
-:module: ewflow.module.window
+:module: PULSED.module.window
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
@@ -9,7 +9,7 @@
 
 Classes
 -------
-:class:`~ewflow.module.window.WindowMod`
+:class:`~PULSED.module.window.WindowMod`
 """
 import logging, sys
 import seisbench.models as sbm
@@ -19,7 +19,6 @@ from PULSED.data.mlstream import MLStream
 from PULSED.data.mlwindow import MLWindow
 from PULSED.module._base import _BaseMod
 
-Logger = logging.getLogger(__name__)
 
 class WindowMod(_BaseMod):
     """
@@ -36,6 +35,7 @@ class WindowMod(_BaseMod):
         component_aliases={"Z": "Z3", "N": "N1", "E": "E2"},
         reference_component='Z',
         reference_completeness_threshold=0.95,
+        other_completeness_threshold=0.8,
         model_name="EQTransformer",
         reference_sampling_rate=100.0,
         reference_npts=6000,
@@ -68,7 +68,7 @@ class WindowMod(_BaseMod):
         :type reference_overlap: int, optional
         :param fnfilter: fnmatch filter string to use for subsetting channel inputs, default is None
         :type fnfilter: None or str
-            also see :meth:`~ewflow.data.mlstream.MLStream.fnselect`
+            also see :meth:`~PULSED.data.mlstream.MLStream.fnselect`
         :param pulse_type: style of running pulse, defaults to 'network'
             Supported values:
                 'network' - attempt to create one window from each instrument per pulse
@@ -117,7 +117,17 @@ class WindowMod(_BaseMod):
                 raise ValueError
         else:
             raise TypeError
-
+        
+        # Compatability check for other_completeness_threshold
+        if isinstance(other_completeness_threshold, (float, int)):
+            if 0 <= other_completeness_threshold <= 1:
+                othert = other_completeness_threshold
+            else:
+                raise ValueError
+        else:
+            raise TypeError
+        
+        # Model Name compabatility check
         if not isinstance(model_name, str):
             raise TypeError('model_name must be type str')
         else:
@@ -155,7 +165,13 @@ class WindowMod(_BaseMod):
         else:
             raise TypeError('fnfilter must be type str or NoneType')
 
-        self.ref = {'sampling_rate': refsr, 'overlap': refo, 'npts': refn, 'component': refc, 'threshold': reft}
+        self.ref = {
+            'sampling_rate': refsr,
+            'overlap': refo,
+            'npts': refn,
+            'component': refc,
+            'thresholds': {'ref':reft, 'other': othert}
+        }
          # Set Defaults and Derived Attributes
         # Calculate window length, window advance, and blinding size in seconds
         self.window_sec = (self.ref['npts'] - 1)/self.ref['sampling_rate']
@@ -164,6 +180,7 @@ class WindowMod(_BaseMod):
         self.options = options
         # Create dict for holding instrument window starttime values
         self.window_tracker = {}
+        self.Logger.info('WindowMod initialized!')
 
     #######################################
     # Parameterization Convenience Method #
@@ -192,7 +209,9 @@ class WindowMod(_BaseMod):
                 self.ref.update({'npts': model.in_samples})
             self.ref.update({'overlap': model._annotate_args['overlap'][1]})
             self.model_name = model.name
-            self.ref['threshold'] = (model.in_samples - model._annotate_args['blinding'][1][0])/model.in_samples
+        
+            # self.ref['threshold']['ref'] = (model.in_samples - model._annotate_args['blinding'][1][0])/model.in_samples
+
         else:
             raise TypeError('seisbench.models.WaveformModel base class does not provide the necessary update information')
 
@@ -204,13 +223,13 @@ class WindowMod(_BaseMod):
     def _should_this_iteration_run(self, input, input_measure, iter_number):
         """
         POLYMORPHIC
-        Last updated with :class:`~ewflow.module.window.WindowMod`
+        Last updated with :class:`~PULSED.module.window.WindowMod`
 
         unconditional pass - early stopping is handled by
-        :meth:`~ewflow.module.window.WindowMod._should_next_iteration_run`
+        :meth:`~PULSED.module.window.WindowMod._should_next_iteration_run`
 
         :param input: standard input
-        :type input: ewflow.data.mlstream.MLStream
+        :type input: PULSED.data.mlstream.MLStream
         :param iter_number: iteration number, unused
         :type iter_number: int
         :return status: should iterations continue in pulse, always True
@@ -225,7 +244,7 @@ class WindowMod(_BaseMod):
         obj is a view of input
 
         :param input: standard input
-        :type input: ewflow.data.mlstream.MLStream
+        :type input: PULSED.data.mlstream.MLStream
         :return: _description_
         :rtype: _type_
         """
@@ -233,7 +252,7 @@ class WindowMod(_BaseMod):
             unit_input = input
             return unit_input
         else:
-            Logger.error('TypeError - input is not type MLStream')
+            self.Logger.error('TypeError - input is not type MLStream')
             sys.exit(1)
     
     def _unit_process(self, unit_input):
@@ -246,7 +265,7 @@ class WindowMod(_BaseMod):
         Newly generated windows are appended to WindowMod.output
 
         :param unit_input: view of a MLStream containing waveforms
-        :type unit_input: ewflow.data.mlstream.MLStream
+        :type unit_input: PULSED.data.mlstream.MLStream
         """        
         unit_output = deque()
         # Update window tracker
@@ -288,7 +307,8 @@ class WindowMod(_BaseMod):
                                 traces = traces,
                                 header = {'reference_starttime': next_window_ti,
                                           'reference_sampling_rate': self.ref['sampling_rate'],
-                                          'reference_npts': self.ref['npts']},
+                                          'reference_npts': self.ref['npts'],
+                                          'thresholds': self.ref['thresholds']},
                                 ref_component=self.ref['component']
                             )
                             # Append window to output
@@ -297,7 +317,7 @@ class WindowMod(_BaseMod):
                             old_ti = self.window_tracker[site][inst][mod]['ti']
                             self.window_tracker[site][inst][mod]['ti'] += self.advance_sec
                             new_ti = self.window_tracker[site][inst][mod]['ti']
-                            Logger.debug(f'New window for {window.stats.common_id} at {old_ti} += next at {new_ti}')
+                            self.Logger.debug(f'New window for {window.stats.common_id} at {old_ti} += next at {new_ti}')
                             # Set ready flag to false for this site
                             self.window_tracker[site][inst][mod].update({'ready': False})
         return unit_output
@@ -342,15 +362,15 @@ class WindowMod(_BaseMod):
         (Network.Station.Location.BandInstrument{ref}) Traces are found
 
         :: INPUT ::
-        :param mlstream: MLStream object containing :class:`~ewflow.data.trace.Trace`-type objects
-        :type mlstream: ewflow.data.mlstream.MLStream
+        :param mlstream: MLStream object containing :class:`~PULSED.data.trace.Trace`-type objects
+        :type mlstream: PULSED.data.mlstream.MLStream
         """
         # Subset using fnfilter
         fmlstream = mlstream.fnselect(self.fnfilter)
         # Iterate across subset
         for mltrace in fmlstream.traces.values():
             if not isinstance(mltrace, MLTrace):
-                raise TypeError('this build of WindowMod only works with ewflow.data.mltrace.Trace objects')
+                raise TypeError('this build of WindowMod only works with PULSED.data.mltrace.Trace objects')
             # Get site, instrument, mod, and component codes from Trace
             site = mltrace.site
             inst = mltrace.inst
@@ -375,7 +395,7 @@ class WindowMod(_BaseMod):
                                                          'ref': mltrace.id,
                                                          'ready': False}},
                                                 't0': mltrace.stats.starttime}})
-                Logger.info(f'Added buffer tree for {site} - triggered by {mltrace.id}')
+                self.Logger.info(f'Added buffer tree for {site} - triggered by {mltrace.id}')
             # If site is in window_tracker
             else:
                 # If inst is not in this site subdictionary
@@ -385,7 +405,7 @@ class WindowMod(_BaseMod):
                                                             {'ti': self.window_tracker[site]['t0'],
                                                              'ref': mltrace.id,
                                                              'ready': False}}})
-                    Logger.info('Added buffer branch {inst} to {site} tree - triggered by {mltrace.id}')
+                    self.Logger.info('Added buffer branch {inst} to {site} tree - triggered by {mltrace.id}')
                 # If inst is in this site subdictionary
                 else:
                     # If mod is not in this inst sub-subdictionary
@@ -405,7 +425,7 @@ class WindowMod(_BaseMod):
                 # Get valid fraction for proposed window in Trace
                 fv = mltrace.get_fvalid_subset(starttime=next_window_ti, endtime=next_window_tf)
                 # If threshold passes
-                if fv >= self.ref['threshold']:
+                if fv >= self.ref['thresholds']['ref']:
                     # set (window) ready flag to True
                     self.window_tracker[site][inst][mod].update({'ready': True})
                     # And continue to next mltrace
@@ -430,7 +450,7 @@ class WindowMod(_BaseMod):
                             fv = mltrace.get_fvalid_subset(starttime=next_window_ti,
                                                         endtime=next_window_tf)
                             # If window passes threshold, re-approve
-                            if fv >= self.ref['threshold']:
+                            if fv >= self.ref['thresholds']['ref']:
                                 self.window_tracker[site][inst][mod].update({'ready': True})
                         # Otherwise preserve dis-approval of window generation (ready = False) for now
 

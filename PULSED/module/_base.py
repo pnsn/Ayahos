@@ -19,7 +19,7 @@ from copy import deepcopy
 from collections import deque
 import logging, sys
 
-# Logger = logging.getLogger(__name__)
+# self.Logger = logging.getLogger(__name__)
 
 def add_class_name_to_docstring(cls):
     for name, method in vars(cls).items():
@@ -70,6 +70,7 @@ class _BaseMod(object):
                     None value turns reporting off
         :type report_period: float or NoneType, optional
         """
+
         # Compatability check for max_pulse_size
         if isinstance(max_pulse_size, (int, float)):
             if 1 <= max_pulse_size:
@@ -105,14 +106,14 @@ class _BaseMod(object):
             if 0 < report_period <= self.meta_memory:
                 self.report_period = report_period
             else:
-                Logger.critical(f'{self.__class__} | report_period greater than memory period!')
+                self.Logger.critical(f'{self.__class__} | report_period greater than memory period!')
                 sys.exit(1)
         else:
             raise TypeError
         
         if max_output_size is None:
             self.max_output_size = 1e12
-            Logger.critical(f'setting non-limited output size for {self.__class__.__name__} object to {self.max_output_size}')
+            self.Logger.critical(f'setting non-limited output size for {self.__class__.__name__} object to {self.max_output_size}')
         elif isinstance(max_output_size, (int,float)):
             if 0 < max_output_size <= 1e12:
                 self.max_output_size = max_output_size
@@ -121,16 +122,20 @@ class _BaseMod(object):
 
         self._last_report_time = pd.Timestamp.now().timestamp()
         self._pulse_rate = nan
+        self.Logger = logging.getLogger(f'{self.__name__()}')
 
-    def __name__(self):
-        """Return the camel-case name of this class without
-        the submodule extension
 
-        alias of self.__class__.__name__
+    def __name__(self, full=False):
+        """Return the camel-case name of this class with or without the submodule extension
+        :param full: use the full class path? Defaults to False
+        :type full: bool, optional
         :return: class name
         :rtype: str
-        """        
-        return self.__class__.__name__
+        """
+        if full:
+            return self.__class__.__str__(self)
+        else:
+            return self.__class__.__name__
     
     def __repr__(self):
         """
@@ -200,7 +205,7 @@ class _BaseMod(object):
                 self._update_metadata(pulse_starttime, input_size, nproc, 1)
                 break
         # if not self.mute_pulse_logging:
-        #     Logger.info(f'{self.__name__} {nproc} processes run (MAX: {self.max_pulse_size})')
+        #     self.Logger.info(f'{self.__name__} {nproc} processes run (MAX: {self.max_pulse_size})')
         # Get alias of self.output as output
         output = self.output
         # If the 
@@ -217,7 +222,7 @@ class _BaseMod(object):
             # If the elapsed time since the last report transmission is exceeded
             if self.report_period <= nowtime - self._last_report_time:
                 # Transmit report to logging
-                Logger.info(f'\n\n{self._generate_report_string()}\n')
+                self.Logger.info(f'\n\n{self._generate_report_string()}\n')
                 # Update the last report time
                 self._last_report_time = nowtime
 
@@ -291,7 +296,7 @@ class _BaseMod(object):
             unit_input = input.popleft()
             return unit_input
         else:
-            Logger.error(f'input object was incorrect type')
+            self.Logger.error(f'input object was incorrect type')
             sys.exit(1)
             raise TypeError
         
@@ -328,7 +333,7 @@ class _BaseMod(object):
         self.output.append(unit_output)
         extra = len(self.output) - self.max_output_size
         # if extra > 0:
-        #     Logger.info(f'{self.__class__.__name__} object reached max_output_size. Deleting {extra} oldest values')
+        #     self.Logger.info(f'{self.__class__.__name__} object reached max_output_size. Deleting {extra} oldest values')
 
         while len(self.output) > self.max_output_size:
             self.output.popleft()
@@ -397,7 +402,7 @@ class _BaseMod(object):
                 self._pulse_rate = nd/dt
 
     def _generate_report_string(self):
-        header = f'~~~~ {pd.Timestamp.now()} | {self.__name__} ~~~~\n'
+        header = f'~~^v~~~ {pd.Timestamp.now()} | {self.__name__()} ~~^v~~~\n'
         header += f'pulse rate: {self._pulse_rate:.2e} Hz | max pulse size: {self.max_pulse_size}\n'
         header += f'sample period: {self.meta_memory} sec | max output size: {self.max_output_size}'
         return f'{header}\n{self.report}\n'
@@ -412,5 +417,5 @@ class _BaseMod(object):
             obj = eval(f'{clas}')
             return obj
         except ImportError:
-            Logger.critical(f'failed to import {class_path_str}')
+            self.Logger.critical(f'failed to import {class_path_str}')
             sys.exit(1)

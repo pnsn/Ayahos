@@ -66,7 +66,6 @@ class InPlaceMod(_BaseMod):
 
         # pclass compatability checks
         self.pclass = self.import_class(pclass)
-        breakpoint()
         # pmethod compatability checks
         if pmethod not in [func for func in dir(self.pclass) if callable(getattr(self.pclass, func))]:
             raise ValueError(f'pmethod "{pmethod}" is not defined in {self.pclass} properties or methods')
@@ -94,7 +93,7 @@ class InPlaceMod(_BaseMod):
         if isinstance(unit_input, self.pclass):
             return unit_input
         else:
-            Logger.critical(f'object popped from input mismatch {self.pclass} != {type(obj)}')
+            self.Logger.critical(f'object popped from input mismatch {self.pclass} != {type(obj)}')
             raise TypeError
         
     def _unit_process(self, unit_input):
@@ -199,7 +198,7 @@ class OutputMod(InPlaceMod):
         try:
             unit_output = getattr(unit_input, self.pmethod)(**self.pkwargs)
         except:
-            Logger.critical('Specified operation did not work - exiting')
+            self.Logger.critical('Specified operation did not work - exiting')
             sys.exit(1)
         return unit_output
     
@@ -218,7 +217,7 @@ class OutputMod(InPlaceMod):
             status = super()._capture_unit_output(unit_output)
             return status
         else:
-            Logger.critical(f'unit_output type mismatch {self.oclass} != {type(unit_output)}')
+            self.Logger.critical(f'unit_output type mismatch {self.oclass} != {type(unit_output)}')
             sys.exit(1)
         
 

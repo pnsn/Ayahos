@@ -13,7 +13,7 @@ Classes
 """
 import threading, logging, time, sys, configparser, inspect
 from PULSED.util.pyew import is_wave_msg
-from PULSED.module.bundle import SequenceMod
+from PULSED.module.sequence import SequenceMod
 from PULSED.module.transact import PyEWMod
 
 Logger = logging.getLogger(__name__)
@@ -52,10 +52,10 @@ class PulsedMod_EW(SequenceMod):
 
     def __init__(self, config_file):
         """Create a PULSED object
-        Inherits the mod_dict attribute and pulse() method from sequenceWyrm
+        Inherits the sequence attribute and pulse() method from sequenceWyrm
 
         :param wait_sec: number of seconds to wait between completion of one pulse sequence of
-            the Wyrm-like objects in self.mod_dict and the next, defaults to 0
+            the Wyrm-like objects in self.sequence and the next, defaults to 0
         :type wait_sec: float, optional
         :param default_ring_id: default ring ID to assign to EWModule, defaults to 1000
         :type default_ring_id: int, optional
@@ -65,8 +65,8 @@ class PulsedMod_EW(SequenceMod):
         :type installation_id: int, optional
         :param heartbeat_period: send heartbeat message to Earthworm every X seconds, defaults to 15
         :type heartbeat_period: int, optional
-        :param mod_dict: dictionary of PULSED.core.wyrms-type objects that will be executed in a chain , defaults to {}
-        :type mod_dict: dict, optional
+        :param sequence: dictionary of PULSED.core.wyrms-type objects that will be executed in a chain , defaults to {}
+        :type sequence: dict, optional
             also see PULSED.core.wyrms.sequencewyrm.sequenceWyrm
         :param submodule_wait_sec: seconds to wait between execution of the **pulse** method of each
             Wyrm-like object
@@ -78,42 +78,55 @@ class PulsedMod_EW(SequenceMod):
         # Read configuration file
         self.cfg.read(config_file)
 
+        # Initialize Super for SequenceMod inheritance
+        if 'PulsedMod_EW' in self.cfg._sections.keys():
+            PULSED_init = self.parse_config_section('PulsedMod_EW')
+            sequence_params = inspect.signature(SequenceMod).parameters
+            super_init_kwargs = {}
+            for _k, _v in PULSED_init.items():
+                if _k in sequence_params.keys():
+                    super_init_kwargs.update({_k: _v})
+            breakpoint()
+            super().__init__(**super_init_kwargs)
+        # Trigger safety catch that something is missing
+        else:
+            Logger.critical(f'Cannot initialize {super().__name__(full=True)}')
         # Ensure minimum required fields are present for module initialization
         demerits = 0
-        for _rs in ['Earthworm','PULSED','Sequence']:
+        for _rs in ['Earthworm','PulsedMod_EW','Sequence']:
             if _rs not in self.cfg._sections.keys():
-                Logger.critical(f'section {_rs} missing from config file! Will not initialize PULSED')
+                self.Logger.critical(f'section {_rs} missing from config file! Will not initialize PULSED')
                 demerits += 1
         if demerits > 0:
             sys.exit(1)
         else:
-            Logger.debug('config file has all required sections')
+            self.Logger.debug('config file has all required sections')
 
         # Initialize PULSEDPyEWModule Object
-        self.module = PULSEDModule(
-            connections = eval(self.cfg.get('PULSED','connections')),
+        self.module = PyEWMod(
+            connections = eval(self.cfg.get('PulsedMod_EW','connections')),
             module_id = self.cfg.getint('Earthworm', 'MOD_ID'),
             installation_id = self.cfg.getint('Earthworm', 'INST_ID'),
             heartbeat_period = self.cfg.getfloat('Earthworm', 'HB'),
-            deep_debug = self.cfg.getboolean('PULSED', 'deep_debug')
+            deep_debug = self.cfg.getboolean('PulsedMod_EW', 'deep_debug')
         )        
         # Create a thread for the module process
         try:
             self.module_thread = threading.Thread(target=self.run)
         except:
-            Logger.critical('Failed to start thread')
+            self.Logger.critical('Failed to start thread')
             sys.exit(1)
-        Logger.info('PULSEDModule initialized')
+        self.Logger.info('PyEWMod initialized')
 
         # Sequence submodules
-        mod_dict = {}
+        sequence = {}
         demerits = 0
 
         # Iterate across submodule names and section names
         for submod_name, submod_section in self.cfg['Sequence'].items():
             # Log if there are missing submodules
             if submod_section not in self.cfg._sections.keys():
-                Logger.critical(f'submodule {submod_section} not defined in config_file. Will not compile!')
+                self.Logger.critical(f'submodule {submod_section} not defined in config_file. Will not compile!')
                 demerits += 1
             # Construct if the submodule has a section
             else:
@@ -127,29 +140,22 @@ class PulsedMod_EW(SequenceMod):
                 try:
                     exec(f'from {path} import {clas}')
                 except ImportError:
-                    Logger.critical(f'failed to import {submod_class}')
+                    self.Logger.critical(f'failed to import {submod_class}')
                     sys.exit(1)
                 submod_object = eval(clas)(**submod_init_kwargs)
-                # Attach object to mod_dict
-                mod_dict.update({submod_name: submod_object})
-                Logger.info(f'{submod_name} initialized')
+                # Attach object to sequence
+                sequence.update({submod_name: submod_object})
+                self.Logger.info(f'{submod_name} initialized')
         # If there are any things that failed to compile, exit
         if demerits > 0:
             sys.exit(1)
         
-        PULSED_init = self.parse_config_section('PULSED')
-        sequence_params = inspect.signature(SequenceMod).parameters
-        sequence_init = {'mod_dict': mod_dict}
-        for _k, _v in PULSED_init.items():
-            if _k in sequence_params.keys():
-                sequence_init.update({_k: _v})
-
-        # Initialize SequenceMod inheritance
-        super().__init__(**sequence_init)
+        # Update with non-empty sequence
+        self.update(sequence)
 
         # Set runs flag to True
         self.runs = True
-        Logger.critical('ALL OK - PULSED Initialized!')
+        self.Logger.critical('ALL OK - PULSED Initialized!')
 
     ###########################################
     ### MODULE CONFIGURATION PARSING METHOD ###
@@ -189,8 +195,8 @@ class PulsedMod_EW(SequenceMod):
         Start Module Command
         runs ```self._thread.start()```
         """
-        if len(self.mod_dict) == 0:
-            Logger.warning('No Wyrm-type sub-/base-modules contained in this PULSED Module')
+        if len(self.sequence) == 0:
+            self.Logger.warning('No Wyrm-type sub-/base-modules contained in this PULSED Module')
         self.module_thread.start()
 
     def stop(self):
@@ -204,23 +210,23 @@ class PulsedMod_EW(SequenceMod):
         """
         Run the PyEW.EWModule housed by this PULSED with the option
         of an initial input that is shown to the first wyrm in 
-        this PULSED' mod_dict attribute.
+        this PULSED' sequence attribute.
 
-        :param input: input for the pulse() method of the first wyrm in PULSED.mod_dict, default None
+        :param input: input for the pulse() method of the first wyrm in PULSED.sequence, default None
         :type input: varies, optional
         """
-        Logger.critical("Starting Module Operation")     
+        self.Logger.critical("Starting Module Operation")     
         print('Im doing science')   
         while self.runs:
             if self.module.mod_sta() is False:
                 break
             time.sleep(0.001)
             if self.module.debug:
-                Logger.debug('running PULSED pulse')
+                self.Logger.debug('running PULSED pulse')
             # Run pulse inherited from sequenceWyrm
             _ = super().pulse(input)
         # Note shutdown in logging
-        Logger.critical("Shutting Down Module") 
+        self.Logger.critical("Shutting Down Module") 
         # Gracefully shut down
         self.module.goodbye()
     
@@ -231,6 +237,6 @@ class PulsedMod_EW(SequenceMod):
         that broadcasts a pair of logging errors pointing to use PULSED.run()
         as the operational 
         """        
-        Logger.error("pulse() method disabled for PULSED.core.PULSED.PULSED")
-        Logger.error("Use PULSED.run() to start module operation")
+        self.Logger.error("pulse() method disabled for PULSED.core.PULSED.PULSED")
+        self.Logger.error("Use PULSED.run() to start module operation")
         return None, None

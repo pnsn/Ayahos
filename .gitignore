@@ -12,6 +12,7 @@ examples/live_example/data/*
 *.log.202*
 *.log
 *.pck
+*.ndx
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -178,4 +179,3 @@ cython_debug/
 
 docs/source/modules.rst
 live_example/data/tmp/ew2file_pew_keeper
-live_example/params/pick_ew_099.ndx

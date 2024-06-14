@@ -12,9 +12,9 @@ Classes
 :class:`~ewflow.ewflow.EWFlow`
 """
 import threading, logging, time, sys, configparser, inspect
-from PULSE.util.pyew import is_wave_msg
-from PULSE.module.bundle import SequenceMod
-from PULSE.module.transact import EWFlowModule
+from PULSED.util.pyew import is_wave_msg
+from PULSED.module.bundle import SequenceMod
+from PULSED.module.ew_transact import EWFlowModule
 
 Logger = logging.getLogger(__name__)
 

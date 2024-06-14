@@ -18,7 +18,7 @@ Classes
 
 import logging, sys
 from collections import deque
-from PULSE.module._base import _BaseMod
+from PULSED.module._base import _BaseMod
 
 Logger = logging.getLogger(__name__)
 

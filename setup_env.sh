@@ -4,7 +4,7 @@
 # :org: Pacific Northwest Seismic Network
 # :license: AGPL-3.0
 # :purpose: This script creates a conda environment and installs EWFlow and all its dependencies
-ENVNAME='EWFlow'
+ENVNAME='PULSED'
 ACTIVATE="$CONDA_PREFIX/bin/activate"
 
 # Check if environment exists

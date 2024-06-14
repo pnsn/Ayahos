@@ -20,8 +20,8 @@ from obspy.core.stream import Stream
 from obspy.core.trace import Trace
 from obspy.core.util.attribdict import AttribDict
 from obspy.core import compatibility
-from PULSE.data.mltrace import MLTrace
-from PULSE.util.pyew import wave2mltrace
+from PULSED.data.mltrace import MLTrace
+from PULSED.util.pyew import wave2mltrace
 
 
 

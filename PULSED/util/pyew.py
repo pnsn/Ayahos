@@ -11,7 +11,7 @@
 """
 import numpy as np
 from obspy import UTCDateTime, Trace
-from PULSE.data.mltrace import MLTrace
+from PULSED.data.mltrace import MLTrace
 
 
 def is_empty_message(msg):

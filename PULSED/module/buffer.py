@@ -15,11 +15,11 @@ Classes
 """
 import logging, sys
 from numpy import isfinite
-from PULSE.module._base import _BaseMod
-from PULSE.data.mltrace import MLTrace
-from PULSE.data.mltracebuff import MLTraceBuff
-from PULSE.data.mlstream import MLStream
-from PULSE.util.pyew import is_wave_msg, wave2mltrace
+from PULSED.module._base import _BaseMod
+from PULSED.data.mltrace import MLTrace
+from PULSED.data.mltracebuff import MLTraceBuff
+from PULSED.data.mlstream import MLStream
+from PULSED.util.pyew import is_wave_msg, wave2mltrace
 
 Logger = logging.getLogger(__name__)
 

@@ -1,9 +1,9 @@
-name: wyrm
+name: PULSED
 channels:
  - defaults
 dependencies:
  - pip
  - git
  - pip:
-    - git+https://github.com/pnsn/wyrm@develop
+    - git+https://github.com/pnsn/PULSED@develop
     

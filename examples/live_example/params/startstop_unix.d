@@ -1,5 +1,3 @@
-
-
 #                 Startstop Configuration File for Windows NT
 #
 #    <nRing> is the number of transport rings to create.

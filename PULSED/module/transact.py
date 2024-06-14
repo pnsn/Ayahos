@@ -236,12 +236,12 @@ class TransactMod(_BaseMod):
     
     
 ####################
-#### EWFLOWMOD #####
+#### EWMod #####
 ####################
-class EWFlowModule(EWModule):
+class PyEWMod(EWModule):
     """
-    An extension of the PyEarthworm PyEW.EWModule class that provides additional
-    book-keeping utilities for transport ring connections and queries
+    An extension of the PyEarthworm's :class:`~PyEW.EWModule` class that provides book-keeping utilities
+    for transport ring connections and queries
 
     :param default_ring_id: ID of the first ring to connect to, defaults to 1000 (WAVE RING)
     :type default_ring_id: int, optional

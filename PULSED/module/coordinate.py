@@ -1,5 +1,5 @@
 """
-:module: ewflow.ewflow
+:module: PULSED.module.coordinate
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
@@ -9,32 +9,32 @@
 
 Classes
 -------
-:class:`~ewflow.ewflow.EWFlow`
+:class:`~PULSED.module.coordinate.PULSED_EW`
 """
 import threading, logging, time, sys, configparser, inspect
 from PULSED.util.pyew import is_wave_msg
 from PULSED.module.bundle import SequenceMod
-from PULSED.module.ew_transact import EWFlowModule
+from PULSED.module.transact import PyEWMod
 
 Logger = logging.getLogger(__name__)
 
 ###################################################################################
-# EWFLOW CLASS DEFINITION ########################################################
+# PULSED CLASS DEFINITION ########################################################
 ###################################################################################
-class CoordinateMod(SequenceMod):
+class PULSED_EW(SequenceMod):
     """
-    The EWFlow class comprises an extended :class:`~PyEW.EWModule` object
-    (:class:`~ewflow.util.ewflowewmodule.EWFlowule) and a sequence of ewflow modules
+    The PULSED_EW class comprises an extended :class:`~PyEW.EWModule` object
+    (:class:`~PULSED.module.ew_transact.PyEWMod`) and a sequence of PULSED modules
     that make an operational python module that communicates with the Earthworm message transport system
     
-    This class inherits its sequencing methods and attributes from :class:`~ewflow.wyrms.sequencewyrm.sequenceWyrm`
+    This class inherits its sequencing methods and attributes from :class:`~PULSED.wyrms.sequencewyrm.sequenceWyrm`
     
 
     :param wait_sec: number of seconds to wait between pulses, defaults to 0
     :type wait_sec: int, optional
-    :param default_ring_id: default ring ID to assign to EWFlowule, defaults to 1000
+    :param default_ring_id: default ring ID to assign to PULSEDule, defaults to 1000
     :type default_ring_id: int, optional
-    :param module_id: module ID that Earthworm will see for this EWFlowule, defaults to 193
+    :param module_id: module ID that Earthworm will see for this PULSEDule, defaults to 193
     :type module_id: int, optional
     :param installation_id: installation ID, defaults to 255 - anonymous/nonexchanging installation
     :type installation_id: int, optional
@@ -44,14 +44,14 @@ class CoordinateMod(SequenceMod):
         to make in addition to the 'DEFAULT': default_ring_id connection
         defaults to {'WAVE': 1000, 'PICK': 1005}
     :type: dict, optional
-    :param ewmodule_debug: should debugging level logging messages within the EWFlowule object
+    :param ewmodule_debug: should debugging level logging messages within the PULSEDule object
         be included if logging level is set to DEBUG? Defaults to False.
         (acts as an extra nit-picky layer for debugging)
     :type ewmodule_debug: bool, optional
     """
 
     def __init__(self, config_file):
-        """Create a EWFlow object
+        """Create a PULSED object
         Inherits the mod_dict attribute and pulse() method from sequenceWyrm
 
         :param wait_sec: number of seconds to wait between completion of one pulse sequence of
@@ -65,9 +65,9 @@ class CoordinateMod(SequenceMod):
         :type installation_id: int, optional
         :param heartbeat_period: send heartbeat message to Earthworm every X seconds, defaults to 15
         :type heartbeat_period: int, optional
-        :param mod_dict: dictionary of ewflow.core.wyrms-type objects that will be executed in a chain , defaults to {}
+        :param mod_dict: dictionary of PULSED.core.wyrms-type objects that will be executed in a chain , defaults to {}
         :type mod_dict: dict, optional
-            also see ewflow.core.wyrms.sequencewyrm.sequenceWyrm
+            also see PULSED.core.wyrms.sequencewyrm.sequenceWyrm
         :param submodule_wait_sec: seconds to wait between execution of the **pulse** method of each
             Wyrm-like object
         """
@@ -80,22 +80,22 @@ class CoordinateMod(SequenceMod):
 
         # Ensure minimum required fields are present for module initialization
         demerits = 0
-        for _rs in ['Earthworm','EWFlow','Sequence']:
+        for _rs in ['Earthworm','PULSED','Sequence']:
             if _rs not in self.cfg._sections.keys():
-                Logger.critical(f'section {_rs} missing from config file! Will not initialize EWFlow')
+                Logger.critical(f'section {_rs} missing from config file! Will not initialize PULSED')
                 demerits += 1
         if demerits > 0:
             sys.exit(1)
         else:
             Logger.debug('config file has all required sections')
 
-        # Initialize EWFlowPyEWModule Object
-        self.module = EWFlowModule(
-            connections = eval(self.cfg.get('EWFlow','connections')),
+        # Initialize PULSEDPyEWModule Object
+        self.module = PULSEDModule(
+            connections = eval(self.cfg.get('PULSED','connections')),
             module_id = self.cfg.getint('Earthworm', 'MOD_ID'),
             installation_id = self.cfg.getint('Earthworm', 'INST_ID'),
             heartbeat_period = self.cfg.getfloat('Earthworm', 'HB'),
-            deep_debug = self.cfg.getboolean('EWFlow', 'deep_debug')
+            deep_debug = self.cfg.getboolean('PULSED', 'deep_debug')
         )        
         # Create a thread for the module process
         try:
@@ -103,7 +103,7 @@ class CoordinateMod(SequenceMod):
         except:
             Logger.critical('Failed to start thread')
             sys.exit(1)
-        Logger.info('EWFlowModule initialized')
+        Logger.info('PULSEDModule initialized')
 
         # Sequence submodules
         mod_dict = {}
@@ -137,10 +137,10 @@ class CoordinateMod(SequenceMod):
         if demerits > 0:
             sys.exit(1)
         
-        ewflow_init = self.parse_config_section('EWFlow')
+        PULSED_init = self.parse_config_section('PULSED')
         sequence_params = inspect.signature(SequenceMod).parameters
         sequence_init = {'mod_dict': mod_dict}
-        for _k, _v in ewflow_init.items():
+        for _k, _v in PULSED_init.items():
             if _k in sequence_params.keys():
                 sequence_init.update({_k: _v})
 
@@ -149,7 +149,7 @@ class CoordinateMod(SequenceMod):
 
         # Set runs flag to True
         self.runs = True
-        Logger.critical('ALL OK - EWFlow Initialized!')
+        Logger.critical('ALL OK - PULSED Initialized!')
 
     ###########################################
     ### MODULE CONFIGURATION PARSING METHOD ###
@@ -190,7 +190,7 @@ class CoordinateMod(SequenceMod):
         runs ```self._thread.start()```
         """
         if len(self.mod_dict) == 0:
-            Logger.warning('No Wyrm-type sub-/base-modules contained in this EWFlow Module')
+            Logger.warning('No Wyrm-type sub-/base-modules contained in this PULSED Module')
         self.module_thread.start()
 
     def stop(self):
@@ -202,11 +202,11 @@ class CoordinateMod(SequenceMod):
 
     def run(self, input=None):
         """
-        Run the PyEW.EWModule housed by this EWFlow with the option
+        Run the PyEW.EWModule housed by this PULSED with the option
         of an initial input that is shown to the first wyrm in 
-        this EWFlow' mod_dict attribute.
+        this PULSED' mod_dict attribute.
 
-        :param input: input for the pulse() method of the first wyrm in EWFlow.mod_dict, default None
+        :param input: input for the pulse() method of the first wyrm in PULSED.mod_dict, default None
         :type input: varies, optional
         """
         Logger.critical("Starting Module Operation")     
@@ -216,7 +216,7 @@ class CoordinateMod(SequenceMod):
                 break
             time.sleep(0.001)
             if self.module.debug:
-                Logger.debug('running ewflow pulse')
+                Logger.debug('running PULSED pulse')
             # Run pulse inherited from sequenceWyrm
             _ = super().pulse(input)
         # Note shutdown in logging
@@ -227,10 +227,10 @@ class CoordinateMod(SequenceMod):
 
     def pulse(self):
         """
-        Overwrites the inherited :meth:`~ewflow.wyrms.sequencewyrm.sequencewyrm.pulse` method
-        that broadcasts a pair of logging errors pointing to use EWFlow.run()
+        Overwrites the inherited :meth:`~PULSED.wyrms.sequencewyrm.sequencewyrm.pulse` method
+        that broadcasts a pair of logging errors pointing to use PULSED.run()
         as the operational 
         """        
-        Logger.error("pulse() method disabled for ewflow.core.ewflow.EWFlow")
-        Logger.error("Use EWFlow.run() to start module operation")
+        Logger.error("pulse() method disabled for PULSED.core.PULSED.PULSED")
+        Logger.error("Use PULSED.run() to start module operation")
         return None, None

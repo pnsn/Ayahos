@@ -15,6 +15,7 @@ class MLWindowStats(MLStreamStats):
     _types = copy.deepcopy(MLStreamStats._types)
     _types.update({'ref_component': str,
                    'aliases': dict,
+                   'thresholds': dict,
                    'reference_starttime': (UTCDateTime, type(None)),
                    'reference_npts': (int, type(None)),
                    'reference_sampling_rate': (float, type(None))})
@@ -23,6 +24,7 @@ class MLWindowStats(MLStreamStats):
                      'aliases': {'Z': 'Z3',
                                  'N': 'N1',
                                  'E': 'E2'},
+                     'thresholds': {'ref': 0.95, 'other': 0.8},
                      'reference_starttime': None,
                      'reference_sampling_rate': None,
                      'reference_npts': None})
@@ -199,7 +201,7 @@ class MLWindow(MLStream):
     ###############################################################################
     # FILL RULE METHODS ###########################################################
     ###############################################################################
-    def apply_fill_rule(self, rule='zeros', ref_thresh=0.9, other_thresh=0.8):
+    def apply_fill_rule(self, rule='zeros'):
         """Summative class method for assessing if channels have enough data, and applying the specified channel fill `rule`
 
         The thresh(olds) values in this method are compared against a given
@@ -217,18 +219,12 @@ class MLWindow(MLStream):
                                         if both `other` traces are missing, clone the `ref` trace
                             ~also see wyrm.core.stream.MLWindow.MLWindow._apply_clone_other()
         :type rule: str, optional
-        :param ref_thresh: fractional completeness threshold for the reference trace,
-                        the `ref` trace must pass this threshold to be considered sufficiently complete,
-                        defaults to 0.9
-                        See rule-specific methods for failure behavior
-        :type ref_thresh: float, optional
-        :param other_thresh: fractional completeness threshold for the other traces, 
-                        traces are considered missing if they fail to meet/exceed this threshold,
-                        defaults to 0.8
-        :type other_thresh: float, optional
         :raises ValueError: Raised if `rule` is not a supported value
-        """        
+        """      
+
         thresh_dict = {}
+        ref_thresh = self.stats.thresholds['ref']
+        other_thresh = self.stats.thresholds['other']
         for _k in self.stats.aliases.keys():
             if _k == self.stats.ref_component:
                 thresh_dict.update({_k: ref_thresh})
@@ -267,10 +263,12 @@ class MLWindow(MLStream):
         :raises ValueError: raised if the `ref` component has insufficient data
         """
         ref_comp = self.stats.ref_component
+        ref_thresh = self.stats.thresholds['ref']
+        ref_other = self.stats.thresholds['other']
         # Get reference trace
         ref_tr = self.traces[ref_comp]
         # Safety catch that at least the reference component does have enough data
-        if ref_tr.get_fvalid_subset() < thresh_dict[ref_comp]:
+        if ref_tr.get_fvalid_subset() < ref_thresh:
             raise ValueError('insufficient valid data in reference trace')
         else:
             pass
@@ -590,7 +588,6 @@ class MLWindow(MLStream):
         # If any checks against windowing references fail, proceed with interpolation/padding
         if not self.check_windowing_status(mode='summary'):
             # df_full = self.check_windowing_status(mode='full')
-            # breakpoint()
             for _tr in self:
                 _tr.sync_to_window(starttime=starttime, endtime=endtime, fill_value=fill_value, **kwargs)
 

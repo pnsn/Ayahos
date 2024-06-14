@@ -68,9 +68,9 @@
 #  Process          "copystatus HYPO_RING STATUS_RING"
 #  Class/Priority    OTHER 0
 #
-#  Process          "copystatus TEST_RING STATUS_RING"
-#  Class/Priority    OTHER 0
-#
+  Process          "copystatus TEST_RING STATUS_RING"
+  Class/Priority    OTHER 0
+
  Process          "statmgr statmgr.d"
  Class/Priority    OTHER 0
 #
@@ -80,8 +80,8 @@
 # Process          "wave_serverV wave_serverV.d"
 # Class/Priority    OTHER 0
 
-# Process          "pick_ew pick_ew.d"
-# Class/Priority    OTHER 0
+ Process          "pick_ew pick_ew.d"
+ Class/Priority    OTHER 0
 
 # Process          "binder_ew binder_ew.d"
 # Class/Priority    OTHER 0

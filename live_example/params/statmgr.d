@@ -124,6 +124,7 @@ MsgSuffix "))"
 Descriptor  statmgr.desc
 Descriptor  startstop.desc
 Descriptor  slink2ew.desc
+Descriptor  pick_ew.desc
 
 #Descriptor  binder_ew.desc
 #Descriptor  carlstatrig.desc
@@ -131,7 +132,6 @@ Descriptor  slink2ew.desc
 #Descriptor  eqproc.desc
 #Descriptor  ew2file.desc
 #Descriptor  localmag.desc
-#Descriptor  pick_ew.desc
 #Descriptor  scn2scnl.desc
 #Descriptor  slink2ew.desc
 #Descriptor  tankplayer.desc

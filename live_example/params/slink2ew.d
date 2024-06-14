@@ -76,8 +76,22 @@ StateFile                        # If this flag is specified (uncommented) a
 # allow wildcars (either '*' or '?') for both the network and station
 # fields, for example to request all stations from the TA network:
 
-#Stream  KM_KMI C1?.D
+# Washington Broadbands
 Stream UW_* HH?.D
+# MSH Stations
+Stream CC_VALT BH?.D
+Stream CC_SUG BH?.D
+Stream CC_USRF BH?.D
+Stream CC_SEP BH?.D
+Stream CC_REM BH?.D
+Stream CC_EDM BH?.D
+Stream CC_HOA BH?.D
+Stream CC_STD BH?.D
+Stream CC_HSR BH?.D
+Stream CC_SHW BH?.D
+
+#Stream  KM_KMI C1?.D
+#Stream CC_* HH?.D
 #Stream UW_* HN?.D
 #Stream UW_* EH?.D
 #Stream UW_* BH?.D

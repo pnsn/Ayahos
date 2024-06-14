@@ -12,10 +12,9 @@ export SYS_NAME=`hostname`
 # Set environment variables used by earthworm modules at run-time
 # Path names must end with the slash "/"
 export EW_INSTALLATION=INST_UW
-export EW_PARAMS=${PULSED_HOME}/examples/live_example/params/
-export EW_LOG=${PULSED_HOME}/examples/live_example/logs/
-export EW_DATA_DIR=${PULSED_HOME}/examples/live_example/data/
-
+export EW_PARAMS=${PULSED_HOME}/live_example/params/
+export EW_LOG=${PULSED_HOME}/live_example/log/
+export EW_DATA_DIR=${PULSED_HOME}/live_example/data/
 
 #
 # Database (Oracle) related environment

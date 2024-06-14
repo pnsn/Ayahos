@@ -68,8 +68,8 @@
 #  Process          "copystatus HYPO_RING STATUS_RING"
 #  Class/Priority    OTHER 0
 #
-  Process          "copystatus TEST_RING STATUS_RING"
-  Class/Priority    OTHER 0
+#  Process          "copystatus TEST_RING STATUS_RING"
+#  Class/Priority    OTHER 0
 #
  Process          "statmgr statmgr.d"
  Class/Priority    OTHER 0

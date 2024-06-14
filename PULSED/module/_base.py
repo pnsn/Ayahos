@@ -387,6 +387,9 @@ class _BaseMod(object):
         self._metadata = self._metadata[self._metadata.time >= oldest_time]
 
     def _update_report(self):
+        """
+        Update the self.report attribute of thie *Mod object 
+        """        
         # Update Report       
         df_last = self._metadata[self._metadata.time == self._metadata.time.max()]
         df_last.index = ['last']
@@ -408,7 +411,25 @@ class _BaseMod(object):
         return f'{header}\n{self.report}\n'
     
 
-    def import_class(self, class_path_str, **kwargs):
+    def import_class(self, class_path_str):
+        """Use the full extension ID of a class object to import that class within
+        the local scope of this class-method and return the class object for use
+        elsewhere
+
+        e.g. class_path_str = 'obspy.core.trace.Trace'
+          runs exec('from obspy.core.trace import Trace')
+          and returns obj = Trace
+
+        :param class_path_str: class extension ID
+        :type class_path_str: str
+        :return: class defining object
+        :rtype: type
+        """        
+        if not isinstance(class_path_str, str):
+            raise TypeError('class_path_str must be type str')
+        elif '.' not in class_path_str:
+            raise ValueError('class_path_str is not .-delimited. Does not look like a class __name__')
+        
         parts = class_path_str.split('.')
         path = '.'.join(parts[:-1])
         clas = parts[-1]

@@ -16,11 +16,11 @@ Logger = logging.getLogger(__name__)
 class SeisBenchMod(_BaseMod):
     """
     Conduct ML model predictions on preprocessed data ingested as a deque of
-    WindowStream objects using one or more pretrained model weights. Following
+    MLWindow objects using one or more pretrained model weights. Following
     guidance on model application acceleration from SeisBench, an option to precompile
     models on the target device is included as a default option.
 
-    This Wyrm's pulse() method accepts a deque of preprocessed WindowStream objects
+    This Wyrm's pulse() method accepts a deque of preprocessed MLWindow objects
     and outputs to another deque (self.queue) of MLTrace objects that contain
     windowed predictions, source-metadata, and fold values that are the sum of the
     input data fold vectors
@@ -47,7 +47,7 @@ class SeisBenchMod(_BaseMod):
         max_output_size=1e9,
         report_period=False):
         """
-        Initialize a ayahos.core.wyrms.mldetectwyrm.MLDetectWyrm object
+        Initialize a PULSED.data.wyrms.mldetectwyrm.MLDetectWyrm object
 
         :: INPUTS ::
         :param model: seisbench WaveformModel child class object, e.g., seisbench.models.EQTransformer()
@@ -138,10 +138,10 @@ class SeisBenchMod(_BaseMod):
 
         self.cmods = {}
         for wname in self.weight_names:
-            Logger.debug(f'Loading {self.model.name} - {wname}')
+            self.Logger.debug(f'Loading {self.model.name} - {wname}')
             cmod = self.model.from_pretrained(wname)
             if compiled:
-                Logger.debug(f'...pre compiling model on device type "{self.device.type}"')
+                self.Logger.debug(f'...pre compiling model on device type "{self.device.type}"')
                 cmod = torch.compile(cmod.to(self.device))
             else:
                 cmod = cmod.to(self.device)
@@ -150,7 +150,7 @@ class SeisBenchMod(_BaseMod):
         self.junk_drawer = deque()
 
     # def __str__(self):
-    #     rstr = f'ayahos.core.wyrms.mldetectwyrm.MLDetectWyrm('
+    #     rstr = f'PULSED.data.wyrms.mldetectwyrm.MLDetectWyrm('
     #     rstr += f'model=sbm.{self.model.name}, weight_names={self.weight_names}, '
     #     rstr += f'devicetype={self.device.type}, compiled={self.compiled}, '
     #     rstr += f'max_pulse_size={self.max_pulse_size}, debug={self.debug})'
@@ -181,12 +181,12 @@ class SeisBenchMod(_BaseMod):
     def _unit_input_from_input(self, input):
         """
         POLYMORPHIC
-        Last update with :class:`~ayahos.wyrms.sbmwyrm.SBMWyrm`
+        Last update with :class:`~PULSED.wyrms.sbmwyrm.SBMWyrm`
 
         Create batched window data for input to ML prediction
 
         :param input: collection of input objects
-        :type input: collections.deque of ayahos.core.stream.windowstream.WindowStream(s)
+        :type input: collections.deque of PULSED.data.MLWindow.MLWindow(s)
         :returns: 
             - **unit_input** (*3-tuple of lists*) -- tuple containing
                 - **batch_data** -- batch of windowed, preprocessed data tensors
@@ -204,20 +204,20 @@ class SeisBenchMod(_BaseMod):
         measure = len(input)
         for j_ in range(self.max_batch_size):
             # Check if there are still objects to assess (inherited from Wyrm)
-            status = super()._continue_iteration(input, measure, j_)
+            status = super()._should_this_iteration_run(input, measure, j_)
             # If there are 
             if status:
                 _x = input.popleft()
-                if not isinstance(_x, WindowStream):
-                    Logger.critical('type mismatch')
+                if not isinstance(_x, MLWindow):
+                    self.Logger.critical('type mismatch')
                     raise TypeError
-                # Check if windowstream is ready for conversion to torch.Tensor
+                # Check if MLWindow is ready for conversion to torch.Tensor
                 if _x.ready_to_burn(self.model):
                     # Get data tensor
                     _data = _x.to_npy_tensor(self.model).copy()
                     # Get data fold vector
                     _fold = _x.collapse_fold().copy()
-                    # Get WindowStream metadata
+                    # Get MLWindow metadata
                     _meta = _x.stats.copy()
                     # Explicitly delete the source window from memory
                     del _x
@@ -226,8 +226,8 @@ class SeisBenchMod(_BaseMod):
                     batch_fold.append(_fold)
                     batch_meta.append(_meta)
                 else:
-                    Logger.error(f'WindowStream for {_x.stats.common_id} is not sufficiently processed - skipping')
-                    self.junk_drawer.append(_x)
+                    self.Logger.error(f'MLWindow for {_x.stats.common_id} is not sufficiently processed - skipping')
+                    # self.junk_drawer.append(_x)
                     pass
             # If we've run out of objects to assess, stop creating batch
             else:
@@ -238,7 +238,7 @@ class SeisBenchMod(_BaseMod):
     def _unit_process(self, unit_input):
         """
         POLYMORPHIC
-        Last update with :class:`~ayahos.wyrms.sbmwyrm.SBMWyrm`
+        Last update with :class:`~PULSED.wyrms.sbmwyrm.SBMWyrm`
 
         This unit process batches data, runs predictions, reassociates
         predicted values and their source metadata, and attaches prediction
@@ -247,13 +247,15 @@ class SeisBenchMod(_BaseMod):
         :param unit_input: tuple containing batched data, fold, and metadata objects
         :type unit_input: (list of numpy.ndarray, list of numpy.ndarray, list of dict)
         :returns
-            - **unit_output** (*dict of ayahos.core.stream.dictstream.DictStream*) -- output predictions reassociated with their fold-/meta-data
+            - **unit_output** (*dict of PULSED.data.mlstream.MLStream*) -- output predictions reassociated with their fold-/meta-data
         """
         # unpack unit_input
         batch_data, batch_fold, batch_meta = unit_input
+        # Create holder for outputs
+        unit_output = {'pred': {}, 'meta': batch_meta, 'fold': batch_fold}
         # If we have at least one tensor to predict on, proceed
         if len(batch_data) > 0:
-            Logger.info(f'prediction on batch of {len(batch_data)} windows')
+            # self.Logger.info(f'prediction on batch of {len(batch_data)} windows')
             # Convert list of 2d numpy.ndarrays into a 3d numpy.ndarray
             batch_data = np.array(batch_data)
             # Catch case where we have a single window (add the window axis)
@@ -261,37 +263,56 @@ class SeisBenchMod(_BaseMod):
                 batch_data = batch_data[np.newaxis, :, :]
             # Convert int
             batch_data = torch.Tensor(batch_data)
-            # Create output holder for all predictions
-            unit_output = {i_: DictStream() for i_ in range(len(batch_meta))}
             # Iterate across preloaded (possibly precompiled) models
             for wname, weighted_model in self.cmods.items():
                 # RUN PREDICTION
                 batch_pred = self.__run_prediction(weighted_model, batch_data, batch_meta)
-                # Reassociate metadata
-                self.__batch2dst_dict(wname, batch_pred, batch_fold, batch_meta, unit_output)
+                # Capture model-weight output
+                breakpoint()
+                unit_output['pred'].update({wname: batch_pred})
         else:
             unit_output = None
         return unit_output
     
-    def _capture_unit_output(self, unit_output): 
-        """_capture_unit_output
-
-        Iterate across DictStreams in unit_output and append each to the output attribute
-
-        If the batch_size is less than max_batch_size return an early breaking flag
-        (status = False) to pass to pulse()
-
-        :param unit_output: unit output from _unit_output
-        :type unit_output: dict of ayahos.core.stream.dictstream.DictStream objects or None
-        :return status: should pulse iterations continue? Unconditional True
-        :rtype status: bool
-        """                       
-        # Attach DictStreams to output if there are data
-        status = True
-        if isinstance(unit_output, dict):
-            for _v in unit_output.values():
-                self.output.append(_v)    
-        return status
+    def _capture_unit_output(self, unit_output):
+        if unit_output is None:
+            return
+        else:
+            bm = unit_output['meta']
+            bf = unit_output['fold']
+            for wname in self.cmods.keys():
+                bp = unit_output['pred'][wname]
+                breakpoint()
+                if bp is None:
+                    continue
+                else:
+                    pass
+                _traces = []
+                breakpoint()
+                for _n, _meta in enumerate(bm):
+                    n,s,l,c,m,w = _meta.common_id.split('.')
+                    # Generate new general MLTrace header for this set of predictions
+                    _header = {'starttime': _meta.reference_starttime,
+                            'sampling_rate': _meta.reference_sampling_rate,
+                            'network': n,
+                            'station': s,
+                            'location': l,
+                            'channel': c,
+                            'model': m,
+                            'weight': wname,
+                            'processing': copy.deepcopy(_meta.processing)}
+                    breakpoint()
+                    for _o, _label in enumerate(self.cmods[wname].labels):
+                        # Compose output trace from prediction values, input data fold, and header data
+                        _mlt = MLTrace(data = bp[_n, _o, :], fold=bf[_n], header=_header)
+                        # Update component labeling
+                        _mlt.set_comp(_label)
+                        _traces.append(_mlt)
+                    mls = MLStream(traces=_traces,
+                                   header=_header,
+                                   key_attr='id')
+                    breakpoint()
+                    self.output.append(mls)
 
     #############################
     # _unit_process subroutines #
@@ -341,85 +362,5 @@ class SeisBenchMod(_BaseMod):
             else:
                 detached_batch_preds = batch_preds.detach().numpy()
         else:
-            Logger.critical(f'model "{self.model.name}" prediction initial unpacking not yet implemented')
+            self.Logger.critical(f'model "{self.model.name}" prediction initial unpacking not yet implemented')
             raise NotImplementedError
-        # breakpoint()
-        # # Check if output predictions are presented as some list-like of torch.Tensors
-        # if isinstance(batch_preds, (tuple, list)):
-        #     # If so, convert into a torch.Tensor
-        #     if all(isinstance(_p, torch.Tensor) for _p in batch_preds):
-        #         batch_preds = torch.concat(batch_preds)
-        #     else:
-        #         raise TypeError('not all elements of preds is type torch.Tensor')
-        # # # If reshaping to batch_data.shape is desired, check if it is required.
-        # # if reshape_output and batch_preds.shape != batch_data.shape:
-        # #     batch_preds = batch_preds.reshape(batch_data.shape)
-
-        return detached_batch_preds
-
-    def __batch2dst_dict(self, weight_name, batch_preds, batch_fold, batch_meta, dst_dict):
-        """
-        Reassociated batched predictions, batched metadata, and model metadata to generate MLTrace objects
-        that are appended to the output deque (self.queue). The following MLTrace ID elements are updated
-            component = 1st letter of the model label (e.g., "Detection" from EQTranformer -> "D")
-            model = model name
-            weight = pretrained weight name
-        
-
-        :param weight_name: name of the pretrained model weight used
-        :type weight_name: str
-        :param batch_preds: predicted values with expected axis assignments:
-                                axis 0: window # - corresponding to the axis 0 values in batch_fold and batch_meta
-                                axis 1: label - label assignments from the model architecture used
-                                axis 2: values
-        :type batch_preds: torch.Tensor
-        :param batch_fold: vectors of summed input data fold for each input window
-        :type batch_fold: list of numpy.ndarray
-        :param batch_meta: metadata corresponding to input data for each prediction window
-        :type batch_meta: list of wyrm.core.WindowStream.WindowStreamStats
-        :param dst_dict: prediction output holder object that will house reassociated (meta)data
-        :type dst_dict: dict of ayahos.core.dictstream.DictStream objects
-
-        """
-        # Reshape sanity check
-        if batch_preds.ndim != 3:
-            if batch_preds.shape[0] != len(batch_meta):
-                batch_preds = batch_preds.reshape((len(batch_meta), -1, self.model.in_samples))
-
-        # TODO - change metadata propagation to take procesing from component stream, but still keep
-        # timing and whatnot from reference_streams
-        # Iterate across metadata dictionaries
-        for _i, _meta in enumerate(batch_meta):
-            # Split reference code into components
-            # breakpoint()
-            n,s,l,c,m,w = _meta.common_id.split('.')
-            # Generate new MLTrace header for this set of predictions
-            _header = {'starttime': _meta.reference_starttime,
-                      'sampling_rate': _meta.reference_sampling_rate,
-                      'network': n,
-                      'station': s,
-                      'location': l,
-                      'channel': c,
-                      'model': m,
-                      'weight': weight_name,
-                      'processing': copy.deepcopy(_meta.processing)}
-            # Update processing information to timestamp completion of batch prediction
-     
-            # _header['processing'].append([time.time(),
-            #                               'Wyrm 0.0.0',
-            #                               'PredictionWyrm',
-            #                               'batch2dst_dict',
-            #                               '<internal>'])
-            # Iterate across prediction labels
-            for _j, label in enumerate(self.cmods[weight_name].labels):
-                # Compose output trace from prediction values, input data fold, and header data
-                _mlt = MLTrace(data = batch_preds[_i, _j, :], fold=batch_fold[_i], header=_header)
-                # Update component labeling
-                _mlt.set_comp(label)
-                # if self._timestamp:
-                #     _mlt.stats.processing.append(['PredictionWyrm','batch2dst',f'{_i+1} of {len(batch_meta)}',time.time()])
-                # Append to window-indexed dictionary of WyrmStream objects
-                if _i not in dst_dict.keys():
-                    dst_dict.update({_i, DictStream()})
-                dst_dict[_i].__add__(_mlt, key_attr='id')
-                # Add mltrace to dsbuffer (subsequent buffering to happen in the next step)

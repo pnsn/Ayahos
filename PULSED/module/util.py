@@ -22,10 +22,8 @@ class BreakpointMod(_BaseMod):
     """
     A module that calls breakpoints within :meth:`~PULSED.module.util.BreakpointMod.pulse`
     at the :meth:`~PULSED.module.util.BreakpointMod._mesaure_input_size` subroutine call 
-    (before the iteration loop in pulse) and on either side of the 
-    :meth:`~PULSED.module._base._BaseMod._unit_process` call nested inside 
-    :meth:`~PULSED.module.util.BreakpointMod._unit_process` subprocess.
-
+    (before the iteration loop in pulse),
+    
     This is intended to provide inspection points within an operational
     PulsedMod_EW instance for debugging and development purposes.
     """    
@@ -36,12 +34,8 @@ class BreakpointMod(_BaseMod):
                          report_period=False)
         
     def _measure_input_size(self, input):
-        breakpoint()
         input_size = super()._measure_input_size(input)
+        if input_size > 0:
+            breakpoint()
         return input_size
     
-    def _unit_process(self, unit_input):
-        breakpoint()
-        unit_output = super()._unit_process(unit_input)
-        breakpoint()
-        return unit_output

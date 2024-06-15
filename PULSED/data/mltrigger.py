@@ -205,7 +205,7 @@ class Pick2KMsg(object):
         :return: TYPE_PICK2K formatted message string
         :rtype: str
         """        
-        ids = f'{self.type:>3}{self.module_id:>3}{self.inst_id:>3} {self.seq_no:>4}'
+        ids = f'{self.type:>3}{self.mod_id:>3}{self.inst_id:>3} {self.seq_no:>4}'
         codes = f'{self.sta:<5}{self.net:<2}{self.comp:<3}'
         attr = f'{self.pol:1}{self.qual:1}{self.phz:2}'
         idate = f'{self.time.year:4}{self.time.month:02}{self.time.day:02}'
@@ -267,7 +267,7 @@ class Trigger(object):
             raise TypeError
 
         # Compat check for trigger
-        if isinstance(trigger, (list, tuple)):
+        if isinstance(trigger, (list, tuple, np.ndarray)):
             if len(trigger) == 2: 
                 if trigger[0] < trigger[1]:
                     self.iON = trigger[0]
@@ -277,9 +277,9 @@ class Trigger(object):
                 else:
                     raise ValueError('trigger ON index is larger than OFF index')
             else:
-                raise ValueError('trigger must be a 2-list or 2-tuple')
+                raise ValueError('trigger must be a 2-element array-like')
         else:
-            raise TypeError('trigger must be type list or tuple')
+            raise TypeError('trigger must be type numpy.ndarray, list, or tuple')
 
         # Compat. Check for padding_samples
         if isinstance(padding_samples, int):

@@ -1,4 +1,4 @@
-import torch, copy, logging
+import torch, copy, logging, sys
 import numpy as np
 import seisbench.models as sbm
 from collections import deque
@@ -94,7 +94,6 @@ class SeisBenchMod(_BaseMod):
 
         # Load model class object
         model = self.import_class(mclass)()
-        breakpoint()
         # model compatability checks
         if not isinstance(model, sbm.WaveformModel):
             raise TypeError('model must be a seisbench.models.WaveformModel object')
@@ -268,7 +267,6 @@ class SeisBenchMod(_BaseMod):
                 # RUN PREDICTION
                 batch_pred = self.__run_prediction(weighted_model, batch_data, batch_meta)
                 # Capture model-weight output
-                breakpoint()
                 unit_output['pred'].update({wname: batch_pred})
         else:
             unit_output = None
@@ -282,13 +280,11 @@ class SeisBenchMod(_BaseMod):
             bf = unit_output['fold']
             for wname in self.cmods.keys():
                 bp = unit_output['pred'][wname]
-                breakpoint()
                 if bp is None:
                     continue
                 else:
                     pass
                 _traces = []
-                breakpoint()
                 for _n, _meta in enumerate(bm):
                     n,s,l,c,m,w = _meta.common_id.split('.')
                     # Generate new general MLTrace header for this set of predictions
@@ -301,7 +297,6 @@ class SeisBenchMod(_BaseMod):
                             'model': m,
                             'weight': wname,
                             'processing': copy.deepcopy(_meta.processing)}
-                    breakpoint()
                     for _o, _label in enumerate(self.cmods[wname].labels):
                         # Compose output trace from prediction values, input data fold, and header data
                         _mlt = MLTrace(data = bp[_n, _o, :], fold=bf[_n], header=_header)
@@ -311,7 +306,6 @@ class SeisBenchMod(_BaseMod):
                     mls = MLStream(traces=_traces,
                                    header=_header,
                                    key_attr='id')
-                    breakpoint()
                     self.output.append(mls)
 
     #############################
@@ -345,10 +339,11 @@ class SeisBenchMod(_BaseMod):
         else:
             batch_preds = weighted_model(batch_data)
 
-        # If operating on EQTransformer
         nwind = batch_data.shape[0]
         nlbl = len(self.model.labels)
         nsmp = self.model.in_samples
+
+        # If using EQTransformer
         if self.model.name == 'EQTransformer':
             detached_batch_preds= np.full(shape=(nwind, nlbl, nsmp), fill_value=np.nan, dtype=np.float32)
             for _l, _p in enumerate(batch_preds):
@@ -356,11 +351,15 @@ class SeisBenchMod(_BaseMod):
                     detached_batch_preds[:, _l, :] = _p.detach().cpu().numpy()
                 else:
                     detached_batch_preds[:, _l, :] = _p.detach().numpy()
+        # If using PhaseNet (original)
         elif self.model.name == 'PhaseNet':
             if batch_preds.device.type != 'cpu':
                 detached_batch_preds = batch_preds.detach().cpu().numpy() 
             else:
                 detached_batch_preds = batch_preds.detach().numpy()
+        # Safety catch
         else:
             self.Logger.critical(f'model "{self.model.name}" prediction initial unpacking not yet implemented')
-            raise NotImplementedError
+            sys.exit(1)
+        
+        return detached_batch_preds

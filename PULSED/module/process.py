@@ -150,7 +150,8 @@ class OutputMod(InPlaceMod):
             pkwargs={},
             max_pulse_size=10000,
             meta_memory=3600,
-            report_period=None
+            report_period=False,
+            max_output_size=1e9
             ):
         """Initialize an OutputMod object
         
@@ -171,12 +172,16 @@ class OutputMod(InPlaceMod):
             pkwargs=pkwargs,
             max_pulse_size=max_pulse_size,
             meta_memory=meta_memory,
-            report_period=report_period)
+            report_period=report_period,
+            max_output_size=max_output_size)
         
-        if not isinstance(oclass, type):
-            raise ValueError
+        if not isinstance(oclass, str):
+            self.Logger.critical(f'oclass must be type =str. Not {type(oclass)}')
         else:
-            self.oclass = oclass
+            if oclass in ['str','int','float']:
+                self.oclass = eval(oclass)
+            else:
+                self.oclass = self.import_class(oclass)
     
     def _unit_process(self, unit_input):
         """

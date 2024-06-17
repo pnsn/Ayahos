@@ -288,11 +288,11 @@ class Trigger(object):
             raise TypeError
 
         # Get data snippet
-        trig_trace = source_trace.view_copy(
+        self.trace = source_trace.view_copy(
             starttime=self.tON - self.padding_samples/self.sampling_rate,
             endtime=self.tOFF + self.padding_samples/self.sampling_rate)
-        self.data = trig_trace.data
-        self.fold = trig_trace.fold
+        self.data = self.trace.data
+        self.fold = self.trace.fold
 
         # Get maximum trigger level
         self.tmax = self.tON + np.argmax(self.data)/self.sampling_rate
@@ -309,7 +309,7 @@ class Trigger(object):
         
         self.pref_pick_time = self.tmax
         self.pref_pick_prob = self.pmax
-
+        self.pick_type='max'
         # Placeholder for pick obj
         self.pick2k = None
 
@@ -341,6 +341,17 @@ class Trigger(object):
         else:
             msg = ''
         return msg
+
+    def __repr__(self):
+        rstr = f'{self.__class__.__name__}\n'
+        rstr += f'Pick Time: {self.pref_pick_time} | '
+        rstr += f'Pick Type: {self.pick_type} | '
+        rstr += f'Pick Value: {self.pref_pick_prob}\n'
+        rstr += f'Padded Trigger Trace:\n{self.trace.__repr__()}\n'
+        
+        return rstr
+
+
 
 
 class GaussTrigger(Trigger):
@@ -385,8 +396,9 @@ class GaussTrigger(Trigger):
         # Overwrite reference inherited from Trigger
         self.pref_pick_time = self.mean
         self.pref_pick_prob = self.scale
-    
-    def get_l1(self):
+        self.pick_type='Gaussian mean'
+
+    def get_l1(self):   
         norm = np.linalg.norm(self.res, ord=1)
         return norm
     
@@ -397,6 +409,10 @@ class GaussTrigger(Trigger):
         return norm
     
     L2 = property(get_l2)
+
+    def __repr__(self):
+        rstr = super().__repr__()
+        rstr += f'\nResidual | L1: {self.L1} | L2: {self.L2}'
 
 
 class QuantTrigger(Trigger):
@@ -433,3 +449,8 @@ class QuantTrigger(Trigger):
 
         self.pref_pick_time = self.tmed
         self.pref_pick_prob = self.pmed
+        self.pick_type='Estimated median'
+
+    # def __repr__(self):
+    #     rstr = super().__repr__():
+    #     rstr += 

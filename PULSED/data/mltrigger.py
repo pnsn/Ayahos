@@ -232,8 +232,8 @@ class Trigger(object):
     :type padding_samples: non-negative int, optional
 
     :attributes:
-        - **self.data** (*numpy.ndarray*) -- data samples from **source_trace** for this trigger
-        - **self.fold** (*numpy.ndarray*) -- fold values from **source_trace** for this trigger
+        - **self.trace.data** (*numpy.ndarray*) -- data samples from **source_trace** for this trigger
+        - **self.trace.fold** (*numpy.ndarray*) -- fold values from **source_trace** for this trigger
         - **self.starttime** (*obspy.core.utcdatetime.UTCDateTime) -- starting timestamp from **source_trace**
         - **self.sampling_rate** (*float*) -- sampling rate from **source_trace**
         - **self.network** (*str*) -- network attribute from **source_trace.stats**
@@ -291,12 +291,10 @@ class Trigger(object):
         self.trace = source_trace.view_copy(
             starttime=self.tON - self.padding_samples/self.sampling_rate,
             endtime=self.tOFF + self.padding_samples/self.sampling_rate)
-        self.data = self.trace.data
-        self.fold = self.trace.fold
 
         # Get maximum trigger level
-        self.tmax = self.tON + np.argmax(self.data)/self.sampling_rate
-        self.pmax = np.max(self.data)
+        self.tmax = self.tON + np.argmax(self.trace.data)/self.sampling_rate
+        self.pmax = np.max(self.trace.data)
 
         # Compatability check on trigger_level
         if isinstance(trigger_level, float):
@@ -383,7 +381,7 @@ class GaussTrigger(Trigger):
         super().__init__(source_trace, trigger, trigger_level, padding_samples=padding_samples)
         
         x = np.arange(self.iON, self.iOFF)/self.sampling_rate + self.starttime.timestamp
-        y = self.data
+        y = self.trace.data
         # If user does not define the threshold for fitting, use the trigger_level
         if 'threshold' not in options.keys():
             options.update({'threshold': self.trigger_level})
@@ -439,7 +437,7 @@ class QuantTrigger(Trigger):
         
         self.quantiles.sort
 
-        y = self.data
+        y = self.trace.data
         x = np.arange(self.iON, self.iOFF)
         samples, probabilities = estimate_quantiles(x, y)
         self.probabilities = probabilities

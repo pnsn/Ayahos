@@ -12,6 +12,7 @@ examples/live_example/data/*
 *.log.202*
 *.log
 *.pck
+*.pk2
 *.ndx
 
 # Byte-compiled / optimized / DLL files

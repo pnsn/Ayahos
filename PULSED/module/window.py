@@ -14,6 +14,7 @@ Classes
 import logging, sys
 import seisbench.models as sbm
 from collections import deque
+from obspy import UTCDateTime
 from PULSED.data.mltrace import MLTrace
 from PULSED.data.mlstream import MLStream
 from PULSED.data.mlwindow import MLWindow
@@ -42,6 +43,7 @@ class WindowMod(_BaseMod):
         reference_overlap=1800,
         fnfilter=None,
         pulse_type='network',
+        stance='patient',
         max_pulse_size=1,
         meta_memory=3600,
         report_period=False,
@@ -164,6 +166,14 @@ class WindowMod(_BaseMod):
             self.fnfilter = '*'
         else:
             raise TypeError('fnfilter must be type str or NoneType')
+
+        if isinstance(stance, str):
+            if stance.lower() in ['patient','eager']:
+                self.stance = stance.lower()
+            else:
+                raise ValueError
+        else:
+            raise TypeError
 
         self.ref = {
             'sampling_rate': refsr,
@@ -308,7 +318,8 @@ class WindowMod(_BaseMod):
                                 header = {'reference_starttime': next_window_ti,
                                           'reference_sampling_rate': self.ref['sampling_rate'],
                                           'reference_npts': self.ref['npts'],
-                                          'thresholds': self.ref['thresholds']},
+                                          'thresholds': self.ref['thresholds'],
+                                          'processing': [[self.__name__(full=False), UTCDateTime()]]},
                                 ref_component=self.ref['component']
                             )
                             # Append window to output
@@ -420,8 +431,19 @@ class WindowMod(_BaseMod):
             # Get window edge times
             next_window_ti = self.window_tracker[site][inst][mod]['ti']
             next_window_tf = next_window_ti + self.window_sec
+            # If the endpoint exists in the buffer
+            status = False
+            # If eager, just need the window endtime in the scope of the trace
+            if self.stance == 'eager':
+                status = next_window_tf <= mltrace.stats.endtime
+            # If patient, require at least one non-zero-fold sample past the end of the window
+            elif self.stance == 'patient':
+                if next_window_tf <= mltrace.stats.endtime:
+                    _, fold_view = mltrace.get_subset_view(starttime=next_window_tf)
+                    status = any(fold_view > 0)
+
             # If the mltrace has reached or exceeded the endpoint of the next window
-            if next_window_tf <= mltrace.stats.endtime:
+            if status:
                 # Get valid fraction for proposed window in Trace
                 fv = mltrace.get_fvalid_subset(starttime=next_window_ti, endtime=next_window_tf)
                 # If threshold passes
@@ -445,7 +467,7 @@ class WindowMod(_BaseMod):
                         next_window_ti += nadv*self.advance_sec
                         next_window_tf += nadv*self.advance_sec
                         # If the new window ends inside the current data
-                        if mltrace.stats.endtime >= next_window_tf:
+                        if mltrace.stats.endtime >= next_window_tf and self.stance == 'eager':
                             # Consider re-approving the window for copying + trimming
                             fv = mltrace.get_fvalid_subset(starttime=next_window_ti,
                                                         endtime=next_window_tf)

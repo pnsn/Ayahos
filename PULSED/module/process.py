@@ -18,6 +18,10 @@ Classes
 
 import logging, sys
 from collections import deque
+from obspy import UTCDateTime
+from PULSED.data.mltrace import MLTrace
+from PULSED.data.mlstream import MLStream
+from PULSED.data.mlwindow import MLWindow
 from PULSED.module._base import _BaseMod
 
 Logger = logging.getLogger(__name__)
@@ -93,7 +97,7 @@ class InPlaceMod(_BaseMod):
         if isinstance(unit_input, self.pclass):
             return unit_input
         else:
-            self.Logger.critical(f'object popped from input mismatch {self.pclass} != {type(obj)}')
+            self.Logger.critical(f'object popped from input mismatch {self.pclass} != {type(unit_input)}')
             raise TypeError
         
     def _unit_process(self, unit_input):
@@ -114,6 +118,8 @@ class InPlaceMod(_BaseMod):
          - **unit_output** (*self.pclass*) -- modified object
         """ 
         getattr(unit_input, self.pmethod)(**self.pkwargs)
+        if self.pclass in [MLTrace, MLStream, MLWindow]:
+            unit_input.stats.processing.append([self.__name__(full=False), self.pmethod, UTCDateTime()])
         unit_output = unit_input
         return unit_output
     

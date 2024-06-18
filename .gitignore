@@ -181,3 +181,4 @@ cython_debug/
 docs/source/modules.rst
 live_example/data/tmp/ew2file_pew_keeper
 live_example/params/*.ndx
+live_example/data/pick_ew/*.p2k

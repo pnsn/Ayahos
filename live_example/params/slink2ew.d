@@ -77,34 +77,34 @@ StateFile                        # If this flag is specified (uncommented) a
 # fields, for example to request all stations from the TA network:
 
 # Washington Broadbands
-# Stream UW_* HH?.D
+Stream UW_* HH?.D
 # Mount St. Helens Stations
 # CVO Stations
-Stream CC_EDM BH?.D
-Stream CC_HOA BH?.D
-Stream CC_HSR BH?.D
-Stream CC_LOO BH?.D
-Stream CC_REM BH?.D
-Stream CC_SEP BH?.D
-Stream CC_SHW BH?.D
-Stream CC_STD BH?.D
-Stream CC_SUG BH?.D
-Stream CC_USRF BH?.D
-Stream CC_VALT BH?.D
+#Stream CC_EDM BH?.D
+#Stream CC_HOA BH?.D
+#Stream CC_HSR BH?.D
+#Stream CC_LOO BH?.D
+#Stream CC_REM BH?.D
+#Stream CC_SEP BH?.D
+#Stream CC_SHW BH?.D
+#Stream CC_STD BH?.D
+#Stream CC_SUG BH?.D
+#Stream CC_USRF BH?.D
+#Stream CC_VALT BH?.D
 # Plate Boundary Observatory Stations
-Stream PB_B201 EH?.D
-Stream PB_B202 EH?.D
-Stream PB_B203 EH?.D
-Stream PB_B204 EH?.D
+#Stream PB_B201 EH?.D
+#Stream PB_B202 EH?.D
+#Stream PB_B203 EH?.D
+#Stream PB_B204 EH?.D
 # UW 1C Stations
-Stream UW_ELK EHZ.D
+#Stream UW_ELK EHZ.D
 # UW 6C Stations
-Stream UW_TOUT "HH?.D EN?.D"
-Stream UW_YACT "HH?.D EN?.D"
-Stream UW_ASR2 "HH?.D EN?.D"
-Stream UW_CINE "HH?.D EN?.D"
+#Stream UW_TOUT "HH?.D EN?.D"
+#Stream UW_YACT "HH?.D EN?.D"
+#Stream UW_ASR2 "HH?.D EN?.D"
+#Stream UW_CINE "HH?.D EN?.D"
 # UW 4C Stations
-Stream UW_PUPY "EHZ.D EN?.D"
+#Stream UW_PUPY "EHZ.D EN?.D"
 
 #(notes regarding "selectors" from a SeedLink configuration file)
 #

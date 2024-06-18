@@ -234,8 +234,8 @@ class Trigger(object):
     :attributes:
         - **self.trace.data** (*numpy.ndarray*) -- data samples from **source_trace** for this trigger
         - **self.trace.fold** (*numpy.ndarray*) -- fold values from **source_trace** for this trigger
-        - **self.starttime** (*obspy.core.utcdatetime.UTCDateTime) -- starting timestamp from **source_trace**
-        - **self.sampling_rate** (*float*) -- sampling rate from **source_trace**
+        - **self.trace.starttime** (*obspy.core.utcdatetime.UTCDateTime) -- starting timestamp from **source_trace**
+        - **self.trace.sampling_rate** (*float*) -- sampling rate from **source_trace**
         - **self.network** (*str*) -- network attribute from **source_trace.stats**
         - **self.station** (*str*) -- station attribute from **source_trace.stats**
         - **self.location** (*str*) -- location attribute from **source_trace.stats**
@@ -252,17 +252,8 @@ class Trigger(object):
         - **self.pick2k** (*ayahos.core.pick.Pick2KMsg*) -- TYPE_PICK2K data class object
     """
     def __init__(self, source_trace, trigger, trigger_level, padding_samples=0):
-        # Compat check for source_trace
-        if isinstance(source_trace, MLTrace):
-            self.starttime = source_trace.stats.starttime
-            self.sampling_rate = source_trace.stats.sampling_rate
-            self.npts = source_trace.stats.npts
-            self.network = source_trace.stats.network
-            self.station = source_trace.stats.station
-            self.location = source_trace.stats.location
-            self.channel = source_trace.stats.channel
-            self.model = source_trace.stats.model
-            self.weight = source_trace.stats.weight
+        if isinstance(source_trace, Trace):
+            pass
         else:
             raise TypeError
 
@@ -271,9 +262,9 @@ class Trigger(object):
             if len(trigger) == 2: 
                 if trigger[0] < trigger[1]:
                     self.iON = trigger[0]
-                    self.tON = self.starttime + self.iON/self.sampling_rate
+                    self.tON = source_trace.stats.starttime + self.iON/source_trace.stats.sampling_rate
                     self.iOFF = trigger[1]
-                    self.tOFF = self.starttime + self.iOFF/self.sampling_rate
+                    self.tOFF = source_trace.stats.starttime + self.iOFF/source_trace.stats.sampling_rate
                 else:
                     raise ValueError('trigger ON index is larger than OFF index')
             else:
@@ -289,11 +280,11 @@ class Trigger(object):
 
         # Get data snippet
         self.trace = source_trace.view_copy(
-            starttime=self.tON - self.padding_samples/self.sampling_rate,
-            endtime=self.tOFF + self.padding_samples/self.sampling_rate)
+            starttime=self.tON - self.padding_samples/source_trace.stats.sampling_rate,
+            endtime=self.tOFF + self.padding_samples/source_trace.stats.sampling_rate)
 
         # Get maximum trigger level
-        self.tmax = self.tON + np.argmax(self.trace.data)/self.sampling_rate
+        self.tmax = self.tON + np.argmax(self.trace.data)/self.trace.stats.sampling_rate
         self.pmax = np.max(self.trace.data)
 
         # Compatability check on trigger_level
@@ -304,7 +295,7 @@ class Trigger(object):
                 raise ValueError
         else:
             raise TypeError
-        
+        self.pref_pick_pos = self.iON + (self.tmax - self.tON)*self.trace.stats.sampling_rate
         self.pref_pick_time = self.tmax
         self.pref_pick_prob = self.pmax
         self.pick_type='max'
@@ -312,19 +303,19 @@ class Trigger(object):
         self.pick2k = None
 
     def get_site(self):
-        rstr = f'{self.network}.{self.station}'
+        rstr = f'{self.trace.stats.network}.{self.trace.stats.station}'
         return rstr
     
     site = property(get_site)
 
     def get_id(self):
-        rstr = f'{self.network}.{self.station}.{self.location}.{self.channel}.{self.model}.{self.weight}'
+        rstr = self.trace.id
         return rstr
     
     id = property(get_id)
 
     def get_label(self):
-        rstr = self.channel[-1]
+        rstr = self.trace.stats.channel[-1]
         return rstr
     
     label = property(get_label)  
@@ -345,6 +336,7 @@ class Trigger(object):
         rstr += f'Pick Time: {self.pref_pick_time} | '
         rstr += f'Pick Type: {self.pick_type} | '
         rstr += f'Pick Value: {self.pref_pick_prob}\n'
+        rstr += f'Window Position: {self.iON} / {self.pref_pick_pos} \ {self.iOFF}\n'
         rstr += f'Padded Trigger Trace:\n{self.trace.__repr__()}\n'
         
         return rstr
@@ -380,7 +372,7 @@ class GaussTrigger(Trigger):
         """        
         super().__init__(source_trace, trigger, trigger_level, padding_samples=padding_samples)
         
-        x = np.arange(self.iON, self.iOFF)/self.sampling_rate + self.starttime.timestamp
+        x = np.arange(self.iON, self.iOFF)/self.trace.sampling_rate + self.trace.starttime.timestamp
         y = self.trace.data
         # If user does not define the threshold for fitting, use the trigger_level
         if 'threshold' not in options.keys():
@@ -441,7 +433,7 @@ class QuantTrigger(Trigger):
         x = np.arange(self.iON, self.iOFF)
         samples, probabilities = estimate_quantiles(x, y)
         self.probabilities = probabilities
-        self.times = [self.tON + smp/self.sampling_rate for smp in samples]
+        self.times = [self.tON + smp/self.trace.sampling_rate for smp in samples]
         self.tmed = self.times[self.quantiles==0.5]
         self.pmed = self.probabilities[self.quantiles==0.5]
 

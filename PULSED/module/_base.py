@@ -376,11 +376,15 @@ class _BaseMod(object):
         timestamp = pd.Timestamp.now().timestamp()
         runtime = (timestamp - pulse_starttime)
         output_size = len(self.output)
-        S_line = pd.DataFrame(dict(zip(self._keys_meta,
+        df_line = pd.DataFrame(dict(zip(self._keys_meta,
                                        [timestamp, nproc, runtime, input_size, output_size, early_stop_code])),
                                index=[0])
         # Append line to dataframe
-        self._metadata = self._metadata._append(S_line, ignore_index=True)
+        if len(self._metadata) == 0:
+            self._metadata = df_line
+        else:
+            
+            self._metadata = pd.concat([self._metadata, df_line], axis=0, ignore_index=True)
 
         # Trim outdated metadata
         oldest_time = timestamp - self.meta_memory

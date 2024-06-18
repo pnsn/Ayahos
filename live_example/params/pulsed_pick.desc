@@ -21,7 +21,7 @@
 #
 #
 modName  pulsed_pick
-modId    MOD_pulsed_pick
+modId    MOD_PULSED_PICK
 instId   ${EW_INST_ID}
 #
 #

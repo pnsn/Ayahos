@@ -218,7 +218,7 @@
  Module   MOD_CODA_AAV          148
  Module   MOD_CODA_DUR          149
  Module   MOD_CARLSUBTRIGNM     150
- Module   MOD_AYAHOS_PICK       193
+ Module   MOD_PULSED_PICK       193
 
 
 #--------------------------------------------------------------------------

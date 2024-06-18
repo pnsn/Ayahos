@@ -1,4 +1,4 @@
-import torch, copy, logging, sys
+import torch, copy, logging, sys, os
 import numpy as np
 import seisbench.models as sbm
 from collections import deque
@@ -46,6 +46,7 @@ class SeisBenchMod(_BaseMod):
         max_pulse_size=1,
         meta_memory=3600,
         max_output_size=1e9,
+        thread_limit=None,
         report_period=False):
         """
         Initialize a PULSED.data.wyrms.mldetectwyrm.MLDetectWyrm object
@@ -76,6 +77,24 @@ class SeisBenchMod(_BaseMod):
                          report_period=report_period,
                          max_output_size=max_output_size)
         
+        if isinstance(thread_limit, int):
+            if thread_limit > 0:
+                if thread_limit <= 0.5*torch.get_num_threads():
+                    torch.set_num_threads(int(thread_limit))
+                elif thread_limit > torch.get_num_threads():
+                    self.Logger.critical('specified thread_limit exceeds CPU count - exiting')
+                    sys.exit(1)
+                else:
+                    self.Logger.warning('specified thread_limit exceeds half the CPU count. May have diminishing returns')
+                    torch.set_num_threads(int(thread_limit))
+            else:
+                self.Logger.critical('cannot specify negative thread_limit - exiting')
+                sys.exit(1)
+        elif thread_limit is None:
+            pass
+        else:
+            self.Logger.critical('thread_limit must be type int or None')
+
         # max_batch_size compatability checks
         if isinstance(max_batch_size, int):
             if 0 < max_batch_size <= 2**15:
@@ -197,43 +216,52 @@ class SeisBenchMod(_BaseMod):
         if not isinstance(input, deque):
             raise TypeError('input `obj` must be type collections.deque')        
 
-        batch_data = []
-        batch_fold = []
-        batch_meta = []
-        # Compose Batch
+        # Measure the input as-is (not the same as the measure at the start of each pulse() call)
         measure = len(input)
-        for j_ in range(self.max_batch_size):
-            # Check if there are still objects to assess (inherited from Wyrm)
-            status = super()._should_this_iteration_run(input, measure, j_)
-            # If there are 
-            if status:
-                _x = input.popleft()
-                if not isinstance(_x, MLWindow):
-                    self.Logger.critical('type mismatch')
-                    raise TypeError
-                # Check if MLWindow is ready for conversion to torch.Tensor
-                if _x.ready_to_burn(self.model):
-                    # Get data tensor
-                    _data = _x.to_npy_tensor(self.model).copy()
-                    # Get data fold vector
-                    _fold = _x.collapse_fold().copy()
-                    # Get MLWindow metadata
-                    _meta = _x.stats.copy()
-                    _meta.processing.append([self.__name__(), 'batched', UTCDateTime()])
-                    # Explicitly delete the source window from memory
-                    del _x
-                    # Append coppied (meta)data to batch collectors
-                    batch_data.append(_data)
-                    batch_fold.append(_fold)
-                    batch_meta.append(_meta)
-                else:
-                    self.Logger.error(f'MLWindow for {_x.stats.common_id} is not sufficiently processed - skipping')
-                    # self.junk_drawer.append(_x)
-                    pass
-            # If we've run out of objects to assess, stop creating batch
+
+        # Get number of windows to process for this batch
+        if self.max_batch_size >= measure >= self.min_batch_size:
+            nbatchwindows = measure
+        elif measure > self.max_batch_size:
+            nbatchwindows = self.max_batch_size
+        else:
+            self.Logger.critical(f'input of size < min_batch_size slipped through - exiting')
+            sys.exit(1)
+
+        # Preallocate numpy arrays
+        batch_data= np.full(shape=(nbatchwindows, self.model.in_channels, self.model.in_samples),
+                            fill_value=0, dtype=np.float32)
+        batch_fold = np.full(shape=(nbatchwindows, self.model.in_samples), fill_value=0, dtype=np.float32)
+        batch_meta = []
+        for j_ in range(nbatchwindows):
+            # Get individual window
+            _x = input.popleft()
+            if not isinstance(_x, MLWindow):
+                self.Logger.critical('type mismatch')
+                raise TypeError
+            # Check if MLWindow is ready for conversion to torch.Tensor
+            if _x.ready_to_burn(self.model):
+                # Get data tensor
+                _data = _x.to_npy_tensor(self.model)
+                # Get data fold vector
+                _fold = _x.collapse_fold()
+                # Get MLWindow metadata
+                _meta = _x.stats
+                _meta.processing.append([self.__name__(), 'batched', UTCDateTime()])
+                # Explicitly delete the source window from memory
+                del _x
+                # Append coppied (meta)data to batch collectors
+                batch_data[j_, :, :] = _data
+                batch_fold[j_, :] = (_fold)
+                batch_meta.append(_meta)
             else:
-                break
-        unit_input = (batch_data, batch_fold, batch_meta)
+                self.Logger.error(f'MLWindow for {_x.stats.common_id} is not sufficiently processed - skipping')
+                # self.junk_drawer.append(_x)
+                pass
+        # Convert batch data into a torch.Tensor
+        tbatch_data = torch.Tensor(batch_data)
+        # Compose unit_output tuple
+        unit_input = (tbatch_data, batch_fold, batch_meta)
         return unit_input
     
     def _unit_process(self, unit_input):
@@ -250,33 +278,48 @@ class SeisBenchMod(_BaseMod):
         :returns
             - **unit_output** (*dict of PULSED.data.mlstream.MLStream*) -- output predictions reassociated with their fold-/meta-data
         """
-        # unpack unit_input
-        batch_data, batch_fold, batch_meta = unit_input
+        # unpack copy of unit_input
+        tbatch_data, batch_fold, batch_meta = unit_input
         # Create holder for outputs
         unit_output = {'pred': {}, 'meta': batch_meta, 'fold': batch_fold}
-        # If we have at least one tensor to predict on, proceed
-        if len(batch_data) > 0:
-            # self.Logger.info(f'prediction on batch of {len(batch_data)} windows')
-            # Convert list of 2d numpy.ndarrays into a 3d numpy.ndarray
-            if isinstance(batch_data, np.ndarray):
-                batch_data = [batch_data]
-            batch_data = torch.Tensor(batch_data)
-                
-            # batch_data = np.array(batch_data, dtype=np.float32)
-            # # Catch case where we have a single window (add the window axis)
-            # if batch_data.ndim == 2:
-            #     batch_data = batch_data[np.newaxis, :, :]
-            # # Convert into torch tensor
-            # batch_data = torch.Tensor(batch_data)
-            # Iterate across preloaded (possibly precompiled) models
-            for wname, weighted_model in self.cmods.items():
-                # RUN PREDICTION
-                batch_pred = self.__run_prediction(weighted_model, batch_data, batch_meta)
-                # Capture model-weight output
-                unit_output['pred'].update({wname: batch_pred})
-        else:
-            unit_output = None
-            del batch_data
+        
+        # Iterate across preloaded (possibly precompiled) models
+        for wname, weighted_model in self.cmods.items():
+            # RUN PREDICTION, ensuring data is on self.device
+            if tbatch_data.device.type != self.device.type:
+                tbatch_preds = weighted_model(tbatch_data.to(self.device))
+            else:
+                tbatch_preds = weighted_model(tbatch_data)
+
+            # Get data dimensions
+            nwind = tbatch_data.shape[0]
+            nlbl = len(self.model.labels)
+            nsmp = self.model.in_samples
+
+            # If using EQTransformer
+            if self.model.name == 'EQTransformer':
+                # Preallocate space for detacted predictions
+                batch_preds= np.full(shape=(nwind, nlbl, nsmp), fill_value=np.nan, dtype=np.float32)
+                for _l, _p in enumerate(tbatch_preds):
+                    if _p.device.type != 'cpu': 
+                        batch_preds[:, _l, :] = _p.detach().cpu().numpy()
+                    else:
+                        batch_preds[:, _l, :] = _p.detach().numpy()
+            # If using PhaseNet (original)
+            elif self.model.name == 'PhaseNet':
+                if tbatch_preds.device.type != 'cpu':
+                    batch_preds = tbatch_preds.detach().cpu().numpy() 
+                else:
+                    batch_preds = tbatch_preds.detach().numpy()
+            # Safety catch for other model architectures
+            else:
+                self.Logger.critical(f'model "{self.model.name}" prediction initial unpacking not yet implemented - exiting')
+                self.Logger.debug('You could make an addition to `~PULSED.module.predict` and contribute to the project!')
+                sys.exit(1)
+
+            # Capture model-weight output
+            unit_output['pred'].update({wname: batch_preds})
+
         return unit_output
     
     def _capture_unit_output(self, unit_output):
@@ -336,39 +379,25 @@ class SeisBenchMod(_BaseMod):
         :return detached_batch_preds: prediction outputs, detached from non-cpu processor if applicable
         :rtype detached_batch_preds: numpy.ndarray
         """
-        # Ensure input data is a torch.tensor
-        if not isinstance(batch_data, (torch.Tensor, np.ndarray)):
-            raise TypeError('batch_data must be type torch.Tensor or numpy.ndarray')
-        elif isinstance(batch_data, np.ndarray):
-            batch_data = torch.Tensor(batch_data)
 
-        # RUN PREDICTION, ensuring data is on self.device
-        if batch_data.device.type != self.device.type:
-            batch_preds = weighted_model(batch_data.to(self.device))
-        else:
-            batch_preds = weighted_model(batch_data)
-
-        nwind = batch_data.shape[0]
-        nlbl = len(self.model.labels)
-        nsmp = self.model.in_samples
-
-        # If using EQTransformer
-        if self.model.name == 'EQTransformer':
-            detached_batch_preds= np.full(shape=(nwind, nlbl, nsmp), fill_value=np.nan, dtype=np.float32)
-            for _l, _p in enumerate(batch_preds):
-                if _p.device.type != 'cpu': 
-                    detached_batch_preds[:, _l, :] = _p.detach().cpu().numpy()
-                else:
-                    detached_batch_preds[:, _l, :] = _p.detach().numpy()
-        # If using PhaseNet (original)
-        elif self.model.name == 'PhaseNet':
-            if batch_preds.device.type != 'cpu':
-                detached_batch_preds = batch_preds.detach().cpu().numpy() 
-            else:
-                detached_batch_preds = batch_preds.detach().numpy()
-        # Safety catch
-        else:
-            self.Logger.critical(f'model "{self.model.name}" prediction initial unpacking not yet implemented')
-            sys.exit(1)
         
         return detached_batch_preds
+
+
+# # If we have at least one tensor to predict on, proceed
+        # if len(tbatch_data) > 0:
+        #     # self.Logger.info(f'prediction on batch of {len(batch_data)} windows')
+        #     # Convert list of 2d numpy.ndarrays into a 3d numpy.ndarray
+        #     if isinstance(tbatch_data, np.ndarray):
+        #         batch_data = batch_data[np.newaxis, :, :]
+        #     elif isinstance(batch_data, list):
+
+
+        #     batch_data = torch.Tensor(batch_data)
+                
+            # batch_data = np.array(batch_data, dtype=np.float32)
+            # # Catch case where we have a single window (add the window axis)
+            # if batch_data.ndim == 2:
+            #     batch_data = batch_data[np.newaxis, :, :]
+            # # Convert into torch tensor
+            # batch_data = torch.Tensor(batch_data)

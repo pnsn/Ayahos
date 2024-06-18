@@ -23,16 +23,16 @@ log_path = os.environ['EW_LOG']
 log_name = f'{os.path.splitext(arguments.config)[0]}.log'
 log_fmt = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 # Rotate files, like eartworm but using only 3 backups
-fh = TimedRotatingFileHandler(
-    filename = os.path.join(log_path, log_name),
-    when='midnight',
-    interval=1,
-    backupCount=3
-)
-# Set logging level for log file
-fh.setLevel(logging.WARNING)
-# Set logging format
-fh.setFormatter(log_fmt)
+# fh = TimedRotatingFileHandler(
+#     filename = os.path.join(log_path, log_name),
+#     when='midnight',
+#     interval=1,
+#     backupCount=3
+# )
+# # Set logging level for log file
+# fh.setLevel(logging.WARNING)
+# # Set logging format
+# fh.setFormatter(log_fmt)
 
 # Set logging level for the terminal
 ch = logging.StreamHandler()
@@ -40,7 +40,7 @@ ch.setFormatter(log_fmt)
 ch.setLevel(logging.INFO)
 
 # Add handler to the root logger
-logging.getLogger().addHandler(fh)
+# logging.getLogger().addHandler(fh)
 logging.getLogger().addHandler(ch)
 # # Set root logger logging level
 logging.getLogger().setLevel(logging.DEBUG)

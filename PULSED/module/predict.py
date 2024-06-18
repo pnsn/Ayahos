@@ -2,6 +2,7 @@ import torch, copy, logging, sys
 import numpy as np
 import seisbench.models as sbm
 from collections import deque
+from obspy import UTCDateTime
 from PULSED.data.mltrace import MLTrace
 from PULSED.data.mlstream import MLStream
 from PULSED.data.mlwindow import MLWindow
@@ -218,6 +219,7 @@ class SeisBenchMod(_BaseMod):
                     _fold = _x.collapse_fold().copy()
                     # Get MLWindow metadata
                     _meta = _x.stats.copy()
+                    _meta.processing.append([self.__name__(), 'batched', UTCDateTime()])
                     # Explicitly delete the source window from memory
                     del _x
                     # Append coppied (meta)data to batch collectors
@@ -256,12 +258,16 @@ class SeisBenchMod(_BaseMod):
         if len(batch_data) > 0:
             # self.Logger.info(f'prediction on batch of {len(batch_data)} windows')
             # Convert list of 2d numpy.ndarrays into a 3d numpy.ndarray
-            batch_data = np.array(batch_data)
-            # Catch case where we have a single window (add the window axis)
-            if batch_data.ndim == 2:
-                batch_data = batch_data[np.newaxis, :, :]
-            # Convert int
+            if isinstance(batch_data, np.ndarray):
+                batch_data = [batch_data]
             batch_data = torch.Tensor(batch_data)
+                
+            # batch_data = np.array(batch_data, dtype=np.float32)
+            # # Catch case where we have a single window (add the window axis)
+            # if batch_data.ndim == 2:
+            #     batch_data = batch_data[np.newaxis, :, :]
+            # # Convert into torch tensor
+            # batch_data = torch.Tensor(batch_data)
             # Iterate across preloaded (possibly precompiled) models
             for wname, weighted_model in self.cmods.items():
                 # RUN PREDICTION
@@ -270,6 +276,7 @@ class SeisBenchMod(_BaseMod):
                 unit_output['pred'].update({wname: batch_pred})
         else:
             unit_output = None
+            del batch_data
         return unit_output
     
     def _capture_unit_output(self, unit_output):
@@ -306,6 +313,8 @@ class SeisBenchMod(_BaseMod):
                     mls = MLStream(traces=_traces,
                                    header=_header,
                                    key_attr='id')
+                    mls.stats.processing.append([self.__name__(), 'debatched', UTCDateTime()])
+                    
                     self.output.append(mls)
 
     #############################

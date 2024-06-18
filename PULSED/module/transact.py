@@ -155,7 +155,7 @@ class TransactMod(_BaseMod):
             unit_input = None
         # Input object for "put" methods is a PyEW message-formatted object
         elif 'put' in self.pulse_method:
-            unit_input = super()._get_obj_from_input(input)
+            unit_input = super()._unit_input_from_input(input)
         return unit_input
     
     def _unit_process(self, unit_input):
@@ -180,7 +180,7 @@ class TransactMod(_BaseMod):
             if self.pulse_method == 'put_wave':
                 getattr(self.module, self.pulse_method)(self.conn_name, unit_input)
             else:
-                getattr(self.module, self.pulse_method)(self.conn_name, unit_input, self.msg_type)
+                getattr(self.module, self.pulse_method)(self.conn_name, self.msg_type, unit_input)
             unit_output = None
         return unit_output
     
@@ -220,18 +220,24 @@ class TransactMod(_BaseMod):
         :rtype status: bool
         """
         status = True
-        if is_empty_message(unit_output):
-            if 'get' in self.pulse_method:
+        if 'get' in self.pulse_method:
+            if is_empty_message(unit_output):
                 status = False
             else:
-                self.Logger.error("We shouldn't have gotten here (empty message with a 'put' method)")
-                status = False
-        else:
-            if 'get' in self.pulse_method:
                 status = True
-            else:
-                self.Logger.error("We shouldn't have gotten here (empty message with a 'put' method)")
-                status = False
+        elif 'put' in self.pulse_method:
+            status = True
+        else:
+            self.Logger.error('We shouldnt have gotten here - means the pulse_method was altered')
+        #     else:
+        #         self.Logger.error("We shouldn't have gotten here (empty message with a 'put' method)")
+        #         status = False
+        # else:
+        #     if 'put' in self.pulse_method:
+        #         status = True
+        #     else:
+        #         self.Logger.error("We shouldn't have gotten here (empty message with a 'put' method)")
+        #         status = False
         return status
     
     
@@ -296,6 +302,7 @@ class PyEWMod(EWModule):
                          installation_id,
                          heartbeat_period,
                          deep_debug)
+        self.Logger = logging.getLogger('PULSED.module.transact.PyEWMod')
         # Capture input values
         self.mod_id = module_id
         self.inst_id = installation_id
@@ -451,7 +458,7 @@ class PyEWMod(EWModule):
             super().put_wave(conn_idx, wave)
         return
 
-    def put_msg(self, conn_name, msg, msg_type):
+    def put_msg(self, conn_name, msg_type, msg):
         """Wraps the :meth:`~PyEW.EWModule.put_msg` method to use conn_name
         instead of the connection index number
 
@@ -476,9 +483,9 @@ class PyEWMod(EWModule):
             if self.debug:
                 self.Logger.critical('msg_type must be \in [1, 255]')
         else:
-            super().put_msg(conn_idx, msg, msg_type)
+            super().put_msg(conn_idx, msg_type, msg)
     
-    def put_bytes(self, conn_name, msg, msg_type):
+    def put_bytes(self, conn_name, msg_type, msg):
         """Wraps the :meth:`~PyEW.EWModule.put_bytes` method to use conn_name
         instead of the connection index number
 
@@ -503,4 +510,4 @@ class PyEWMod(EWModule):
             if self.debug:
                 self.Logger.critical('msg_type must be \in [1, 255]')
         else:
-            super().put_bytes(conn_idx, msg, msg_type)  
+            super().put_bytes(conn_idx, msg_type, msg)  

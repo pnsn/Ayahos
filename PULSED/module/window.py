@@ -406,7 +406,7 @@ class WindowMod(_BaseMod):
                                                          'ref': mltrace.id,
                                                          'ready': False}},
                                                 't0': mltrace.stats.starttime}})
-                self.Logger.info(f'Added buffer tree for {site} - triggered by {mltrace.id}')
+                #self.Logger.info(f'Added buffer tree for {site} - triggered by {mltrace.id}')
             # If site is in window_tracker
             else:
                 # If inst is not in this site subdictionary
@@ -416,7 +416,7 @@ class WindowMod(_BaseMod):
                                                             {'ti': self.window_tracker[site]['t0'],
                                                              'ref': mltrace.id,
                                                              'ready': False}}})
-                    self.Logger.info(f'Added buffer branch {inst} to {site} tree - triggered by {mltrace.id}')
+                    #self.Logger.info(f'Added buffer branch {inst} to {site} tree - triggered by {mltrace.id}')
                 # If inst is in this site subdictionary
                 else:
                     # If mod is not in this inst sub-subdictionary

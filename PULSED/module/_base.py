@@ -58,7 +58,7 @@ class _BaseMod(object):
         max_pulse_size=10,
         meta_memory=3600,
         report_period=False,
-        max_output_size=1e6):
+        max_output_size=100):
         """Initialize a _BaseMod object
 
         :param max_pulse_size: maximum number of iterations to run for each call of :meth:`~camper.module._base._BaseMod.pulse`, defaults to 10
@@ -80,6 +80,9 @@ class _BaseMod(object):
         else:
             raise TypeError('max_pulse_size must be positive int-like')
         
+        # Set up logging
+        self.Logger = logging.getLogger(f'{self.__name__()}')
+
         # Initialize output
         self.output = deque()
 
@@ -122,7 +125,6 @@ class _BaseMod(object):
 
         self._last_report_time = pd.Timestamp.now().timestamp()
         self._pulse_rate = nan
-        self.Logger = logging.getLogger(f'{self.__name__()}')
 
 
     def __name__(self, full=False):

@@ -15,7 +15,7 @@
 # Do NOT include a `.' in the suffix.
 # Use as many GetMsgLogo commands as you want.
 #              Installation       Module       Message Type        File Suffix
- GetMsgLogo    INST_UW            MOD_PICK_EW  TYPE_PICK2K         p2k
+ GetMsgLogo    INST_UW            MOD_PULSED_PICK  TYPE_PICK2K         p2k
  GetMsgLogo    INST_UW            MOD_PICK_EW  TYPE_PICK_SCNL      pck
  
  MaxMsgSize        10000         # maximum size (bytes) for input msgs

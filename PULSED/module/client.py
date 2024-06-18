@@ -9,15 +9,15 @@ from PULSED.data.mlstream import MLStream
 from PULSED.util.pyew import trace2wave
 from PULSED.util.latency import read_latency_file
 
-class ClientMod(_BaseMod):
 
+class ClientMod(_BaseMod):
     def __init__(self,
                  client,
                  latency_file,
                  starttime=None,
                  endtime=None,
                  delayed_start=10,
-                 max_pulse_size=1e9,
+                 max_pulse_size=1,
                  max_output_size=1e10,
                  report_period=False,
                  meta_memory=3600):
@@ -25,7 +25,6 @@ class ClientMod(_BaseMod):
                          max_output_size=max_output_size,
                          report_period=report_period,
                          meta_memory=meta_memory)
-        
         # Compatability check for client
         if isinstance(client, (Client, FederatorRoutingClient, WaveBank)):
             self.client = client        
@@ -33,7 +32,34 @@ class ClientMod(_BaseMod):
             self.Logger.critical(f'client is invalid type {type(client)} - supported types: \
                                   obspy.clients.fdsn.client.Client, \
                                   obspy.clients.fdsn.routing.federator_routing_client.FederatorRoutingClient, \
-                                  obsplus.bank.wavebank.WaveBank')    
+                                  obsplus.bank.wavebank.WaveBank')       
+
+class LatencyPlayerMod(ClientMod):
+    """
+    This module acts in a similar manner to a wave_serverV / tankplayer set of modules for
+    Earthworm in that it provides real-time 
+    """
+    def __init__(self,
+                 client,
+                 latency_file,
+                 starttime=None,
+                 endtime=None,
+                 delayed_start=10,
+                 max_pulse_size=1,
+                 max_output_size=1e10,
+                 report_period=False,
+                 meta_memory=3600):
+        
+        super().__init__(
+            client = client,
+            starttime = starttime,
+            endtime=endtime,
+            max_pulse_size=max_pulse_size,
+            max_output_size=max_output_size,
+            report_period=report_period,
+            meta_memory=meta_memory)
+        
+   
 
         # Compatability & formatting check for latency_dataframe
         latency_dataframe = read_latency_file(latency_file)
@@ -119,6 +145,19 @@ class ClientMod(_BaseMod):
         self.index = self.index[(self.index.arrival_time >= self._rectime1)]
 
     def _should_next_iteration_run(self, unit_output):
+        """
+        POLYMORPHIC
+        Last updated with :class:`~PULSED.module.client.ClientMod`
+        
+        If there are still packet arrival times that post-date the
+        last record time (_rectime1), continue iterations, otherwise
+        trigger early stopping.
+
+        :param unit_output: _description_
+        :type unit_output: _type_
+        :return: _description_
+        :rtype: _type_
+        """        
         if self._rectime1 > self.ref_tf:
             status = False
         else:
@@ -127,5 +166,15 @@ class ClientMod(_BaseMod):
 
 
     def _current_ldf_view(self):
+        """Using the time interval [_rectime0, _rectime1), return a view of the
+        latency data frame aliased to the *index* attribute.
+
+        :return ldf_view: subset view of self.index, or if initial pulse has not been run, a view of the entire index
+        :rtype: pandas.core.dataframe.DataFrame
+        """        
         if self._realtime_t0 is None:
             self.Logger.warning('Initial pulse has not been run - showing entire latency dataframe')
+            ldf_view = self.index
+        else:
+            ldf_view = self.index[(self.index.pkt_arrival >= self._rectime0) & (self.index.pkt_arrival < self._rectime1)]
+        return ldf_view

@@ -78,6 +78,8 @@ StateFile                        # If this flag is specified (uncommented) a
 
 # Washington Broadbands
 Stream UW_* HH?.D
+# Washgington Strong Motion
+Stream UO_* HH?.D
 # Mount St. Helens Stations
 # CVO Stations
 #Stream CC_EDM BH?.D

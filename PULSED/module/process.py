@@ -117,10 +117,15 @@ class InPlaceMod(_BaseMod):
         :returns:
          - **unit_output** (*self.pclass*) -- modified object
         """ 
-        getattr(unit_input, self.pmethod)(**self.pkwargs)
+        try:
+            getattr(unit_input, self.pmethod)(**self.pkwargs)
+            unit_output = unit_input
+        except:
+            self.Logger.warning(f'{self.pmethod} did not work on unit input - skipping')
+            unit_output = None
+            return unit_output
         if self.pclass in [MLTrace, MLStream, MLWindow]:
             unit_input.stats.processing.append([self.__name__(full=False), self.pmethod, UTCDateTime()])
-        unit_output = unit_input
         return unit_output
     
 
@@ -209,8 +214,8 @@ class OutputMod(InPlaceMod):
         try:
             unit_output = getattr(unit_input, self.pmethod)(**self.pkwargs)
         except:
-            self.Logger.critical('Specified operation did not work - exiting')
-            sys.exit(1)
+            self.Logger.warning(f'{self.pmethod} was unsuccessful - skipping')
+            unit_output = None
         return unit_output
     
     def _capture_unit_output(self, unit_output):

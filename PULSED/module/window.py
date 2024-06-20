@@ -44,6 +44,7 @@ class WindowMod(_BaseMod):
         fnfilter=None,
         pulse_type='network',
         stance='patient',
+        stagger_start_sec=1,
         max_pulse_size=1,
         meta_memory=3600,
         report_period=False,
@@ -190,7 +191,16 @@ class WindowMod(_BaseMod):
         self.options = options
         # Create dict for holding instrument window starttime values
         self.window_tracker = {}
-        self.Logger.info('WindowMod initialized!')
+        # Create holder stagger_start
+        if isinstance(stagger_start_sec, (int, float)):
+            if 0 <= stagger_start_sec < self.window_sec:
+                self.stagger_start_sec = float(stagger_start_sec)
+            else:
+                raise ValueError('stagger_start_sec must be in the range [0, self.window_sec)')
+        else:
+            raise TypeError('stagger_start_sec must be float-like')
+        self.next_available_start = None
+        # self.Logger.info('WindowMod initialized!')
 
     #######################################
     # Parameterization Convenience Method #
@@ -381,7 +391,7 @@ class WindowMod(_BaseMod):
         # Iterate across subset
         for mltrace in fmlstream.traces.values():
             if not isinstance(mltrace, MLTrace):
-                raise TypeError('this build of WindowMod only works with PULSED.data.mltrace.Trace objects')
+                raise TypeError('this build of WindowMod only works with PULSED.data.mltrace.MLTrace objects')
             # Get site, instrument, mod, and component codes from Trace
             site = mltrace.site
             inst = mltrace.inst
@@ -395,9 +405,17 @@ class WindowMod(_BaseMod):
             # Otherwise proceed
             else:
                 pass
-            
             # If new site in window_tracker
             if site not in self.window_tracker.keys():
+                # TODO: WIP
+                # # Check if this is the very first entry
+                # if self.window_tracker == {}:
+                #     self.next_available_start = mltrace.stats.starttime
+                # else:
+                #     # Get number of windows difference between trace start and next_available starttime
+                #     dwindow = (mltrace.stats.starttime - self.next_available_start)//self.window_sec
+                #     if dwindow > 0:
+                #         self.next_available_start += dwindow*self.window_sec
                 # Populate t0's
                 self.window_tracker.update({site: 
                                                 {inst: 

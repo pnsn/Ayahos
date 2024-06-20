@@ -228,7 +228,7 @@ class MLTraceBuff(MLTrace):
         return self
     
     # @_add_processing_info          
-    def _first_append(self, other, overflow_ref='endtime'):
+    def _first_append(self, other, reference_edge='endtime'):
         """
         PRIVATE METHOD
 
@@ -239,7 +239,7 @@ class MLTraceBuff(MLTrace):
         :: INPUTS ::
         :param other: [obspy.Trace] or [ewflow.MLTrace] like object
                         data and metadata to append to this initialized MLTraceBuff object
-        :param overflow_ref: [str] in the event that the appended trace has more data than
+        :param reference_edge: [str] in the event that the appended trace has more data than
                         max_length allows, this specifies which endpoint of `other` is used
                         as a fixed referece (i.e., the end that is not truncated)
                         Supported arguments
@@ -265,21 +265,34 @@ class MLTraceBuff(MLTrace):
 
             # If appended data is smaller than the buffer size
             if other.stats.npts < max_data:
-                # Assign starttime
-                self.stats.starttime = other.stats.starttime
-                # Bring in other's data and unmask those values
-                if not isinstance(other.data, np.ma.MaskedArray):
-                    self.data.data[:other.stats.npts] = other.data
-                    self.data.mask[:other.stats.npts] = False
-                else:
-                    self.data.data[:other.stats.npts] = other.data.data
-                    self.data.mask[:other.stats.npts] = other.data.mask
-                # If other has a fold attribute, use it's fold
-                if 'fold' in dir(other):
-                    self.fold[:other.stats.npts] = other.fold
-                # Otherwise populate as a 1-fold segment
-                else:
-                    self.fold[:other.stats.npts] = np.ones(shape=other.data.shape)
+                if reference_edge == 'starttime':
+                    # Assign starttime
+                    self.stats.starttime = other.stats.starttime
+                    # Bring in other's data and unmask those values
+                    if not isinstance(other.data, np.ma.MaskedArray):
+                        self.data.data[:other.stats.npts] = other.data
+                        self.data.mask[:other.stats.npts] = False
+                    else:
+                        self.data.data[:other.stats.npts] = other.data.data
+                        self.data.mask[:other.stats.npts] = other.data.mask
+                    # If other has a fold attribute, use it's fold
+                    if 'fold' in dir(other):
+                        self.fold[:other.stats.npts] = other.fold
+                    # Otherwise populate as a 1-fold segment
+                    else:
+                        self.fold[:other.stats.npts] = np.ones(shape=other.data.shape)
+                elif reference_edge == 'endtime':
+                    self.stats.starttime = other.stats.endtime - self.max_length
+                    if not isinstance(other.data, np.ma.MaskedArray):
+                        self.data.data[-other.stats.npts:] = other.data
+                        self.data.mask[-other.stats.npts:] = False
+                    else:
+                        self.data.data[-other.stats.npts:] = other.data.data
+                        self.data.mask[-other.stats.npts:] = other.data.mask
+                    if 'fold' in dir(other):
+                        self.fold[-other.stats.npts:] = other.fold
+                    else:
+                        self.fold[-other.stats.npts:] = np.ones(shape=other.data.shape)
 
             # If data fit the buffer perfectly
             elif other.stats.npts == max_data:
@@ -294,14 +307,14 @@ class MLTraceBuff(MLTrace):
             # if there is overflow
             else:
                 # If referencing to the endtime
-                if overflow_ref == 'endtime':
+                if reference_edge == 'endtime':
                     self.stats.starttime = other.stats.endtime - self.max_length
                     self.data = other.trim(starttime=self.stats.starttime).data
                     if 'fold' in dir(other):
                         self.fold = other.fold
                     else:
                         self.fold = np.ones(shape=self.data.shape, dtype=self.data.dtype)
-                elif overflow_ref == 'starttime':
+                elif reference_edge == 'starttime':
                     self.stats.starttime = other.stats.starttime
                     self.data = other.trim(endtime = self.stats.endtime).data
                     if 'fold' in dir(other):
@@ -309,7 +322,7 @@ class MLTraceBuff(MLTrace):
                     else:
                         self.fold = np.ones(shape=self.data.shape, dtype=self.data.dtype)
                 else:
-                    raise ValueError(f'overflow_ref "{overflow_ref}" not supported. See documentation')
+                    raise ValueError(f'reference_edge "{reference_edge}" not supported. See documentation')
             self._has_data = True
         else:
            raise AttributeError('This MLTraceBuff already contains data - canceling _first_append()')

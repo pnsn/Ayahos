@@ -2,7 +2,7 @@
 import logging, argparse, os, warnings
 from logging.handlers import TimedRotatingFileHandler
 # Get the Module Constructor Class 
-from PULSE.module.coordinate import PulsedMod_EW
+from PULSE.module.coordinate import PulseMod_EW
 
 # Suppress warnings - just stick to logging
 with warnings.catch_warnings():
@@ -11,7 +11,7 @@ with warnings.catch_warnings():
 
 # Setup argument parsing (command line arguments)
 parser = argparse.ArgumentParser(description="This is an example PULSE module for developmental purposes")
-parser.add_argument('-f', action='store', dest='config', default='pulsed_pick.ini', type=str)
+parser.add_argument('-f', action='store', dest='config', default='pulse_pick.ini', type=str)
 
 # Read arguments from command line
 arguments = parser.parse_args()
@@ -47,9 +47,9 @@ logging.getLogger().setLevel(logging.DEBUG)
 
 # main program start
 if __name__ == '__main__':
-    pulsedmod = PulsedMod_EW(arguments.config)
+    pulsemod = PulseMod_EW(arguments.config)
     try:
-        pulsedmod.start()
+        pulsemod.start()
     except KeyboardInterrupt:
         # Logger.critical('Stopping - User Hit Keyboard Interrupt')
-        pulsedmod.stop()
+        pulsemod.stop()

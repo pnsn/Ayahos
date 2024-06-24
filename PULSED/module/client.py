@@ -7,7 +7,39 @@ from obsplus import WaveBank
 from PULSED.module._base import _BaseMod
 from PULSED.data.mlstream import MLStream
 from PULSED.util.pyew import trace2wave
-from PULSED.util.latency import read_latency_file
+# from PULSED.util.latency import read_latency_file
+
+
+class ClientMod(_BaseMod):
+    def __init__(
+            self,
+            client,
+            max_batch_size=30,
+            max_pulse_size=1,
+            max_output_size=1e5,
+            meta_memory=60,
+            report_period=False
+    ):
+        super().__init__(
+            max_pulse_size=max_pulse_size,
+            max_output_size=max_output_size,
+            meta_memory=meta_memory,
+            report_period=report_period
+        )
+        # Compatability check for client
+        if isinstance(client, (Client, FederatorRoutingClient, WaveBank)):
+            self.client = client        
+        else:
+            self.Logger.critical(f'client is invalid type {type(client)} - supported types: \
+                                  obspy.clients.fdsn.client.Client, \
+                                  obspy.clients.fdsn.routing.federator_routing_client.FederatorRoutingClient, \
+                                  obsplus.bank.wavebank.WaveBank') 
+        if isinstance(max_batch_size, int):
+            if 0 < max_batch_size <= max_pulse_size
+            
+    def _unit_input_from_input(self, input):
+        if len(input) < self.max_batch_size:
+
 
 
 class ClientMod(_BaseMod):

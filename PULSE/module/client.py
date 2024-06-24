@@ -4,10 +4,10 @@ from obspy import UTCDateTime
 from obspy.clients.fdsn import Client
 from obspy.clients.fdsn.routing.federator_routing_client import FederatorRoutingClient
 from obsplus import WaveBank
-from PULSED.module._base import _BaseMod
-from PULSED.data.mlstream import MLStream
-from PULSED.util.pyew import trace2wave
-# from PULSED.util.latency import read_latency_file
+from PULSE.module._base import _BaseMod
+from PULSE.data.mlstream import MLStream
+from PULSE.util.pyew import trace2wave
+# from PULSE.util.latency import read_latency_file
 
 
 class ClientMod(_BaseMod):
@@ -179,7 +179,7 @@ class LatencyPlayerMod(ClientMod):
     def _should_next_iteration_run(self, unit_output):
         """
         POLYMORPHIC
-        Last updated with :class:`~PULSED.module.client.ClientMod`
+        Last updated with :class:`~PULSE.module.client.ClientMod`
         
         If there are still packet arrival times that post-date the
         last record time (_rectime1), continue iterations, otherwise

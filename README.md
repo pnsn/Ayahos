@@ -1,11 +1,11 @@
-#  PULSED: **P**rocessing **U**tility for **L**ive-streaming **S**eismic **E**vent **D**ata
+#  PULSE: **P**rocessing **U**tility for **L**ive-streaming **S**eismic **E**vents
 
 ## About  
-PULSED is an open-source python project that provides an adaptable framework for integrating python-based seismic analysis tools into live-streaming seismic data analysis systems. This initial version of the project focuses on integrating machine-learning enhanced phase detection and labeling workflows hosted in [`SeisBench`](https://seisbench.readthedocs.io/en/stable/) into [`Earthworm`](http://www.earthwormcentral.org). In future releases we hope to incorporate hosting capabilities for computationally efficient phase association and denoising workflows.
+PULSE is an open-source python project that provides an adaptable framework for integrating python-based seismic analysis tools into live-streaming seismic data analysis systems. This initial version of the project focuses on integrating machine-learning enhanced phase detection and labeling workflows hosted in [`SeisBench`](https://seisbench.readthedocs.io/en/stable/) into [`Earthworm`](http://www.earthwormcentral.org). In future releases we hope to incorporate hosting capabilities for computationally efficient phase association and denoising workflows.
 
-PULSED workflows center around sequences of single-task modules that progressively process data objects as they become available. This cascading data flow operates in discrete pulses (via the **pulse** class method for each module) that can be tuned Each module has a **pulse** method that conducts some number of actions 
+PULSE workflows center around sequences of single-task modules that progressively process data objects as they become available. This cascading data flow operates in discrete pulses (via the **pulse** class method for each module) that can be tuned Each module has a **pulse** method that conducts some number of actions 
 
-PULSED uses and augments popular Python API's for routine seismic data analyses ([`ObsPy`](https://docs.obspy.org) and [`NumPy`](https://numpy.org)) to provide familar  and the key open-source package [`PyEarthworm`](https://github.com/Boritech-Solutions/PyEarthworm) for Python/Earthworm integration.
+PULSE uses and augments popular Python API's for routine seismic data analyses ([`ObsPy`](https://docs.obspy.org) and [`NumPy`](https://numpy.org)) to provide familar  and the key open-source package [`PyEarthworm`](https://github.com/Boritech-Solutions/PyEarthworm) for Python/Earthworm integration.
 
 In future releases we plan to incorporate 
 
@@ -18,9 +18,9 @@ This project is distributed under a GNU Affero General Public License (AGPL-3.0)
 
 # Getting Started
 
-PULSED consists of a collection of single-task-oriented module classes housed in `PULSED.module`,
-modified ObsPy data classes housed in `PULSED.data`, and pre-composed sequences of modules housed
-in `PULSED.sequences`. Supporting python methods are housed in `PULSED.util`
+PULSE consists of a collection of single-task-oriented module classes housed in `PULSE.module`,
+modified ObsPy data classes housed in `PULSE.data`, and pre-composed sequences of modules housed
+in `PULSE.sequences`. Supporting python methods are housed in `PULSE.util`
 
  Supporting methods
 

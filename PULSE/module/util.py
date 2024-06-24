@@ -1,4 +1,4 @@
-from PULSED.module._base import _BaseMod
+from PULSE.module._base import _BaseMod
 
 class EchoMod(_BaseMod):
     """
@@ -20,8 +20,8 @@ class EchoMod(_BaseMod):
 
 class BreakpointMod(_BaseMod):
     """
-    A module that calls breakpoints within :meth:`~PULSED.module.util.BreakpointMod.pulse`
-    at the :meth:`~PULSED.module.util.BreakpointMod._mesaure_input_size` subroutine call 
+    A module that calls breakpoints within :meth:`~PULSE.module.util.BreakpointMod.pulse`
+    at the :meth:`~PULSE.module.util.BreakpointMod._mesaure_input_size` subroutine call 
     (before the iteration loop in pulse),
     
     This is intended to provide inspection points within an operational

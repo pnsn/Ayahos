@@ -18,8 +18,8 @@ from obspy.core.stream import Stream
 from obspy.core.trace import Trace
 from obspy.core.util.attribdict import AttribDict
 from obspy.core import compatibility
-from PULSED.data.mltrace import MLTrace
-from PULSED.util.pyew import wave2mltrace
+from PULSE.data.mltrace import MLTrace
+from PULSE.util.pyew import wave2mltrace
 
 
 
@@ -533,11 +533,11 @@ class MLStream(Stream):
         :return rstr: representative string
         :rtype rstr: str
         """
-        rstr = 'PULSED.data.mlstream.MLStream'
+        rstr = 'PULSE.data.mlstream.MLStream'
         return rstr
 
     def __repr__(self, extended=False):
-        """string representation of the contents of this PULSED.data.mlstream.MLStream` object
+        """string representation of the contents of this PULSE.data.mlstream.MLStream` object
         Always shows the representation of the MLStream.stats object,
         Truncates the representation of Trace-like objects in the MLStream
         if there are more than 20 Trace-like objects.

@@ -2,7 +2,7 @@
 import logging, argparse, os, warnings
 from logging.handlers import TimedRotatingFileHandler
 # Get the Module Constructor Class 
-from PULSED.module.coordinate import PulsedMod_EW
+from PULSE.module.coordinate import PulsedMod_EW
 
 # Suppress warnings - just stick to logging
 with warnings.catch_warnings():
@@ -10,7 +10,7 @@ with warnings.catch_warnings():
 
 
 # Setup argument parsing (command line arguments)
-parser = argparse.ArgumentParser(description="This is an example PULSED module for developmental purposes")
+parser = argparse.ArgumentParser(description="This is an example PULSE module for developmental purposes")
 parser.add_argument('-f', action='store', dest='config', default='pulsed_pick.ini', type=str)
 
 # Read arguments from command line

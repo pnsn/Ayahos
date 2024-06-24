@@ -1,5 +1,5 @@
 #!/bin/zsh
-ENVNAME='PULSED'
+ENVNAME='PULSE'
 ACTIVATE="$CONDA_PREFIX/bin/activate"
 PXD='~~^v~~~'
 # Check if environment exists

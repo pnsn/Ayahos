@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 from obspy import Trace
-from PULSED.data.mltrace import MLTrace
+from PULSE.data.mltrace import MLTrace
 
 Logger = logging.getLogger(__name__)
 

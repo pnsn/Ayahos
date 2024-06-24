@@ -15,10 +15,10 @@ Classes
 """
 
 import logging, sys
-from PULSED.data.mltrace import MLTrace
-from PULSED.data.mlstream import MLStream
-from PULSED.module._base import _BaseMod
-from PULSED.data.mltrigger import Trigger, GaussTrigger, QuantTrigger, Pick2KMsg
+from PULSE.data.mltrace import MLTrace
+from PULSE.data.mlstream import MLStream
+from PULSE.module._base import _BaseMod
+from PULSE.data.mltrigger import Trigger, GaussTrigger, QuantTrigger, Pick2KMsg
 from obspy.signal.trigger import trigger_onset
 import numpy as np
 

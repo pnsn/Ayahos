@@ -3,10 +3,10 @@ import numpy as np
 import seisbench.models as sbm
 from collections import deque
 from obspy import UTCDateTime
-from PULSED.data.mltrace import MLTrace
-from PULSED.data.mlstream import MLStream
-from PULSED.data.mlwindow import MLWindow
-from PULSED.module._base import _BaseMod
+from PULSE.data.mltrace import MLTrace
+from PULSE.data.mlstream import MLStream
+from PULSE.data.mlwindow import MLWindow
+from PULSE.module._base import _BaseMod
 
 Logger = logging.getLogger(__name__)
 ###################################################################################

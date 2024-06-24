@@ -1,5 +1,5 @@
 """
-:module: PULSED.module.window
+:module: PULSE.module.window
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
@@ -9,16 +9,16 @@
 
 Classes
 -------
-:class:`~PULSED.module.window.WindowMod`
+:class:`~PULSE.module.window.WindowMod`
 """
 import logging, sys
 import seisbench.models as sbm
 from collections import deque
 from obspy import UTCDateTime
-from PULSED.data.mltrace import MLTrace
-from PULSED.data.mlstream import MLStream
-from PULSED.data.mlwindow import MLWindow
-from PULSED.module._base import _BaseMod
+from PULSE.data.mltrace import MLTrace
+from PULSE.data.mlstream import MLStream
+from PULSE.data.mlwindow import MLWindow
+from PULSE.module._base import _BaseMod
 
 
 class WindowMod(_BaseMod):
@@ -71,7 +71,7 @@ class WindowMod(_BaseMod):
         :type reference_overlap: int, optional
         :param fnfilter: fnmatch filter string to use for subsetting channel inputs, default is None
         :type fnfilter: None or str
-            also see :meth:`~PULSED.data.mlstream.MLStream.fnselect`
+            also see :meth:`~PULSE.data.mlstream.MLStream.fnselect`
         :param pulse_type: style of running pulse, defaults to 'network'
             Supported values:
                 'network' - attempt to create one window from each instrument per pulse
@@ -243,13 +243,13 @@ class WindowMod(_BaseMod):
     def _should_this_iteration_run(self, input, input_measure, iter_number):
         """
         POLYMORPHIC
-        Last updated with :class:`~PULSED.module.window.WindowMod`
+        Last updated with :class:`~PULSE.module.window.WindowMod`
 
         unconditional pass - early stopping is handled by
-        :meth:`~PULSED.module.window.WindowMod._should_next_iteration_run`
+        :meth:`~PULSE.module.window.WindowMod._should_next_iteration_run`
 
         :param input: standard input
-        :type input: PULSED.data.mlstream.MLStream
+        :type input: PULSE.data.mlstream.MLStream
         :param iter_number: iteration number, unused
         :type iter_number: int
         :return status: should iterations continue in pulse, always True
@@ -264,7 +264,7 @@ class WindowMod(_BaseMod):
         obj is a view of input
 
         :param input: standard input
-        :type input: PULSED.data.mlstream.MLStream
+        :type input: PULSE.data.mlstream.MLStream
         :return: _description_
         :rtype: _type_
         """
@@ -285,7 +285,7 @@ class WindowMod(_BaseMod):
         Newly generated windows are appended to WindowMod.output
 
         :param unit_input: view of a MLStream containing waveforms
-        :type unit_input: PULSED.data.mlstream.MLStream
+        :type unit_input: PULSE.data.mlstream.MLStream
         """        
         unit_output = deque()
         # Update window tracker
@@ -383,15 +383,15 @@ class WindowMod(_BaseMod):
         (Network.Station.Location.BandInstrument{ref}) Traces are found
 
         :: INPUT ::
-        :param mlstream: MLStream object containing :class:`~PULSED.data.trace.Trace`-type objects
-        :type mlstream: PULSED.data.mlstream.MLStream
+        :param mlstream: MLStream object containing :class:`~PULSE.data.trace.Trace`-type objects
+        :type mlstream: PULSE.data.mlstream.MLStream
         """
         # Subset using fnfilter
         fmlstream = mlstream.fnselect(self.fnfilter)
         # Iterate across subset
         for mltrace in fmlstream.traces.values():
             if not isinstance(mltrace, MLTrace):
-                raise TypeError('this build of WindowMod only works with PULSED.data.mltrace.MLTrace objects')
+                raise TypeError('this build of WindowMod only works with PULSE.data.mltrace.MLTrace objects')
             # Get site, instrument, mod, and component codes from Trace
             site = mltrace.site
             inst = mltrace.inst

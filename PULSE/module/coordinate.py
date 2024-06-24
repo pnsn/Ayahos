@@ -1,5 +1,5 @@
 """
-:module: PULSED.module.coordinate
+:module: PULSE.module.coordinate
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
@@ -9,32 +9,32 @@
 
 Classes
 -------
-:class:`~PULSED.module.coordinate.PULSED_EW`
+:class:`~PULSE.module.coordinate.PULSE_EW`
 """
 import threading, logging, time, sys, configparser, inspect
-from PULSED.util.pyew import is_wave_msg
-from PULSED.module.sequence import SequenceMod
-from PULSED.module.transact import PyEWMod
+from PULSE.util.pyew import is_wave_msg
+from PULSE.module.sequence import SequenceMod
+from PULSE.module.transact import PyEWMod
 
 Logger = logging.getLogger(__name__)
 
 ###################################################################################
-# PULSED CLASS DEFINITION ########################################################
+# PULSE CLASS DEFINITION ########################################################
 ###################################################################################
-class PulsedMod_EW(SequenceMod):
+class PulseMod_EW(SequenceMod):
     """
-    The PULSED_EW class comprises an extended :class:`~PyEW.EWModule` object
-    (:class:`~PULSED.module.ew_transact.PyEWMod`) and a sequence of PULSED modules
+    The PULSE_EW class comprises an extended :class:`~PyEW.EWModule` object
+    (:class:`~PULSE.module.ew_transact.PyEWMod`) and a sequence of PULSE modules
     that make an operational python module that communicates with the Earthworm message transport system
     
-    This class inherits its sequencing methods and attributes from :class:`~PULSED.wyrms.sequencewyrm.sequenceWyrm`
+    This class inherits its sequencing methods and attributes from :class:`~PULSE.wyrms.sequencewyrm.sequenceWyrm`
     
 
     :param wait_sec: number of seconds to wait between pulses, defaults to 0
     :type wait_sec: int, optional
-    :param default_ring_id: default ring ID to assign to PULSEDule, defaults to 1000
+    :param default_ring_id: default ring ID to assign to PULSEule, defaults to 1000
     :type default_ring_id: int, optional
-    :param module_id: module ID that Earthworm will see for this PULSEDule, defaults to 193
+    :param module_id: module ID that Earthworm will see for this PULSEule, defaults to 193
     :type module_id: int, optional
     :param installation_id: installation ID, defaults to 255 - anonymous/nonexchanging installation
     :type installation_id: int, optional
@@ -44,14 +44,14 @@ class PulsedMod_EW(SequenceMod):
         to make in addition to the 'DEFAULT': default_ring_id connection
         defaults to {'WAVE': 1000, 'PICK': 1005}
     :type: dict, optional
-    :param ewmodule_debug: should debugging level logging messages within the PULSEDule object
+    :param ewmodule_debug: should debugging level logging messages within the PULSEule object
         be included if logging level is set to DEBUG? Defaults to False.
         (acts as an extra nit-picky layer for debugging)
     :type ewmodule_debug: bool, optional
     """
 
     def __init__(self, config_file):
-        """Create a PULSED object
+        """Create a PULSE object
         Inherits the sequence attribute and pulse() method from sequenceWyrm
 
         :param wait_sec: number of seconds to wait between completion of one pulse sequence of
@@ -65,9 +65,9 @@ class PulsedMod_EW(SequenceMod):
         :type installation_id: int, optional
         :param heartbeat_period: send heartbeat message to Earthworm every X seconds, defaults to 15
         :type heartbeat_period: int, optional
-        :param sequence: dictionary of PULSED.core.wyrms-type objects that will be executed in a chain , defaults to {}
+        :param sequence: dictionary of PULSE.core.wyrms-type objects that will be executed in a chain , defaults to {}
         :type sequence: dict, optional
-            also see PULSED.core.wyrms.sequencewyrm.sequenceWyrm
+            also see PULSE.core.wyrms.sequencewyrm.sequenceWyrm
         :param submodule_wait_sec: seconds to wait between execution of the **pulse** method of each
             Wyrm-like object
         """
@@ -80,10 +80,10 @@ class PulsedMod_EW(SequenceMod):
 
         # Initialize Super for SequenceMod inheritance
         if 'PulsedMod_EW' in self.cfg._sections.keys():
-            PULSED_init = self.parse_config_section('PulsedMod_EW')
+            PULSE_init = self.parse_config_section('PulsedMod_EW')
             sequence_params = inspect.signature(SequenceMod).parameters
             super_init_kwargs = {}
-            for _k, _v in PULSED_init.items():
+            for _k, _v in PULSE_init.items():
                 if _k in sequence_params.keys():
                     super_init_kwargs.update({_k: _v})
             super().__init__(**super_init_kwargs)
@@ -94,14 +94,14 @@ class PulsedMod_EW(SequenceMod):
         demerits = 0
         for _rs in ['Earthworm','PulsedMod_EW','Sequence']:
             if _rs not in self.cfg._sections.keys():
-                self.Logger.critical(f'section {_rs} missing from config file! Will not initialize PULSED')
+                self.Logger.critical(f'section {_rs} missing from config file! Will not initialize PULSE')
                 demerits += 1
         if demerits > 0:
             sys.exit(1)
         else:
             self.Logger.debug('config file has all required sections')
 
-        # Initialize PULSEDPyEWModule Object
+        # Initialize PULSEPyEWModule Object
         self.module = PyEWMod(
             connections = eval(self.cfg.get('PulsedMod_EW','connections')),
             module_id = self.cfg.getint('Earthworm', 'MOD_ID'),
@@ -154,7 +154,7 @@ class PulsedMod_EW(SequenceMod):
 
         # Set runs flag to True
         self.runs = True
-        self.Logger.critical('ALL OK - PULSED Initialized!')
+        self.Logger.critical('ALL OK - PULSE Initialized!')
 
     ###########################################
     ### MODULE CONFIGURATION PARSING METHOD ###
@@ -195,7 +195,7 @@ class PulsedMod_EW(SequenceMod):
         runs ```self._thread.start()```
         """
         if len(self.sequence) == 0:
-            self.Logger.warning('No Wyrm-type sub-/base-modules contained in this PULSED Module')
+            self.Logger.warning('No Wyrm-type sub-/base-modules contained in this PULSE Module')
         self.module_thread.start()
 
     def stop(self):
@@ -207,11 +207,11 @@ class PulsedMod_EW(SequenceMod):
 
     def run(self, input=None):
         """
-        Run the PyEW.EWModule housed by this PULSED with the option
+        Run the PyEW.EWModule housed by this PULSE with the option
         of an initial input that is shown to the first wyrm in 
-        this PULSED' sequence attribute.
+        this PULSE' sequence attribute.
 
-        :param input: input for the pulse() method of the first wyrm in PULSED.sequence, default None
+        :param input: input for the pulse() method of the first wyrm in PULSE.sequence, default None
         :type input: varies, optional
         """
         self.Logger.critical("Starting Module Operation")     
@@ -221,7 +221,7 @@ class PulsedMod_EW(SequenceMod):
                 break
             time.sleep(0.001)
             if self.module.debug:
-                self.Logger.debug('running PULSED pulse')
+                self.Logger.debug('running PULSE pulse')
             # Run pulse inherited from sequenceWyrm
             _ = super().pulse(input)
         # Note shutdown in logging
@@ -232,10 +232,10 @@ class PulsedMod_EW(SequenceMod):
 
     def pulse(self):
         """
-        Overwrites the inherited :meth:`~PULSED.wyrms.sequencewyrm.sequencewyrm.pulse` method
-        that broadcasts a pair of logging errors pointing to use PULSED.run()
+        Overwrites the inherited :meth:`~PULSE.wyrms.sequencewyrm.sequencewyrm.pulse` method
+        that broadcasts a pair of logging errors pointing to use PULSE.run()
         as the operational 
         """        
-        self.Logger.error("pulse() method disabled for PULSED.core.PULSED.PULSED")
-        self.Logger.error("Use PULSED.run() to start module operation")
+        self.Logger.error("pulse() method disabled for PULSE.core.PULSE.PULSE")
+        self.Logger.error("Use PULSE.run() to start module operation")
         return None, None

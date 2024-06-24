@@ -40,7 +40,7 @@ import logging
 import numpy as np
 import pandas as pd
 from collections import deque
-from PULSED.module._base import _BaseMod
+from PULSE.module._base import _BaseMod
 
 
 Logger = logging.getLogger(__name__)

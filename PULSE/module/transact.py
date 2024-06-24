@@ -17,8 +17,8 @@ Classes
 import logging
 from collections import deque
 from PyEW import EWModule
-from PULSED.module._base import _BaseMod
-from PULSED.util.pyew import wave2mltrace, is_empty_message, is_wave_msg
+from PULSE.module._base import _BaseMod
+from PULSE.util.pyew import wave2mltrace, is_empty_message, is_wave_msg
 
 Logger = logging.getLogger(__name__)
 

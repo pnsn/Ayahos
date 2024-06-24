@@ -4,7 +4,7 @@
 # :org: Pacific Northwest Seismic Network
 # :license: AGPL-3.0
 # :purpose: This script creates a conda environment and installs EWFlow and all its dependencies
-ENVNAME='PULSED'
+ENVNAME='PULSE'
 ACTIVATE="$CONDA_PREFIX/bin/activate"
 PXD='~~^v~~~'
 
@@ -26,7 +26,7 @@ else
     source "$ACTIVATE" "$ENVNAME"
 fi
 
-# Install PULSED and dependencies using pip backend
+# Install PULSE and dependencies using pip backend
 if [[ "$CONDA_DEFAULT_ENV" == "$ENVNAME" ]]; then
     echo "$PXD Installing '$ENVNAME' and dependencies from local copy"
     python -m pip install .

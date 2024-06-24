@@ -5,16 +5,16 @@
 # Set environment variables describing your Earthworm directory/version
 # export EW_HOME=/opt/earthworm/
 export EW_HOME=/usr/local/earthworm
-export PULSED_HOME=/Users/nates/Code/PULSED
+export PULSE_HOME=/Users/nates/Code/PULSE
 export EW_VERSION=earthworm_7.10
 export SYS_NAME=`hostname`
 
 # Set environment variables used by earthworm modules at run-time
 # Path names must end with the slash "/"
 export EW_INSTALLATION=INST_UW
-export EW_PARAMS=${PULSED_HOME}/live_example/params/
-export EW_LOG=${PULSED_HOME}/live_example/log/
-export EW_DATA_DIR=${PULSED_HOME}/live_example/data/
+export EW_PARAMS=${PULSE_HOME}/live_example/params/
+export EW_LOG=${PULSE_HOME}/live_example/log/
+export EW_DATA_DIR=${PULSE_HOME}/live_example/data/
 
 #
 # Database (Oracle) related environment

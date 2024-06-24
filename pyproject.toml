@@ -17,7 +17,7 @@ classifiers = [
 dependencies = [
     "seisbench",
     "cython",
-    "numpy",
+    "numpy<2",
     "obspy",
     "pandas",
     "ipython",

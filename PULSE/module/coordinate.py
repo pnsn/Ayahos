@@ -9,7 +9,7 @@
 
 Classes
 -------
-:class:`~PULSE.module.coordinate.PULSE_EW`
+:class:`~PULSE.module.coordinate.PulseMod_EW`
 """
 import threading, logging, time, sys, configparser, inspect
 from PULSE.util.pyew import is_wave_msg
@@ -79,8 +79,8 @@ class PulseMod_EW(SequenceMod):
         self.cfg.read(config_file)
 
         # Initialize Super for SequenceMod inheritance
-        if 'PulsedMod_EW' in self.cfg._sections.keys():
-            PULSE_init = self.parse_config_section('PulsedMod_EW')
+        if 'PulseMod_EW' in self.cfg._sections.keys():
+            PULSE_init = self.parse_config_section('PulseMod_EW')
             sequence_params = inspect.signature(SequenceMod).parameters
             super_init_kwargs = {}
             for _k, _v in PULSE_init.items():
@@ -92,7 +92,7 @@ class PulseMod_EW(SequenceMod):
             Logger.critical(f'Cannot initialize {super().__name__(full=True)}')
         # Ensure minimum required fields are present for module initialization
         demerits = 0
-        for _rs in ['Earthworm','PulsedMod_EW','Sequence']:
+        for _rs in ['Earthworm','PulseMod_EW','Sequence']:
             if _rs not in self.cfg._sections.keys():
                 self.Logger.critical(f'section {_rs} missing from config file! Will not initialize PULSE')
                 demerits += 1
@@ -103,11 +103,11 @@ class PulseMod_EW(SequenceMod):
 
         # Initialize PULSEPyEWModule Object
         self.module = PyEWMod(
-            connections = eval(self.cfg.get('PulsedMod_EW','connections')),
+            connections = eval(self.cfg.get('PulseMod_EW','connections')),
             module_id = self.cfg.getint('Earthworm', 'MOD_ID'),
             installation_id = self.cfg.getint('Earthworm', 'INST_ID'),
             heartbeat_period = self.cfg.getfloat('Earthworm', 'HB'),
-            deep_debug = self.cfg.getboolean('PulsedMod_EW', 'deep_debug')
+            deep_debug = self.cfg.getboolean('PulseMod_EW', 'deep_debug')
         )        
         # Create a thread for the module process
         try:

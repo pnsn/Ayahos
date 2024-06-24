@@ -75,7 +75,7 @@ class TransactMod(_BaseMod):
         if isinstance(module, EWModule):
             self.module = module
         else:
-            raise TypeError(f'module must be type camper.util.pyew.EWModule, not type {type(module)}')
+            raise TypeError(f'module must be type PULSE.util.pyew.EWModule, not type {type(module)}')
         
         if conn_name not in module.connections.keys():
             raise KeyError(f'conn_name {conn_name} is not a named connection in the input module')

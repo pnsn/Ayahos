@@ -1,6 +1,4 @@
-import seisbench.models as sbm
 from PULSE.util.input import bounded_intlike
-
 
 def pretrained_dict():
     out = {'EQTransformer': ['ethz',

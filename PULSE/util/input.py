@@ -13,7 +13,7 @@
 """
 import numpy as np
 from collections import deque
-import seisbench.models as sbm
+# import seisbench.models as sbm
 from math import inf
 
 
@@ -226,19 +226,19 @@ def isiterable(x):
         return False
 
 
-def validate_seisbench_model_name(model_name, arg_name="x"):
-    mname = None
-    # Seek camel-case name
-    for x in dir(sbm):
-        if iscamelcase_str(x):
-            if x.lower() == model_name.lower():
-                mname = x
-    if mname is None:
-        raise ValueError(
-            f"(case-insensitive) model name {model} is not included in seisbench.models"
-        )
-    else:
-        return mname
+# def validate_seisbench_model_name(model_name, arg_name="x"):
+#     mname = None
+#     # Seek camel-case name
+#     for x in dir(sbm):
+#         if iscamelcase_str(x):
+#             if x.lower() == model_name.lower():
+#                 mname = x
+#     if mname is None:
+#         raise ValueError(
+#             f"(case-insensitive) model name {model} is not included in seisbench.models"
+#         )
+#     else:
+#         return mname
 
 
 # def parse_bounded_interval(x, str_repr):

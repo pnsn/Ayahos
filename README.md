@@ -28,24 +28,24 @@ in `PULSE.sequences`. Supporting python methods are housed in `PULSE.util`
  Supporting methods
 
 ## For new users 
-We recommend installing `EWFlow` and working through the **Pure-Python Tutorials** first to get familiar with the python-side aspects of the API.  
+We recommend installing `PULSE` and working through the **Pure-Python Tutorials** first to get familiar with the python-side aspects of the API.  
 Once you're comfortable with these parts of the project, proceed with installing `Earthworm`, a Test Suite dataset, and `PyEarthworm` and try out the **Earthworm-Integrated Tutorials**
 
 ### Installation Instructions  
 
-### Installing `EWFlow`
+### Installing `PULSE`
 We recommend creating a `conda` environment with clean installs of `pip` and `git` for the current distribution:  
 ```
-conda create --name EWFlow pip git
-conda activate ayahos
-pip install git+https://github.com/pnsn/Ayahos.git@develop
+conda create --name PULSE pip git
+conda activate PULSE
+pip install git+https://github.com/pnsn/PULSE.git@develop
 ``` 
 
 #### Pure-Python Tutorials (No Earthworm Required)
 
 | Examples                        | Source Data  |  Notebook    | Reference                    |  
 | ------------------------------- | ------------ | ------------ | ---------------------------- |
-| Introduction to Ayahos Data Classes | local | PLACEHOLDER | | 
+| Introduction to PULSE Data Classes | local | PLACEHOLDER | | 
 | ObsPy Signal Processing | local        | PLACEHOLDER  |                              |
 | PhaseNet on One Station         | local        | PLACEHOLDER  | [Retailleau et al. (2022)](https://doi.org/10.1785/0220210279)   |
 | EQTransformer on Many Stations  | local        | PLACEHOLDER  | [Ni et al. (2023)](https://doi.org/10.26443/seismica.v2i1.368) | 
@@ -58,7 +58,7 @@ Follow
 * Directions on Earthworm 7.10 installation can be found [here](https://gitlab.rm.ingv.it/earthworm/earthworm)  
 * The Univerity of Memphis Test Suite can be downloaded directly [here] (http://www.earthwormcentral.org/distribution/memphis_test.zip)
 
-**NOTE**: The PNSN is developing an PNW test suite to showcase Ayahos' functionalities. Stay tuned!  
+**NOTE**: The PNSN is developing an PNW test suite to showcase PULSE' functionalities. Stay tuned!  
 
 ### Installing `PyEarthworm`
 #### `pip` install from `main`
@@ -88,13 +88,13 @@ pip install git+https://github.com/Boritech-Solutions/PyEarthworm
 
 ## Installation In A Nutshell (For Experienced Users)
 ```
-conda create --name EWFlow pip git
+conda create --name PULSE pip git
 ```
 ```
-conda activate EWFlow
+conda activate PULSE
 ```
 ```
-pip install git+https://github.com/pnsn/EWFlow@develop
+pip install git+https://github.com/pnsn/PULSE@develop
 ```
 ```
 source </path/to/your/ew_env.bash>
@@ -104,7 +104,7 @@ pip install git+https://github.com/Boritech-Solutions/PyEarthworm
 ```
 
 ## Adding Visualization Tools for `class DictStream` (For Experienced Users)  
-EWFlow includes data visualization methods for the `DictStream` class that use elements of the [Pyrocko](https://pyrocko.org) project, namely `snuffler`. To add these tools to the environment described above, install the Pyrocko library following their instructions [here](https://pyrocko.org/docs/current/install/). These functionalities are not required for typical module operation with EWFlow, but users may find them handy.  
+PULSE includes data visualization methods for the `DictStream` class that use elements of the [Pyrocko](https://pyrocko.org) project, namely `snuffler`. To add these tools to the environment described above, install the Pyrocko library following their instructions [here](https://pyrocko.org/docs/current/install/). These functionalities are not required for typical module operation with PULSE, but users may find them handy.  
 
 ```
 conda install -c pyrocko pyrocko
@@ -118,7 +118,7 @@ Resource: https://sphinx-rtd-tutorial.readthedocs.io/en/latest/
 <!-- ### Install with `conda`  
 The same as above, but using a *.yaml  
 ```
-wget https://github.com/pnsn/Ayahos/conda_env_create.yaml
+wget https://github.com/pnsn/PULSE/conda_env_create.yaml
 ``` -->
 
 

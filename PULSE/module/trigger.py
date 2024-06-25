@@ -1,17 +1,17 @@
 """
-:module: PULSED.module.trigger
+:module: PULSE.module.trigger
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
 :license: AGPL-3.0
 :purpose:
-    This conatins the class definition for a module that facilitates triggering on :class:`~PULSED.data.mltrace.MLTrace`
+    This conatins the class definition for a module that facilitates triggering on :class:`~PULSE.data.mltrace.MLTrace`
     objects containing characteristic response function (ML phase pick probability) time series and conversion of triggers
-    into :class:`~PULSED.data.trigger.Trigger` objects.
+    into :class:`~PULSE.data.trigger.Trigger` objects.
 
 Classes
 -------
-:class:`~PULSED.module.trigger.TriggerMod`
+:class:`~PULSE.module.trigger.TriggerMod`
 """
 
 import logging, sys
@@ -26,16 +26,16 @@ Logger = logging.getLogger(__name__)
 
 class BuffTriggerMod(_BaseMod):
     """
-    A unit module that conducts incremental triggering on :class:`~PULSED.data.mltracebuff.MLTraceBuff` objects
+    A unit module that conducts incremental triggering on :class:`~PULSE.data.mltracebuff.MLTraceBuff` objects
     using their *fold* attribute and window overlap lengths to only trigger on data that will not receive further
     updates from subsequent windows appended to the MLTraceBuff's. 
 
-    The :meth:`~PULSED.module.trigger.BuffTriggerMod._unit_process` method for this class conducts the following steps:
-        1) scans across each :class:`~PULSED.data.mltracebuff.MLTracBuff entry in a :class:`~PULSED.data.mlstream.MLStream`
+    The :meth:`~PULSE.module.trigger.BuffTriggerMod._unit_process` method for this class conducts the following steps:
+        1) scans across each :class:`~PULSE.data.mltracebuff.MLTracBuff entry in a :class:`~PULSE.data.mlstream.MLStream`
         2) runs :meth:`~obspy.signal.trigger.trigger_onset` on samples with fold :math:`\\geq` **threshold**
-        3) converts triggers to :class:`~PULSED.data.trigger.Trigger`-type objects (see **method** below)
+        3) converts triggers to :class:`~PULSE.data.trigger.Trigger`-type objects (see **method** below)
         4) appends Trigger-type objects objects to this BuffTriggerMod's *output* attribute
-        5) sets analyzed samples' fold in a given :class:`~PULSED.data.mltracebuff.MLTraceBuff` to 0
+        5) sets analyzed samples' fold in a given :class:`~PULSE.data.mltracebuff.MLTraceBuff` to 0
             WARNING: Step 5) is an in-place alteration to *fold* values 
 
     :param module_id: module number for output pick2kmsg objects
@@ -52,9 +52,9 @@ class BuffTriggerMod(_BaseMod):
     :type leading_mute: int, optional
     :param pick_method: name of method to use for picking the arrival time, defaults to 'max'
             Supported:
-                - 'max' -- represent triggers as :class:`~PULSED.data.trigger.Trigger` objects and use their `tmax` attribute for pick time and `pmax` for quality mapping
-                - 'gau' -- represent triggers as :class:`~PULSED.data.trigger.GaussTrigger` objects and use their `mean` attribute for pick time and `scale` attribute for quality mapping
-                - 'med' -- represent triggers as :class:`~PULSED.data.trigger.QuantTrigger` objects and use their `tmed` attribute for pick time and `pmed` attribute for quality mapping
+                - 'max' -- represent triggers as :class:`~PULSE.data.trigger.Trigger` objects and use their `tmax` attribute for pick time and `pmax` for quality mapping
+                - 'gau' -- represent triggers as :class:`~PULSE.data.trigger.GaussTrigger` objects and use their `mean` attribute for pick time and `scale` attribute for quality mapping
+                - 'med' -- represent triggers as :class:`~PULSE.data.trigger.QuantTrigger` objects and use their `tmed` attribute for pick time and `pmed` attribute for quality mapping
     :type pick_method: str, optional
     :param prob2qual_map: mapping of pick quality (keys) to probabilities (values), defaults to {0:0.9, 1:0.7, 2:0.5, 3: 0.3, 4:0.2}
     :type prob2qual_map: dict, optional
@@ -227,10 +227,10 @@ class BuffTriggerMod(_BaseMod):
     def _should_this_iteration_run(self, input, input_size, iter_number):
         """
         POLYMORPHIC
-        Last updated with :class:`~PULSED.module.trigger.BuffTriggerMod`
+        Last updated with :class:`~PULSE.module.trigger.BuffTriggerMod`
 
         Signal early stopping (status = False) if:
-         - type(input) != :class:`~PULSED.data.mlstream.MLStream
+         - type(input) != :class:`~PULSE.data.mlstream.MLStream
          - input_size == 0
          - iter_number < input_size
 
@@ -239,7 +239,7 @@ class BuffTriggerMod(_BaseMod):
               and the iteration counter is less than the number of MLTrace-like objects
 
         :param input: input MLStream
-        :type input: PULSED.data.mlstream.MLStream
+        :type input: PULSE.data.mlstream.MLStream
         :param input_size: number of MLTrace-like objects in mlstream (len(input))
         :type input_size: int
         :param iter_number: iteration number
@@ -258,18 +258,18 @@ class BuffTriggerMod(_BaseMod):
     def _unit_input_from_input(self, input):
         """
         POLYMORPHIC
-        Last update with :class:`~PULSED.module.trigger.BuffTriggerMod`
+        Last update with :class:`~PULSE.module.trigger.BuffTriggerMod`
 
         Get a view of a single MLTrace-like object from input
 
         :param input: input MLStream
-        :type input: PULSED.data.mlstream.MLStream
+        :type input: PULSE.data.mlstream.MLStream
         :returns:
-            - **unit_input** (*PULSED.data.mltrace.MLTrace) -- view of a single MLTrace-like object in input
+            - **unit_input** (*PULSE.data.mltrace.MLTrace) -- view of a single MLTrace-like object in input
 
         """        
         if not isinstance(input, MLStream):
-            Logger.critical('input for BuffTriggerMod.pulse must be type PULSED.data.mlstream.MLStream')
+            Logger.critical('input for BuffTriggerMod.pulse must be type PULSE.data.mlstream.MLStream')
             sys.exit(1)
     
         # If the next item would fall outside length of input, wrap
@@ -278,7 +278,10 @@ class BuffTriggerMod(_BaseMod):
 
         # Get MLTrace
         _mlt = input[self._next_index]
-
+        # Safety catch
+        if not isinstance(_mlt, MLTrace):
+            self.Logger.critical(f'MLStream containing {type(_mlt)} not supported. Must be type PULSE.data.mltrace.MLTrace - exiting')
+            sys.exit(1)
         # If MLTrace ID is in the index keys
         if _mlt.id in self.index.keys():
             # Pass as unit_output (already passed checks below)
@@ -309,7 +312,7 @@ class BuffTriggerMod(_BaseMod):
     def _unit_process(self, unit_input):
         """
         POLYMORPHIC
-        Last update with :class:`~PULSED.module.trigger.BuffTriggerMod`
+        Last update with :class:`~PULSE.module.trigger.BuffTriggerMod`
 
         Iterate across each MLTrace-like object in **unit_input** and conduct triggering and picking
         on traces with predicted probability labels that match self.phases_to_pick entries and do the 
@@ -319,24 +322,24 @@ class BuffTriggerMod(_BaseMod):
             2) for each trigger
 
         The right-most self.leading_mute samples are ignored in this process, as described in the
-        :class:`~PULSED.module.trigger.BuffTriggerMod` class docstring.
+        :class:`~PULSE.module.trigger.BuffTriggerMod` class docstring.
 
 
 
         :param unit_input: input view of MLStream
-        :type unit_input: PULSED.data.mlstream.MLStream
+        :type unit_input: PULSE.data.mlstream.MLStream
         :returns:
             - **unit_output** (*)
         :rtype: _type_
         """
-        # initialize unit_output
+        # initialize unit_output as empty list
         unit_output = []
         # If unit_input ID was rejected due to mismatch label
         if unit_input.id != self._last_key:
-            Logger.debug(f'Skipping mltrace ID {unit_input.id} - component code rejected')
+            self.Logger.debug(f'Skipping mltrace ID {unit_input.id} - component code rejected')
         # If unit_input passed, but no data have non-0 fold
         elif not any(unit_input.fold[:-self.leading_mute] > 0):
-            Logger.debug(f'Skipping mltrace ID {unit_input.id} - no non-zero, non-muted fold samples')
+            self.Logger.debug(f'Skipping mltrace ID {unit_input.id} - no non-zero, non-muted fold samples')
         # Otherwise, proceed to triggering
         else:
             # Run Triggering
@@ -399,16 +402,18 @@ class BuffTriggerMod(_BaseMod):
     def _capture_unit_output(self, unit_output):
         """
         POLYMORPHIC
-        Last updated with :class:`~PULSED.module.trigger.BuffTriggerMod`
+        Last updated with :class:`~PULSE.module.trigger.BuffTriggerMod`
 
         Return None - capture is handled in _unit_process
 
-        :param unit_output: list-like set of :class:`~PULSED.data.pick.Trigger`-type objects
+        :param unit_output: list-like set of :class:`~PULSE.data.pick.Trigger`-type objects
         :type unit_output: list
 
         """   
+
         if len(unit_output) > 0:
             if all(isinstance(e, Trigger) for e in unit_output):
+                # Use __iadd__ to append contents of list
                 self.output += unit_output
             else:
                 Logger.critical('unit_process is outputting non-Trigger-type objects')
@@ -416,6 +421,14 @@ class BuffTriggerMod(_BaseMod):
 
     
     def get_comp(self, mlt):
+        """Supporting method for getting the component code
+        from the mapping provided in phase2comp_map
+
+        :param mlt: mltrace object from which to get the band and instrument codes
+        :type mlt: PULSE.data.mltrace.MLTrace
+        :return: _description_
+        :rtype: _type_
+        """        
         if isinstance(mlt, MLTrace):
             comp = mlt.stats.channel[:2] + self.phase2comp_map[mlt.comp]
         else:

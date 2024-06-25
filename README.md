@@ -1,4 +1,5 @@
-#  PULSE: **P**rocessing **U**tility for **L**ive **S**eismic **E**vents  
+# PULSE ~~^v~~~    
+# **P**rocessing **U**tility for **L**ive **S**eismic **E**vents  
 
 Connecting emerging python seismic analysis codes to real-time seismic processing
 

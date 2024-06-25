@@ -1,7 +1,7 @@
 # PULSE ~~^v~~~    
 ## **P**rocessing **U**tility for **L**ive **S**eismic **E**vents  
-
-Connecting emerging python seismic analysis codes to real-time seismic processing
+## (**P**ython) **U**tility for **L**ive **S**eismic **E**vents  
+Integrating emerging python seismic analysis codes to live-streaming seismic data workflows
 
 ## About  
 PULSE is an open-source python project that provides an adaptable framework for integrating python-based seismic analysis tools into live-streaming seismic data analysis systems. This initial version of the project focuses on integrating machine-learning enhanced phase detection and labeling workflows hosted in [`SeisBench`](https://seisbench.readthedocs.io/en/stable/) into [`Earthworm`](http://www.earthwormcentral.org). In future releases we hope to incorporate hosting capabilities for computationally efficient phase association and denoising workflows.

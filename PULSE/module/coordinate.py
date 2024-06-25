@@ -13,15 +13,13 @@ Classes
 """
 import threading, logging, time, sys, configparser, inspect
 from PULSE.util.pyew import is_wave_msg
-from PULSE.module.sequence import SequenceMod
+from PULSE.module.sequence import SequenceMod, SequenceBuildMod
 from PULSE.module.transact import PyEWMod
 
 Logger = logging.getLogger(__name__)
 
-###################################################################################
-# PULSE CLASS DEFINITION ########################################################
-###################################################################################
-class PulseMod_EW(SequenceMod):
+
+class PulseMod_EW(SequenceBuildMod):
     """
     The PULSE_EW class comprises an extended :class:`~PyEW.EWModule` object
     (:class:`~PULSE.module.ew_transact.PyEWMod`) and a sequence of PULSE modules
@@ -195,7 +193,7 @@ class PulseMod_EW(SequenceMod):
         runs ```self._thread.start()```
         """
         if len(self.sequence) == 0:
-            self.Logger.warning('No Wyrm-type sub-/base-modules contained in this PULSE Module')
+            self.Logger.warning('No *Mod-type sub-/base-modules contained in this PULSE Module')
         self.module_thread.start()
 
     def stop(self):
@@ -211,7 +209,7 @@ class PulseMod_EW(SequenceMod):
         of an initial input that is shown to the first wyrm in 
         this PULSE' sequence attribute.
 
-        :param input: input for the pulse() method of the first wyrm in PULSE.sequence, default None
+        :param input: input for the pulse() method of the first Mod in PULSE.sequence, default None
         :type input: varies, optional
         """
         self.Logger.critical("Starting Module Operation")     
@@ -232,7 +230,7 @@ class PulseMod_EW(SequenceMod):
 
     def pulse(self):
         """
-        Overwrites the inherited :meth:`~PULSE.wyrms.sequencewyrm.sequencewyrm.pulse` method
+        Overwrites the inherited :meth:`~PULSE.module.coordinate.SequenceBuildMod.pulse` method
         that broadcasts a pair of logging errors pointing to use PULSE.run()
         as the operational 
         """        

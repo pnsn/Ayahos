@@ -1,5 +1,5 @@
 """
-:module: PULSED.module.unit.package
+:module: PULSE.module.unit.package
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
@@ -11,8 +11,8 @@
 
 Classes
 -------
-:class:`~PULSED.module.bundle.SequenceMod`
-:class:`~PULSED.module.bundle.ParallelMod` (WIP)
+:class:`~PULSE.module.bundle.SequenceMod`
+:class:`~PULSE.module.bundle.ParallelMod` (WIP)
 """
 """
 :module: module.coordinating.sequence
@@ -36,14 +36,11 @@ TODO: Turn status from _capture_unit_out into a representation of nproc
     idea is to say "keep going" if the SequenceMod is conducting any processes
 
 """
-import logging
+import sys, configparser
 import numpy as np
 import pandas as pd
 from collections import deque
 from PULSE.module._base import _BaseMod
-
-
-Logger = logging.getLogger(__name__)
 
 class SequenceMod(_BaseMod):
     """
@@ -149,7 +146,7 @@ class SequenceMod(_BaseMod):
         if not isinstance(new_dict, dict):
             raise TypeError('new_dict must be type dict')
         elif not all(isinstance(_m, _BaseMod) for _m in new_dict.values()):
-            raise TypeError('new_dict can only have values of type PULSED.module._base._BaseMod')
+            raise TypeError('new_dict can only have values of type PULSE.module._base._BaseMod')
         else:
             pass
         # Run updates on sequence
@@ -268,7 +265,7 @@ class SequenceMod(_BaseMod):
         """
         POLYMORPHIC
 
-        Last updated with :class: `~PULSED.module.bundle.SequenceMod`
+        Last updated with :class: `~PULSE.module.bundle.SequenceMod`
 
         always return status = True
         Execute max_pulse_size iterations regardless of internal processes
@@ -286,7 +283,7 @@ class SequenceMod(_BaseMod):
     def _unit_input_from_input(self, input):
         """
         POLYMORPHIC
-        Last updated with :class: `~PULSED.module.bundle.SequenceMod` 
+        Last updated with :class: `~PULSE.module.bundle.SequenceMod` 
 
         Pass the standard input directly to the first module in sequence
 
@@ -301,7 +298,7 @@ class SequenceMod(_BaseMod):
     def _unit_process(self, unit_input):
         """
         POLYMORPHIC
-        Last updated with :class: `~PULSED.module.bundle.SequenceMod`
+        Last updated with :class: `~PULSE.module.bundle.SequenceMod`
 
         Chain pulse() methods of modules in sequence
         passing unit_input as the input to the first 
@@ -329,7 +326,7 @@ class SequenceMod(_BaseMod):
     def _capture_unit_output(self, unit_output):
         """
         POLYMORPHIC
-        Last updated by :class: `~PULSED.module.bundle.SequenceMod`
+        Last updated by :class: `~PULSE.module.bundle.SequenceMod`
 
         Termination point - output capture is handled by the last
         Wyrm-Type object in sequence and aliased to this SequenceMod's
@@ -345,7 +342,7 @@ class SequenceMod(_BaseMod):
     def _should_next_iteration_run(self, unit_output):
         """
         POLYMORPHIC
-        Last updated by :class: `~PULSED.module.bundle.SequenceMod`
+        Last updated by :class: `~PULSE.module.bundle.SequenceMod`
 
         Signal early stopping (status = False) if unit_output == 0
 
@@ -364,7 +361,7 @@ class SequenceMod(_BaseMod):
     def _update_report(self):
         """
         POLYMORPHIC
-        Last updated with :class:`~PULSED.module.bundle.SequenceMod`
+        Last updated with :class:`~PULSE.module.bundle.SequenceMod`
 
         Get the mean value line for each module and add information
         on the pulserate, number of logged pulses, and memory period
@@ -383,3 +380,91 @@ class SequenceMod(_BaseMod):
         keys = self._keys_meta + ['p_rate','n_pulse','memory_sec']
         self.report = pd.DataFrame(report_dict, index=keys).T
         self.report.index.name = 'submod (stat)'
+
+
+
+
+class SequenceBuildMod(SequenceMod):
+    def __init__(self, config_file):
+        """
+
+        """
+        # Initialize config parser
+        self.cfg = configparser.ConfigParser(
+            interpolation=configparser.ExtendedInterpolation()
+        )
+        # Read configuration file
+        self.cfg.read(config_file)
+
+        if 'Sequence' not in self.cfg._sections.keys():
+            self.Logger.critical('config_file does not have a `Sequence` section. Cannot create a sequence. Exiting')
+            sys.exit(1)
+
+        # Sequence submodules
+        sequence = {}
+        demerits = 0
+
+        # Iterate across submodule names and section names
+        for submod_name, submod_section in self.cfg['Sequence'].items():
+            # Log if there are missing submodules
+            if submod_section not in self.cfg._sections.keys():
+                self.Logger.critical(f'submodule {submod_section} not defined in config_file. Will not compile!')
+                demerits += 1
+            # Construct if the submodule has a section
+            else:
+                # Parse the class name and __init__ kwargs
+                submod_class, submod_init_kwargs = \
+                    self.parse_config_section(submod_section)
+                # Run import to local scope
+                parts = submod_class.split('.')
+                path = '.'.join(parts[:-1])
+                clas = parts[-1]
+                try:
+                    exec(f'from {path} import {clas}')
+                except ImportError:
+                    self.Logger.critical(f'failed to import {submod_class}')
+                    sys.exit(1)
+                submod_object = eval(clas)(**submod_init_kwargs)
+                # Attach object to sequence
+                sequence.update({submod_name: submod_object})
+                self.Logger.info(f'{submod_name} initialized')
+        # If there are any things that failed to compile, exit
+        if demerits > 0:
+            sys.exit(1)
+        super().__init__(sequence=sequence, 
+                         )
+    ###########################################
+    ### MODULE CONFIGURATION PARSING METHOD ###
+    ###########################################
+        
+    def parse_config_section(self, section):
+        submod_init_kwargs = {}
+        submod_class = None
+        for _k, _v in self.cfg[section].items():
+            # Handle special case where class is passed
+            if _k == 'class':
+                submod_class = _v
+            # Handle special case where module is passed
+            elif _k == 'module':
+                if 'module' in dir(self):
+                    _val = self.module
+                else:
+                    self.Logger.critical('Special key `module` not supported by SequenceBuildMod - see PulseMod_EW - exiting')
+                sys.exit(1)
+                # _val = self.module
+            # Handle case where the parameter value is bool-like    
+            elif _v in ['True', 'False', 'yes', 'no']:
+                _val = self.cfg.getboolean(section, _k)
+            # For everything else, use eval statements
+            else:
+                _val = eval(self.cfg.get(section, _k))
+            
+            if _k != 'class':
+                submod_init_kwargs.update({_k: _val})
+        
+        if submod_class is None:
+            return submod_init_kwargs
+        else:
+            return submod_class, submod_init_kwargs
+        
+

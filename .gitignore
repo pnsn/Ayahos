@@ -182,3 +182,8 @@ docs/source/modules.rst
 live_example/data/tmp/ew2file_pew_keeper
 live_example/params/*.ndx
 live_example/data/pick_ew/*.p2k
+diagrams/ANSS_presentation_EW_PULSE_overview.png
+diagrams/ANSS_presentation_MOD_PULSE_level2view.png
+diagrams/ANSS_presentation_MOD_PULSE_level3view.png
+diagrams/ANSS_presentation_MOD_PULSE_overview.png
+diagrams/Retailleau_etal_2022_PFD_remake.png

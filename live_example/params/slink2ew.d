@@ -78,15 +78,15 @@ StateFile                        # If this flag is specified (uncommented) a
 
 # PNSN-Operated + PB AQMS Imports
 Stream UW_* HH?.D
-#Stream UW_* EH?.D
 Stream UO_* HH?.D
 Stream CC_* BH?.D
 #Stream PB_* EH?.D
+
 # Washington Accelerometers
 #Stream UW_* HN?.D
 #Stream UW_* EN?.D
 # Washington Short Periods
-Stream UW_* EH?.D
+# Stream UW_* EH?.D
 # Oregon Broadbands
 #Stream UO_* HH?.D
 #Stream UO_* EH?.D

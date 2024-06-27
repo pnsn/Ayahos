@@ -126,7 +126,7 @@ Descriptor  startstop.desc
 Descriptor  slink2ew.desc
 Descriptor  pick_ew.desc
 Descriptor  ew2file.desc
-
+Descriptor  pulse_pick.desc
 #Descriptor  binder_ew.desc
 #Descriptor  carlstatrig.desc
 #Descriptor  carlsubtrig_nm.desc

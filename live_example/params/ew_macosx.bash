@@ -4,7 +4,7 @@
 
 # Set environment variables describing your Earthworm directory/version
 # export EW_HOME=/opt/earthworm/
-export EW_HOME=/usr/local/earthworm
+export EW_HOME=/opt/earthworm
 export PULSE_HOME=/Users/nates/Code/PULSE
 export EW_VERSION=earthworm_7.10
 export SYS_NAME=`hostname`

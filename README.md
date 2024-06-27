@@ -1,5 +1,5 @@
 # PULSE  
-# ~~^v~~~  
+# ~~|^v~~~  
 ## **P**rocessing (**P**ython) **U**tility for **L**ive **S**eismic **E**vents  
 Integrating emerging python seismic analysis codes into live-streaming seismic data workflows.
 

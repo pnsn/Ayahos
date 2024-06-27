@@ -269,8 +269,12 @@ class MLWindow(MLStream):
         ref_tr = self.traces[ref_comp]
         # Safety catch that at least the reference component does have enough data
         if ref_tr.get_fvalid_subset() < ref_thresh:
-            breakpoint()
-            raise ValueError('insufficient valid data in reference trace')
+            # Attempted fix for small decrease in valid fraction due to resampling
+            if np.abs((ref_tr.get_fvalid_subset() - ref_thresh)/ref_thresh) < 0.01:
+                pass
+            else:
+                breakpoint()
+                raise ValueError('insufficient valid data in reference trace')
         else:
             pass
         # Iterate across entries in the threshold dictionary

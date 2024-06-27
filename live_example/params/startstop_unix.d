@@ -7,7 +7,7 @@
 #    Ring names are listed in file earthworm.h.
 #
   nRing               4
-  Ring   WAVE_RING   8192
+  Ring   WAVE_RING   16384
 #  Ring    SCN_RING   500
   Ring   PICK_RING   1024
 #  Ring   HYPO_RING   128
@@ -71,8 +71,8 @@
  Process          "slink2ew slink2ew.d"
  Class/Priority    OTHER 0
 #
- Process          "pick_ew pick_ew.d"
- Class/Priority    OTHER 0
+# Process          "pick_ew pick_ew.d"
+# Class/Priority    OTHER 0
 #
  Process          "ew2file ew2file_pick_ew.d"
  Class/Priority    OTHER 0

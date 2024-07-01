@@ -296,6 +296,7 @@ class MLTrace(Trace):
             if np.ma.is_masked(self.data):
                 self.fold[self.data.mask] = 0
 
+        # TODO: Make real fix to this bandage
         # Ignore the warnings arising from MLTrace.__add__'s use of np.where
         warnings.filterwarnings('ignore', r'All-NaN (slice|axis) encountered')
 
@@ -488,7 +489,7 @@ class MLTrace(Trace):
         ft.stats.channel += 'f'        
         return ft
 
-    @_add_processing_info
+    # @_add_processing_info
     def apply_blinding(self, blinding=(500,500)):
         """
         Apply blinding to this MLTrace, which is defined by
@@ -583,7 +584,29 @@ class MLTrace(Trace):
             if np.ma.is_masked(self.data):
                 self.fold[self.data.mask] = 0
         return self
+    
+    def todtype(self, dtype):
+        """Conduct an in-place change of the data and fold dtype to a new dtype
 
+        Supported types:
+         - np.int8
+         - np.int16
+         - np.int32
+         - np.float32
+         - np.float64
+
+        :param dtype: New dtype to assign to the data and fold numpy arrays
+        :type dtype: type - see aboce
+        """        
+        if isinstance(dtype, type):
+            if dtype in [np.int8, np.int16, np.int32, np.float32, np.float64]:
+                self.data = self.data.astype(dtype)
+                self.fold = self.fold.astype(dtype)
+            else:
+                raise ValueError(f'dtype type {dtype} not supported')
+        else:
+            raise TypeError(f'dtype must be a `type` not type {type(dtype)}')
+        
     #####################################################################
     # UPDATED SPECIAL METHODS ###########################################
     #####################################################################

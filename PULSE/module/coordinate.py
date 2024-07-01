@@ -13,13 +13,28 @@ Classes
 """
 import threading, logging, time, sys, configparser, inspect
 from PULSE.util.pyew import is_wave_msg
-from PULSE.module.sequence import SequenceMod, SequenceBuildMod
+from PULSE.module.sequence import SequenceMod, SequenceBuilderMod
 from PULSE.module.transact import PyEWMod
 
 Logger = logging.getLogger(__name__)
 
 
-class PulseMod_EW(SequenceBuildMod):
+def _init_pyewmodule(modname, cfg_object):
+
+    # Construct PyEW.EWmodule object
+    ewmodinit = {
+        'connections': eval(cfg_object.get(modname, 'connections')),
+        'module_id': cfg_object.getint('Earthworm', 'MOD_ID'),
+        'installation_id': cfg_object.getint('Earthworm', 'INST_ID'),
+        'heartbeat_period': cfg_object.getfloat('Earthworm', 'HB'),
+        'deep_debug': cfg_object.getboolean(modname, 'deep_debug')
+        }
+
+    module = PyEWMod(**ewmodinit)
+    return module
+
+
+class PulseMod_EW(SequenceBuilderMod):
     """
     The PULSE_EW class comprises an extended :class:`~PyEW.EWModule` object
     (:class:`~PULSE.module.ew_transact.PyEWMod`) and a sequence of PULSE modules
@@ -30,9 +45,9 @@ class PulseMod_EW(SequenceBuildMod):
 
     :param wait_sec: number of seconds to wait between pulses, defaults to 0
     :type wait_sec: int, optional
-    :param default_ring_id: default ring ID to assign to PULSEule, defaults to 1000
+    :param default_ring_id: default ring ID to assign to PULSE module, defaults to 1000
     :type default_ring_id: int, optional
-    :param module_id: module ID that Earthworm will see for this PULSEule, defaults to 193
+    :param module_id: module ID that Earthworm will see for this PULSE module, defaults to 193
     :type module_id: int, optional
     :param installation_id: installation ID, defaults to 255 - anonymous/nonexchanging installation
     :type installation_id: int, optional
@@ -42,13 +57,16 @@ class PulseMod_EW(SequenceBuildMod):
         to make in addition to the 'DEFAULT': default_ring_id connection
         defaults to {'WAVE': 1000, 'PICK': 1005}
     :type: dict, optional
-    :param ewmodule_debug: should debugging level logging messages within the PULSEule object
+    :param ewmodule_debug: should debugging level logging messages within the PULSE module object
         be included if logging level is set to DEBUG? Defaults to False.
         (acts as an extra nit-picky layer for debugging)
     :type ewmodule_debug: bool, optional
     """
+    special_keys = SequenceBuilderMod.special_keys
+    special_methods = SequenceBuilderMod.special_methods
+    special_methods.update({'module': _init_pyewmodule})
 
-    def __init__(self, config_file):
+    def __init__(self, config_file, starting_section='PulseMod_EW'):
         """Create a PULSE object
         Inherits the sequence attribute and pulse() method from sequenceWyrm
 
@@ -69,6 +87,28 @@ class PulseMod_EW(SequenceBuildMod):
         :param submodule_wait_sec: seconds to wait between execution of the **pulse** method of each
             Wyrm-like object
         """
+        # Inherit and build module using SequenceBuilderMod inheritance
+        # NOTE: uses polymorphic adaptation of :meth:`~PULSE.module.sequence.SequenceBuilderMod.parse_config_section`
+        super().__init__(config_file=config_file,
+                         starting_section=starting_section)
+
+        # Construct PyEW.EWmodule object
+        if 'Earthworm' not in self.cfg._sections.keys():
+            self.Logger.critical('KeyError: "Earthworm" not included in sections')
+            sys.exit(1)
+        else:
+            ewmodinit = {
+                'connections': eval(self.cfg.get(self._mname, 'connections')),
+                'module_id': self.cfg.getint('Earthworm', 'MOD_ID'),
+                'installation_id': self.cfg.getint('Earthworm', 'INST_ID'),
+                'heartbeat_period': self.cfg.getfloat('Earthworm', 'HB'),
+                'deep_debug': self.cfg.getboolean(self._mname, 'deep_debug')
+            }
+
+            self.module = PyEWMod(**ewmodinit)
+
+
+
         # Initialize config parser
         self.cfg = configparser.ConfigParser(
             interpolation=configparser.ExtendedInterpolation()

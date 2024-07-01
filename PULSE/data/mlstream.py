@@ -9,6 +9,9 @@
     from :class:`~obspy.core.stream.Stream` and coordinate with functionalities of the
     :class:`~PULSE.data.mltrace.MLTrace` class.
 
+TODO: Ensure import paths in documentation are up to date and in sphinx formatting
+TODO: cleanup extraneous (developmental) methods that are commented out
+TODO: 
 """
 
 import fnmatch, os, obspy, logging
@@ -66,7 +69,7 @@ from PULSE.util.pyew import wave2mltrace
 
 class MLStreamStats(AttribDict):
     """
-    A class to contain metadata for a PULSE.data.MLStream.MLStream object
+    A class to contain metadata for a PULSE.data.mlstream.MLStream object
     of the based on the ObsPy AttribDict (Attribute Dictionary) class. 
 
     This operates very similarly to obspy.core.trace.Trace objects' Stats object
@@ -91,8 +94,7 @@ class MLStreamStats(AttribDict):
     def __init__(self, header={}):
         """Initialize a MLStreamStats object
 
-        A container for additional header information of an EWFlow
-        :class: `~PULSE.data.mlstream.MLStream` object
+        A container for additional header information of a PULSE :class:`~PULSE.data.mlstream.MLStream` object
 
 
         :param header: _description_, defaults to {}
@@ -203,18 +205,18 @@ class MLStreamStats(AttribDict):
 
 class MLStream(Stream):
     """
-    Dictionary like object of multiple EWFlow :class: `~PULSE.data.mltrace.MLTrace` objects
+    Dictionary like object of multiple PULSE :class: `~PULSE.data.mltrace.MLTrace` objects
 
     :param traces: initial list of ObsPy Trace-lke objects, defaults to []
     :type traces: list of :class: `~obspy.core.trace.Trace` (or children) objects, optional
         NOTE: all initial traces are converted into :class: `~PULSE.data.mltrace.MLTrace` objects
-    :param header: initial dictionary of key-value pairs to pass to EWFlow
+    :param header: initial dictionary of key-value pairs to pass to PULSE
         :meth: `~PULSE.data.mlstream.MLStreamStats.__init__`, defaults to {}
     :type header: dict-like, optional
     :param key_attr: attribute of each trace in traces to use for their unique key values
         such that a MLStream.traces entry is {tr.key_attr: tr}, defaults to 'id'
     :type key_attr: str, optional
-        Based on N.S.L.C.M.W from EWFlow :class: `~PULSE.data.mltrace.MLTraceStats`
+        Based on N.S.L.C.M.W from PULSE :class: `~PULSE.data.mltrace.MLTraceStats`
             Network.Station.Location.Channel.Model
             with Channel = SEED Channel naming convention
                 Character 0: Band character
@@ -743,6 +745,26 @@ class MLStream(Stream):
         out.stats.common_id = out.get_common_id()
         return out
     
+    def fnpop(self, fnstr, key_attr=None):
+        """Use a fnmatch.filter() search for keys that match the provided
+        fn string and pop them off this MLStream-like object into a new 
+        MLStream-like object
+
+        :param fnstr: unix wildcard compliant string for matching to keys that will be popped off this MLStream object
+        :type fnstr: str
+        :param key_attr: alternative key attribute to use for the output MLStream object, defaults to None
+        :type key_attr: NoneType or str, optional
+        :return out: popped items hosted in a new MLStream-like object
+        :rtype: PULSE.data.mlstream.MLStream-like
+        """        
+        matches = fnmatch.filter(self.traces.keys(), fnstr)
+        out = self.__class__(header=self.stats.copy(), key_attr=self.default_key_attr)
+        for _m in matches:
+            out.extend(self.pop(_m), key_attr = key_attr)
+        out.stats.common_id = out.get_common_id()
+        return out
+            
+    
     def isin(self, iterable, key_attr=None, ascopy=False):
         """
         Return a subset view (or copy) of the contents of this
@@ -750,9 +772,6 @@ class MLStream(Stream):
         of strings.
 
         Generally based on the behavior of the pandas.series.Series.isin() method
-
-        TODO: make sure the MLStream.extend() method is not
-              creating
 
         :: INPUTS ::
         :param iterable: [list-like] of [str] - strings to match

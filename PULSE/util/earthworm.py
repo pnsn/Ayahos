@@ -1,5 +1,5 @@
 """
-:module: wyrm.util.earthworm
+:module: PULSE.util.earthworm
 :auth: Nathan T. Stevens
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network
@@ -12,6 +12,24 @@ import argparse, configparser, logging
 import numpy as np
 
 Logger = logging.getLogger(__name__)
+
+
+
+def read_earthworm_d(earthworm_dot_d_file):
+    """TODO: Create parser for earthworm.d file to have a python-side representation of its contents
+
+    :param earthworm_dot_d_file: _description_
+    :type earthworm_dot_d_file: _type_
+    """
+    with open(earthworm_dot_d_file, 'r') as ewd:
+        lines = ewd.readlines()
+
+
+
+
+
+
+
 
 def read_config_file(conffile):
     config = configparser.ConfigParser()

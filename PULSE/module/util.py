@@ -31,11 +31,50 @@ class BreakpointMod(_BaseMod):
         super().__init__(max_pulse_size=max_pulse_size,
                          max_output_size=max_output_size,
                          meta_memory=meta_memory,
-                         report_period=False)
+                         report_period=report_period)
         
     def _measure_input_size(self, input):
         input_size = super()._measure_input_size(input)
         if input_size > 0:
             breakpoint()
         return input_size
+    
+
+class LogGateMod(_BaseMod):
+    def __init__(
+            self,
+            max_pulse_size=1000,
+            min_pulse_size=10,
+            log_base=2,
+            meta_memory=60,
+            max_output_size=10000,
+            report_period=False):
+        super().__init__(max_pulse_size=max_pulse_size,
+                         max_output_size=max_output_size,
+                         meta_memory=meta_memory,
+                         report_period=report_period)
+        self.bounding_max = self.max_pulse_size
+
+
+class RCGateMod(_BaseMod):
+    """Use a regularized coulomb relationship for dynamically scaling
+    the max_pulse_size of this Mod
+
+    See Joughin, Smith, and Schoof (2019, GRL)
+    replace :math:`\\tau_b` with max_pulse_size
+    replace :math:`u_b` with len(self.output) = :math:`O`
+
+    max_pulse_size = -C * \left(\frac{|O|}{|O| + O_0}\right)^{1/m} \frac{O}{|O|}
+
+    Parameters to assign
+    C - prefactor
+    m - exponent
+    O_0 - reference output size
+
+    :param _BaseMod: _description_
+    :type _BaseMod: _type_
+    """
+    def __init__(self):
+
+
     

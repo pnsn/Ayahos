@@ -16,9 +16,9 @@ Classes
 
 import logging, sys
 from PULSE.data.mltrace import MLTrace
-from PULSE.data.mlstream import MLStream
+from PULSE.data.dictstream import DictStream
 from PULSE.module._base import _BaseMod
-from PULSE.data.mltrigger import Trigger, GaussTrigger, QuantTrigger, Pick2KMsg
+from PULSE.data.trigger import Trigger, GaussTrigger, QuantTrigger, Logo
 from obspy.signal.trigger import trigger_onset
 import numpy as np
 
@@ -31,7 +31,7 @@ class BuffTriggerMod(_BaseMod):
     updates from subsequent windows appended to the MLTraceBuff's. 
 
     The :meth:`~PULSE.module.trigger.BuffTriggerMod._unit_process` method for this class conducts the following steps:
-        1) scans across each :class:`~PULSE.data.mltracebuff.MLTracBuff entry in a :class:`~PULSE.data.mlstream.MLStream`
+        1) scans across each :class:`~PULSE.data.mltracebuff.MLTracBuff entry in a :class:`~PULSE.data.dictstream.DictStream`
         2) runs :meth:`~obspy.signal.trigger.trigger_onset` on samples with fold :math:`\\geq` **threshold**
         3) converts triggers to :class:`~PULSE.data.trigger.Trigger`-type objects (see **method** below)
         4) appends Trigger-type objects objects to this BuffTriggerMod's *output* attribute
@@ -69,8 +69,7 @@ class BuffTriggerMod(_BaseMod):
 
     def __init__(
             self,
-            module_id,
-            installation_id,
+            logo,
             trigger_level=0.2,
             trigger_bounds=[5, 200],
             fold_threshold=1,
@@ -92,29 +91,31 @@ class BuffTriggerMod(_BaseMod):
                          meta_memory=meta_memory,
                          report_period=report_period)
 
-        # Compatability check for module_id
-        if isinstance(module_id, int):
-            if 0 < module_id < 256:
-                self.module_id = module_id
-            else:
-                self.Logger.critical('Invalid module_id value: must be in [1, 255]')
-                sys.exit(1)
-        else:
-            self.Logger.critical('Invalid module_id type. Must be type int')
-            sys.exit(1)
+
+
+        # # Compatability check for module_id
+        # if isinstance(module_id, int):
+        #     if 0 < module_id < 256:
+        #         self.module_id = module_id
+        #     else:
+        #         self.Logger.critical('Invalid module_id value: must be in [1, 255]')
+        #         sys.exit(1)
+        # else:
+        #     self.Logger.critical('Invalid module_id type. Must be type int')
+        #     sys.exit(1)
         
-        # Compatability check for installation_id
-        if isinstance(installation_id, int):
-            if 0 < installation_id < 256:
-                self.installation_id = installation_id
-            else:
-                self.Logger.critical(f'Invalid installtion_id value {installation_id} not in [1, 255]')
-                sys.exit(10)
-        elif installation_id is None:
-            self.installation_id == 255
-        else:
-            self.Logger.critical(f'Invalid installation_id type {type(installation_id)}')
-            sys.exit(1)
+        # # Compatability check for installation_id
+        # if isinstance(installation_id, int):
+        #     if 0 < installation_id < 256:
+        #         self.installation_id = installation_id
+        #     else:
+        #         self.Logger.critical(f'Invalid installtion_id value {installation_id} not in [1, 255]')
+        #         sys.exit(10)
+        # elif installation_id is None:
+        #     self.installation_id == 255
+        # else:
+        #     self.Logger.critical(f'Invalid installation_id type {type(installation_id)}')
+        #     sys.exit(1)
 
         # Compatability check for trigger_level
         if isinstance(trigger_level, float):
@@ -230,17 +231,17 @@ class BuffTriggerMod(_BaseMod):
         Last updated with :class:`~PULSE.module.trigger.BuffTriggerMod`
 
         Signal early stopping (status = False) if:
-         - type(input) != :class:`~PULSE.data.mlstream.MLStream
+         - type(input) != :class:`~PULSE.data.dictstream.DictStream
          - input_size == 0
          - iter_number < input_size
 
-        I.e., If input is a MLStream, 
+        I.e., If input is a DictStream, 
               there are MLTrace-like objects in input, 
               and the iteration counter is less than the number of MLTrace-like objects
 
-        :param input: input MLStream
-        :type input: PULSE.data.mlstream.MLStream
-        :param input_size: number of MLTrace-like objects in mlstream (len(input))
+        :param input: input DictStream
+        :type input: PULSE.data.dictstream.DictStream
+        :param input_size: number of MLTrace-like objects in dictstream (len(input))
         :type input_size: int
         :param iter_number: iteration number
         :type iter_number: int
@@ -249,7 +250,7 @@ class BuffTriggerMod(_BaseMod):
         """
         status = False
         if input_size > 0:
-            if isinstance(input, MLStream):
+            if isinstance(input, DictStream):
                 if iter_number < input_size:
                     status = True
                     self._inner_index=iter_number
@@ -262,14 +263,14 @@ class BuffTriggerMod(_BaseMod):
 
         Get a view of a single MLTrace-like object from input
 
-        :param input: input MLStream
-        :type input: PULSE.data.mlstream.MLStream
+        :param input: input DictStream
+        :type input: PULSE.data.dictstream.DictStream
         :returns:
             - **unit_input** (*PULSE.data.mltrace.MLTrace) -- view of a single MLTrace-like object in input
 
         """        
-        if not isinstance(input, MLStream):
-            Logger.critical('input for BuffTriggerMod.pulse must be type PULSE.data.mlstream.MLStream')
+        if not isinstance(input, DictStream):
+            Logger.critical('input for BuffTriggerMod.pulse must be type PULSE.data.dictstream.DictStream')
             sys.exit(1)
     
         # If the next item would fall outside length of input, wrap
@@ -280,7 +281,7 @@ class BuffTriggerMod(_BaseMod):
         _mlt = input[self._next_index]
         # Safety catch
         if not isinstance(_mlt, MLTrace):
-            self.Logger.critical(f'MLStream containing {type(_mlt)} not supported. Must be type PULSE.data.mltrace.MLTrace - exiting')
+            self.Logger.critical(f'DictStream containing {type(_mlt)} not supported. Must be type PULSE.data.mltrace.MLTrace - exiting')
             sys.exit(1)
         # If MLTrace ID is in the index keys
         if _mlt.id in self.index.keys():
@@ -326,8 +327,8 @@ class BuffTriggerMod(_BaseMod):
 
 
 
-        :param unit_input: input view of MLStream
-        :type unit_input: PULSE.data.mlstream.MLStream
+        :param unit_input: input view of DictStream
+        :type unit_input: PULSE.data.dictstream.DictStream
         :returns:
             - **unit_output** (*)
         :rtype: _type_

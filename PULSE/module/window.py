@@ -16,8 +16,8 @@ import seisbench.models as sbm
 from collections import deque
 from obspy import UTCDateTime
 from PULSE.data.mltrace import MLTrace
-from PULSE.data.mlstream import MLStream
-from PULSE.data.mlwindow import MLWindow
+from PULSE.data.dictstream import DictStream
+from PULSE.data.window import Window
 from PULSE.module._base import _BaseMod
 
 
@@ -26,7 +26,7 @@ class WindowMod(_BaseMod):
     The WindowMod class takes windowing information from an input
     seisbench.models.WaveformModel object and user-defined component
     mapping and data completeness metrics and provides a pulse method
-    that iterates across entries in an input MLStream object and
+    that iterates across entries in an input DictStream object and
     generates Window copies of sampled data that pass data completeness
     requirements. 
     """
@@ -71,7 +71,7 @@ class WindowMod(_BaseMod):
         :type reference_overlap: int, optional
         :param fnfilter: fnmatch filter string to use for subsetting channel inputs, default is None
         :type fnfilter: None or str
-            also see :meth:`~PULSE.data.mlstream.MLStream.fnselect`
+            also see :meth:`~PULSE.data.mlstream.DictStream.fnselect`
         :param pulse_type: style of running pulse, defaults to 'network'
             Supported values:
                 'network' - attempt to create one window from each instrument per pulse
@@ -249,7 +249,7 @@ class WindowMod(_BaseMod):
         :meth:`~PULSE.module.window.WindowMod._should_next_iteration_run`
 
         :param input: standard input
-        :type input: PULSE.data.mlstream.MLStream
+        :type input: PULSE.data.mlstream.DictStream
         :param iter_number: iteration number, unused
         :type iter_number: int
         :return status: should iterations continue in pulse, always True
@@ -264,15 +264,15 @@ class WindowMod(_BaseMod):
         obj is a view of input
 
         :param input: standard input
-        :type input: PULSE.data.mlstream.MLStream
+        :type input: PULSE.data.mlstream.DictStream
         :return: _description_
         :rtype: _type_
         """
-        if isinstance(input, MLStream):
+        if isinstance(input, DictStream):
             unit_input = input
             return unit_input
         else:
-            self.Logger.error('TypeError - input is not type MLStream')
+            self.Logger.error('TypeError - input is not type DictStream')
             sys.exit(1)
     
     def _unit_process(self, unit_input):
@@ -284,8 +284,8 @@ class WindowMod(_BaseMod):
 
         Newly generated windows are appended to WindowMod.output
 
-        :param unit_input: view of a MLStream containing waveforms
-        :type unit_input: PULSE.data.mlstream.MLStream
+        :param unit_input: view of a DictStream containing waveforms
+        :type unit_input: PULSE.data.mlstream.DictStream
         """        
         unit_output = deque()
         # Update window tracker
@@ -323,7 +323,7 @@ class WindowMod(_BaseMod):
                                 # Append mlt to traces
                                 traces.append(mlt)
                             # Populate window traces and metadata
-                            window = MLWindow(
+                            window = Window(
                                 traces = traces,
                                 header = {'reference_starttime': next_window_ti,
                                           'reference_sampling_rate': self.ref['sampling_rate'],
@@ -376,15 +376,15 @@ class WindowMod(_BaseMod):
         """
         PRIVATE METHOD
 
-        Scan across Traces in an input MLStream 
+        Scan across Traces in an input DictStream 
         with a component code matching the self.ref['component']
         attribute of this WindowMod and populate new branches in
         the self.window_index attribute if new site.inst
         (Network.Station.Location.BandInstrument{ref}) Traces are found
 
         :: INPUT ::
-        :param mlstream: MLStream object containing :class:`~PULSE.data.trace.Trace`-type objects
-        :type mlstream: PULSE.data.mlstream.MLStream
+        :param mlstream: DictStream object containing :class:`~PULSE.data.trace.Trace`-type objects
+        :type mlstream: PULSE.data.mlstream.DictStream
         """
         # Subset using fnfilter
         fmlstream = mlstream.fnselect(self.fnfilter)

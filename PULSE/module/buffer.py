@@ -1,24 +1,24 @@
 """
-:module: camper.module.buffer
+:module: PULSE.module.buffer
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
 :license: AGPL-3.0
 :purpose:
-    This contains the definition for the BufferModule class that hosts a :class:`~camper.data.stream.Stream`
-    object containing :class:`~camper.data.trace.Buffer` objects keyed to the Buffers' id attribute
+    This contains the definition for the BufferModule class that hosts a :class:`~PULSE.data.stream.Stream`
+    object containing :class:`~PULSE.data.trace.Buffer` objects keyed to the Buffers' id attribute
 
 Classes
 -------
-:class:`~camper.data.stream.Stream`
-:class:`~camper.data.stream.Window`
+:class:`~PULSE.data.stream.Stream`
+:class:`~PULSE.data.stream.Window`
 """
 import logging, sys
 from numpy import isfinite
 from PULSE.module._base import _BaseMod
 from PULSE.data.mltrace import MLTrace
 from PULSE.data.mltracebuff import MLTraceBuff
-from PULSE.data.mlstream import MLStream
+from PULSE.data.dictstream import DictStream
 from PULSE.util.pyew import is_wave_msg, wave2mltrace
 
 Logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ Logger = logging.getLogger(__name__)
 # @add_class_name_to_docstring
 class BufferMod(_BaseMod):
     """
-    Class for buffering/stacking MLTrace objects into a MLStream of MLTraceBuffer objects with
+    Class for buffering/stacking MLTrace objects into a DictStream of MLTraceBuffer objects with
     self-contained settings and sanity checks for changing the MLTraceBuffer.__add__ method options.
     """
     def __init__(
@@ -43,7 +43,7 @@ class BufferMod(_BaseMod):
             **add_kwargs):
         """Initialize a BufferMod object
 
-        :param buffer_key: MLTrace attribute to use for the MLStream keys, defaults to 'id'
+        :param buffer_key: MLTrace attribute to use for the DictStream keys, defaults to 'id'
         :type buffer_key: str, optional
         :param max_length: Maximum MLTraceBuffer length in seconds, defaults to 300.
         :type max_length: positive float-like, optional
@@ -83,8 +83,8 @@ class BufferMod(_BaseMod):
             report_period=report_period,
             max_output_size=max_output_size)
 
-        # Initialize output of type ewflow.data.mlstream.MLStream
-        self.output = MLStream(key_attr=buffer_key)
+        # Initialize output of type PULSE.data.dictstream.DictStream
+        self.output = DictStream(key_attr=buffer_key)
         self.buffer_key = buffer_key
         # Create holder attribute for MLTraceBuffer initialization Kwargs
         self.mltb_kwargs = {}
@@ -172,7 +172,7 @@ class BufferMod(_BaseMod):
         buffers or appending to existing buffers
 
         :param unit_input: iterable set of MLTrace unit_inputects
-        :type unit_input: MLStream, list-like
+        :type unit_input: DictStream, list-like
         :return unit_output: standard output of _unit_process
         :rtype unit_output: None
         """ 

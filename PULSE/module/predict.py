@@ -1,11 +1,13 @@
+#TODO: Header
+
 import torch, copy, logging, sys, os
 import numpy as np
 import seisbench.models as sbm
 from collections import deque
 from obspy import UTCDateTime
 from PULSE.data.mltrace import MLTrace
-from PULSE.data.mlstream import MLStream
-from PULSE.data.mlwindow import MLWindow
+from PULSE.data.dictstream import DictStream
+from PULSE.data.window import Window
 from PULSE.module._base import _BaseMod
 
 Logger = logging.getLogger(__name__)
@@ -17,11 +19,11 @@ Logger = logging.getLogger(__name__)
 class SeisBenchMod(_BaseMod):
     """
     Conduct ML model predictions on preprocessed data ingested as a deque of
-    MLWindow objects using one or more pretrained model weights. Following
+    Window objects using one or more pretrained model weights. Following
     guidance on model application acceleration from SeisBench, an option to precompile
     models on the target device is included as a default option.
 
-    This Wyrm's pulse() method accepts a deque of preprocessed MLWindow objects
+    This Wyrm's pulse() method accepts a deque of preprocessed Window objects
     and outputs to another deque (self.queue) of MLTrace objects that contain
     windowed predictions, source-metadata, and fold values that are the sum of the
     input data fold vectors
@@ -33,7 +35,6 @@ class SeisBenchMod(_BaseMod):
     This functionality allows tracking of information density across the prediction stage
     of a processing pipeline.
     """
-
 
     def __init__(
         self,
@@ -205,7 +206,7 @@ class SeisBenchMod(_BaseMod):
         Create batched window data for input to ML prediction
 
         :param input: collection of input objects
-        :type input: collections.deque of PULSED.data.MLWindow.MLWindow(s)
+        :type input: collections.deque of PULSED.data.Window.Window(s)
         :returns: 
             - **unit_input** (*3-tuple of lists*) -- tuple containing
                 - **batch_data** -- batch of windowed, preprocessed data tensors
@@ -236,16 +237,16 @@ class SeisBenchMod(_BaseMod):
         for j_ in range(nbatchwindows):
             # Get individual window
             _x = input.popleft()
-            if not isinstance(_x, MLWindow):
+            if not isinstance(_x, Window):
                 self.Logger.critical('type mismatch')
                 raise TypeError
-            # Check if MLWindow is ready for conversion to torch.Tensor
+            # Check if Window is ready for conversion to torch.Tensor
             if _x.ready_to_burn(self.model):
                 # Get data tensor
                 _data = _x.to_npy_tensor(self.model)
                 # Get data fold vector
                 _fold = _x.collapse_fold()
-                # Get MLWindow metadata
+                # Get Window metadata
                 _meta = _x.stats
                 _meta.processing.append([self.__name__(), 'batched', UTCDateTime()])
                 # Explicitly delete the source window from memory
@@ -255,7 +256,7 @@ class SeisBenchMod(_BaseMod):
                 batch_fold[j_, :] = (_fold)
                 batch_meta.append(_meta)
             else:
-                self.Logger.error(f'MLWindow for {_x.stats.common_id} is not sufficiently processed - skipping')
+                self.Logger.error(f'Window for {_x.stats.common_id} is not sufficiently processed - skipping')
                 # self.junk_drawer.append(_x)
                 pass
         # Convert batch data into a torch.Tensor
@@ -276,7 +277,7 @@ class SeisBenchMod(_BaseMod):
         :param unit_input: tuple containing batched data, fold, and metadata objects
         :type unit_input: (list of numpy.ndarray, list of numpy.ndarray, list of dict)
         :returns
-            - **unit_output** (*dict of PULSED.data.mlstream.MLStream*) -- output predictions reassociated with their fold-/meta-data
+            - **unit_output** (*dict of PULSED.data.dictstream.DictStream*) -- output predictions reassociated with their fold-/meta-data
         """
         # unpack copy of unit_input
         tbatch_data, batch_fold, batch_meta = unit_input
@@ -353,7 +354,7 @@ class SeisBenchMod(_BaseMod):
                         # Update component labeling
                         _mlt.set_comp(_label)
                         _traces.append(_mlt)
-                    mls = MLStream(traces=_traces,
+                    mls = DictStream(traces=_traces,
                                    header=_header,
                                    key_attr='id')
                     mls.stats.processing.append([self.__name__(), 'debatched', UTCDateTime()])

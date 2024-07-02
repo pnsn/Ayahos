@@ -10,31 +10,33 @@
 Classes
 -------
 :class:`~PULSE.module.coordinate.PulseMod_EW`
+
+TODO: Eventually migrate general sequence construction to PULSE.module.sequence.SequenceBuilderMod
 """
 import threading, logging, time, sys, configparser, inspect
 from PULSE.util.pyew import is_wave_msg
-from PULSE.module.sequence import SequenceMod, SequenceBuilderMod
+from PULSE.module.sequence import SequenceMod
 from PULSE.module.transact import PyEWMod
 
 Logger = logging.getLogger(__name__)
 
 
-def _init_pyewmodule(modname, cfg_object):
+# def _init_pyewmodule(modname, cfg_object):
 
-    # Construct PyEW.EWmodule object
-    ewmodinit = {
-        'connections': eval(cfg_object.get(modname, 'connections')),
-        'module_id': cfg_object.getint('Earthworm', 'MOD_ID'),
-        'installation_id': cfg_object.getint('Earthworm', 'INST_ID'),
-        'heartbeat_period': cfg_object.getfloat('Earthworm', 'HB'),
-        'deep_debug': cfg_object.getboolean(modname, 'deep_debug')
-        }
+#     # Construct PyEW.EWmodule object
+#     ewmodinit = {
+#         'connections': eval(cfg_object.get(modname, 'connections')),
+#         'module_id': cfg_object.getint('Earthworm', 'MOD_ID'),
+#         'installation_id': cfg_object.getint('Earthworm', 'INST_ID'),
+#         'heartbeat_period': cfg_object.getfloat('Earthworm', 'HB'),
+#         'deep_debug': cfg_object.getboolean(modname, 'deep_debug')
+#         }
 
-    module = PyEWMod(**ewmodinit)
-    return module
+#     module = PyEWMod(**ewmodinit)
+#     return module
 
 
-class PulseMod_EW(SequenceBuilderMod):
+class PulseMod_EW(SequenceMod):
     """
     The PULSE_EW class comprises an extended :class:`~PyEW.EWModule` object
     (:class:`~PULSE.module.ew_transact.PyEWMod`) and a sequence of PULSE modules
@@ -62,13 +64,19 @@ class PulseMod_EW(SequenceBuilderMod):
         (acts as an extra nit-picky layer for debugging)
     :type ewmodule_debug: bool, optional
     """
-    special_keys = SequenceBuilderMod.special_keys
-    special_methods = SequenceBuilderMod.special_methods
-    special_methods.update({'module': _init_pyewmodule})
+    # special_keys = SequenceBuilderMod.special_keys
+    # special_methods = SequenceBuilderMod.special_methods
+    # special_methods.update({'module': _init_pyewmodule})
 
-    def __init__(self, config_file, starting_section='PulseMod_EW'):
+    # Initialize configparser outside of __init__
+    cfgpar = configparser.ConfigParser(
+        interpolation=configparser.ExtendedInterpolation()
+    )
+    required_sections=['Earthworm','PulseMod_EW','Sequence']
+
+    def __init__(self, config_file):
         """Create a PULSE object
-        Inherits the sequence attribute and pulse() method from sequenceWyrm
+        Inherits the sequence attribute and pulse() method from :class:`~PULSE.module.sequence.SequenceMod`
 
         :param wait_sec: number of seconds to wait between completion of one pulse sequence of
             the Wyrm-like objects in self.sequence and the next, defaults to 0
@@ -87,89 +95,50 @@ class PulseMod_EW(SequenceBuilderMod):
         :param submodule_wait_sec: seconds to wait between execution of the **pulse** method of each
             Wyrm-like object
         """
-        # Inherit and build module using SequenceBuilderMod inheritance
-        # NOTE: uses polymorphic adaptation of :meth:`~PULSE.module.sequence.SequenceBuilderMod.parse_config_section`
-        super().__init__(config_file=config_file,
-                         starting_section=starting_section)
-
-        # Construct PyEW.EWmodule object
-        if 'Earthworm' not in self.cfg._sections.keys():
-            self.Logger.critical('KeyError: "Earthworm" not included in sections')
-            sys.exit(1)
-        else:
-            ewmodinit = {
-                'connections': eval(self.cfg.get(self._mname, 'connections')),
-                'module_id': self.cfg.getint('Earthworm', 'MOD_ID'),
-                'installation_id': self.cfg.getint('Earthworm', 'INST_ID'),
-                'heartbeat_period': self.cfg.getfloat('Earthworm', 'HB'),
-                'deep_debug': self.cfg.getboolean(self._mname, 'deep_debug')
-            }
-
-            self.module = PyEWMod(**ewmodinit)
+        # # Inherit and build module using SequenceBuilderMod inheritance
+        # # NOTE: uses polymorphic adaptation of :meth:`~PULSE.module.sequence.SequenceBuilderMod.parse_unit_module_config_section`
+        # super().__init__(config_file=config_file,
+        #                  starting_section=starting_section)
 
 
-
-        # Initialize config parser
-        self.cfg = configparser.ConfigParser(
-            interpolation=configparser.ExtendedInterpolation()
-        )
         # Read configuration file
-        self.cfg.read(config_file)
+        self.cfgpar.read(config_file)
 
-        # Initialize Super for SequenceMod inheritance
-        if 'PulseMod_EW' in self.cfg._sections.keys():
-            PULSE_init = self.parse_config_section('PulseMod_EW')
-            sequence_params = inspect.signature(SequenceMod).parameters
-            super_init_kwargs = {}
-            for _k, _v in PULSE_init.items():
-                if _k in sequence_params.keys():
-                    super_init_kwargs.update({_k: _v})
-            super().__init__(**super_init_kwargs)
-        # Trigger safety catch that something is missing
-        else:
-            Logger.critical(f'Cannot initialize {super().__name__(full=True)}')
-        # Ensure minimum required fields are present for module initialization
-        demerits = 0
-        for _rs in ['Earthworm','PulseMod_EW','Sequence']:
-            if _rs not in self.cfg._sections.keys():
-                self.Logger.critical(f'section {_rs} missing from config file! Will not initialize PULSE')
-                demerits += 1
-        if demerits > 0:
-            sys.exit(1)
-        else:
-            self.Logger.debug('config file has all required sections')
-
-        # Initialize PULSEPyEWModule Object
+        # Check for required sections
+        for _sec in self.required_sections:
+            if _sec not in self.cfgpar._sections.keys():
+                Logger.critical(f'KeyError: required section "{_sec}" not included in config_file')
+                sys.exit(1)
+        
+        
+        # Initialize PyEWMod object
         self.module = PyEWMod(
-            connections = eval(self.cfg.get('PulseMod_EW','connections')),
-            module_id = self.cfg.getint('Earthworm', 'MOD_ID'),
-            installation_id = self.cfg.getint('Earthworm', 'INST_ID'),
-            heartbeat_period = self.cfg.getfloat('Earthworm', 'HB'),
-            deep_debug = self.cfg.getboolean('PulseMod_EW', 'deep_debug')
-        )        
-        # Create a thread for the module process
-        try:
-            self.module_thread = threading.Thread(target=self.run)
-        except:
-            self.Logger.critical('Failed to start thread')
-            sys.exit(1)
-        self.Logger.info('PyEWMod initialized')
+            connections=eval(self.cfgpar.get('PulseMod_EW',
+                                             'connections')),
+            module_id=self.cfgpar.getint('Earthworm',
+                                         'MOD_ID'),
+            installation_id=self.cfgpar.getint('Earthworm',
+                                               'INST_ID'),
+            heartbeat_period=self.cfgpar.getfloat('Earthworm',
+                                                  'HB'),
+            deep_debug=self.cfgpar.getboolean('PulseMod_EW',
+                                              'deep_debug'))
 
         # Sequence submodules
         sequence = {}
         demerits = 0
 
         # Iterate across submodule names and section names
-        for submod_name, submod_section in self.cfg['Sequence'].items():
+        for submod_name, submod_section in self.cfgpar['Sequence'].items():
             # Log if there are missing submodules
-            if submod_section not in self.cfg._sections.keys():
-                self.Logger.critical(f'submodule {submod_section} not defined in config_file. Will not compile!')
+            if submod_section not in self.cfgpar._sections.keys():
+                Logger.critical(f'submodule {submod_section} not defined in config_file. Will not compile!')
                 demerits += 1
             # Construct if the submodule has a section
             else:
                 # Parse the class name and __init__ kwargs
                 submod_class, submod_init_kwargs = \
-                    self.parse_config_section(submod_section)
+                    self.parse_unit_module_config_section(submod_section)
                 # Run import to local scope
                 parts = submod_class.split('.')
                 path = '.'.join(parts[:-1])
@@ -177,18 +146,32 @@ class PulseMod_EW(SequenceBuilderMod):
                 try:
                     exec(f'from {path} import {clas}')
                 except ImportError:
-                    self.Logger.critical(f'failed to import {submod_class}')
+                    Logger.critical(f'failed to import {submod_class}')
                     sys.exit(1)
                 submod_object = eval(clas)(**submod_init_kwargs)
                 # Attach object to sequence
                 sequence.update({submod_name: submod_object})
-                self.Logger.info(f'{submod_name} initialized')
+                Logger.info(f'{submod_name} initialized')
         # If there are any things that failed to compile, exit
         if demerits > 0:
             sys.exit(1)
         
-        # Update with non-empty sequence
-        self.update(sequence)
+        # Initialize Super for SequenceMod inheritance
+        _, PULSE_init = self.parse_unit_module_config_section('PulseMod_EW')
+        sequence_params = inspect.signature(SequenceMod).parameters
+        super_init_kwargs = {'sequence': sequence}
+        for _k, _v in PULSE_init.items():
+            if _k in sequence_params.keys():
+                super_init_kwargs.update({_k: _v})
+        super().__init__(**super_init_kwargs)
+
+        # Create a thread for the module process
+        try:
+            self.module_thread = threading.Thread(target=self.run)
+        except:
+            self.Logger.critical('Failed to start thread')
+            sys.exit(1)
+        self.Logger.info('PyEWMod initialized')
 
         # Set runs flag to True
         self.runs = True
@@ -198,10 +181,19 @@ class PulseMod_EW(SequenceBuilderMod):
     ### MODULE CONFIGURATION PARSING METHOD ###
     ###########################################
         
-    def parse_config_section(self, section):
+    def parse_unit_module_config_section(self, section):
+        """Parse the keys and values of a config_file section defining a PULSE unit module
+
+        :param section: specified configuration file section header
+        :type section: str
+        :return submod_class: import path for the submodule class for this section
+        :rtype submod_class: str
+        :return submod_kwargs: dictionary of key-word arguments to be passed to submod_class.__init__
+        :rtype submod_kwargs: dict
+        """        
         submod_init_kwargs = {}
         submod_class = None
-        for _k, _v in self.cfg[section].items():
+        for _k, _v in self.cfgpar[section].items():
             # Handle special case where class is passed
             if _k == 'class':
                 submod_class = _v
@@ -210,16 +202,17 @@ class PulseMod_EW(SequenceBuilderMod):
                 _val = self.module
             # Handle case where the parameter value is bool-like    
             elif _v in ['True', 'False', 'yes', 'no']:
-                _val = self.cfg.getboolean(section, _k)
+                _val = self.cfgpar.getboolean(section, _k)
             # For everything else, use eval statements
             else:
-                _val = eval(self.cfg.get(section, _k))
+                _val = eval(self.cfgpar.get(section, _k))
             
             if _k != 'class':
                 submod_init_kwargs.update({_k: _val})
         
         if submod_class is None:
-            return submod_init_kwargs
+            self.Logger.critical(f'unit module class not defined in section [{section}] - will not result in a viable PULSE sequence')
+            sys.exit(1)
         else:
             return submod_class, submod_init_kwargs
 
@@ -267,7 +260,6 @@ class PulseMod_EW(SequenceBuilderMod):
         # Gracefully shut down
         self.module.goodbye()
     
-
     def pulse(self):
         """
         Overwrites the inherited :meth:`~PULSE.module.coordinate.SequenceBuildMod.pulse` method

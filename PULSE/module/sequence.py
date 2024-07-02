@@ -34,7 +34,7 @@ Classes
 
 TODO: Turn status from _capture_unit_out into a representation of nproc
     idea is to say "keep going" if the SequenceMod is conducting any processes
-
+TODO: develop SequenceBuilderMod such that layered builds of sequences can be handled with the config_file construction route.
 """
 import sys, configparser
 import numpy as np
@@ -265,7 +265,7 @@ class SequenceMod(_BaseMod):
         """
         POLYMORPHIC
 
-        Last updated with :class: `~PULSE.module.bundle.SequenceMod`
+        Last updated with :class:`~PULSE.module.bundle.SequenceMod`
 
         always return status = True
         Execute max_pulse_size iterations regardless of internal processes
@@ -384,168 +384,171 @@ class SequenceMod(_BaseMod):
 
 
 
-class SequenceBuilderMod(SequenceMod):
-    """
-    Defines a self-building :class:`~PULSE.module.sequence.SequenceMod` child-class using regularly formatted
-    inputs from a configuration file (*.ini) using the ConfigParser Python library
+# class SequenceBuilderMod(SequenceMod):
+#     """
+#     Defines a self-building :class:`~PULSE.module.sequence.SequenceMod` child-class using regularly formatted
+#     inputs from a configuration file (*.ini) using the ConfigParser Python library
 
-    :param config_file: file name and path for the desired configuration file, which must contain the sections decribed below
-    :type config_file: str
-    :param starting_section: unique section name for this sequence, defaults to 'Sequence_Module'
+#     :param config_file: file name and path for the desired configuration file, which must contain the sections decribed below
+#     :type config_file: str
+#     :param starting_section: unique section name for this sequence, defaults to 'Sequence_Module'
 
-    config_file.ini format
-    '''
-    [Sequence_Module]   # <- Re-assign to match with **starting_section** in your .ini file to allow for multiple calls
-    class: PULSE.module.sequence.SequenceBuilderMod
-    sequence: Sequence_0
-    max_pulse_size: 1000
-    ...
+#     config_file.ini format
+#     '''
+#     [Sequence_Module]   # <- Re-assign to match with **starting_section** in your .ini file to allow for multiple calls
+#     class: PULSE.module.sequence.SequenceBuilderMod
+#     sequence: Sequence_0
+#     max_pulse_size: 1000
+#     ...
 
-    [Sequence_0]
-    mod0_name: mod0_section_name
-    mod1_name: mod1_section_name
-    mod2_name: mod1_section_name  # <- not a typo, section names can be called multiple times!
-    ...
-    '''
+#     [Sequence_0]
+#     mod0_name: mod0_section_name
+#     mod1_name: mod1_section_name
+#     mod2_name: mod1_section_name  # <- not a typo, section names can be called multiple times!
+#     ...
+#     '''
 
 
 
-    """
-    # Define special section keys (allows overwrite outside of __init__ for things like PulseMod_EW)
-    special_keys = ['sequence','class','module']
+#     """
+#     # Define special section keys (allows overwrite outside of __init__ for things like PulseMod_EW)
+#     special_keys=['sequence','class']
+#     def __init__(self, config_file, starting_section='Sequence_Module', additional_special_keys=[]):
+#         """
+#         Initialize a :class:`~PULSE.module.sequence.SequenceBuilderMod` object
+#         """
 
-    def __init__(self, config_file, starting_section='Sequence_Module'):
-        """
-        Initialize a :class:`~PULSE.module.sequence.SequenceBuilderMod` object
-        """
+#         # Initialize config parser
+#         self.cfg = configparser.ConfigParser(
+#             interpolation=configparser.ExtendedInterpolation()
+#         )
+#         # Read configuration file
+#         self.cfg.read(config_file)
 
-        # Initialize config parser
-        self.cfg = configparser.ConfigParser(
-            interpolation=configparser.ExtendedInterpolation()
-        )
-        # Read configuration file
-        self.cfg.read(config_file)
-
-        # Compatablity checks with starting_section & cross-check with cfg
-        if isinstance(starting_section, str):
-            if starting_section not in self.cfg._sections.keys():
-                self.Logger.critical('KeyError: starting_section not in config_file')
-                sys.exit(1)
-            else:
-                self._modname = starting_section
-        else:
-            self.Logger.critical('TypeError: starting_section must be type str')
-            sys.exit(1)
+#         # Compatablity checks with starting_section & cross-check with cfg
+#         if isinstance(starting_section, str):
+#             if starting_section not in self.cfg._sections.keys():
+#                 self.Logger.critical('KeyError: starting_section not in config_file')
+#                 sys.exit(1)
+#             else:
+#                 self._modname = starting_section
+#         else:
+#             self.Logger.critical('TypeError: starting_section must be type str')
+#             sys.exit(1)
     
-        # Get sequence name
-        try:
-            _seqname = self.cfg.get(self._modname, 'sequence')
-        except:
-            self.Logger.critical(f'sequence-definining entry for "sequence" in section {self._modname} not found')
-            sys.exit(1)
-        if _seqname in self.cfg._sections.keys():
-            self._seqname = _seqname
-        else:
-            self.Logger.critical(f'"sequence" argument {_seqname} in {self._modname} not found in section names of config_file')
-            sys.exit(1)
+#         if isinstance(additional_special_keys, list):
+#             if all(isinstance(e, str) for e in additional_special_keys):
+#                 self.special_keys += additional_special_keys
+#             else:
+#                 self.Logger.critical('TypeError: special_keys elements must be all type str')
+#                 sys.exit(1)
+#         else:
+#             self.Logger.critical('TypeError: special_keys must be a list')
+#             sys.exit(1)
+
+#         # Populate specials
+#         for key in self.special_keys:
+#             self.populate_specials(key)
+
+#         # Get sequence name
+#         try:
+#             _seqname = self.cfg.get(self._modname, 'sequence')
+#         except:
+#             self.Logger.critical(f'sequence-definining entry for "sequence" in section {self._modname} not found')
+#             sys.exit(1)
+#         if _seqname in self.cfg._sections.keys():
+#             self._seqname = _seqname
+#         else:
+#             self.Logger.critical(f'"sequence" argument {_seqname} in {self._modname} not found in section names of config_file')
+#             sys.exit(1)
         
-        # Get super init kwargs for SequenceMod inheritance
-        super_init_kwargs = {}
-        for _k, _v in self.cfg[self._modname].items():
-            if _k not in self.special_keys:
-                super_init_kwargs.update({_k: _v})
-
-        # Build Special Fields
-        self.special_kwargs = {}
-        for key in self.special_keys:
-            self._parse_special_kwarg(key)
+#         # Get super init kwargs for SequenceMod inheritance
+#         super_init_kwargs = {}
+#         for _k, _v in self.cfg[self._modname].items():
+#             if _k not in self.special_keys:
+#                 super_init_kwargs.update({_k: _v})
         
-        # Get sequence of sections
-        module_sequence = {}
-        # Iterate across unit module sections
-        for _smname, _smsect in self.cfg[self._seqname].items():
-            # Check that the defining section exists
-            if _smsect not in self.cfg._sections.keys():
-                self.Logger.critical(f'submodule {_smsect} not defined in config_file')
-                sys.exit(1)
-            else:
-                # Parse config_file section
-                section_kwargs = self.parse_cfg_section(_smsect)
-                # Build unit module object
-                imod = self._build_unit_module(section_kwargs)
-                # Add unit module object to sequence
-                module_sequence.update({_smname: imod})
-        # Update sequence in init key-word arguments
-        super_init_kwargs.update({'sequence': module_sequence})
-        # super init from SequenceMod
-        super().__init__(**super_init_kwargs)
+#         # Get sequence of sections
+#         module_sequence = {}
+#         # Iterate across unit module sections
+#         for _smname, _smsect in self.cfg[self._seqname].items():
+#             # Check that the defining section exists
+#             if _smsect not in self.cfg._sections.keys():
+#                 self.Logger.critical(f'submodule {_smsect} not defined in config_file')
+#                 sys.exit(1)
+#             else:
+#                 # Parse config_file section
+#                 section_kwargs = self.parse_cfg_section(_smsect)
+#                 # Build unit module object
+#                 imod = self._build_unit_module(section_kwargs)
+#                 # Add unit module object to sequence
+#                 module_sequence.update({_smname: imod})
+#         # Update sequence in init key-word arguments
+#         super_init_kwargs.update({'sequence': module_sequence})
+#         # super init from SequenceMod
+#         super().__init__(**super_init_kwargs)
 
-    ###########################################
-    ### MODULE CONFIGURATION PARSING METHOD ###
-    ###########################################            
+#     ###########################################
+#     ### MODULE CONFIGURATION PARSING METHOD ###
+#     ###########################################            
 
-    def _parse_special_kwarg(self, key):
-        if key in self.special_keys:
-            self.special_kwargs.update({key: self.special_methods[key]()})
-        
+#     def parse_cfg_section(self, section):
+#         """Parse a config_file section's keys and values to create construction information for a PULSE unit module object initialization
 
-    def parse_cfg_section(self, section):
-        """Parse a config_file section's keys and values to create construction information for a PULSE unit module object initialization
-
-        :param section: name of the section defining the unit module object
-        :type section: str
-        :return section_kwargs: key-word arguments for initializing a PULSE unit module class object
-        :rtype section_kwargs: dict
-        :return special_fields: parsed special_keys values 
-        :rtype special_fields: dict
-        """        
-        section_kwargs = {}
-        special_kwargs = {}
-        for _k, _v in self.cfg[section].items():
-            if _k in self.special_keys:
-                # Parse special keys with provided methods (must be something )
-                if self.special_methods[_k] is not None:
-                    _val = self.special_kwargs[_k]
-                    special_kwargs.update({_k: _val})
-                # Parse special keys with provided methods (None --> direct copy)
-                else:
-                    special_kwargs.update({_k: _v})
-            else:
-                # Parse boolean with configparser methods
-                if _v in ['True','False','yes','no']:
-                    _val = self.cfg.getboolean(section, _k)
-                # Parse everything else with eval statements
-                else:
-                    _val = eval(self.cfg.get(section, _k))
-                section_kwargs.update({_k: _val})
-        return section_kwargs, special_kwargs
+#         :param section: name of the section defining the unit module object
+#         :type section: str
+#         :return section_kwargs: key-word arguments for initializing a PULSE unit module class object
+#         :rtype section_kwargs: dict
+#         :return special_fields: parsed special_keys values 
+#         :rtype special_fields: dict
+#         """        
+#         section_kwargs = {}
+#         special_kwargs = {}
+#         for _k, _v in self.cfg[section].items():
+#             if _k in self.special_keys:
+#                 # Parse special keys with provided methods (must be something )
+#                 if self.special_methods[_k] is not None:
+#                     _val = self.special_kwargs[_k]
+#                     special_kwargs.update({_k: _val})
+#                 # Parse special keys with provided methods (None --> direct copy)
+#                 else:
+#                     special_kwargs.update({_k: _v})
+#             else:
+#                 # Parse boolean with configparser methods
+#                 if _v in ['True','False','yes','no']:
+#                     _val = self.cfg.getboolean(section, _k)
+#                 # Parse everything else with eval statements
+#                 else:
+#                     _val = eval(self.cfg.get(section, _k))
+#                 section_kwargs.update({_k: _val})
+#         return section_kwargs, special_kwargs
     
-    def _build_special_fields(self):
-        special_fields = {}
-        for _k, _v in self.special_methods.items():
+#     def _build_special_fields(self):
+#         special_fields = {}
+#         for _k, _v in self.special_methods.items():
             
-            if _v is not None:
-                special_fields.update({_k: _v()})
-            else:
-                special_fields.update({_k: _v})
+#             if _v is not None:
+#                 special_fields.update({_k: _v()})
+#             else:
+#                 special_fields.update({_k: _v})
 
-    def _build_unit_module(self, section_kwargs, special_fields):
-        # Import class to local scope
-        parts = special_fields['class'].split(".")
-        path = '.'.join(parts[:-1])
-        clas = parts[-1]
-        try:
-            exec(f'from {path} import {clas}')
-        except ImportError:
-            self.Logger.critical(f'failed to import {special_fields['class']}')
-            sys.exit(1)
-        # Pass copies of parsed special fields to section kwargs
-        for _k, _v in special_fields.items():
-            if _k != 'class':
-                section_kwargs.update({_k, _v})
-        # Construct unit module object
-        unit_mod_obj = eval(clas)(**section_kwargs)
-        return unit_mod_obj 
+#     def _build_unit_module(self, section_kwargs, special_fields):
+#         # Import class to local scope
+#         parts = special_fields['class'].split(".")
+#         path = '.'.join(parts[:-1])
+#         clas = parts[-1]
+#         try:
+#             exec(f'from {path} import {clas}')
+#         except ImportError:
+#             self.Logger.critical(f'failed to import {special_fields['class']}')
+#             sys.exit(1)
+#         # Pass copies of parsed special fields to section kwargs
+#         for _k, _v in special_fields.items():
+#             if _k != 'class':
+#                 section_kwargs.update({_k, _v})
+#         # Construct unit module object
+#         unit_mod_obj = eval(clas)(**section_kwargs)
+#         return unit_mod_obj 
 
         # # Placeholder for use of "module" in child classes
         # if 'module' in special_fields.keys():

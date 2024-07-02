@@ -11,7 +11,6 @@
 """
 import numpy as np
 from obspy import UTCDateTime, Trace
-from PULSE.data.mltrace import MLTrace
 
 
 def is_empty_message(msg):
@@ -168,32 +167,7 @@ def wave2trace(wave):
     trace = Trace(data=_data, header=_header)
     return trace
 
-def wave2mltrace(wave):
-    """
-    Convert a PyEW wave dictionary message into
-    a ayahos.core.trace.mltrace.MLTrace object
-    """
-    status = is_wave_msg(wave)
-    if isinstance(status, str):
-        raise SyntaxError(status)
-    header = {}
-    for _k, _v in wave.items():
-        if _k in ['station','network','channel','location']:
-            header.update({_k:_v})
-        elif _k == 'samprate':
-            header.update({'sampling_rate': _v})
-        elif _k == 'data':
-            data = _v
-        elif _k == 'startt':
-            header.update({'starttime': UTCDateTime(_v)})
-        elif _k == 'datatype':
-            dtype = _v
-    try:
-        data = wave['data'].astype(dtype)
-    except TypeError:
-        data = wave['data']
-    mlt = MLTrace(data=data, header=header)
-    return mlt
+
 
 
 def trace2wave(trace, dtype=None):

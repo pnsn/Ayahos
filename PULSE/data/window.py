@@ -1,25 +1,39 @@
+"""
+:module: PULSE.data.window
+:auth: Nathan T. Stevens
+:email: ntsteven (at) uw.edu
+:org: Pacific Northwest Seismic Network
+:license: AGPL-3.0
+:purpose:
+    This module provides the class definitions for :class:`~PULSE.data.window.Window` and :class:`~PULSE.data.window.WindowStats`
+    that are child classes of :class:`~PULSE.data.dictstream.DictStream` and :class:`~PULSE.data.dictstream.DictStreamStats`, respectively.
+
+    The Window class keys :class:`~PULSE.data.mltrace.MLTrace`-type objects by their component code, rather than full **id** attribute
+    and provides additional class methods for pre-processing one or more MLTrace objects into a data tensor ready for input to a machine
+    learning model (e.g., SeisBench's WaveformModel classes)
+"""
 import copy
 import numpy as np
 import pandas as pd
 import seisbench.models as sbm
 from obspy import Trace, Stream, UTCDateTime
-from PULSE.data.mlstream import MLStream, MLStreamStats
+from PULSE.data.dictstream import DictStream, DictStreamStats
 from PULSE.data.mltrace import MLTrace
 
 ###############################################################################
-# MLWindowStats Class Definition ##########################################
+# WindowStats Class Definition ##########################################
 ###############################################################################
 
-class MLWindowStats(MLStreamStats):
+class WindowStats(DictStreamStats):
     # NTS: Deepcopy is necessary to not overwrite _types and defaults for parent class
-    _types = copy.deepcopy(MLStreamStats._types)
+    _types = copy.deepcopy(DictStreamStats._types)
     _types.update({'ref_component': str,
                    'aliases': dict,
                    'thresholds': dict,
                    'reference_starttime': (UTCDateTime, type(None)),
                    'reference_npts': (int, type(None)),
                    'reference_sampling_rate': (float, type(None))})
-    defaults = copy.deepcopy(MLStreamStats.defaults)
+    defaults = copy.deepcopy(DictStreamStats.defaults)
     defaults.update({'ref_component': 'Z',
                      'aliases': {'Z': 'Z3',
                                  'N': 'N1',
@@ -30,13 +44,13 @@ class MLWindowStats(MLStreamStats):
                      'reference_npts': None})
     
     def __init__(self, header={}):
-        """Create a MLWindowStats object
+        """Create a WindowStats object
 
-        :param header: attribute: value pairs to assign in the MLWindowStats, defaults to {}
+        :param header: attribute: value pairs to assign in the WindowStats, defaults to {}
         :type header: dict, optional
         """        
         # Initialize super + updates to class attributes
-        super(MLWindowStats, self).__init__()
+        super(WindowStats, self).__init__()
         # THEN update self with header inputs
         self.update(header)
 
@@ -63,10 +77,10 @@ class MLWindowStats(MLStreamStats):
 # Component Stream Class Definition ###########################################
 ###############################################################################
         
-class MLWindow(MLStream):
-    """A child-class of MLStream that only uses trace component codes as keys and
+class Window(DictStream):
+    """A child-class of DictStream that only uses trace component codes as keys and
     is postured towards processing a collection of windowed traces from a single
-    seismometer. It provides additional class methods extending from MLStream
+    seismometer. It provides additional class methods extending from DictStream
     that facilitate windowed trace data pre-processing in advance of ML prediction
     using SeisBench WaveformModel type model architectures.
     """
@@ -76,27 +90,27 @@ class MLWindow(MLStream):
             ref_component='Z',
             header={},
             **options):
-        """Initialize a ewflow.data.mlwindow.MLWindow object
+        """Initialize a PULSE.data.window.Window object
 
         :param traces: ObsPy Trace-like object(s)
         :type traces: obspy.core.trace.Trace or list/obspy.core.stream.Stream thereof
         :param ref_component: reference component code for this window stream, defaults to 'Z'
         :type ref_component: str, optional
-        :param header: inputs ot pass to the MLWindowStats.__init__, defaults to {}
+        :param header: inputs ot pass to the WindowStats.__init__, defaults to {}
         :type header: dict, optional
-        :param **options: collector for key-word arguments passed to MLWindow.__add__ 
+        :param **options: collector for key-word arguments passed to Window.__add__ 
                 for merging entries with matching component codes
         :type **options: kwargs
         """
-        # Initialize & inherit from MLStream
+        # Initialize & inherit from DictStream
         super().__init__()
         # Initialize Stream Header
-        self.stats = MLWindowStats(header=header)
+        self.stats = WindowStats(header=header)
         if isinstance(ref_component, str):
             if ref_component in self.stats.aliases.keys():
                 self.stats.ref_component = ref_component
             else:
-                raise ValueError(f'ref_component must be a key value in MLWindow.stats.aliases')
+                raise ValueError(f'ref_component must be a key value in Window.stats.aliases')
         else:
             raise TypeError('ref_component must be type str')
         
@@ -107,7 +121,7 @@ class MLWindow(MLStream):
                 raise TypeError('all input traces must be type MLTrace')
         else:
             raise TypeError("input 'traces' must be a single MLTrace or iterable set of MLTrace objects")
-        # Add traces using the MLWindow __add__ method that converts non MLTrace objects into MLTrace objects
+        # Add traces using the Window __add__ method that converts non MLTrace objects into MLTrace objects
         # if self.validate_trace_ids(self, other=traces)
         self.extend(traces, **options)
         self.stats.common_id = self.get_common_id()
@@ -115,13 +129,13 @@ class MLWindow(MLStream):
         #     self.stats.reference_id = self.traces[self.ref['component']].id
 
     def extend(self, traces, **options):
-        """Extend (add) more traces to this MLWindow
+        """Extend (add) more traces to this Window
 
-        :param traces: set of traces to add to this MLWindow, keying on their component codes
+        :param traces: set of traces to add to this Window, keying on their component codes
         :type traces: obspy.core.trace.Trace-like
 
-        NOTE: Any true obspy.core.trace.Trace objects are converted into wyrm.core.trace.mltrace.MLTrace
-             objects before extending the MLWindow
+        NOTE: Any true obspy.core.trace.Trace objects are converted into PULSE.data.mltrace.MLTrace
+             objects before extending the Window
         """
         # If extending with a single trace object
         if isinstance(traces, Trace):
@@ -165,10 +179,10 @@ class MLWindow(MLStream):
     def __repr__(self, extended=False):
         """
         Provide a user-friendly string representation of the contents and key parameters of this
-        MLWindow object. 
+        Window object. 
 
         :: INPUTS ::
-        :param extended: option to show an extended form of the MLWindow should 
+        :param extended: option to show an extended form of the Window should 
                          there be a large number of unique component codes (an uncommon use case)
         :type extend: bool, optional
 
@@ -205,19 +219,19 @@ class MLWindow(MLStream):
         """Summative class method for assessing if channels have enough data, and applying the specified channel fill `rule`
 
         The thresh(olds) values in this method are compared against a given
-        wyrm.core.trace.mltrace.MLTrace object's .get_fvalid_subset() output
-            ~also see wyrm.core.trace.mltrace.MLTrace.get_fvalid_subset()
+        PULSE.data.mltrace.MLTrace object's .get_fvalid_subset() output
+            ~also see PULSE.data.mltrace.MLTrace.get_fvalid_subset()
         
         :param rule: channel fill rule to apply to non-reference channels that are
                     missing or fail to meet the `other_thresh` requirement, defaults to 'zeros'
                     Supported Values
                         'zeros' - fill with 0-valued traces
-                            ~also see wyrm.core.stream.MLWindow.MLWindow._apply_zeros()
+                            ~also see PULSE.data.window.Window._apply_zeros()
                         'clone_ref' - clone the primary trace if any secondary traces are missing
-                            ~also see wyrm.core.stream.MLWindow.MLWindow._apply_clone_ref()
+                            ~also see PULSE.data.window.Window._apply_clone_ref()
                         'clone_other' - if 1 `other` trace is missing, clone with the present one
                                         if both `other` traces are missing, clone the `ref` trace
-                            ~also see wyrm.core.stream.MLWindow.MLWindow._apply_clone_other()
+                            ~also see PULSE.data.window.Window._apply_clone_other()
         :type rule: str, optional
         :raises ValueError: Raised if `rule` is not a supported value
         """      
@@ -358,7 +372,7 @@ class MLWindow(MLStream):
                 pass
         # If the reference component is absent, kick error
         else:
-            raise KeyError("reference component is not in this MLWindow's keys")
+            raise KeyError("reference component is not in this Window's keys")
         
         # If all expected components are present
         if pass_dict.keys() == thresh_dict.keys():
@@ -425,7 +439,7 @@ class MLWindow(MLStream):
                                reference_npts=None,
                                mode='summary'):
         """
-        Check if the data timing and sampling in this MLWindow are synchronized
+        Check if the data timing and sampling in this Window are synchronized
         with the reference_* [starttime, sampling_rate, npts] attributes in its Stats object
         or those specified as arguments in this check_sync() call. Options are provided for
         different slices of the boolean representation of trace-attribute-reference sync'-ing
@@ -514,13 +528,13 @@ class MLWindow(MLStream):
                    taperkw={'max_percentage': None, 'max_length': 0.06},
                    mergekw={},
                    trimkw={'pad': True, 'fill_value':0}):
-        """Execute a wyrm.core.trace.mltrace.MLTrace.treat_gaps() method on each trace
-        in this MLWindow using common kwargs (see below) and reference sampling data
-        in the MLWindow.stats
+        """Execute a PULSE.data.mltrace.MLTrace.treat_gaps() method on each trace
+        in this Window using common kwargs (see below) and reference sampling data
+        in the Window.stats
 
         filter -> detrend* -> resample* -> taper* -> merge* -> trim
 
-        For expanded explanation of key word arguments, see wyrm.core.trace.mltrace.MLTrace.treat_gaps
+        For expanded explanation of key word arguments, see PULSE.data.mltrace.MLTrace.treat_gaps
 
         :param filterkw: kwargs to pass to MLTrace.filter(), defaults to {'type': 'bandpass', 'freqmin': 1, 'freqmax': 45}
         :type filterkw: dict, optional
@@ -564,7 +578,7 @@ class MLWindow(MLStream):
         """Use a combination of trim and interpolate functions to synchronize
         the sampling of traces contained in this WindowWyrm
 
-        Wraps the wyrm.core.trace.mltrace.MLTrace.sync_to_window() method
+        Wraps the PULSE.data.mltrace.MLTrace.sync_to_window() method
 
         :param fill_value: fill value for, defaults to 0.
         :type fill_value: _type_, optional
@@ -580,13 +594,13 @@ class MLWindow(MLStream):
             raise ValueError('sample_tol must be a small float value \in [0, 0.1)')
         starttime = self.stats.reference_starttime
         if starttime is None:
-            raise ValueError('reference_starttime must be specified in this MLWindow\'s `stats`')
+            raise ValueError('reference_starttime must be specified in this Window\'s `stats`')
         npts = self.stats.reference_npts
         if npts is None:
-            raise ValueError('reference_npts must be specified in this MLWindow\'s `stats`')
+            raise ValueError('reference_npts must be specified in this Window\'s `stats`')
         sampling_rate = self.stats.reference_sampling_rate
         if sampling_rate is None:
-            raise ValueError('reference_sampling_rate must be specified in this MLWindow\'s `stats`')
+            raise ValueError('reference_sampling_rate must be specified in this Window\'s `stats`')
 
         endtime = starttime + (npts-1)/sampling_rate
 
@@ -613,16 +627,16 @@ class MLWindow(MLStream):
 
 
     ###############################################################################
-    # MLWindow to Tensor Methods ###########################################
+    # Window to Tensor Methods ###########################################
     ###############################################################################
             
     def ready_to_burn(self, model):
         """
-        Assess if the data contents of this MLWindow are ready
+        Assess if the data contents of this Window are ready
         to convert into a torch.Tensor given a particular seisbench model
 
         NOTE: This inspects that the dimensionality, timing, sampling, completeness,
-             and component aliasing of the contents of this MLWindow are
+             and component aliasing of the contents of this Window are
              compliant with reference values in the metadata and in the input `model`'s
              metadata
               
@@ -634,8 +648,8 @@ class MLWindow(MLStream):
                         object that prediction will be run on 
                         NOTE: This is really a child-class of sbm.WaveformModel
         :: OUTPUT ::
-        :return status: [bool] - is this MLWindow ready for conversion
-                                using MLWindow.to_torch(model)?
+        :return status: [bool] - is this Window ready for conversion
+                                using Window.to_torch(model)?
         """
         # model compatability check
         if not isinstance(model, sbm.WaveformModel):
@@ -666,14 +680,14 @@ class MLWindow(MLStream):
     
     def to_npy_tensor(self, model):
         """
-        Convert the data contents of this MLWindow into a numpy array that
+        Convert the data contents of this Window into a numpy array that
         conforms to the component ordering required by a seisbench WaveformModel
         object
         :: INPUT ::
         :param model: []
         """
         if not self.ready_to_burn(model):
-            raise ValueError('This MLWindow is not ready for conversion to a torch.Tensor')
+            raise ValueError('This Window is not ready for conversion to a torch.Tensor')
         
         npy_array = np.c_[[self[_c].data for _c in model.component_order]]
         return npy_array
@@ -689,5 +703,5 @@ class MLWindow(MLStream):
             addfold = np.sum(np.c_[[_tr.fold for _tr in self]], axis=0)
             return addfold
         else:
-            raise ValueError('not all traces in this MLWindow have matching npts')
+            raise ValueError('not all traces in this Window have matching npts')
         

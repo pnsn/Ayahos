@@ -1,8 +1,5 @@
 import sys
-from PULSE.module.predict import SeisBenchMod
-from PULSE.module.sequence import SequenceMod
-from PULSE.module.process import InPlaceMod
-from PULSE.util.io import import_from_string
+from PULSE.module import WindowMod, SequenceMod, InPlaceMod, SeisBenchMod
 
 class SeisBenchSequenceMod(SequenceMod):
     
@@ -11,11 +8,16 @@ class SeisBenchSequenceMod(SequenceMod):
             model_class_name,
             weight_names,
             devicetype='cpu',
+            torch_thread_limit=4,
+            max_batch_size=128,
+            max_prediction_batch_count=5,
             sampling_rate=100.,
             sample_overlap=1800,
+            windowing_ref_thresh=0.9,
+            windowing_other_thresh=0.8,
             channel_fill_rule='cloneZ',
-            max_pulse_size=1e6,
-            max_output_size=1e7,
+            max_pulse_size=1024,
+            max_output_size=1e5,
             report_period=False,
             meta_memory=60,
             **kwargs
@@ -31,13 +33,48 @@ class SeisBenchSequenceMod(SequenceMod):
             self.Logger.critical('exiting')
             sys.exit(1)
         sequence = {}
-
+        # Create SeisBenchMod object
         seisbenchmod = SeisBenchMod(model_class_name,
                                     weight_names=weight_names,
                                     devicetype=devicetype,
-                                    )
+                                    max_batch_size=max_batch_size,
+                                    thread_limit=torch_thread_limit,
+                                    max_pulse_size=max_prediction_batch_count,
+                                    meta_memory=meta_memory,
+                                    max_output_size=max_output_size)
+        # Create Windowing object
+        windowmod = WindowMod(reference_completeness_threshold=windowing_ref_thresh,
+                              other_completeness_threshold=windowing_other_thresh,
+                              model_name=seisbenchmod.model.name,
+                              reference_sampling_rate=sampling_rate,
+                              reference_npts=seisbenchmod.model.in_samples,
+                              max_pulse_size=1,
+                              max_output_size=max_output_size,
+                              meta_memory=60,
+                              report_period=False
+                              )
 
+        gapsmod = InPlaceMod(
+            pclass='PULSE.data.mlwindow.MLWindow',
+            pmethod='treat_gaps',
+            max_pulse_size=max_pulse_size,
+            max_output_size=max_output_size,
+            meta_memory=meta_memory,
+            report_period=False)
+
+
+        # Create Processing Sequences
         for pmethod in self.pmethods:
-            sequence.update({pmethod: })
+            sequence.update(
+                {pmethod: InPlaceMod(
+                    pclass='PULSE.data.mlwindow.MLWindow',
+                    pmethod=pmethod,
+                    max_pulse_size=max_pulse_size,
+                    max_output_size=max_output_size,
+                    report_period=False,
+                    meta_memory=meta_memory)
+                })
+        
+        sequence.update({'predict': })
 
         for _k, _v in kwargs.items():

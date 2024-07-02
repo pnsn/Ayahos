@@ -22,8 +22,37 @@ from obspy.core.trace import Trace, Stats
 from obspy.core.util.misc import flat_not_masked_contiguous
 from PULSE.util.seisbench import pretrained_dict
 from PULSE.util.stats import estimate_quantiles, estimate_moments
+from PULSE.util.pyew import is_wave_msg
 
 Logger = logging.getLogger(__name__)
+
+
+def wave2mltrace(wave):
+    """
+    Convert a PyEW wave dictionary message into
+    a ayahos.core.trace.mltrace.MLTrace object
+    """
+    status = is_wave_msg(wave)
+    if isinstance(status, str):
+        raise SyntaxError(status)
+    header = {}
+    for _k, _v in wave.items():
+        if _k in ['station','network','channel','location']:
+            header.update({_k:_v})
+        elif _k == 'samprate':
+            header.update({'sampling_rate': _v})
+        elif _k == 'data':
+            data = _v
+        elif _k == 'startt':
+            header.update({'starttime': UTCDateTime(_v)})
+        elif _k == 'datatype':
+            dtype = _v
+    try:
+        data = wave['data'].astype(dtype)
+    except TypeError:
+        data = wave['data']
+    mlt = MLTrace(data=data, header=header)
+    return mlt
 
 def read_mltrace(data_file, **obspy_read_kwargs):
     """
@@ -1779,6 +1808,22 @@ class MLTrace(Trace):
         return id
 
     id = property(get_id)
+
+    def get_nslc(self):
+        """
+        Get the NSLC ID for this MLTrace object
+        """
+        id = f'{self.stats.network}.{self.stats.station}.{self.stats.location}.{self.stats.channel}'
+        return id
+    nslc = property(get_nslc)
+
+    def get_scnl(self):
+        """
+        Get the SCNL ID for this MLTrace object
+        """
+        id = f'{self.stats.station}.{self.stats.channel}.{self.stats.network}.{self.stats.location}'
+        return id
+    scnl = property(get_scnl)
 
     def get_instrument_id(self):
         """Get the instrument id (NSLC minus component code) of this MLTrace

@@ -1,5 +1,5 @@
 """
-:module: ewflow.module.unit.process
+:module: PULSE.module.unit.process
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
@@ -12,16 +12,16 @@
 
 Classes
 -------
-:class:`~ewflow.module.process.InPlaceMod`
-:class:`~ewflow.module.process.OutputMod`
+:class:`~PULSE.module.process.InPlaceMod`
+:class:`~PULSE.module.process.OutputMod`
 """
 
 import logging, sys
 from collections import deque
 from obspy import UTCDateTime
 from PULSE.data.mltrace import MLTrace
-from PULSE.data.mlstream import MLStream
-from PULSE.data.mlwindow import MLWindow
+from PULSE.data.dictstream import DictStream
+from PULSE.data.window import Window
 from PULSE.module._base import _BaseMod
 
 Logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ class InPlaceMod(_BaseMod):
 
         :: INPUTS ::
         :param pclass: full import path and name of class this InPlaceMod will operate on
-        :type pclass: str, e.g., "ewflow.data.stream.Window"
+        :type pclass: str, e.g., "PULSE.data.window.Window"
         :param pmethod: name of class method to apply to unit_input objects
         :type pmethod: str, e.g., "filter"
         :param pkwargs: key-word arguments (and positional arguments stated as key-word arguments) for pclass.pmethod(**pkwargs)
@@ -124,7 +124,7 @@ class InPlaceMod(_BaseMod):
             self.Logger.warning(f'{self.pmethod} did not work on unit input - skipping')
             unit_output = None
             return unit_output
-        if self.pclass in [MLTrace, MLStream, MLWindow]:
+        if self.pclass in [MLTrace, DictStream, Window]:
             unit_input.stats.processing.append([self.__name__(full=False), self.pmethod, UTCDateTime()])
         return unit_output
     
@@ -197,7 +197,7 @@ class OutputMod(InPlaceMod):
     def _unit_process(self, unit_input):
         """
         POLYMORPHIC
-        Last update with :class:`~ewflow.module.process.OutputMod`
+        Last update with :class:`~PULSE.module.process.OutputMod`
 
         Run the specified class method (and kwargs) on the unit input
         and return the output of that class method

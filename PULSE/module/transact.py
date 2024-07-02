@@ -1,5 +1,5 @@
 """
-:module: camper.module.transact
+:module: PULSE.module.transact
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
@@ -18,229 +18,12 @@ import logging
 from collections import deque
 from PyEW import EWModule
 from PULSE.module._base import _BaseMod
-from PULSE.util.pyew import wave2mltrace, is_empty_message, is_wave_msg
+from PULSE.data.mltrace import wave2mltrace
+from PULSE.data.message import Logo
+from PULSE.util.pyew import is_empty_message, is_wave_msg
 
 Logger = logging.getLogger(__name__)
 
-class TransactMod(_BaseMod):   
-    """
-    Class that facilitates transactions between memory rings in the Earthworm
-    Message Transport System and the Python environment. This wraps an active 
-    EWModule and a single python-ring connection and provides an abstract
-    TransactMod.pulse() method that facilitates the following PyEW.EWModule
-    class methods:
-        + get_wave() - get TYPE_TRACEBUFF2 (msg_type 19) messages from a WAVE RING
-        + put_wave() - submit a `wave` dict object to a WAVE RING (msg_type 19)
-        + get_msg() - get a string-formatted message* from a RING
-        + put_msg() - put a string-formatted message* onto a RING
-        + get_bytes() - get a bytestring* from a RING
-        + put_bytes() - put a bytestring* onto a RING
-
-        *with appropriate msg_type code
-    """
-    
-    def __init__(
-            self,
-            module,
-            conn_name,
-            pulse_method='get_wave',
-            msg_type=19,
-            max_pulse_size=10000,
-            meta_memory=3600,
-            report_period=None,
-            max_output_size=1e9
-            ):
-        """Initialize a TransactMod object
-
-        :param module: Pre-initialized EWModule object with connections established
-        :type module: camper.util.pyew.EWModule
-        :param conn_name: connection name of a valid connection in module.connection
-        :type conn_name: str
-        :param pulse_method: name of the EWModule messaging method to use, defaults to 'get_wave'
-        :type pulse_method: str, optional
-            Supported: 'get_wave','put_wave','get_msg','put_msg','get_bytes','put_bytes'
-            also see    :class:`~camper.util.pyew.EWModule`
-        :param msg_type: Earthworm message code, defaults to 19 (TYPE_TRACEBUFF2)
-        :type msg_type: int, optional
-            cross reference with your installation's `earthworm_global.d` file
-        :param max_pulse_size: Maximum mumber of messages to transact in a single pulse, defaults to 10000
-        :type max_pulse_size: int, optional
-        """        
-        super().__init__(
-            max_pulse_size=max_pulse_size,
-            meta_memory=meta_memory,
-            report_period=report_period,
-            max_output_size=max_output_size)
-        # Compatability checks for `module`
-        if isinstance(module, EWModule):
-            self.module = module
-        else:
-            raise TypeError(f'module must be type PULSE.util.pyew.EWModule, not type {type(module)}')
-        
-        if conn_name not in module.connections.keys():
-            raise KeyError(f'conn_name {conn_name} is not a named connection in the input module')
-        else:
-            self.conn_name = conn_name
-        # Compatability or pulse_method
-        if pulse_method not in ['get_wave','put_wave','get_msg','put_msg','get_bytes','put_bytes']:
-            raise ValueError(f'pulse_method {pulse_method} unsupported. See documentation')
-        else:
-            self.pulse_method = pulse_method
-        
-        # Compatability checks for msg_type
-        if isinstance(msg_type, int):
-            if self.pulse_method in ['get_msg','put_msg','get_bytes','put_bytes']:
-                if 0 <= msg_type <= 255:
-                    self.msg_type = msg_type
-                else:
-                    raise ValueError(f'msg_type value {msg_type} out of bounds [0, 255]')
-            # Hard set TYPE_TRACEBUFF2 for get/put_wave
-            else:
-                self.msg_type = 19
-
-        self.Logger.info('INIT TransactMod: "{0}" for type {1}'.format(self.pulse_method, self.msg_type))
-
-
-
-    #################################
-    # POLYMORPHIC METHODS FOR PULSE #
-    #################################
-
-    def _should_this_iteration_run(self, input, input_size, iter_number):
-        """
-        POLYMORPHIC
-        Last updated with :class:`~camper.module.transact.TransactMod`
-
-        For "put" pulse_method, use _BaseMod's _continue_iteration() inherited method
-        to see if there are unassessed objects in input
-
-        For "get" pulse_method, assume iteration 0 should proceed,
-        for all subsequent iterations, check if the last message appended
-        to TransactMod().output was an empty message. If so
-
-        Inputs and outputs for "put" pulse_method:
-        :param input: standard input collection of objects (put)
-        :type input: collections.deque (put) None (get)
-        :param iter_number: iteration number
-        :type iter_number: int
-        :return status: should iteration in pulse continue?
-        :rtype status: bool
-        """        
-        # If passing messages from deque to ring, check if there are messages to pass
-        if 'put' in self.pulse_method:
-            # Use _BaseMod._should_this_iteration_run() method
-            status = super()._should_this_iteration_run(input, input_size, iter_number)
-        # If passing messages from ring to deque, default to True
-        elif 'get' in self.pulse_method:
-            status = True
-            # NOTE: This relies on the 'break' clause in _capture_stdout
-        return status
-
-    def _unit_input_from_input(self, input):
-        """
-        POLYMORPHIC
-        Last updated with :class:`~camper.module.transact.TransactMod`
-
-        If using a "get" pulse_method, input is unused and returns None
-        
-        If using a "put" pulse_method, inputs and outputs are:
-
-        :param input: standard input object collection
-        :type input: collections.deque
-        :return unit_input: object retrieved from input
-        :rtype: PyEW message-like object
-        """
-        # Input object for "get" methods is None by default        
-        if 'get' in self.pulse_method:
-            unit_input = None
-        # Input object for "put" methods is a PyEW message-formatted object
-        elif 'put' in self.pulse_method:
-            unit_input = super()._unit_input_from_input(input)
-        return unit_input
-    
-    def _unit_process(self, unit_input):
-        """
-        POLYMORPHIC
-        Last updated with :class:`~camper.module.transact.TransactMod`
-
-        "get" pulse_methods fetch a message from the specified EW RING
-        "put" pulse_methods put unit_input onto the specified EW RING
-
-        :param unit_input: message to "put" onto an Earthworm memory ring, or None for "get" methods
-        :type unit_input: PyEW message-formatted object (get) or None (put)
-        :return unit_output: message object output from "get" pulse_methods
-        :rtype unit_output: PyEW message-formatted object (get) or None (put)
-        """        
-        if 'get' in self.pulse_method:
-            if self.pulse_method == 'get_wave':
-                unit_output = getattr(self.module, self.pulse_method)(self.conn_name)
-            else:
-                unit_output = getattr(self.module, self.pulse_method)(self.conn_name, self.msg_type)
-        elif 'put' in self.pulse_method:
-            if self.pulse_method == 'put_wave':
-                getattr(self.module, self.pulse_method)(self.conn_name, unit_input)
-            else:
-                getattr(self.module, self.pulse_method)(self.conn_name, self.msg_type, unit_input)
-            unit_output = None
-        return unit_output
-    
-    def _capture_unit_out(self, unit_output):
-        """
-        POLYMORPHIC
-        Last updated with :class:`~camper.module.transact.TransactMod`
-
-        "get" pulse_methods use Wyrm's _capture_unit_output()
-        "put" pulse_methods do nothing (pass)
-
-        :param unit_output: standard output object from _unit_process
-        :type unit_output: PyEW message-formatted object or None
-        :return: None
-        :rtype: None
-        """
-        # For "get" methods, capture messages        
-        if 'get' in self.pulse_method:
-            # If unit_output is an empty message
-            if not is_empty_message(unit_output):
-                if self.pulse_method == 'get_wave':
-                    unit_output = wave2mltrace(unit_output)
-                # For all "get" methods, use Wyrm._capture_unit_output()
-                super()._capture_unit_output(unit_output)
-    
-    def _should_next_iteration_run(self, unit_output):
-        """
-        POLYMORPHIC
-        Last updated with :class:`~camper.module.transact.TransactMod`
-
-        Do not start next iteration if unit_output looks like an
-        empty message for "get" type pulse_method
-
-        :param unit_output: unit output from :meth: `~camper.module.transact.TransactMod._unit_process`
-        :type unit_output: dict, tuple, or list, depends on pulse_method
-        :return status: Should the next iteration be run, based on unit_output?
-        :rtype status: bool
-        """
-        status = True
-        if 'get' in self.pulse_method:
-            if is_empty_message(unit_output):
-                status = False
-            else:
-                status = True
-        elif 'put' in self.pulse_method:
-            status = True
-        else:
-            self.Logger.error('We shouldnt have gotten here - means the pulse_method was altered')
-        #     else:
-        #         self.Logger.error("We shouldn't have gotten here (empty message with a 'put' method)")
-        #         status = False
-        # else:
-        #     if 'put' in self.pulse_method:
-        #         status = True
-        #     else:
-        #         self.Logger.error("We shouldn't have gotten here (empty message with a 'put' method)")
-        #         status = False
-        return status
-    
-    
 ####################
 #### EWMod #####
 ####################
@@ -309,6 +92,9 @@ class PyEWMod(EWModule):
         self.hb_period = heartbeat_period
         self.def_ring_id = default_ring_id
         self.debug = deep_debug
+
+        self.logo = Logo(MOD_ID=module_id,
+                         INST_ID=installation_id)
 
         # Create holder for connections
         self.connections = {}
@@ -511,3 +297,223 @@ class PyEWMod(EWModule):
                 self.Logger.critical('msg_type must be \in [1, 255]')
         else:
             super().put_bytes(conn_idx, msg_type, msg)  
+
+
+class TransactMod(_BaseMod):   
+    """
+    Class that facilitates transactions between memory rings in the Earthworm
+    Message Transport System and the Python environment. This wraps an active 
+    PyEWMod and a single python-ring connection and provides an abstract
+    TransactMod.pulse() method that facilitates the following methods:
+        + get_wave() - get TYPE_TRACEBUFF2 (msg_type 19) messages from a WAVE RING
+        + put_wave() - submit a `wave` dict object to a WAVE RING (msg_type 19)
+        + get_msg() - get a string-formatted message* from a RING
+        + put_msg() - put a string-formatted message* onto a RING
+        + get_bytes() - get a bytestring* from a RING
+        + put_bytes() - put a bytestring* onto a RING
+
+        *with appropriate msg_type code
+    """
+    
+    def __init__(
+            self,
+            module,
+            conn_name,
+            pulse_method='get_wave',
+            msg_type=19,
+            max_pulse_size=10000,
+            meta_memory=3600,
+            report_period=None,
+            max_output_size=1e9
+            ):
+        """Initialize a TransactMod object
+
+        :param module: Pre-initialized EWModule object with connections established
+        :type module: PULSE.module.transact.PyEWMod
+        :param conn_name: connection name of a valid connection in module.connection
+        :type conn_name: str
+        :param pulse_method: name of the EWModule messaging method to use, defaults to 'get_wave'
+        :type pulse_method: str, optional
+            Supported: 'get_wave','put_wave','get_msg','put_msg','get_bytes','put_bytes'
+            also see    :class:`~PULSE.module.transact.PyEWMod`
+        :param msg_type: Earthworm message code, defaults to 19 (TYPE_TRACEBUFF2)
+        :type msg_type: int, optional
+            NOTE: cross reference with your installation's `earthworm_global.d` file
+        :param max_pulse_size: Maximum mumber of messages to transact in a single pulse, defaults to 10000
+        :type max_pulse_size: int, optional
+        """        
+        super().__init__(
+            max_pulse_size=max_pulse_size,
+            meta_memory=meta_memory,
+            report_period=report_period,
+            max_output_size=max_output_size)
+        # Compatability checks for `module`
+        if isinstance(module, PyEWMod):
+            self.module = module
+        else:
+            raise TypeError(f'module must be type PULSE.module.transact.PyEWMod, not type {type(module)}')
+        
+        if conn_name not in module.connections.keys():
+            raise KeyError(f'conn_name {conn_name} is not a named connection in the input module')
+        else:
+            self.conn_name = conn_name
+        # Compatability or pulse_method
+        if pulse_method not in ['get_wave','put_wave','get_msg','put_msg','get_bytes','put_bytes']:
+            raise ValueError(f'pulse_method {pulse_method} unsupported. See documentation')
+        else:
+            self.pulse_method = pulse_method
+        
+        # Compatability checks for msg_type
+        if isinstance(msg_type, int):
+            if self.pulse_method in ['get_msg','put_msg','get_bytes','put_bytes']:
+                if 0 <= msg_type <= 255:
+                    self.msg_type = msg_type
+                else:
+                    raise ValueError(f'msg_type value {msg_type} out of bounds [0, 255]')
+            # Hard set TYPE_TRACEBUFF2 for get/put_wave
+            else:
+                self.msg_type = 19
+
+        self.Logger.info('INIT TransactMod: "{0}" for type {1}'.format(self.pulse_method, self.msg_type))
+
+
+
+    #################################
+    # POLYMORPHIC METHODS FOR PULSE #
+    #################################
+
+    def _should_this_iteration_run(self, input, input_size, iter_number):
+        """
+        POLYMORPHIC
+        Last updated with :class:`~PULSE.module.transact.TransactMod`
+
+        For "put" pulse_method, use _BaseMod's _continue_iteration() inherited method
+        to see if there are unassessed objects in input
+
+        For "get" pulse_method, assume iteration 0 should proceed,
+        for all subsequent iterations, check if the last message appended
+        to TransactMod().output was an empty message. If so
+
+        Inputs and outputs for "put" pulse_method:
+        :param input: standard input collection of objects (put)
+        :type input: collections.deque (put) None (get)
+        :param iter_number: iteration number
+        :type iter_number: int
+        :return status: should iteration in pulse continue?
+        :rtype status: bool
+        """        
+        # If passing messages from deque to ring, check if there are messages to pass
+        if 'put' in self.pulse_method:
+            # Use _BaseMod._should_this_iteration_run() method
+            status = super()._should_this_iteration_run(input, input_size, iter_number)
+        # If passing messages from ring to deque, default to True
+        elif 'get' in self.pulse_method:
+            status = True
+            # NOTE: This relies on the 'break' clause in _capture_stdout
+        return status
+
+    def _unit_input_from_input(self, input):
+        """
+        POLYMORPHIC
+        Last updated with :class:`~PULSE.module.transact.TransactMod`
+
+        If using a "get" pulse_method, input is unused and returns None
+        
+        If using a "put" pulse_method, inputs and outputs are:
+
+        :param input: standard input object collection
+        :type input: collections.deque
+        :return unit_input: object retrieved from input
+        :rtype: PyEW message-like object
+        """
+        # Input object for "get" methods is None by default        
+        if 'get' in self.pulse_method:
+            unit_input = None
+        # Input object for "put" methods is a PyEW message-formatted object
+        elif 'put' in self.pulse_method:
+            unit_input = super()._unit_input_from_input(input)
+        return unit_input
+    
+    def _unit_process(self, unit_input):
+        """
+        POLYMORPHIC
+        Last updated with :class:`~PULSE.module.transact.TransactMod`
+
+        "get" pulse_methods fetch a message from the specified EW RING
+        "put" pulse_methods put unit_input onto the specified EW RING
+
+        :param unit_input: message to "put" onto an Earthworm memory ring, or None for "get" methods
+        :type unit_input: PyEW message-formatted object (get) or None (put)
+        :return unit_output: message object output from "get" pulse_methods
+        :rtype unit_output: PyEW message-formatted object (get) or None (put)
+        """        
+        if 'get' in self.pulse_method:
+            if self.pulse_method == 'get_wave':
+                unit_output = getattr(self.module, self.pulse_method)(self.conn_name)
+            else:
+                unit_output = getattr(self.module, self.pulse_method)(self.conn_name, self.msg_type)
+        elif 'put' in self.pulse_method:
+            if self.pulse_method == 'put_wave':
+                getattr(self.module, self.pulse_method)(self.conn_name, unit_input)
+            else:
+                getattr(self.module, self.pulse_method)(self.conn_name, self.msg_type, unit_input)
+            unit_output = None
+        return unit_output
+    
+    def _capture_unit_out(self, unit_output):
+        """
+        POLYMORPHIC
+        Last updated with :class:`~PULSE.module.transact.TransactMod`
+
+        "get" pulse_methods use Wyrm's _capture_unit_output()
+        "put" pulse_methods do nothing (pass)
+
+        :param unit_output: standard output object from _unit_process
+        :type unit_output: PyEW message-formatted object or None
+        :return: None
+        :rtype: None
+        """
+        # For "get" methods, capture messages        
+        if 'get' in self.pulse_method:
+            # If unit_output is an empty message
+            if not is_empty_message(unit_output):
+                if self.pulse_method == 'get_wave':
+                    unit_output = wave2mltrace(unit_output)
+                # For all "get" methods, use Wyrm._capture_unit_output()
+                super()._capture_unit_output(unit_output)
+    
+    def _should_next_iteration_run(self, unit_output):
+        """
+        POLYMORPHIC
+        Last updated with :class:`~PULSE.module.transact.TransactMod`
+
+        Do not start next iteration if unit_output looks like an
+        empty message for "get" type pulse_method
+
+        :param unit_output: unit output from :meth: `~PULSE.module.transact.TransactMod._unit_process`
+        :type unit_output: dict, tuple, or list, depends on pulse_method
+        :return status: Should the next iteration be run, based on unit_output?
+        :rtype status: bool
+        """
+        status = True
+        if 'get' in self.pulse_method:
+            if is_empty_message(unit_output):
+                status = False
+            else:
+                status = True
+        elif 'put' in self.pulse_method:
+            status = True
+        else:
+            self.Logger.error('We shouldnt have gotten here - means the pulse_method was altered')
+        #     else:
+        #         self.Logger.error("We shouldn't have gotten here (empty message with a 'put' method)")
+        #         status = False
+        # else:
+        #     if 'put' in self.pulse_method:
+        #         status = True
+        #     else:
+        #         self.Logger.error("We shouldn't have gotten here (empty message with a 'put' method)")
+        #         status = False
+        return status
+    
+    

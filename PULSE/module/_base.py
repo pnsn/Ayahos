@@ -411,7 +411,7 @@ class _BaseMod(object):
                 self._pulse_rate = nd/dt
 
     def _generate_report_string(self):
-        header = f'~~^v~~~ {pd.Timestamp.now()} | {self.__name__()} ~~^v~~~\n'
+        header = f'~~|^v~~~ {pd.Timestamp.now()} | {self.__name__()} ~~|^v~~~\n'
         header += f'pulse rate: {self._pulse_rate:.2e} Hz | max pulse size: {self.max_pulse_size}\n'
         header += f'sample period: {self.meta_memory} sec | max output size: {self.max_output_size}'
         return f'{header}\n{self.report}\n'

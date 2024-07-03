@@ -1,7 +1,8 @@
 # General ToDo List for PULSE  
 
 ## ToDos
-TODO: Finish migration of Build behaviors to PULSE.module.sequence.BuildSequenceMod
+TODO: (Aspirational) Build behaviors to PULSE.module.sequence.BuildSequenceMod
+TODO: Required - migration/development of TYPE_PICK_SCNL output from picker (TYPE_PICK_SCNL superceded TYPE_PICK2K)
 ## Bugs
 24 JUNE 2024  
 BUG - Check what behaviors TriggerMod has now that MLTraceBuff objects fill referenced to the endtime edge by default.  

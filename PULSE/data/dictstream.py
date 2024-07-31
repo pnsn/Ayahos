@@ -32,7 +32,7 @@ from obspy.core.util.attribdict import AttribDict
 from obspy.core import compatibility
 from PULSE.data.mltrace import MLTrace, wave2mltrace
 
-
+# TODO: Determine if this method should be removed
 # def read_mltraces(data_files, obspy_read_kwargs={}, add_options={}):
 #     """
 #     Wrapper around :meth:`~PULS# .data.mltrace.MLTrace.read_mltrace`
@@ -76,11 +76,10 @@ from PULSE.data.mltrace import MLTrace, wave2mltrace
 
 class DictStreamStats(AttribDict):
     """
-    A class to contain metadata for a PULSE.data.dictstream.DictStream object
+    A class to contain metadata for a :class:`~PULSE.data.dictstream.DictStream` object
     of the based on the ObsPy AttribDict (Attribute Dictionary) class. 
 
-    This operates very similarly to obspy.core.trace.Trace objects' Stats object
-    (a sibling class)
+    This operates very similarly to :class:`~obspy.core.trace.Stats` objects
 
     """
     defaults = {
@@ -104,39 +103,28 @@ class DictStreamStats(AttribDict):
         A container for additional header information of a PULSE :class:`~PULSE.data.dictstream.DictStream` object
 
 
-        :param header: _description_, defaults to {}
+        :param header: Non-default key-value pairs to include with this DictStreamStats object, defaults to {}
         :type header: dict, optional
         """        
-        """
-        Initialize a DictStreamStats object
-
-        :: INPUT ::
-        :param header: [dict] (optional)
-                    Dictionary defining attributes (keys) and 
-                    values (values) to assign to the DictStreamStats
-                    object
-        """
         super(DictStreamStats, self).__init__()
         self.update(header)
     
     def _pretty_str(self, priorized_keys=[], hidden_keys=[], min_label_length=16):
         """
-        Return better readable string representation of AttribDict object.
+        Return tidier string representation of this :class:`~PULSE.data.dictstream.DictStreamStats` object
 
-        NOTE: Slight adaptation of the obspy.core.util.attribdict.AttribDict
-                _pretty_str method, adding a hidden_keys argument
+        Based on the :meth:`~obspy.core.util.attribdict.AttribDict._pretty_str` method, and adds
+        a `hidden_keys` argument
 
-        :type priorized_keys: list[str], optional
-        :param priorized_keys: Keywords of current AttribDict which will be
+        :param priorized_keys: Keys of current AttribDict which will be
             shown before all other keywords. Those keywords must exists
-            otherwise an exception will be raised. Defaults to empty list.
-        :param hidden_keys: [list] of [str]
-                        Keywords of current AttribDict that will be hidden
-                        NOTE: does not supercede items in prioritized_keys
+            otherwise an exception will be raised. Defaults to [].
+        :type priorized_keys: list, optional
+        :param hidden_keys: Keys of current AttribDict that will be hidden, defaults to []
+                        NOTE: does not supercede items in prioritized_keys.
+        :param min_label_length: Minimum label length for keywords, defaults to 16.
         :type min_label_length: int, optional
-        :param min_label_length: Minimum label length for keywords. Defaults
-            to ``16``.
-        :return: String representation of current AttribDict object.
+        :return: String representation of object contents.
         """
         keys = list(self.keys())
         # determine longest key name for alignment of all items
@@ -166,36 +154,13 @@ class DictStreamStats(AttribDict):
     def _repr_pretty_(self, p, cycle):
         p.text(str(self))
 
-    # def __repr__(self):
-    #     """
-    #     Provide a user-friendly string representation of the contents of this DictStreamStats object
-    #     """
-    #     rstr = '----Stats----'
-    #     for _k, _v in self.items():
-    #         if _v is not None:
-    #             if self.min_starttime != self.max_starttime or self.min_endtime != self.max_endtime:
-    #                 if 'min_' in _k:
-    #                     if _k == 'min_starttime':
-    #                         rstr += f'\n{"min time range":>18}: {self.min_starttime} - {self.min_endtime}'
-    #                 elif 'max_' in _k:
-    #                     if _k == 'max_starttime':
-    #                         rstr += f'\n{"max time range":>18}: {self.max_starttime} - {self.max_endtime}'
-    #             elif 'time' in _k:
-    #                 if _k == 'min_starttime':
-    #                     rstr += f'\n{"uniform range":>18}: {self.min_starttime} - {self.min_endtime}'
-    #             else:
-    #                 rstr += f'\n{_k:>18}: {_v}'
-    #     return rstr
 
     def update_time_range(self, trace):
         """
-        Update the minimum and maximum starttime and endtime attributes of this
-        DictStreamStats object using timing information from an obspy Trace-like
-        object.
+        Update the minimum and maximum starttime and endtime attributes of this :class:`~PULSE.data.dictstream.DictStreamStats` object using timing information from an obspy Trace-like object.
 
-        :: INPUT ::
-        :param trace: [obspy.core.trace.Trace] or child classes from which to 
-                    query starttime and endtime information
+        :param trace: trace-like object with :attr:`stats` from which to query starttime and endtime information
+        :type trace: obspy.core.trace.Trace
         """
         if self.min_starttime is None or self.min_starttime > trace.stats.starttime:
             self.min_starttime = trace.stats.starttime
@@ -212,18 +177,16 @@ class DictStreamStats(AttribDict):
 
 class DictStream(Stream):
     """
-    Dictionary like object of multiple PULSE :class: `~PULSE.data.mltrace.MLTrace` objects
+    Dictionary like object of multiple PULSE :class:`~PULSE.data.mltrace.MLTrace` objects
 
     :param traces: initial list of ObsPy Trace-lke objects, defaults to []
-    :type traces: list of :class: `~obspy.core.trace.Trace` (or children) objects, optional
-        NOTE: all initial traces are converted into :class: `~PULSE.data.mltrace.MLTrace` objects
-    :param header: initial dictionary of key-value pairs to pass to PULSE
-        :meth: `~PULSE.data.dictstream.DictStreamStats.__init__`, defaults to {}
+    :type traces: list of :class:`~obspy.core.trace.Trace` (or children) objects, optional
+        NOTE: all ingested traces are converted into :class:`~PULSE.data.mltrace.MLTrace` objects
+    :param header: initial dictionary of key-value pairs to pass to PULSE :meth:`~PULSE.data.dictstream.DictStreamStats.__init__`, defaults to {}
     :type header: dict-like, optional
-    :param key_attr: attribute of each trace in traces to use for their unique key values
-        such that a DictStream.traces entry is {tr.key_attr: tr}, defaults to 'id'
+    :param key_attr: attribute of each trace in traces to use for their unique key values such that a DictStream.traces entry is {tr.key_attr: tr}, defaults to 'id'
     :type key_attr: str, optional
-        Based on N.S.L.C.M.W from PULSE :class: `~PULSE.data.mltrace.MLTraceStats`
+        Based on N.S.L.C.M.W from PULSE :class:`~PULSE.data.mltrace.MLTraceStats`
             Network.Station.Location.Channel.Model
             with Channel = SEED Channel naming convention
                 Character 0: Band character
@@ -295,7 +258,7 @@ class DictStream(Stream):
         Containts the 
     
     NOTE: 
-    Not all inherited methods from ObsPy :class: `~obspy.core.stream.Stream` are gauranteed to supported. 
+    Not all inherited methods from ObsPy :class:`~obspy.core.stream.Stream` are gauranteed to supported. 
     
     Please submit a bug report if you find one that you'd like to use that hasn't been supported!
     """
@@ -325,34 +288,31 @@ class DictStream(Stream):
             
     def __iter__(self):
         """
-        Return a robust iterator for DictStream.traces to iterate
-        across keyed values (i.e., list(self.traces.values()))
+        Return a robust iterator for DictStream.traces.values()
+        :returns: (*list*) -- list of values in DictStream.traces.values
         """
         return list(self.traces.values()).__iter__()
     
     def __getitem__(self, index):
         """
-        Fusion between the __getitem__ method for lists and dictionaries
-        This accepts integer and slice indexing to access items in
-        DictStream.traces, as well as str-type key values. 
+        Fusion between the __getitem__ method for lists and dictionaries.
 
-        __getitem__ calls that retrieve a single trace return a trace-type object
-        whereas calls that retrieve multiple traces return a DictStream object
+        This accepts integer and slice indexing to access items in DictStream.traces, as well as str-type key values. 
 
-        Because the DictStream class defaults to using trace.id values for
-        keys (which are str-type), this remove the ambiguity in the expected
-        type for self.traces' keys.
+        __getitem__ calls that retrieve a single trace return a MLTrace-like object whereas calls that retrieve multiple traces return a DictStream object
 
-        :: INPUTS ::
-        :param index: [int] - returns the ith trace in list(self.traces.values())
-                      [slice] - returns a DictStream with the specified slice from 
-                            list(self.traces.values())
-                      [str] - returns the trace corresponding to self.traces[index]
-                      [list] of [str] - return a DictStream containing the traces as 
-                            specified by a list of trace keys
+        Explainer
+        The DictStream class defaults to using trace.id values for keys (which are str-type), so this approach remove the ambiguity in the expected type for self.traces' keys.
+
         
-        :: OUTPUT ::
-        :return out: see INPUTS
+        :param index: indexing value with behaviors based on index type
+        :type index: int, slice, str, list
+        
+        :returns:
+             - for *int* index -- returns the i^{th} trace in list(self.traces.values())
+             - for *slice* index -- returns a DictStream with the specified slice from list(self.traces.values()) and associated keys
+             - for *str* index -- returns the trace corresponding to self.traces[index]
+             - for *list* of *str* -- returns a DictStream containing the traces as specified by a list of trace keys
         """
         # Handle single item fetch
         if isinstance(index, int):
@@ -380,6 +340,22 @@ class DictStream(Stream):
         return out
     
     def __setitem__(self, index, trace):
+        """Provides options to __setitem__ for string and int type indexing consistent with :meth:`~PULSE.data.dictstream.DictStream.__getitem__` behaviors.
+
+        :param index: index to assign trace object to, either a string-type key value or int-type index value
+        :type index: int or str
+        :param trace: Trace-like object to add, will be converted into a :class:`~PULSE.data.mltrace.MLTrace` object if a :class:`~obspy.core.trace.Trace` is provided
+        :type trace: obspy.core.trace.Trace
+        """
+        if not isinstance(trace, Trace):
+            raise TypeError(f'input object trace must be type obspy.core.trace.Trace or child. Not {type(trace)}')
+        elif not isinstance(trace, MLTrace):
+            trace = MLTrace(trace)
+        elif isinstance(trace, MLTrace):
+            pass
+        else:
+            raise TypeError('Shouldn\'t have gotten here...')
+                
         if isinstance(index, int):
             key = list(self.traces.keys())[index]
         elif isinstance(index, str):
@@ -389,6 +365,14 @@ class DictStream(Stream):
         self.traces.update({key: trace})
 
     def __delitem__(self, index):
+        """Provides options to __delitem__ for string and int type indexing consistent with :meth:`~PULSE.data.dictstream.DictStream.__getitem__` behaviors
+
+        :param index: _description_
+        :type index: _type_
+        :raises TypeError: _description_
+        :return: _description_
+        :rtype: _type_
+        """        
         if isinstance(index, str):
             key = index
         elif isinstance(index, int):
@@ -400,23 +384,29 @@ class DictStream(Stream):
 
     def __getslice__(self, i, j, k=1):
         """
-        Updated __getslice__ that leverages the DictStream.__getitem__ update
-        from comparable magic methods for obspy.core.stream.Stream.
+        Updated __getslice__ that leverages the :meth:`~PULSE.data.dictstream.DictStream.__getitem__` for retrieving integer-indexed slices of DictStream.traces values. 
+
+        :param i: leading index value, must be non-negative
+        :type i: int
+        :param j: trailing index value, must be non-negative
+        :type j: int
+        :param k: index increment, defaults to 1
+        :type k: int, optional
+
+        :return: view of this DictStream
+        :type: PULSE.data.dictstream.DictStream
         """
         return self.__class__(traces=self[max(0,i):max(0,j):k])
 
     def __add__(self, other, **options):
-        """Add the contents of this DictStream object and another
-        iterable set of ObsPy :class:`~obspy.core.trace.Trace` objects
-        into a list and initialize a new :class:`~PULSE.data.dictstream.DictStream`
-        object.
+        """Add the contents of this DictStream object and another iterable set of ObsPy :class:`~obspy.core.trace.Trace` objects into a list and initialize a new :class:`~PULSE.data.dictstream.DictStream` object.
 
         :param other: ObsPy Trace (or child-class) object or iterable comprising several Traces
         :type other: obspy.core.trace.Trace, or list-like thereof
         :param **options: key-word argument gatherer that passes to DictStream.__init__
         :type **options: kwargs
-            NOTE: If key_attr is not specified in **options, 
-                the new DictStream uses key_attr = self.default_key_attr
+            # NOTE: If key_attr is not specified in **options, 
+            #     the new DictStream uses key_attr = self.default_key_attr
         :raises TypeError: If other's type does not comply
         :return: new DictStream object containing traces from self and other
         :rtype: PULSE.data.dictstream.DictStream
@@ -589,6 +579,7 @@ class DictStream(Stream):
     # WRITE METHOD ######################################################
     #####################################################################
 
+    # TODO: Determine if this class method should be removed
     # def write_to_mseed(
     #         self,
     #         savepath='.',
@@ -611,7 +602,7 @@ class DictStream(Stream):
     #             split_outs.update({_mlt.id: out})
     #     return split_outs
 
-
+    # TODO: Determine if this class method should be removed
     # def write(
     #         self,
     #         save_path='.',
@@ -632,6 +623,8 @@ class DictStream(Stream):
     #                    save_processing=save_processing,
     #                    filename_format=filename_format,
     #                    **obspy_write_options)
+
+    # TODO: Determine if this method is sufficient for development purposes
     def write(self, base_path='.', path_structure='mltraces', name_structure='{wfid}_{iso_start}', **options):
         """
         Write a DictStream object to disk as a series of MSEED files using the MLTrace.write() method/file formatting
@@ -1013,12 +1006,13 @@ class DictStream(Stream):
         self.stats.common_id = self.get_common_id()
         return self
     
+    # 
     def normalize_traces(self, norm_type ='peak'):
-        """Normalize traces in this DictStream using a specified
-        norm_type and :meth: `~PULSE.data.mltrace.MLTrace.normalize`
+        """Normalize traces in this :class:`~PULSE.data.dictstream.DictStream`, using :meth:`~PULSE.data.mltrace.MLTrace.normalize` on each trace
 
-        :param norm_type: _description_, defaults to 'peak'
+        :param norm_type: normalization method, defaults to 'peak'
         :type norm_type: str, optional
+            Supported values: 'peak', 'std'
         """        
         for tr in self:
             tr.normalize(norm_type=norm_type)
@@ -1027,6 +1021,7 @@ class DictStream(Stream):
     #######################
     # VISUALIZATION TOOLS #  
     #######################
+    # TODO: Determine if this section should be migrated to a visualization submodule
     def _to_vis_stream(self, fold_threshold=0, normalize_src_traces=True, attach_mod_to_loc=True):
         """PRIVATE METHOD - prepare a copy of the traces in this DictStream for visualization
 
@@ -1048,7 +1043,7 @@ class DictStream(Stream):
             st += tr.to_trace(fold_threshold=fold_threshold,
                               attach_mod_to_loc=attach_mod_to_loc)
         return st
-
+    
     def plot(self, fold_threshold=0, attach_mod_to_loc=True, normalize_src_traces=False, **kwargs):
         """Plot the contents of this DictStream using the obspy.core.stream.Stream.plot backend
         
@@ -1062,7 +1057,7 @@ class DictStream(Stream):
     def snuffle(self, fold_threshold=0, attach_mod_to_loc=True, normalize_src_traces=True,**kwargs):
         """Launch a snuffler instance on the contents of this DictStream
 
-        NOTE: Imports from Pyrocko and runs :meth: `~pyrocko.obspy_compat.plant()`
+        NOTE: Imports from Pyrocko and runs :meth:`~pyrocko.obspy_compat.plant()`
 
         :param fold_threshold: fold_threshold for "valid" data (invalid data are masked), defaults to 0
         :type fold_threshold: float, optional
@@ -1088,7 +1083,7 @@ class DictStream(Stream):
     ####################
     # Group Triggering #
     ####################
-
+    # TODO: Determine if this should be migrated into a method associated with triggering
     def prediction_trigger_report(self, thresh, exclude_list=None, **kwargs):
         """Wrapper around the :meth:`~PULSE.data.mltrace.MLTrace.prediction_trigger_report`
         method. This method executes the Trace-level method on each trace it contains using

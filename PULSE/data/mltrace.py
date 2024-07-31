@@ -5,9 +5,12 @@
 :org: Pacific Northwest Seismic Network
 :license: AGPL-3.0
 :purpose:
-    This contains class definitions for Trace data objects that extend functionalities
-    of the :class:`~obspy.core.mltrace.MLTrace` class to include.
-
+    This contains class definitions for Trace data objects that extend functionalities of the :class:`~obspy.core.trace.Trace`.
+    
+    Major additions include:
+     - :attr:`fold` - a data vector tracking the number of valid observations associated with a given data point
+     - :attr:`stats.model` - name of a (machine learning) model architecture associated with this MLTrace
+     - :attr:`stats.weight` - name of a pretrained weight set associated with this MLTrace
 Classes
 -------
 :class:`~PULSE.data.mltrace.MLTrace`

@@ -1,5 +1,5 @@
 """
-:module: camper.data.pick
+:module: PULSE.data.pick
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network

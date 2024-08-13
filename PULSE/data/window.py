@@ -25,6 +25,21 @@ from PULSE.data.mltrace import MLTrace
 ###############################################################################
 
 class WindowStats(DictStreamStats):
+    """Child-class of :class:`~PULSE.data.dictstream.DictStreamStats` that extends
+    contained metadata to include the reference component code, component code aliases,
+    completeness thresholds for reference and non-reference ("other") component codes,
+    and desired starttime, sampling_rate, and npts to reference during pre-processing
+    on the way to making a :class:`~seisbench.models.WaveformModel` compliant input
+    data tensor.
+
+    :param header: collector for non-default values (i.e., not in WindowStats.defaults)
+        to use when initializing a WindowStats object, defaults to {}
+    :type header: dict, optional
+
+    also see:
+     - :class:`~PULSE.data.dictstream.DictStreamStats`
+     - :class:`~obspy.core.util.attribdict.AttribDict`
+    """    
     # NTS: Deepcopy is necessary to not overwrite _types and defaults for parent class
     _types = copy.deepcopy(DictStreamStats._types)
     _types.update({'ref_component': str,
@@ -44,10 +59,15 @@ class WindowStats(DictStreamStats):
                      'reference_npts': None})
     
     def __init__(self, header={}):
-        """Create a WindowStats object
+        """Initialize a WindowStats object
 
-        :param header: attribute: value pairs to assign in the WindowStats, defaults to {}
+        :param header: collector for non-default values (i.e., not in WindowStats.defaults)
+            to use when initializing a WindowStats object, defaults to {}
         :type header: dict, optional
+
+        also see:
+         - :class:`~PULSE.data.dictstream.DictStreamStats`
+         - :class:`~obspy.core.util.attribdict.AttribDict`
         """        
         # Initialize super + updates to class attributes
         super(WindowStats, self).__init__()
@@ -78,11 +98,21 @@ class WindowStats(DictStreamStats):
 ###############################################################################
         
 class Window(DictStream):
-    """A child-class of DictStream that only uses trace component codes as keys and
-    is postured towards processing a collection of windowed traces from a single
-    seismometer. It provides additional class methods extending from DictStream
-    that facilitate windowed trace data pre-processing in advance of ML prediction
-    using SeisBench WaveformModel type model architectures.
+    """A child-class of DictStream that strictly uses trace component codes as
+    keys and is intended to faciliate processing of a collection of windowed
+    traces from a single seismometer. It provides additional class methods extending
+    :class:`~PULSE.data.dictstream.DictStream`.
+
+    :param traces: list of MLTrace-like objects to insert at initialization
+    :type traces: list or PULSE.data.mltrace.MLTrace-like
+    :param ref_component: reference component code, used in assessing data completeness, defaults to "Z".
+    :type ref_component: str, optional
+    :param header: non-default values to pass to the header of this Window object, defaults to {}.
+    :type header: dict, optional
+    
+    **options: collector for key-word arguments passed to :meth:`~PULSE.data.window.Window.__add__` in determining
+        how entries in `traces` with matching component codes are merged.
+        also see :meth:`~PULSE.data.dictstream.DictStream.__add__`
     """
     def __init__(
             self,
@@ -90,17 +120,19 @@ class Window(DictStream):
             ref_component='Z',
             header={},
             **options):
-        """Initialize a PULSE.data.window.Window object
+        """
+        Initialize a PULSE.data.window.Window object
 
-        :param traces: ObsPy Trace-like object(s)
-        :type traces: obspy.core.trace.Trace or list/obspy.core.stream.Stream thereof
-        :param ref_component: reference component code for this window stream, defaults to 'Z'
+        :param traces: list of MLTrace-like objects to insert at initialization
+        :type traces: list or PULSE.data.mltrace.MLTrace-like
+        :param ref_component: reference component code, used in assessing data completeness, defaults to "Z".
         :type ref_component: str, optional
-        :param header: inputs ot pass to the WindowStats.__init__, defaults to {}
+        :param header: non-default values to pass to the header of this Window object, defaults to {}.
         :type header: dict, optional
-        :param **options: collector for key-word arguments passed to Window.__add__ 
-                for merging entries with matching component codes
-        :type **options: kwargs
+        
+        **options: collector for key-word arguments passed to :meth:`~PULSE.data.window.Window.__add__` in determining
+            how entries in `traces` with matching component codes are merged.
+            also see :meth:`~PULSE.data.dictstream.DictStream.__add__`
         """
         # Initialize & inherit from DictStream
         super().__init__()
@@ -129,13 +161,20 @@ class Window(DictStream):
         #     self.stats.reference_id = self.traces[self.ref['component']].id
 
     def extend(self, traces, **options):
-        """Extend (add) more traces to this Window
+        """Extend (add more) trace(s) to this Window, checking if non-unique component codes are compliant
+    
+        LOGIC TREE
+        If the component code(s) of the trace(s) is/are included in this object's `window.stats.aliases` attribute
+            - If the component code is new, it is added using :meth:`~dict.update`
+            - If the component code already exists in the Window, if the trace-like objects are compliant, they are merged using :meth:`~PULSE.data.mltrace.MLTrace.__add__` method
+
+        Following a successful update/__add__ operation, the metadata held in this object's `window.stats`
+        attribute are updated using the 
 
         :param traces: set of traces to add to this Window, keying on their component codes
-        :type traces: obspy.core.trace.Trace-like
-
-        NOTE: Any true obspy.core.trace.Trace objects are converted into PULSE.data.mltrace.MLTrace
-             objects before extending the Window
+        :type traces: obspy.core.trace.Trace like
+        
+        **options: collector for key-word arguments passed to :meth:`~PULSE.data.mltrace.MLTrace.__add__` (see description above)
         """
         # If extending with a single trace object
         if isinstance(traces, Trace):
@@ -181,7 +220,6 @@ class Window(DictStream):
         Provide a user-friendly string representation of the contents and key parameters of this
         Window object. 
 
-        :: INPUTS ::
         :param extended: option to show an extended form of the Window should 
                          there be a large number of unique component codes (an uncommon use case)
         :type extend: bool, optional
@@ -216,24 +254,37 @@ class Window(DictStream):
     # FILL RULE METHODS ###########################################################
     ###############################################################################
     def apply_fill_rule(self, rule='zeros'):
-        """Summative class method for assessing if channels have enough data, and applying the specified channel fill `rule`
+        """Summative class-method for assessing if channels have enough valid data
+        in the "reference" and "other" components and apply the specified channel fill `rule`
+        for addressing "other" components that have insufficient valid data or are missing.
 
-        The thresh(olds) values in this method are compared against a given
-        PULSE.data.mltrace.MLTrace object's .get_fvalid_subset() output
-            ~also see PULSE.data.mltrace.MLTrace.get_fvalid_subset()
+        If one or more "other" component codes 
+
+        If the "reference" channel does not have sufficient valid data the method will return a ValueError.
+
+        Data validity for each trace is assessed using the :meth:`~PULSE.data.mltrace.MLTrace.get_fvalid_subset`
+        method with the starttime `window.stats.reference_starttime` attribute and the endtime implied by the
+        `window.stats.reference_npts` and `window.stats.reference_sampling_rate` attributes. 
         
+        The threshold criteria for a give trace to be considered "valid" is a get_fvalid_subset output value
+        that meets or exceeds the relevant threshold value in `window.stats.thresholds`
+
         :param rule: channel fill rule to apply to non-reference channels that are
                     missing or fail to meet the `other_thresh` requirement, defaults to 'zeros'
                     Supported Values
                         'zeros' - fill with 0-valued traces
-                            ~also see PULSE.data.window.Window._apply_zeros()
+                            - see :meth:`~PULSE.data.window.Window._apply_zeros`
                         'clone_ref' - clone the primary trace if any secondary traces are missing
-                            ~also see PULSE.data.window.Window._apply_clone_ref()
+                            - see :meth:`~PULSE.data.window.Window._apply_clone_ref`
                         'clone_other' - if 1 `other` trace is missing, clone with the present one
                                         if both `other` traces are missing, clone the `ref` trace
-                            ~also see PULSE.data.window.Window._apply_clone_other()
+                            - see :meth`~PULSE.data.window.Window._apply_clone_other`
         :type rule: str, optional
-        :raises ValueError: Raised if `rule` is not a supported value
+
+        :returns:
+            - unaltered object, if all component codes aliases are present and all  have valid data
+            - 
+                
         """      
 
         thresh_dict = {}

@@ -5,13 +5,9 @@
 :org: Pacific Northwest Seismic Network
 :license: AGPL-3.0
 :purpose:
-    This contains the definition for the BufferModule class that hosts a :class:`~PULSE.data.stream.Stream`
-    object containing :class:`~PULSE.data.trace.Buffer` objects keyed to the Buffers' id attribute
+    This contains the definition for the BufferModule class that hosts a :class:`~PULSE.data.dictstream.DictStream`
+    object containing :class:`~PULSE.data.mltracebuff.MLTraceBuff` objects keyed to the Buffers' id attribute
 
-Classes
--------
-:class:`~PULSE.data.stream.Stream`
-:class:`~PULSE.data.stream.Window`
 """
 import logging, sys
 from numpy import isfinite
@@ -26,8 +22,41 @@ Logger = logging.getLogger(__name__)
 # @add_class_name_to_docstring
 class BufferMod(_BaseMod):
     """
-    Class for buffering/stacking MLTrace objects into a DictStream of MLTraceBuffer objects with
-    self-contained settings and sanity checks for changing the MLTraceBuffer.__add__ method options.
+    Module class for buffering/stacking MLTrace objects into a :class:`~PULSE.data.dictstream.DictStream` containing
+    sets of :class:`~PULSE.data.mltracebuff.MLTraceBuff` objects with options to format the method by which identically
+    keyed traces are joined (via :meth:`~PULSE.data.mltrace.MLTrace.__add__`).
+
+    :param buffer_key: MLTrace attribute to use for the DictStream keys, defaults to 'id'
+        :type buffer_key: str, optional
+        :param max_length: Maximum MLTraceBuffer length in seconds, defaults to 300.
+        :type max_length: positive float-like, optional
+        :param restrict_past_append: Enforce MLTraceBuffer past append safeguards?, defaults to True
+        :type restrict_past_append: bool, optional
+        :param blinding: Apply blinding before appending MLTrace objects to MLTraceBuffer objects, defaults to None
+                also see PULSE.data.mltrace.MLTrace.apply_blinding
+                Supported 
+                    None - do not blind
+                    (int, int) - left and right blinding sample counts (must be non-negative), e.g., (500, 500)
+        :type blinding: None or 2-tuple of int, optional
+        :param method: method to use for appending data to MLTrace-type objects in this BufferMod's buffer attribute, defaults to 1
+                Supported values:
+                    ObsPy-like
+                        0, 'dis','discard' - discard overlapping dat
+                        1, 'int','interpolate' - interploate between edge-points of overlapping data
+                    SeisBench-like
+                        2, 'max', 'maximum' - conduct stacking with "max" behavior
+                        3, 'avg', 'average' - condcut stacking with "avg" behavior
+
+                also see :meth:`~PULSE.data.mltrace.MLTrace.__add__`
+                         :meth:`~PULSE.data.mltracebuffer.MLTraceBuffer.append`
+        :type method: int or str, optional
+        :param max_pulse_size: maximum number of items to pull from source deque for each call of :meth:`~PULSE.module.buffer.BufferMod.pulse`, defaults to 10000
+        :type max_pulse_size: int, optional
+            also see :meth:`~PULSE.module._base._BaseMod.pulse`
+        :param **add_kwargs: key word argument collector to pass to MLTraceBuffer's initialization **kwargs
+            that in turn pass to :meth:`~PULSE.data.mltrace.MLTrace.__add__`
+            NOTE: add_kwargs with matching keys to pre-specified values will be ignored to prevent multiple call errors
+        :type **add_kwargs: kwargs
     """
     def __init__(
             self,
@@ -50,7 +79,7 @@ class BufferMod(_BaseMod):
         :param restrict_past_append: Enforce MLTraceBuffer past append safeguards?, defaults to True
         :type restrict_past_append: bool, optional
         :param blinding: Apply blinding before appending MLTrace objects to MLTraceBuffer objects, defaults to None
-                also see ewflow.core.trace.mltrace.MLTrace.apply_blinding
+                also see PULSE.data.mltrace.MLTrace.apply_blinding
                 Supported 
                     None - do not blind
                     (int, int) - left and right blinding sample counts (must be non-negative), e.g., (500, 500)
@@ -64,28 +93,31 @@ class BufferMod(_BaseMod):
                         2, 'max', 'maximum' - conduct stacking with "max" behavior
                         3, 'avg', 'average' - condcut stacking with "avg" behavior
 
-                also see ewflow.core.trace.mltrace.MLTrace.__add__
-                         ewflow.core.trace.mltracebuffer.MLTraceBuffer.append
+                also see :meth:`~PULSE.data.mltrace.MLTrace.__add__`
+                         :meth:`~PULSE.data.mltracebuffer.MLTraceBuffer.append`
         :type method: int or str, optional
-        :param max_pulse_size: maximum number of items to pull from source deque (x) for a single .pulse(x) call for this BufferMod, defaults to 10000
+        :param max_pulse_size: maximum number of items to pull from source deque for each call of :meth:`~PULSE.module.buffer.BufferMod.pulse`, defaults to 10000
         :type max_pulse_size: int, optional
-        :param **add_kwargs: key word argument collector to pass to MLTraceBuffer's initialization **kwargs that in turn pass to __add__
-                NOTE: add_kwargs with matching keys to pre-specified values will be ignored to prevent multiple call errors
+            also see :meth:`~PULSE.module._base._BaseMod.pulse`
+        :param **add_kwargs: key word argument collector to pass to MLTraceBuffer's initialization **kwargs
+            that in turn pass to :meth:`~PULSE.data.mltrace.MLTrace.__add__`
+            NOTE: add_kwargs with matching keys to pre-specified values will be ignored to prevent multiple call errors
         :type **add_kwargs: kwargs
-        :raises TypeError: _description_
-        :raises TypeError: _description_
-        :raises ValueError: _description_
         """
-        # Inherit from Wyrm
+        # Inherit from _BaseMod
         super().__init__(
             max_pulse_size=max_pulse_size,
             meta_memory=meta_memory,
             report_period=report_period,
             max_output_size=max_output_size)
 
-        # Initialize output of type PULSE.data.dictstream.DictStream
+        # Initialize self.output as PULSE.data.dictstream.DictStream
         self.output = DictStream(key_attr=buffer_key)
-        self.buffer_key = buffer_key
+        if isinstance(buffer_key, str):
+            self.buffer_key = buffer_key
+        else:
+            raise TypeError(f'buffer_key must be type str. Not type {type(buffer_key)}')
+
         # Create holder attribute for MLTraceBuffer initialization Kwargs
         self.mltb_kwargs = {}
         if isinstance(max_length, (float, int)):
@@ -119,7 +151,7 @@ class BufferMod(_BaseMod):
                           3,'avg','average']:
             self.mltb_kwargs.update({'method': method})
         else:
-            raise ValueError(f'method {method} not supported. See ewflow.data.mltrace.MLTrace.__add__()')
+            raise ValueError(f'method {method} not supported. See PULSE.data.mltrace.MLTrace.__add__()')
 
         for _k, _v in add_kwargs:
             if _k not in self.mltb_kwargs:
@@ -129,21 +161,19 @@ class BufferMod(_BaseMod):
     #################################
     # PULSE POLYMORPHIC SUBROUTINES #
     #################################
-
-
     def _unit_input_from_input(self, input):
         """
-        POLYMORPHIC
-        Last updated with :class: `~ewflow.module.buffer.BufferMod`
+        POLYMORPHIC METHOD
+        Last updated with :class:`~PULSE.module.buffer.BufferMod`
 
         Claim the left-most object in `input` using popleft(), ensure it is a
-        :class: `~ewflow.core.mltrace.MLTrace` object, or a collection thereof
+        :class:`~PULSE.data.mltrace.MLTrace` object, or a collection thereof
         and convert single MLTrace objects into a 1-element list.
 
         :param input: collection of MLTrace-like objects
-        :type input: collections.deque of ewflow.core.trace.mltrace.MLTrace or list-like thereof
+        :type input: collections.deque of PULSE.data.mltrace.MLTrace objects or list-like thereof
         :return unit_input: iterable list of MLTrace-like objects
-        :rtype unit_input: list of ewflow.core.trace.mltrace.MLTrace
+        :rtype unit_input: list of PULSE.data.mltrace.MLTrace
         """        
         unit_input = input.popleft()
         if isinstance(unit_input, dict):
@@ -161,8 +191,8 @@ class BufferMod(_BaseMod):
 
     def _unit_process(self, unit_input):
         """
-        POLYMORPHIC
-        Last updated with :class: `~ewflow.module.buffer.BufferMod`
+        POLYMORPHIC METHOD
+        Last updated with :class:`~PULSE.module.buffer.BufferMod`
 
         Iterate across MLTraces in `unit_input` and either generate new
         MLTraceBuffers keyed by the MLTrace.id or append the MLTrace
@@ -202,10 +232,10 @@ class BufferMod(_BaseMod):
     
     def _capture_unit_output(self, unit_output):
         """
-        POLYMORPHIC
-        Last updated with :class: `~ewflow.module.buffer.BufferMod`
+        POLYMORPHIC METHOD
+        Last updated with :class:`~PULSE.module.buffer.BufferMod`
 
-        Placeholder/termination
+        Placeholder/termination in case unit_output is not type int.
 
         :param unit_output: _description_
         :type unit_output: _type_
@@ -218,8 +248,8 @@ class BufferMod(_BaseMod):
 
     def _should_next_iteration_run(self, unit_output):
         """
-        POLYMORPHIC
-        Last updated with :class: `~ewflow.module.buffer.BufferMod`
+        POLYMORPHIC METHOD
+        Last updated with :class:`~PULSE.module.buffer.BufferMod`
 
         Signal early stopping (status = False) if unit_input = 0
         i.e., no new trace segments buffered

@@ -272,21 +272,19 @@ class Window(DictStream):
         :param rule: channel fill rule to apply to non-reference channels that are
                     missing or fail to meet the `other_thresh` requirement, defaults to 'zeros'
                     Supported Values
-                        'zeros' - fill with 0-valued traces
+                        'zeros' - fill missing/insufficient "other" traces with 0-valued data and fold vectors
                             - see :meth:`~PULSE.data.window.Window._apply_zeros`
-                        'clone_ref' - clone the primary trace if any secondary traces are missing
+                            - e.g., Retailleau et al. (2022)
+                        'clone_ref' - clone the "reference" trace if any "other" traces are missing/insufficient
                             - see :meth:`~PULSE.data.window.Window._apply_clone_ref`
-                        'clone_other' - if 1 `other` trace is missing, clone with the present one
-                                        if both `other` traces are missing, clone the `ref` trace
+                            - e.g., Ni et al. (2023)
+                        'clone_other' - if an "other" trace is missing/insufficient but one "other" trace is present and sufficient,
+                            clone the present and sufficient "other" trace. If both "other" traces are missing, uses the "clone_ref" subroutine
                             - see :meth`~PULSE.data.window.Window._apply_clone_other`
+                            - e.g., Lara et al. (2023)
         :type rule: str, optional
-
-        :returns:
-            - unaltered object, if all component codes aliases are present and all  have valid data
-            - 
                 
         """      
-
         thresh_dict = {}
         ref_thresh = self.stats.thresholds['ref']
         other_thresh = self.stats.thresholds['other']
@@ -313,7 +311,7 @@ class Window(DictStream):
             raise ValueError(f'rule {rule} not supported. Supported values: "zeros", "clone_ref", "clone_other"')
 
     def _apply_zeros(self, thresh_dict): 
-        """Apply the channel filling rule `zeros` (e.g., Retailleau et al., 2022)
+        """Apply the channel filling rule "zeros" (e.g., Retailleau et al., 2022)
         where both "other" (horzontal) components are set as zero-valued traces
         if one or both are missing/overly gappy.
 
@@ -322,7 +320,7 @@ class Window(DictStream):
 
         :param thresh_dict: directory with keys matching keys in 
                         self.traces.keys() (i.e., alised component characters)
-                        and values \in [0, 1] representing fractional completeness
+                        and values :math:`\in [0, 1]` representing fractional completeness
                         thresholds below which the associated component is rejected
         :type thresh_dict: dict
         :raises ValueError: raised if the `ref` component has insufficient data

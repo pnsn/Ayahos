@@ -1,16 +1,15 @@
 """
-:module: camper.module._base
+:module: PULSE.module._base
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
 :license: AGPL-3.0
 :purpose:
-    This contains the definition for the _BaseMod class that serves serves as a template
-    (parent class) for all other modules.
+    This contains the definition for the _BaseMod class that serves serves as a parent class for all other PULSE module classes.
 
 Classes
 -------
-:class:`~camper.module._base._BaseMod`
+:class:`~PULSE.module._base._BaseMod`
 """
 
 from numpy import nan
@@ -20,7 +19,7 @@ from collections import deque
 import logging, sys
 
 # self.Logger = logging.getLogger(__name__)
-
+# TODO: obsolite this method
 def add_class_name_to_docstring(cls):
     for name, method in vars(cls).items():
         if callable(method) and hasattr(method, "__doc__"):
@@ -36,21 +35,29 @@ Logger = logging.getLogger(__name__)
 # @add_class_name_to_docstring
 class _BaseMod(object):
     """Fundamental base class template all other *Mod classes with the following
-    template methods
+    template methods and attributes:
 
-    Mod().pulse() - performs multiple iterations of the following polymorphic subroutines
-        Mod()._should_this_iteration_run() - check if this iteration in pulse should be run
-        Mod()._unit_input_from_input() - get the object input for _unit_process()
-        Mod()._unit_process() - execute a single operation on the input object
-        Mod()._capture_unit_output() - do something to save the output of _unit_process
-        Mod()._should_next_iteration_run() - decide if the next iteration should be run
+    :meth:_BaseMod.pulse() - performs multiple iterations of the following polymorphic subroutines
+        :meth:`~_BaseMod._should_this_iteration_run` - check if this iteration in pulse should be run
+        :meth:`~_BaseMod._unit_input_from_input` - get the object input for :meth:`~_BaseMod._unit_process`
+        :meth:`~_BaseMod._unit_process` - execute a single operation on the input object
+        :meth:`~_BaseMod._capture_unit_output` - do something to save the output of :meth:`~_BaseMod._unit_process`
+        :meth:`~_BaseMod._should_next_iteration_run` - decide if the next iteration should be run
 
-    Mod.output - collector of outputs from core_process(). Should be modified along with
-                Mod().core_process() to meet your needs.
+    #: _BaseMod.output - collector of outputs from :meth:`~_BaseMod._unit_process` via :meth:`~_BaseMod._capture_unit_output`.
+    #: _BaseMod.Logger - logging.Logger instance associated with a given module
 
-    :param max_pulse_size: maximum number of iterations to run for Mod.pulse(), defaults to 10
+    :param max_pulse_size: maximum number of iterations to run for each call of :meth:`~PULSE.module._base._BaseMod.pulse`, defaults to 10
     :type max_pulse_size: int, optional
-    
+    :param meta_memory: maximum age of metadata logging in seconds, defaults to 3600.
+    :type meta_memory: float, optional
+    :param report_period: send report to logging every `report_period` seconds, defaults to None
+                Positive values turn reporting on
+                "None" value turns reporting off
+    :type report_period: float or NoneType, optional
+    :param max_output_size: maximum number of items to keep in this _BaseMod.output attribute, defaults to 100.
+    :type max_output_size: int, optional
+
     """
 
     def __init__(
@@ -59,19 +66,21 @@ class _BaseMod(object):
         meta_memory=3600,
         report_period=False,
         max_output_size=100):
-        """Initialize a _BaseMod object
+        """Initialize a :class:`~PULSE.module._base._BaseMod object`
 
-        :param max_pulse_size: maximum number of iterations to run for each call of :meth:`~camper.module._base._BaseMod.pulse`, defaults to 10
+        :param max_pulse_size: maximum number of iterations to run for each call of :meth:`~PULSE.module._base._BaseMod.pulse`, defaults to 10
         :type max_pulse_size: int, optional
         :param meta_memory: maximum age of metadata logging in seconds, defaults to 3600.
         :type meta_memory: float, optional
         :param report_period: send report to logging every `report_period` seconds, defaults to None
                     Positive values turn reporting on
-                    None value turns reporting off
+                    "None" value turns reporting off
         :type report_period: float or NoneType, optional
+        :param max_output_size: maximum number of items to keep in this _BaseMod.output attribute, defaults to 100.
+        :type max_output_size: int, optional
         """
 
-        # Compatability check for max_pulse_size
+        # Compatability check for `max_pulse_size`
         if isinstance(max_pulse_size, (int, float)):
             if 1 <= max_pulse_size:
                 self.max_pulse_size = int(max_pulse_size)
@@ -79,19 +88,8 @@ class _BaseMod(object):
                 raise ValueError('max_pulse_size must be g.e. 1 ')
         else:
             raise TypeError('max_pulse_size must be positive int-like')
-        
-        # Set up logging
-        self.Logger = logging.getLogger(f'{self.__name__()}')
 
-        # Initialize output
-        self.output = deque()
-
-        # Metadata keys for reporting
-        self._keys_meta = ['time', '# proc', 'runtime', 'isize', 'osize', 'early_stop']
-
-        # Metadata holder for reporting
-        self._metadata = pd.DataFrame(columns=self._keys_meta)
-        self.report = pd.DataFrame()
+        # Compatability checks for `meta_memory`
         if isinstance(meta_memory, (int, float)):
             if meta_memory > 0:
                 if meta_memory <= 24*3600:
@@ -103,6 +101,7 @@ class _BaseMod(object):
         else:
             raise TypeError
         
+        # Compatability checks for `report_period`
         if report_period is False:
             self.report_period = False
         elif isinstance(report_period, (int, float)):
@@ -113,22 +112,37 @@ class _BaseMod(object):
                 sys.exit(1)
         else:
             raise TypeError
-        
+    
+        # Compatability checks for `max_output_size`
         if max_output_size is None:
             self.max_output_size = 1e12
             self.Logger.critical(f'setting non-limited output size for {self.__class__.__name__} object to {self.max_output_size}')
         elif isinstance(max_output_size, (int,float)):
             if 0 < max_output_size <= 1e12:
                 self.max_output_size = max_output_size
+            else:
+                raise ValueError
         else:
             raise TypeError
-
+        
+        # Set up logging
+        self.Logger = logging.getLogger(f'{self.__name__()}')
+        # Initialize output
+        self.output = deque()
+        # Metadata keys for reporting
+        self._keys_meta = ['time', '# proc', 'runtime', 'isize', 'osize', 'early_stop']
+        # Metadata holder for reporting
+        self._metadata = pd.DataFrame(columns=self._keys_meta)
+        # Initialize report attribute
+        self.report = pd.DataFrame()
+        # Initialize last report timestamp
         self._last_report_time = pd.Timestamp.now().timestamp()
+        # Initalize placeholder for _pulse_rate
         self._pulse_rate = nan
 
 
     def __name__(self, full=False):
-        """Return the camel-case name of this class with or without the submodule extension
+        """Return the camel-case name of this class with/without the submodule extension
         :param full: use the full class path? Defaults to False
         :type full: bool, optional
         :return: class name
@@ -141,7 +155,7 @@ class _BaseMod(object):
     
     def __repr__(self):
         """
-        Provide a string representation string of essential user data for this *Mod object
+        Return a string representation string of essential user data for this _BaseMod object
         """
         rstr = f'{self.__class__}\n'
         rstr += f"Max Pulse Size: {self.max_pulse_size}\nOutput: {len(self.output)} (type {type(self.output)})"
@@ -149,7 +163,7 @@ class _BaseMod(object):
 
     def __str__(self):
         """
-        Return self.__class__ for this *Mod
+        Return self.__class__ string for this _BaseMod object
         """
         rstr = self.__class__ 
         #(max_pulse_size={self.max_pulse_size})'
@@ -157,30 +171,36 @@ class _BaseMod(object):
     
     def copy(self):
         """
-        Return a deepcopy of this *Mod object
+        Return a deepcopy of this _BaseMod object
         """
         return deepcopy(self)
 
     def pulse(self, input):
         """
         TEMPLATE METHOD
-        Last updated with :class:`~camper.module._base._BaseMod`
+        Last updated with :class:`~PULSE.module._base._BaseMod`
 
         Run up to max_pulse_size iterations of _unit_process()
 
-        NOTE: Houses the following polymorphic methods that can be modified for decendent Mod-like classes
-            _should_this_iteration_run: check if iteration should continue (early stopping opportunity)
-            _unit_input_from_input: get input object for _unit_process
-            _unit_process: run core process
-            _capture_unit_output: attach _unit_process output to self.output
-            _should_next_iteration_run: check if the next iteration should occur (early stopping opportunity)
-            _update_metadata: update metadata dataframe with a summary of pulse activity
+        NOTE: Houses the following polymorphic methods that can be modified for _BaseMod child classes
+        :meth:`~PULSE.module._base._BaseMod._should_this_iteration_run`
+            check if iteration should continue (early stopping opportunity)
+        :meth:`~PULSE.module._base._BaseMod._unit_input_from_input`
+            get input object for:meth:`~PULSE.module._base._BaseMod._unit_process
+        :meth:`~PULSE.module._base._BaseMod._unit_process`
+            run core process
+        :meth:`~PULSE.module._base._BaseMod._capture_unit_output`
+            attach :meth:`~PULSE.module._base._BaseMod._unit_process` output to self.output
+        :meth:`~PULSE.module._base._BaseMod._should_next_iteration_run`
+            check if the next iteration should occur (early stopping opportunity)
+        :meth:`~PULSE.module._base._BaseMod._update_metadata`
+            update metadata dataframe with a summary of pulse activity
 
         :param input: standard input
         :type input: collections.deque
-            see camper.core.module._base._BaseMod._unit_input_from_input()
+            also see PULSE.core.module._base._BaseMod._unit_input_from_input
         :return output: aliased access to this object's **output** attribute
-        :rtype output: typically collections.deque or camper.core.dictstream.DictStream
+        :rtype output: typically collections.deque or PULSE.core.dictstream.DictStream
         """ 
         input_size = self._measure_input_size(input)
         nproc = 0
@@ -232,16 +252,16 @@ class _BaseMod(object):
 
     def _measure_input_size(self, input):
         """
-        POLYMORPHIC
-        Last updated with :class:`~camper.module._base._BaseMod`
+        POLYMORPHIC METHOD
+        Last updated with :class:`~PULSE.module._base._BaseMod`
 
         take a reference measurement for the input before starting
         iterations within the pulse() method.
 
         This version measures the length of input.
 
-        :param input: standard input
-        :type input: varies, deque here
+        :param input: input provided to :meth:`~PULSE.module._base._BaseMod.pulse`
+        :type input: varies, deque for :class:`~PULSE.module._base._BaseMod`
         :return input_size: representative measure of input
         :rtype: int-like
         """        
@@ -253,9 +273,9 @@ class _BaseMod(object):
 
     def _should_this_iteration_run(self, input, input_size, iter_number):
         """
-        POLYMORPHIC - last updated with :class:`~camper.module._base._BaseMod`
+        POLYMORPHIC METHOD - last updated with :class:`~PULSE.module._base._BaseMod`
 
-        Should this iteration in :meth:`~camper.module._base._BaseMod.pulse()` be run?
+        Should this iteration in :meth:`~PULSE.module._base._BaseMod.pulse` be run?
         
         Criteria:
          - input is type collections.deque
@@ -281,10 +301,11 @@ class _BaseMod(object):
     
     def _unit_input_from_input(self, input):
         """
-        POLYMORPHIC
-        Last updated with :class: `~camper.module._base._BaseMod`
+        POLYMORPHIC METHOD
+        Last updated with :class:`~PULSE.module._base._BaseMod`
 
-        Get the input object for this Mod's _unit_process
+        Get the input object for :meth:`~PULSE.module._base._BaseMod._unit_process` from
+        the `input` provided to :meth:`~PULSE.module._base._BaseMod.pulse`
 
         :param input: standard input object
         :type input: collections.deque
@@ -292,7 +313,6 @@ class _BaseMod(object):
         :rtype unit_input: any
         
         :raises TypeError: if input is not expected type
-        
         """        
         if isinstance(input, deque):
             unit_input = input.popleft()
@@ -305,8 +325,8 @@ class _BaseMod(object):
 
     def _unit_process(self, unit_input):
         """
-        POLYMORPHIC
-        Last updated with :class: `~camper.module._base._BaseMod`
+        POLYMORPHIC METHOD
+        Last updated with :class: `~PULSE.module._base._BaseMod`
 
         return unit_output = unit_input
 
@@ -320,8 +340,8 @@ class _BaseMod(object):
     
     def _capture_unit_output(self, unit_output):
         """
-        POLYMORPHIC
-        Last updated with :class: `~camper.module._base._BaseMod`
+        POLYMORPHIC METHOD
+        Last updated with :class: `~PULSE.module._base._BaseMod`
 
         Append unit_output to self.output
 
@@ -329,8 +349,6 @@ class _BaseMod(object):
 
         :param unit_output: standard output object from unit_process
         :type unit_output: any
-        :return: None
-        :rtype: None
         """        
         self.output.append(unit_output)
         extra = len(self.output) - self.max_output_size
@@ -342,8 +360,8 @@ class _BaseMod(object):
         
     def _should_next_iteration_run(self, unit_output):
         """
-        POLYMORPHIC
-        Last updated with :class: `~camper.module._base._BaseMod`
+        POLYMORPHIC METHOD
+        Last updated with :class:`~PULSE.module._base._BaseMod`
 
         check if the next iteration should be run based on unit_output
 
@@ -359,8 +377,8 @@ class _BaseMod(object):
 
     def _update_metadata(self, pulse_starttime, input_size, nproc, early_stop_code):
         """
-        POLYMORPHIC
-        Last updated with :class:`~camper.module._base._BaseMod`
+        POLYMORPHIC METHOD
+        Last updated with :class:`~PULSE.module._base._BaseMod`
 
         Captures metadata from the most recent pulse and updates
         the representative reporting string attribute *self.report*
@@ -394,7 +412,7 @@ class _BaseMod(object):
 
     def _update_report(self):
         """
-        Update the self.report attribute of thie *Mod object 
+        Update the **_BaseMod.report** attribute with a synopsis of saved metadata
         """        
         # Update Report       
         df_last = self._metadata[self._metadata.time == self._metadata.time.max()]
@@ -402,7 +420,10 @@ class _BaseMod(object):
         self.report = df_last 
         self.report = pd.concat([self.report, self._metadata.agg(['mean','std','min','max'])], axis=0, ignore_index=False)
         self.report.time = self.report.time.apply(lambda x: pd.Timestamp(x, unit='s'))
+
     def _update_pulse_rate(self):
+        """Update the estimate of average pulse rate from logged metadata and update the **_BaseMod._pulse_rate** attribute
+        """
         # Calculate pulse rate
         nd = len(self._metadata)
         if nd > 1:
@@ -411,6 +432,12 @@ class _BaseMod(object):
                 self._pulse_rate = nd/dt
 
     def _generate_report_string(self):
+        """Generate a string representation of metadata logging for output to the command line
+        comprising a formatted header and the current **_BaseMod.report** attribute elements
+
+        :return: report string
+        :rtype: str
+        """        
         header = f'~~|^v~~~ {pd.Timestamp.now()} | {self.__name__()} ~~|^v~~~\n'
         header += f'pulse rate: {self._pulse_rate:.2e} Hz | max pulse size: {self.max_pulse_size}\n'
         header += f'sample period: {self.meta_memory} sec | max output size: {self.max_output_size}'
@@ -446,3 +473,34 @@ class _BaseMod(object):
         except ImportError:
             self.Logger.critical(f'failed to import {class_path_str}')
             sys.exit(1)
+
+    def raise_log(self, etype, emsg='', level='critical', exit_code=1):
+        """Convenience wrapper for writing *Error messages to logging.
+        If logging `level` == 'critical' program exits using :meth:`~sys.exit`
+        with the specified exit code
+
+        :param etype: Error Type to write to message
+        :type etype: 
+        :param emsg: _description_, defaults to ''
+        :type emsg: str, optional
+        :param level: _description_, defaults to 'critical'
+        :type level: str, optional
+        :param exit_code: _description_, defaults to 1
+        :type exit_code: int, optional
+        :raises ValueError: _description_
+        """
+        if isinstance(etype, str):
+            pass
+        else:
+            raise TypeError('etype must be type str')
+        if level.lower() == 'debug':
+            self.Logger.debug(f'{etype}: {emsg}')
+        elif level.lower() == 'error':
+            self.Logger.error(f'{etype}: {emsg}')
+        elif level.lower() == 'warning':
+            self.Logger.warning(f'{etype}: {emsg}')
+        elif level.lower() == 'critical':
+            self.Logger.critical(f'{etype}: {emsg}')
+            sys.exit(exit_code)
+        else:
+            raise ValueError(f'level "{level}" not supported.')

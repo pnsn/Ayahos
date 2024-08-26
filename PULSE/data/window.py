@@ -10,7 +10,7 @@
 
     The Window class keys :class:`~PULSE.data.mltrace.MLTrace`-type objects by their component code, rather than full **id** attribute
     and provides additional class methods for pre-processing one or more MLTrace objects into a data tensor ready for input to a machine
-    learning model (e.g., SeisBench's WaveformModel classes)
+    learning model (i.e., those derived from :class:`~seisbench.models.WaveformModel`.
 """
 import copy
 import numpy as np
@@ -29,7 +29,7 @@ class WindowStats(DictStreamStats):
     contained metadata to include the reference component code, component code aliases,
     completeness thresholds for reference and non-reference ("other") component codes,
     and desired starttime, sampling_rate, and npts to reference during pre-processing
-    on the way to making a :class:`~seisbench.models.WaveformModel` compliant input
+    on the way to making a :class:`~seisbench.models.WaveformModel`-compliant input
     data tensor.
 
     :param header: collector for non-default values (i.e., not in WindowStats.defaults)

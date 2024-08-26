@@ -8,6 +8,9 @@
     This contains the definition for the BufferModule class that hosts a :class:`~PULSE.data.dictstream.DictStream`
     object containing :class:`~PULSE.data.mltracebuff.MLTraceBuff` objects keyed to the Buffers' id attribute
 
+Classes
+-------
+:class:`~PULSE.module.buffer.BufferMod`
 """
 import logging, sys
 from numpy import isfinite

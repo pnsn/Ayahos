@@ -33,7 +33,10 @@ release = _version(project)
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 needs_sphinx = '7.4.7' # Initial docs development version
 
-extensions = []
+extensions = [
+    "sphinx.ext.autodoc",
+    "sphinx_rtd_theme"
+]
 
 templates_path = ['_templates']
 exclude_patterns = []

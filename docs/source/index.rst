@@ -76,3 +76,11 @@ in the attached `LICENSE <https://github.com/pnsn/PULSE/blob/develop/LICENSE>`_ 
    :maxdepth: 3
    :caption: Contents:
 
+   self
+   PULSE.rst
+
+Indices and tables
+==================
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`

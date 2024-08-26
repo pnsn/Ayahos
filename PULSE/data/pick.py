@@ -1,4 +1,12 @@
-# TODO: Header
+"""
+:module: PULSE.data.pick
+:auth: Nathan T. Stevens
+:email: ntsteven (at) uw.edu
+:org: Pacific Northwest Seismic Network
+:
+"""
+
+
 import logging
 import numpy as np
 from obspy import UTCDateTime
@@ -375,4 +383,4 @@ class Pick2KMsg(object):
         return msg
     
 
-class Pick_SCNL(object):
+# class Pick_SCNL(object):

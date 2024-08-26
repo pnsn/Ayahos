@@ -13,7 +13,7 @@ import logging
 from PULSE.util.stats import estimate_moments, fit_normal_pdf_curve, estimate_quantiles
 import numpy as np
 from obspy import Trace, UTCDateTime
-from obspy.core.util.attribdict AttribDict
+from obspy.core.util.attribdict import AttribDict
 from PULSE.data.mltrace import MLTrace
 from scipy.cluster.vq import *
 

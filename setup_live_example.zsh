@@ -1,7 +1,7 @@
 #!/bin/zsh
 ENVNAME='PULSE'
 ACTIVATE="$CONDA_PREFIX/bin/activate"
-PXD='~~^v~~~'
+PXD='~~|^v~~~'
 # Check if environment exists
 if conda info --envs | grep -q "$ENVNAME"; then
     echo "$PXD Conda env '$ENVNAME' already exists $PXD"

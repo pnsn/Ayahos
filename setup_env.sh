@@ -3,10 +3,10 @@
 # :email: ntsteven (at) uw.edu
 # :org: Pacific Northwest Seismic Network
 # :license: AGPL-3.0
-# :purpose: This script creates a conda environment and installs EWFlow and all its dependencies
+# :purpose: This script creates a conda environment and installs PULSE and all its dependencies
 ENVNAME='PULSE'
 ACTIVATE="$CONDA_PREFIX/bin/activate"
-PXD='~~^v~~~'
+PXD='~~|^v~~~'
 
 # Check if environment exists
 if conda info --envs | grep -q "$ENVNAME"; then

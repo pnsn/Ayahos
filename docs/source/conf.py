@@ -17,7 +17,7 @@ from datetime import datetime
 from importlib.metadata import version as _version
 
 sys.path.insert(0, os.path.abspath("../../PULSE/"))
-sys.path.insert(0, os.path.abspath("../../live_example/"))
+# sys.path.insert(0, os.path.abspath("../../live_example/"))
 # sys.path.append(os.path.abspath("_ext"))
 
 # -- Project information -----------------------------------------------------

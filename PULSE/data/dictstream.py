@@ -5,24 +5,24 @@
 :org: Pacific Northwest Seismic Network
 :license: AGPL-3.0
 :purpose:
-    This contains the class definition for DictStream data objects that extend functionalities
-    of :class:`~obspy.core.stream.Stream` and coordinates with functionalities of
-    :class:`~PULSE.data.mltrace.MLTrace` class. It uses a *dictionary* to hold traces,
-    rather than a *list* used by :class:`~obspy.core.stream.Stream`. This accelerates sorting, slicing,
-    and querying individual traces (or sets of traces) via the hash-table functionality that 
-    underlies python dictionaries. 
-    
-    In exchange, this places more restrictions on the objects that can be placed in a
-    :class:`~PULSE.data.dictstream.DictStream` object in comparison to it's ObsPy forebearer
-    as dictionaries require unique keys for each entry.
+This module contains the class definition for :class:`~PULSE.data.dictstream.DictStream` data objects
+and :class:`~PULSE.data.dictstream.DictStreamStats` metadata objects that host and coordinate functionalities 
+of sets of :class:`~PULSE.data.mltrace.MLTrace` objects. 
 
-    We also added a **stats** attribute to :class:`~PULSE.data.dictstream.DictStream` objects
-    (:class:`~PULSE.data.dictstream.DictStreamStats`) that provides summary metadata on the 
-    contents of the DictStream, similar to the :class:`~obspy.core.trace.Stats` class.
+:class:`~PULSE.data.dictstream.DictStream` objects use a :class:`~dict` to hold traces as the **traces** attribute,
+rather than the :class:`~list` used by the ObsPy :class:`~obspy.core.stream.Stream` **traces** attribute. 
+This accelerates sorting, slicing, and querying individual traces (or sets of traces) via the hash-table functionality that 
+underlies python dictionaries.
 
-TODO: Ensure import paths in documentation are up to date and in sphinx formatting
-TODO: cleanup extraneous (developmental) methods that are commented out
-TODO: 
+In exchange, this places more restrictions on the objects that can be placed in a
+:class:`~PULSE.data.dictstream.DictStream` object in comparison to it's ObsPy forebearer
+as dictionaries require unique keys for each entry.
+
+The **stats** attribute added to :class:`~PULSE.data.dictstream.DictStream` objects
+(:class:`~PULSE.data.dictstream.DictStreamStats`) that provides summary metadata on the 
+contents of the DictStream. It is modeled after the ObsPy :class:`~obspy.core.trace.Stats` class.
+
+ * TODO: cleanup extraneous (developmental) methods that are commented out
 """
 
 import fnmatch, os, obspy, logging
@@ -39,11 +39,12 @@ from PULSE.data.mltrace import MLTrace, wave2mltrace
 ###################################################################################
 
 class DictStreamStats(AttribDict):
-    """
-    A class to contain metadata for a :class:`~PULSE.data.dictstream.DictStream` object
-    of the based on the ObsPy AttribDict (Attribute Dictionary) class. 
-
-    This operates very similarly to :class:`~obspy.core.trace.Stats` objects
+    """A class to contain metadata for a :class:`~PULSE.data.dictstream.DictStream` object of the based on the
+    ObsPy :class:`~obspy.core.util.attribdict.AttribDict` class and operates like the ObsPy :class:`~obspy.core.trace.Stats` class.
+    
+    This DictStream header object contains metadata on the minimum and maximum starttimes and endtimes of :class:`~PULSE.data.mltrace.MLTrace`
+    objects contained within a :class:`~PULSE.data.dictstream.DictStream`, along with a Unix-wildcard-inclusive string representation of 
+    all trace keys in **DictStream.traces** called **common_id**
 
     """
     defaults = {
@@ -140,8 +141,8 @@ class DictStreamStats(AttribDict):
 ###################################################################################
 
 class DictStream(Stream):
-    """
-    Dictionary like object of multiple PULSE :class:`~PULSE.data.mltrace.MLTrace` objects
+    """:class:`~obspy.core.stream.Stream`-like object hosting hosting :class:`~PULSE.data.mltrace.MLTrace` objects.
+    :class:`~PULSE.data.dictstream.DictStream that uses a :class:`~dict` **trace** attribute, rather than the :class:`~list` used in its forebearer object 
 
     :param traces: initial list of ObsPy Trace-lke objects, defaults to []
     :type traces: list of :class:`~obspy.core.trace.Trace` (or children) objects, optional
@@ -158,7 +159,7 @@ class DictStream(Stream):
                 Character 2: Component character
 
         Supported values:
-            'id' - N.S.L.C(.M.W) code (see :class: `~PULSE.data.mltrace.MLTrace`)
+            'id' - N.S.L.C(.M.W) code (see :class:`~PULSE.data.mltrace.MLTrace`)
             'site' - N.S code
             'inst' - Band+Instrument characters
             'instrument' - N.S.L.BandInst?(.M.W)
@@ -174,11 +175,9 @@ class DictStream(Stream):
     :type **options: kwargs
 
     .. rubric:: Basic Usage
-
+    >>> from PULSE.data.dictstream import DictStream
     >>> from obspy import read
-    >>> st = read()
-    >>> traces = [tr for tr in st]
-    >>> dst = DictStream(traces=traces)
+    >>> dst = DictStream(traces=read())
     >>> dst
     --Stats--
            common_id: BW.RJOB.--.EH?..
@@ -193,7 +192,10 @@ class DictStream(Stream):
     BW.RJOB.--.EHN.. : BW.RJOB.--.EHN.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples
     BW.RJOB.--.EHE.. : BW.RJOB.--.EHE.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples
 
-    >>> dst = DictStream(traces=traces, key_attr='component')
+    Iterable sets of ObsPy :class:`~obspy.core.trace.Trace`-like objects and :class:`~obspy.core.stream.Stream` objects can be
+    loaded into a :class:`~PULSE.data.dictstream.DictStream` when initializing the object.
+    
+    >>> dst = DictStream(traces=read(), key_attr='component')
     >>> dst
     --Stats--
            common_id: BW.RJOB.--.EH?..
@@ -208,23 +210,93 @@ class DictStream(Stream):
     N : BW.RJOB.--.EHN.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples
     E : BW.RJOB.--.EHE.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples
 
+    Users can specify the key attribute used for auto-generating keys in **DictStream.traces**
+    
+    .. rubric:: Integer Indexing
+    >>> dst[0]
+    BW.RJOB.--.EHZ.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples | Fold: [1] 1.00
+
+    Indexing with an integer value returns the :class:`~PULSE.data.mltrace.MLTrace` at the specified position.
+    This matches the syntax for getting items from :class:`~obspy.core.stream.Stream` objects.
+
+    **Note**: input ObsPy :class:`~obspy.core.trace.Trace` object(s) are automatically converted into :class:`~PULSE.data.mltrace.MLTrace` objects.
+    
+    .. rubric:: Key Indexing
+    >>> dst['BW.RJOB.--.EHN..']
+    BW.RJOB.--.EHN.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples | Fold: [1] 1.00
+
+    Indexing with a string value that matches a key in **DictStream.traces** returns a view of the 
+    corresponding :class:`~PULSE.data.mltrace.MLTrace` object.
+
+    .. rubric:: Slice Indexing
+    >>> dst[1:]
+    --Stats--
+           common_id: BW.RJOB.--.EH?..
+       min_starttime: 2009-08-24T00:20:03.000000Z
+       max_starttime: 2009-08-24T00:20:03.000000Z
+         min_endtime: 2009-08-24T00:20:32.990000Z
+         max_endtime: 2009-08-24T00:20:32.990000Z
+          processing: []
+    -------
+    2 MLTrace(s) in DictStream
+    BW.RJOB.--.EHN.. : BW.RJOB.--.EHN.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples
+    BW.RJOB.--.EHE.. : BW.RJOB.--.EHE.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples
+    
+    Indexing with a slice returns a new :class:`~PULSE.data.dictstream.DictStream` object containing a view of the
+    :class:`~PULSE.data.mltrace.MLTrace` objects at the specified slice position(s). This matches the
+    behavior of slice indexing with ObsPy :class:`~obspy.core.stream.Stream` objects.
+
+    .. rubric:: Key List Indexing
+    >>> dst[['BW.RJOB.--.EHZ..','BW.RJOB.--.EHN..']]
+    --Stats--    
+           common_id: BW.RJOB.--.EH?..    
+       min_starttime: 2009-08-24T00:20:03.000000Z    
+       max_starttime: 2009-08-24T00:20:03.000000Z    
+         min_endtime: 2009-08-24T00:20:32.990000Z    
+         max_endtime: 2009-08-24T00:20:32.990000Z    
+          processing: []
+    -------
+    2 MLTrace(s) in DictStream
+    BW.RJOB.--.EHZ.. : BW.RJOB.--.EHZ.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples
+    BW.RJOB.--.EHN.. : BW.RJOB.--.EHN.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples
+   
+
+    Indexing with a list of keys returns a returns a new :class:`~PULSE.data.dictstream.DictStream` object containing a view
+    of matching keyed :class:`~PULSE.data.mltrace.MLTrace` objects.
+    
+    **Note**: slice and key-list indexing produce new DictStream objects, but the MLTraces contained within are views of the original MLTraces.
+    I.e., the MLTraces are the same in-memory objects, the DictStreams referencing them are not.
     
     .. rubric:: Supported Operations
     ``DictStream = DictStreamA + DictStreamB``
         Merges all mltraces within the two DictStream objects
-        see: :meth:`DictStream.__add__`
     
-    ``DictStreamA += DictStreamB
+    ``DictStreamA += DictStreamB``
         Extends the DictStream object ``DictStreamA`` with all traces from ``DictStreamB``.
-        see: :meth:`DictStream.__iadd__`
     
-    ``str(DictStream)``
-        Containts the 
+    **Indexing and Slicing**
+
+    All indexing returns a new :class:`~PULSE.data.dictstream.DictStream` object containing views of
+    the :class:`~PULSE.data.mltrace.MLTrace` objects in the source :class:`~PULSE.data.dictstream.DictStream` object.
+
+    ``DictStream['key']``
+        Fetches a view of the :class:`~PULSE.data.mltrace.MLTrace`-like value tied to specified 'key'.
+
+    ``DictStream[['key1','key2']]``
+        Fetches a slice of the :class:`~PULSE.data.dictstream.DictStream`**traces** contents for the list of specified keys.
+
+    ``DictStream[int]``
+        Fetches a view of the :class:`~PULSE.data.mltrace.MLTrace` object at the specified integer location in **DictStream.traces**
     
-    NOTE: 
-    Not all inherited methods from ObsPy :class:`~obspy.core.stream.Stream` are gauranteed to supported. 
+    ``DictStream[slice]``
+        Generates a slice view of the contents of :class:`~PULSE.data.dictstream.DictStream`
+
     
-    Please submit a bug report if you find one that you'd like to use that hasn't been supported!
+    **NOTES**:
+
+    * Not all inherited methods from ObsPy :class:`~obspy.core.stream.Stream` are gauranteed to supported. 
+    
+    * Please submit a bug report if you find one that you'd like to use that hasn't been supported!
     """
     _max_processing_info = 100
     def __init__(self, traces=[], header={}, key_attr='id', **options):
@@ -259,7 +331,7 @@ class DictStream(Stream):
     
     def __getitem__(self, index):
         """
-        Fusion between the __getitem__ method for lists and dictionaries.
+        Fusion of the :meth:`~dict.__getitem__` and :meth:`~list.__getitem__` methods.
 
         This accepts integer and slice indexing to access items in DictStream.traces, as well as str-type key values. 
 
@@ -394,10 +466,11 @@ class DictStream(Stream):
         return self           
 
     def extend(self, other, key_attr=None, **options):
-        """
-        Wrapper method for the _add_trace() method that
-        allows input of single or sets of Trace-type objects
-        to append to this DictStream with a specified key_attribute
+        """Wrapper method for :meth:`~PULSE.data.dictstream.DictStream._add_trace`
+        private method that allows input of one or many :class:`~obspy.core.trace.Trace`-like
+        objects that are appended to this DictStream using a specified key attribute
+
+        :param other: 
         """
         if key_attr is None:
             key_attr = self.default_key_attr
@@ -988,7 +1061,7 @@ class DictStream(Stream):
         :param normalize_src_traces: normalized traces for traces that have default weight codes, defaults to True
         :type normalize_src_traces: bool, optional
         :return: standard output from :meth: `obspy.core.stream.Stream.snuffle` which is added to Stream
-            via :class: `pyrocko.obspy_compat`
+            via :class:`pyrocko.obspy_compat`
         :rtype: tuple
         """        
         if 'obspy_compat' not in dir():

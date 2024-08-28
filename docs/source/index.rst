@@ -77,7 +77,10 @@ in the attached `LICENSE <https://github.com/pnsn/PULSE/blob/develop/LICENSE>`_ 
    :caption: Contents:
 
    self
-   PULSE.rst
+   PULSE.data.rst
+   PULSE.module.rst
+   PULSE.sequences.rst
+   PULSE.util.rst
 
 Indices and tables
 ==================

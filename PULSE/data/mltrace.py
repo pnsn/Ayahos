@@ -225,15 +225,7 @@ class MLTrace(Trace):
     """Extends the :class:`~obspy.core.trace.Trace` class to handle additional data and metadata associated with machine learning based workflows.
     in the Trace.data. 
 
-    New attribute:
-    :attr:`fold` -- this vector matches the shape of :attr:`data` and documents the number of valid observations associated with each entry in :attr:`data`.
-        fold values of 0 are assigned for masked data values and can also be assigned for data points that should be ignored (i.e., blinding) for processing.
-        fold values can be non-negative integers or float, with float values arising from resampling
-            also see    
-             - :meth:`~PULSE.data.mltrace.MLTrace.resample`
-             - :meth:`~PULSE.data.mltrace.MLTrace.interpolate`
-             - :meth:`~PULSE.data.mltrace.MLTrace.decimate`
-    
+
     :param data: data vector to write to this MLTrace, defaults to empty numpy array
     :type data: numpy.ndarray
     :param fold: vector conveying the number of observations associated with each
@@ -242,6 +234,17 @@ class MLTrace(Trace):
     :type fold: NoneType or numpy.ndarray
     :param header: initial values for the MLStats object
     :type header: dict or NoneType, optional
+
+    :var data: 
+    :var fold: vector that matches the shape of :var:`data` and documents the number of valid observations associated with each entry in :attr:`data`.
+        fold values of 0 are assigned for masked data values and can also be assigned for data points that should be ignored (i.e., blinding) for processing.
+        fold values can be non-negative integers or float, with float values arising from resampling
+            also see    
+             - :meth:`~PULSE.data.mltrace.MLTrace.resample`
+             - :meth:`~PULSE.data.mltrace.MLTrace.interpolate`
+             - :meth:`~PULSE.data.mltrace.MLTrace.decimate`
+
+    
 
     :: UPDATED METHODS ::
     .__add__     - aliases to the .merge() method that is similar to, albiet with fewer options,
@@ -276,7 +279,7 @@ class MLTrace(Trace):
     """
     _max_processing_info = 10
 
-    def __init__(self, data=np.array([], dtype=np.float32), fold=None, header=None):
+    def __init__(self, data=np.array([]), fold=None, header=None, dtype=np.float32):
         """
         Initialize an MLTrace object
         
@@ -288,8 +291,7 @@ class MLTrace(Trace):
         :type fold: NoneType or numpy.ndarray
         :param header: initial values for the MLStats object, defaults to None
         :type header: dict or NoneType, optional
-        :return: self
-        :rtype: PULSE.data.mltrace.MLTrace
+        :param dtype: numpy datatype to use for :var:`data` and :var:`fold`
 
         """
         # If a trace is passed as data, do super().__init__ with it's data & header
@@ -328,7 +330,7 @@ class MLTrace(Trace):
         # TODO: Make real fix to this bandage
         # Ignore the warnings arising from MLTrace.__add__'s use of np.where
         warnings.filterwarnings('ignore', r'All-NaN (slice|axis) encountered')
-
+        
     ########################
     # VIEW-BASED METHODS ###
     ######################## 
@@ -1906,13 +1908,13 @@ class MLTrace(Trace):
     
     fvalid = property(get_valid_fraction)
 
-    def get_id_element_dict(self):
-        """Get a dictionary of commonly used trace naming attributes
+    def get_id_keys(self):
+        """Get a dictionary of commonly used trace naming strings
 
-        :return key_opts: dictionary of attribute names and values 
-        :rtype key_opts: dict
+        :return:
+         **id_keys** (*dict*) -- dictionary of attribute names and values 
         """        
-        key_opts = {'id': self.id,
+        id_keys = {'id': self.id,
                     'instrument': self.instrument,
                     'site': self.site,
                     'inst': self.inst,
@@ -1926,11 +1928,12 @@ class MLTrace(Trace):
                     'weight': self.stats.weight
                     }
         # If id is not in traces.keys() - use dict.update
-        return key_opts
+        return id_keys
     
-    key_opts = property(get_id_element_dict)
+    id_keys = property(get_id_keys)
 
     def why(self):
+        """Have fun storming the castle"""
         print('True love is the greatest thing on Earth - except for an MLT...')
 
     # TODO: Is this method necessary as a core method?

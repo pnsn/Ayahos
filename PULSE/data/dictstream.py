@@ -142,7 +142,7 @@ class DictStreamStats(AttribDict):
 
 class DictStream(Stream):
     """:class:`~obspy.core.stream.Stream`-like object hosting hosting :class:`~PULSE.data.mltrace.MLTrace` objects.
-    :class:`~PULSE.data.dictstream.DictStream that uses a :class:`~dict` **trace** attribute, rather than the :class:`~list` used in its forebearer object 
+    :class:`~PULSE.data.dictstream.DictStream` that uses a :class:`~dict` **trace** attribute, rather than the :class:`~list` used in its forebearer object 
 
     :param traces: initial list of ObsPy Trace-lke objects, defaults to []
     :type traces: list of :class:`~obspy.core.trace.Trace` (or children) objects, optional
@@ -158,21 +158,27 @@ class DictStream(Stream):
                 Character 1: Instrument character
                 Character 2: Component character
 
-        Supported values:
+        Supported keys:
             'id' - N.S.L.C(.M.W) code (see :class:`~PULSE.data.mltrace.MLTrace`)
             'site' - N.S code
             'inst' - Band+Instrument characters
             'instrument' - N.S.L.BandInst?(.M.W)
             'component' - component character
             'mod': - M.W code
+            'int': - index-valued integers
 
-        also see :meth: `~PULSE.data.mltrace.MLTrace.get_id_element_dict`
+        also see :meth:`~PULSE.data.mltrace.MLTrace.get_id_element_dict`
     :param **options: key word argument gatherer that passes optional kwargs to
         :meth: `~PULSE.data.dictstream.DictStream.__add__` for merging input
         traces that have the same `key_attr`
         NOTE: This is how DictStream objects handle matching trace ID's (key_attr values)
         for multiple traces.
     :type **options: kwargs
+
+    :var stats: A container :class:`~PULSE.data.dictstream.DictStreamStats` for additional header
+        information for the DictStream.
+    :var traces: A container :class:`~dict` for :class:`~PULSE.data.mltrace.MLTrace`-type objects.
+    :var key_attr: Key attribute name used by this :class:`~PULSE.data.dictstream.DictStreamStats` object.
 
     .. rubric:: Basic Usage
     >>> from PULSE.data.dictstream import DictStream
@@ -212,7 +218,7 @@ class DictStream(Stream):
 
     Users can specify the key attribute used for auto-generating keys in **DictStream.traces**
     
-    .. rubric:: Integer Indexing
+    .. rubric:: Indexing and Slicing
     >>> dst[0]
     BW.RJOB.--.EHZ.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples | Fold: [1] 1.00
 
@@ -221,14 +227,12 @@ class DictStream(Stream):
 
     **Note**: input ObsPy :class:`~obspy.core.trace.Trace` object(s) are automatically converted into :class:`~PULSE.data.mltrace.MLTrace` objects.
     
-    .. rubric:: Key Indexing
     >>> dst['BW.RJOB.--.EHN..']
     BW.RJOB.--.EHN.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples | Fold: [1] 1.00
 
     Indexing with a string value that matches a key in **DictStream.traces** returns a view of the 
     corresponding :class:`~PULSE.data.mltrace.MLTrace` object.
 
-    .. rubric:: Slice Indexing
     >>> dst[1:]
     --Stats--
            common_id: BW.RJOB.--.EH?..
@@ -246,7 +250,6 @@ class DictStream(Stream):
     :class:`~PULSE.data.mltrace.MLTrace` objects at the specified slice position(s). This matches the
     behavior of slice indexing with ObsPy :class:`~obspy.core.stream.Stream` objects.
 
-    .. rubric:: Key List Indexing
     >>> dst[['BW.RJOB.--.EHZ..','BW.RJOB.--.EHN..']]
     --Stats--    
            common_id: BW.RJOB.--.EH?..    
@@ -259,7 +262,6 @@ class DictStream(Stream):
     2 MLTrace(s) in DictStream
     BW.RJOB.--.EHZ.. : BW.RJOB.--.EHZ.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples
     BW.RJOB.--.EHN.. : BW.RJOB.--.EHN.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples
-   
 
     Indexing with a list of keys returns a returns a new :class:`~PULSE.data.dictstream.DictStream` object containing a view
     of matching keyed :class:`~PULSE.data.mltrace.MLTrace` objects.
@@ -274,31 +276,14 @@ class DictStream(Stream):
     ``DictStreamA += DictStreamB``
         Extends the DictStream object ``DictStreamA`` with all traces from ``DictStreamB``.
     
-    **Indexing and Slicing**
-
-    All indexing returns a new :class:`~PULSE.data.dictstream.DictStream` object containing views of
-    the :class:`~PULSE.data.mltrace.MLTrace` objects in the source :class:`~PULSE.data.dictstream.DictStream` object.
-
-    ``DictStream['key']``
-        Fetches a view of the :class:`~PULSE.data.mltrace.MLTrace`-like value tied to specified 'key'.
-
-    ``DictStream[['key1','key2']]``
-        Fetches a slice of the :class:`~PULSE.data.dictstream.DictStream`**traces** contents for the list of specified keys.
-
-    ``DictStream[int]``
-        Fetches a view of the :class:`~PULSE.data.mltrace.MLTrace` object at the specified integer location in **DictStream.traces**
-    
-    ``DictStream[slice]``
-        Generates a slice view of the contents of :class:`~PULSE.data.dictstream.DictStream`
-
-    
     **NOTES**:
 
-    * Not all inherited methods from ObsPy :class:`~obspy.core.stream.Stream` are gauranteed to supported. 
+    * Not all inherited methods from ObsPy :class:`~obspy.core.stream.Stream` are gauranteed to be supported. 
     
     * Please submit a bug report if you find one that you'd like to use that hasn't been supported!
     """
     _max_processing_info = 100
+    supported_keys = list(MLTrace().get_id_keys().keys())
     def __init__(self, traces=[], header={}, key_attr='id', **options):
         # initialize as empty stream
         super().__init__()
@@ -309,13 +294,12 @@ class DictStream(Stream):
         self.stats = DictStreamStats(header=header)
         # Redefine self.traces as dict
         self.traces = {}
-        self._attr_keys = ['id', 'site','inst','instrument','mod','component']
-        if key_attr in self._attr_keys:
-            self.default_key_attr = key_attr
+        if key_attr in self.supported_keys:
+            self.key_attr = key_attr
         else:
-            raise ValueError
+            raise ValueError(f'input key_attr not in supported_keys: {self.supported_keys}')
         
-        self.__iadd__(traces, key_attr=self.default_key_attr, **options)
+        self.extend(traces, **options)
         self.stats.common_id = self.get_common_id()
 
     #####################################################################
@@ -442,7 +426,7 @@ class DictStream(Stream):
         :param **options: key-word argument gatherer that passes to DictStream.__init__
         :type **options: kwargs
             # NOTE: If key_attr is not specified in **options, 
-            #     the new DictStream uses key_attr = self.default_key_attr
+            #     the new DictStream uses key_attr = self.key_attr
         :raises TypeError: If other's type does not comply
         :return: new DictStream object containing traces from self and other
         :rtype: PULSE.data.dictstream.DictStream
@@ -453,114 +437,77 @@ class DictStream(Stream):
             raise TypeError
         traces = [tr for tr in self.traces] + other
         if 'key_attr' not in options.keys():
-            options.upate({'key_attr': self.default_key_attr}) 
+            options.upate({'key_attr': self.key_attr}) 
         return self.__class__(traces=traces, **options)
 
     def __iadd__(self, other, **options):
         """
-        Alias for the DictStream.extend() method to allow
-        use of the += operator
-
+        Alias for the :meth:`~PULSE.data.dictstream.DictStream.extend` method, allowing use of the += operator.
         """
         self.extend(other, **options) 
         return self           
 
-    def extend(self, other, key_attr=None, **options):
-        """Wrapper method for :meth:`~PULSE.data.dictstream.DictStream._add_trace`
-        private method that allows input of one or many :class:`~obspy.core.trace.Trace`-like
-        objects that are appended to this DictStream using a specified key attribute
+    def extend(self, other, ascopy=True, **options):
+        """Core method for adding :class:`~PULSE.data.mltrace.MLTrace` objects to this DictStream.
+        In addition to directly incorporating PULSE class objects :class:`~PULSE.data.mltrace.MLTrace` and :class:`~PULSE.data.mltracebuff.MLTraceBuff`,
+        and iterable groups thereof, this method also accepts any instances of ObsPy :class:`~obspy.core.trace.Trace` objects and
+        iterable sets thereof. In this case, Trace-like objects are converted into :class:`~PULSE.data.mltrace.MLTrace` objects.
 
-        :param other: 
-        """
-        if key_attr is None:
-            key_attr = self.default_key_attr
-        elif key_attr not in self._attr_keys:
-            raise ValueError
+        :param other: waveform (meta)data object, or iterable sets thereof, to add to this DictStream
+        :type other: obspy.core.trace.Trace and iterable groups thereof
+        :param ascopy: should MLTrace objects from **other** be added as views (False) or deepcopies (True) of the source data? Defaults to True.
+        :type ascopy: bool, optional
+        :param options: key-word argument collector that is passed to :meth:`~PULSE.data.mltrace.MLTrace.__add__` in the event
+            that a trace-like object in **other** has the same key as an existing value in **DictStream.traces**
+        :type options: kwargs
 
-        if isinstance(other, Trace):
-            self._add_trace(other, key_attr=key_attr, **options)
-        elif isinstance(other, Stream):
-            self._add_stream(other, key_attr=key_attr, **options)
-        elif isinstance(other, (list, tuple)):
-            if all(isinstance(_tr, Trace) for _tr in other):
-                self._add_stream(other, key_attr=key_attr, **options)
-            else:
-                raise TypeError('other elements are not all Trace-like types')
-        else:
-            raise TypeError(f'other type "{type(other)}" not supported.')
+        **Notes**\:
 
-    def _add_trace(self, other, key_attr=None, **options):
-        """
-        Add a trace-like object `other` to this DictStream using elements from
-        the trace's id as the dictionary key in the DictStream.traces dictionary
+        * Iterable groupings include ObsPy :class:`~obspy.core.stream.Stream`, child-classes like PULSE's :class:`~PULSE.data.dictstream.DictStream`.
+        and Python iterable objects: :class:`~list`, :class:`~tuple`, and :class:`~set`.
 
-        :: INPUTS ::
-        :param other: ObsPy Trace-like object to add
-        :type: other: obspy.core.trace.Trace-like
-        :param key_attr: name of the attribute to use as a key, default is None
-                        Supercedes the default value set in DictStream.__init__()
-                        Supported Values:
-                            'id' - full N.S.L.C(.M.W) code
-                            'site' - Net + Station
-                            'inst' - Location + Band & Instrument codes from Channel
-                            'instrument'- 'site' + 'inst'
-                            'mod' - Model + Weight codes
-                            'component' - component code from Channel
-        :type key_attr: str, optional
-        :param **options:key-word argument gatherer to pass to the 
-                        MLTrace.__add__() or MLTraceBuffer.__add__() method
-        :type **options: kwargs
-        """
-        if key_attr is None:
-            key_attr = self.default_key_attr
-        elif key_attr not in self._attr_keys:
-            raise ValueError
+        * This method uses the **DictStream.key_attr** value to generate keys for items in **other** and resolves matching
+        keys in **DictStream.traces** and thos arising from **other** using :meth:`~PULSE.data.mltrace.MLTrace.__add__`.
         
-        # If potentially appending a wave
-        if isinstance(other, dict):
-            try:
-                other = wave2mltrace(other)
-            except SyntaxError:
-                pass
-        # If appending a trace-type object
-        elif isinstance(other, Trace):
-            # If it isn't an MLTrace, __init__ one from data & header
-            if not isinstance(other, MLTrace):
-                other = MLTrace(data=other.data, header=other.stats)
-            else:
-                pass
-        # Otherwise
-        else:
-            raise TypeError(f'other {type(other)} not supported.')
-        
+        Also see :meth:`~PULSE.data.dictstream.DictStream.__iter__`.
+        """
+        # Check if other is an MLTrace, if so, house it in a list
         if isinstance(other, MLTrace):
-            # Get id of MLTrace "other"
-            key_opts = other.key_opts
-            # If id is not in traces.keys() - use dict.update
-            key = key_opts[key_attr]
-            # If new key
-            if key not in self.traces.keys():
-                self.traces.update({key: other})
-            # If key is in traces.keys() - use __add__
+            mlts = [other]
+        # If other is an ObsPy Trace, convert to MLTrace and house it in a list
+        elif isinstance(other, Trace):
+            mlts = [MLTrace(data = other.data, header=other.stats, dtype=other.data.dtype)]
+        # Check if 
+        elif isinstance(other, (list, tuple, set, Stream)):
+            # If everything is an MLTrace, directly map
+            if all(isinstance(_e, MLTrace) for _e in other):
+                mlts = other
+            # If everything is at least an ObsPy trace, iterate across & convert as needed
+            elif all(isinstance(_e, Trace) for _e in other):
+                mlts = []
+                for _tr in other:
+                    if isinstance(_tr, MLTrace):
+                        if ascopy:
+                            mlts.append(_tr.copy())
+                        else:
+                            mlts.append(_tr)
+                    else:
+                        mlts.append(MLTrace(data = _tr.data, header=_tr.stats, dtype=_tr.data.dtype))
             else:
-                self.traces[key].__add__(other, **options)
-            self.stats.update_time_range(other)
-            self.stats.common_id = self.get_common_id()
+                raise TypeError('All elements of an iterable `other` must be type obspy.core.trace.Trace')
+        else:
+            raise TypeError(f'other of type {type(other)} not supported.')
+        # Iterate across all MLTrace-type objects and index based
+        for key, value in {mlt.id_keys[self.key_attr]: mlt for mlt in mlts}.items():
+            if key not in self.traces.keys():
+                self.traces.update({key: value})
+            else:
+                self.traces[key].__add__(value, **options)
+            # Update time range with each extension
+            self.stats.update_time_range(value)
+        # Update 
+        self.stats.common_id = self.get_common_id()
 
-    def _add_stream(self, stream, **options):
-        """
-        Supporting method to iterate across a stream-like object
-        and apply the _add_trace() DictStream class method
-
-        :: INPUTS ::
-        :param stream: iterable object containing obspy Trace-like objects
-        :type stream: obspy.core.stream.Stream or other list-like of obspy.core.trace.Trace-like objects
-        :param **options: optional key-word argument gatherer
-                        to pass kwargs to the DictStream._add_trace method
-        :type **options: kwargs, optional
-        """
-        for _tr in stream:
-            self._add_trace(_tr, **options)
 
     def __str__(self):
         """string representation of the full module/class path of
@@ -617,37 +564,109 @@ class DictStream(Stream):
     # SEARCH METHODS ####################################################
     #####################################################################
     
-    def fnselect(self, fnstr, key_attr=None, ascopy=False):
-        """
-        Find DictStream.traces.keys() strings that match the
-        input `fnstr` string using the fnmatch.filter() method
-        and compose a view (or copy) of the subset DictStream
+    def key_search(self, strings, key_attr=None, ascopy=False, inverse=False):
+        """Return a subset of MLTraces that match at least one unix-wildcard-compliant
+        string contained in strings as a new :class:`~PULSE.data.dictstream.DictStream` object.
 
-        :: INPUTS ::
-        :param fnstr: Unix wildcard compliant string to use for searching for matching keys
-        :type fnstr: str
-        :param key_attr: key attribute for indexing the view/copy
-                            of the source DictStream (see DictStream.__init__)
-                         None defaults to the self.default_key_attr attribute
-                            value of the source DictStream object
-        :type key_attr: str or None, optional
-        :param ascopy: should the returned DictStream be...
-                Default (False) a view (i.e., accessing the same memory blocks)
-                        (True) or a copy of the traces contained within?
+        Options are provided for conducting inverse searches and whether the subset
+        :class:`~PULSE.data.mltrace.MLTrace` object(s) are views of the originals or
+        deepcopy copies of the originals.
+        
+        :param strings: Unix-wildcard-compliant string, or iterable set thereof, to use for searching for matching keys
+        :type strings: str or list-like set thereof
+        :param ascopy: should the subset of MLTrace(s) be deepcopies of the originals? Defaults to False,
+            which provides a view of the original MLTrace objects (i.e., identical in-memory objects).
         :type ascopy: bool, optional
-        :return out: DictStream containing subset traces that match the specified `fnstr`
-        :rtype out: PULSE.data.dictstream.DictStream
+        :param inverse: should the subset be composed of items that *do not* match anything in **strings**? Defaults to False.
+        :type inverse: bool, optional
+        :return:
+            **out** (*PULSE.data.dictstream.DictStream*) -- new DictStream object containing a subset view or copy
+                    selected MLTrace objects.
+        
+        .. rubric:: Selecting and Inverse Selecting
+        >>> dst.key_select('*.*.*.??[NE].*')
+        --Stats--
+            common_id: BW.RJOB.--.EH?..
+        min_starttime: 2009-08-24T00:20:03.000000Z
+        max_starttime: 2009-08-24T00:20:03.000000Z
+            min_endtime: 2009-08-24T00:20:32.990000Z
+            max_endtime: 2009-08-24T00:20:32.990000Z
+            processing: []
+        -------
+        2 MLTrace(s) in DictStream
+        BW.RJOB.--.EHN.. : BW.RJOB.--.EHN.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples
+        BW.RJOB.--.EHE.. : BW.RJOB.--.EHE.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples
+        >>> dst.fnselect('*.*.*.??[NE].*', inverse=True)
+        --Stats--
+            common_id: BW.RJOB.--.EHZ..
+        min_starttime: 2009-08-24T00:20:03.000000Z
+        max_starttime: 2009-08-24T00:20:03.000000Z
+            min_endtime: 2009-08-24T00:20:32.990000Z
+            max_endtime: 2009-08-24T00:20:32.990000Z
+            processing: []
+        -------
+        1 MLTrace(s) in DictStream
+        BW.RJOB.--.EHZ.. : BW.RJOB.--.EHZ.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples
+        
+        Subset views of **DictStream.traces** contents can also be generated quickly using unix-wildcard-compliant
+        search strings using the :meth:`~PULSE.data.dictstream.DictStream.key_select` method. This tends to be faster
+        than than ObsPy Stream objects' :meth:`~obspy.core.stream.Stream.select` method, particularly for large sets
+        of (ML)Trace objects. See :meth:`~PULSE.data.dictstream.DictStream.key_select` documentation for more information.
+
         """
-        matches = fnmatch.filter(self.traces.keys(), fnstr)
-        out = self.__class__(header=self.stats.copy(), key_attr = self.default_key_attr)
+        # Compatability check for `strings`
+        if isinstance(strings, str):
+            strings = [strings]
+        elif isinstance(strings, (list, tuple)):
+            if all(isinstance(_e, str) for _e in strings):
+                pass
+            else:
+                raise TypeError('All elements of a list-like `strings` must be type str')
+        else:
+            raise TypeError('strings must be type str or a list-like thereof.')
+        if not isinstance(inverse, bool):
+            raise TypeError('inverse must be type bool')
+
+        # Initialize matches as a set
+        matches = set()
+        # Get traces keys as a set
+        tkeys = set(self.traces.keys())
+        # Iterate across each string in strings
+        for _e in strings:
+            # Get items that match the current string
+            imatches = fnmatch.filter(tkeys, _e)
+            # Update matches set with output of iterative match
+            matches.update(imatches)
+        # If doing inverse search, use :meth:`~set.difference_update` to remove all matches from the traces keys set
+        if inverse:
+            matches = tkeys.difference_update(matches)
+
+        # Iterate across (inverse)matched keys
+        traces = []
         for _m in matches:
             if ascopy:
-                _tr = self.traces[_m].copy()
+                traces.append(self.traces[_m].copy())
             else:
-                _tr = self.traces[_m]
-            out.extend(_tr, key_attr=key_attr)
-        out.stats.common_id = out.get_common_id()
+                traces.append(self.traces[_m])
+
+        # Initialize new DictStream
+        out = self.__class__(traces=traces, header=self.stats.copy(), key_attr = self.key_attr)
         return out
+
+
+        
+        # for _m in matches
+
+        # matches = fnmatch.filter(self.traces.keys(), strings)
+        # out = self.__class__(header=self.stats.copy(), key_attr = self.key_attr)
+        # for _m in matches:
+        #     if ascopy:
+        #         _tr = self.traces[_m].copy()
+        #     else:
+        #         _tr = self.traces[_m]
+        #     out.extend(_tr, key_attr=key_attr)
+        # out.stats.common_id = out.get_common_id()
+        # return out
     
     def fnpop(self, fnstr, key_attr=None):
         """Use a fnmatch.filter() search for keys that match the provided
@@ -662,15 +681,17 @@ class DictStream(Stream):
         :rtype: PULSE.data.dictstream.DictStream-like
         """        
         matches = fnmatch.filter(self.traces.keys(), fnstr)
-        out = self.__class__(header=self.stats.copy(), key_attr=self.default_key_attr)
+        out = self.__class__(header=self.stats.copy(), key_attr=self.key_attr)
         for _m in matches:
             out.extend(self.pop(_m), key_attr = key_attr)
         out.stats.common_id = out.get_common_id()
         return out
             
     
+
+
     def isin(self, iterable, key_attr=None, ascopy=False):
-        """
+        """ TODO: Merge this into select
         Return a subset view (or copy) of the contents of this
         DictStream with keys that conform to an iterable set
         of strings.
@@ -683,7 +704,7 @@ class DictStream(Stream):
                                 (also see DictStream.fnselect)
         :param key_attr: [str] - key attribute for indexing this view/copy
                         of the source DictStream (see DictStream.__init__)
-                         [None] - defaults to the .default_key_attr attribute
+                         [None] - defaults to the .key_attr attribute
                          value of the source DictStream object
         :param ascopy: [bool] return as an independent copy of the subset?
                         default - False
@@ -692,7 +713,7 @@ class DictStream(Stream):
         :: OUTPUT ::
         :return out: [PULSE.data.dictstream.DictStream] subset view/copy
         """
-        out = self.__class__(header=self.stats.copy(), key_attr = self.default_key_attr)
+        out = self.__class__(header=self.stats.copy(), key_attr = self.key_attr)
         matches = []
         for _e in iterable:
             matches += fnmatch.filter(self.traces.keys(), _e)
@@ -705,9 +726,47 @@ class DictStream(Stream):
         out.stats.common_id = out.get_common_id()
         return out
 
-    def exclude(self, iterable, key_attr=None, ascopy=False):
-        out = self.__class__(header=self.stats.copy(), key_attr = self.default_key_attr)
+    def fnexclude(self, iterable, ascopy=False):
+        """Create a new :class:`~PULSE.data.dictstream.DictStream` object containing
+        and inverse-search set of :class:`~PULSE.data.mltrace.MLTrace` objects using
+        unix-wildcard-compliant search string(s) to match keys in **DictStream.traces**
+        using the :meth:`~fnmatch.filter` method.
+
+        This is the inverse of the :meth:`~PULSE.data.dictstream.DictStream.fnselect` method
+        .. rubric::
+        >>> dst = DictStream(traces=read())
+        >>> dst.fnexclude('*.*.*.??[NE].*')
+
+        --Stats--
+            common_id: BW.RJOB.--.EHZ..
+        min_starttime: 2009-08-24T00:20:03.000000Z
+        max_starttime: 2009-08-24T00:20:03.000000Z
+          min_endtime: 2009-08-24T00:20:32.990000Z
+          max_endtime: 2009-08-24T00:20:32.990000Z
+           processing: []
+        -------
+        1 MLTrace(s) in DictStream
+        BW.RJOB.--.EHZ.. : BW.RJOB.--.EHZ.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples
+
+        :param iterable: one or many fnmatch-compliant strings
+        :type iterable: str, or list-like thereof
+        :param ascopy: should the output DictStream contain deepcopys of the original MLTraces
+            that do not match string(s) in **iterable**? Defaults to False.
+        :type ascopy: bool, optional
+        :returns:
+            **out** -- (*PULSE.data.dictstream.DictStream*) - inverse subset of MLTraces
+        """        
+        out = self.__class__(header=self.stats.copy(), key_attr = self.key_attr)
         matches = []
+        if isinstance(iterable, str):
+            iterable = [iterable]
+        elif isinstance(iterable, (list, tuple)):
+            if all(isinstance(_e, str) for _e in iterable):
+                pass
+            else:
+                raise TypeError(f'list-like iterable must comprise only string elements')
+        else:
+            raise TypeError('iterable must be type str or a list-like thereof.')
         for _e in iterable:
             matches += fnmatch.filter(self.traces.keys(), _e)
         for _k in self.traces.keys():
@@ -716,16 +775,14 @@ class DictStream(Stream):
                     _tr = self.traces[_k].copy()
                 else:
                     _tr = self.traces[_k]
-                out.extend(_tr, key_attr=key_attr)
+                out.extend(_tr, key_attr=self.key_attr)
         out.stats.common_id = out.get_common_id()
         return out
 
 
-    def get_unique_id_elements(self):
+    def _get_unique_id_elements(self):
         """
-        Compose a dictionary containing lists of
-        unique id elements: Network, Station, Location,
-        Channel, Model, Weight in this DictStream
+        Compose a dictionary containing lists of unique id elements: Network, Station, Location, Channel, Model, Weight in this DictStream
 
         :: OUTPUT ::
         :return out: [dict] output dictionary keyed
@@ -751,7 +808,7 @@ class DictStream(Stream):
                        [N, S, L, C, M, W]))
         return out
     
-    def get_common_id_elements(self):
+    def _get_common_id_elements(self):
         """
         Return a dictionary of strings that are 
         UNIX wild-card representations of a common
@@ -763,7 +820,7 @@ class DictStream(Stream):
         :return out: [dict] dictionary of elements keyed
                     with the ID element name
         """
-        ele = self.get_unique_id_elements()
+        ele = self._get_unique_id_elements()
         out = {}
         for _k, _v in ele.items():
             if len(_v) == 0:
@@ -805,7 +862,7 @@ class DictStream(Stream):
         :: OUTPUT ::
         :return out: [str] output stream
         """
-        ele = self.get_common_id_elements()
+        ele = self._get_common_id_elements()
         out = '.'.join(ele.values())
         return out
 
@@ -1216,3 +1273,62 @@ class DictStream(Stream):
 #                    save_processing=save_processing,
 #                    filename_format=filename_format,
 #                    **obspy_write_options)
+        
+
+
+    # def _add_trace(self, other, **options):
+    #     """
+    #     Add a trace-like object `other` to this DictStream using elements from
+    #     the trace's id as the dictionary key in the DictStream.traces dictionary
+
+    #     :: INPUTS ::
+    #     :param other: ObsPy Trace-like object to add
+    #     :type: other: obspy.core.trace.Trace-like or dict
+    #     :param **options:key-word argument gatherer to pass to the 
+    #                     MLTrace.__add__() or MLTraceBuffer.__add__() method
+    #     :type **options: kwargs
+    #     """
+    #     # If potentially appending a wave
+    #     if isinstance(other, dict):
+    #         try:
+    #             other = wave2mltrace(other)
+    #         except SyntaxError:
+    #             pass
+    #     # If appending a trace-type object
+    #     elif isinstance(other, Trace):
+    #         # If it isn't an MLTrace, __init__ one from data & header
+    #         if not isinstance(other, MLTrace):
+    #             other = MLTrace(data=other.data, header=other.stats)
+    #         else:
+    #             pass
+    #     # Otherwise
+    #     else:
+    #         raise TypeError(f'other {type(other)} not supported.')
+        
+    #     if isinstance(other, MLTrace):
+    #         # Get id of MLTrace "other"
+    #         key_opts = other.key_opts
+    #         # If id is not in traces.keys() - use dict.update
+    #         key = key_opts[self.key_attr]
+    #         # If new key
+    #         if key not in self.traces.keys():
+    #             self.traces.update({key: other})
+    #         # If key is in traces.keys() - use __add__
+    #         else:
+    #             self.traces[key].__add__(other, **options)
+    #         self.stats.update_time_range(other)
+    #         self.stats.common_id = self.get_common_id()
+
+    # def _add_stream(self, stream, **options):
+    #     """
+    #     Supporting method to iterate across sets of trace-like objects in a stream-like object
+    #     and apply the :meth:`~PULSE.data.dictstream.DictStream._add_trace` method.
+
+    #     :param stream: iterable object containing obspy Trace-like objects
+    #     :type stream: obspy.core.stream.Stream or other list-like of obspy.core.trace.Trace-like objects
+    #     :param **options: optional key-word argument gatherer
+    #                     to pass kwargs to the :meth:`~PULSE.data.dictstream.DictStream._add_trace` method
+    #     :type **options: kwargs, optional
+    #     """
+    #     for _tr in stream:
+    #         self._add_trace(_tr, **options)

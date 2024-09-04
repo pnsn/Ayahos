@@ -1,5 +1,5 @@
 """
-:module: PULSE.module.buffer
+:module: PULSE.mod.buffer
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
@@ -10,11 +10,11 @@
 
 Classes
 -------
-:class:`~PULSE.module.buffer.BufferMod`
+:class:`~PULSE.mod.buffer.BufferMod`
 """
 import logging, sys
 from numpy import isfinite
-from PULSE.module.base import BaseMod
+from PULSE.mod.base import BaseMod
 from PULSE.data.mltrace import MLTrace
 from PULSE.data.mltracebuff import MLTraceBuff
 from PULSE.data.dictstream import DictStream
@@ -53,9 +53,9 @@ class BufferMod(BaseMod):
                 also see :meth:`~PULSE.data.mltrace.MLTrace.__add__`
                          :meth:`~PULSE.data.mltracebuffer.MLTraceBuffer.append`
         :type method: int or str, optional
-        :param max_pulse_size: maximum number of items to pull from source deque for each call of :meth:`~PULSE.module.buffer.BufferMod.pulse`, defaults to 10000
+        :param max_pulse_size: maximum number of items to pull from source deque for each call of :meth:`~PULSE.mod.buffer.BufferMod.pulse`, defaults to 10000
         :type max_pulse_size: int, optional
-            also see :meth:`~PULSE.module._base.BaseMod.pulse`
+            also see :meth:`~PULSE.mod._base.BaseMod.pulse`
         :param **add_kwargs: key word argument collector to pass to MLTraceBuffer's initialization **kwargs
             that in turn pass to :meth:`~PULSE.data.mltrace.MLTrace.__add__`
             NOTE: add_kwargs with matching keys to pre-specified values will be ignored to prevent multiple call errors
@@ -99,9 +99,9 @@ class BufferMod(BaseMod):
                 also see :meth:`~PULSE.data.mltrace.MLTrace.__add__`
                          :meth:`~PULSE.data.mltracebuffer.MLTraceBuffer.append`
         :type method: int or str, optional
-        :param max_pulse_size: maximum number of items to pull from source deque for each call of :meth:`~PULSE.module.buffer.BufferMod.pulse`, defaults to 10000
+        :param max_pulse_size: maximum number of items to pull from source deque for each call of :meth:`~PULSE.mod.buffer.BufferMod.pulse`, defaults to 10000
         :type max_pulse_size: int, optional
-            also see :meth:`~PULSE.module._base.BaseMod.pulse`
+            also see :meth:`~PULSE.mod._base.BaseMod.pulse`
         :param **add_kwargs: key word argument collector to pass to MLTraceBuffer's initialization **kwargs
             that in turn pass to :meth:`~PULSE.data.mltrace.MLTrace.__add__`
             NOTE: add_kwargs with matching keys to pre-specified values will be ignored to prevent multiple call errors
@@ -167,7 +167,7 @@ class BufferMod(BaseMod):
     def _unit_input_from_input(self, input):
         """
         POLYMORPHIC METHOD
-        Last updated with :class:`~PULSE.module.buffer.BufferMod`
+        Last updated with :class:`~PULSE.mod.buffer.BufferMod`
 
         Claim the left-most object in `input` using popleft(), ensure it is a
         :class:`~PULSE.data.mltrace.MLTrace` object, or a collection thereof
@@ -195,7 +195,7 @@ class BufferMod(BaseMod):
     def _unit_process(self, unit_input):
         """
         POLYMORPHIC METHOD
-        Last updated with :class:`~PULSE.module.buffer.BufferMod`
+        Last updated with :class:`~PULSE.mod.buffer.BufferMod`
 
         Iterate across MLTraces in `unit_input` and either generate new
         MLTraceBuffers keyed by the MLTrace.id or append the MLTrace
@@ -236,7 +236,7 @@ class BufferMod(BaseMod):
     def _capture_unit_output(self, unit_output):
         """
         POLYMORPHIC METHOD
-        Last updated with :class:`~PULSE.module.buffer.BufferMod`
+        Last updated with :class:`~PULSE.mod.buffer.BufferMod`
 
         Placeholder/termination in case unit_output is not type int.
 
@@ -252,7 +252,7 @@ class BufferMod(BaseMod):
     def _should_next_iteration_run(self, unit_output):
         """
         POLYMORPHIC METHOD
-        Last updated with :class:`~PULSE.module.buffer.BufferMod`
+        Last updated with :class:`~PULSE.mod.buffer.BufferMod`
 
         Signal early stopping (status = False) if unit_input = 0
         i.e., no new trace segments buffered

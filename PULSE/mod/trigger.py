@@ -1,5 +1,5 @@
 """
-:module: PULSE.module.trigger
+:module: PULSE.mod.trigger
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
@@ -11,14 +11,15 @@
 
 Classes
 -------
-:class:`~PULSE.module.trigger.TriggerMod`
+:class:`~PULSE.mod.trigger.TriggerMod`
 """
 
 import logging, sys
 from PULSE.data.mltrace import MLTrace
 from PULSE.data.dictstream import DictStream
-from PULSE.module.base import BaseMod
+from PULSE.mod.base import BaseMod
 from PULSE.data.trigger import Trigger, GaussTrigger, QuantTrigger, Logo
+from PULSE.data.pick import Pick2KMsg
 from obspy.signal.trigger import trigger_onset
 import numpy as np
 
@@ -30,7 +31,7 @@ class BuffTriggerMod(BaseMod):
     using their *fold* attribute and window overlap lengths to only trigger on data that will not receive further
     updates from subsequent windows appended to the MLTraceBuff's. 
 
-    The :meth:`~PULSE.module.trigger.BuffTriggerMod._unit_process` method for this class conducts the following steps:
+    The :meth:`~PULSE.mod.trigger.BuffTriggerMod._unit_process` method for this class conducts the following steps:
         1) scans across each :class:`~PULSE.data.mltracebuff.MLTracBuff entry in a :class:`~PULSE.data.dictstream.DictStream`
         2) runs :meth:`~obspy.signal.trigger.trigger_onset` on samples with fold :math:`\\geq` **threshold**
         3) converts triggers to :class:`~PULSE.data.trigger.Trigger`-type objects (see **method** below)
@@ -228,7 +229,7 @@ class BuffTriggerMod(BaseMod):
     def _should_this_iteration_run(self, input, input_size, iter_number):
         """
         POLYMORPHIC
-        Last updated with :class:`~PULSE.module.trigger.BuffTriggerMod`
+        Last updated with :class:`~PULSE.mod.trigger.BuffTriggerMod`
 
         Signal early stopping (status = False) if:
          - type(input) != :class:`~PULSE.data.dictstream.DictStream
@@ -259,7 +260,7 @@ class BuffTriggerMod(BaseMod):
     def _unit_input_from_input(self, input):
         """
         POLYMORPHIC
-        Last update with :class:`~PULSE.module.trigger.BuffTriggerMod`
+        Last update with :class:`~PULSE.mod.trigger.BuffTriggerMod`
 
         Get a view of a single MLTrace-like object from input
 
@@ -313,7 +314,7 @@ class BuffTriggerMod(BaseMod):
     def _unit_process(self, unit_input):
         """
         POLYMORPHIC
-        Last update with :class:`~PULSE.module.trigger.BuffTriggerMod`
+        Last update with :class:`~PULSE.mod.trigger.BuffTriggerMod`
 
         Iterate across each MLTrace-like object in **unit_input** and conduct triggering and picking
         on traces with predicted probability labels that match self.phases_to_pick entries and do the 
@@ -323,7 +324,7 @@ class BuffTriggerMod(BaseMod):
             2) for each trigger
 
         The right-most self.leading_mute samples are ignored in this process, as described in the
-        :class:`~PULSE.module.trigger.BuffTriggerMod` class docstring.
+        :class:`~PULSE.mod.trigger.BuffTriggerMod` class docstring.
 
 
 
@@ -403,7 +404,7 @@ class BuffTriggerMod(BaseMod):
     def _capture_unit_output(self, unit_output):
         """
         POLYMORPHIC
-        Last updated with :class:`~PULSE.module.trigger.BuffTriggerMod`
+        Last updated with :class:`~PULSE.mod.trigger.BuffTriggerMod`
 
         Return None - capture is handled in _unit_process
 

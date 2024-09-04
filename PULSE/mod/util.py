@@ -1,4 +1,4 @@
-from PULSE.module.base import BaseMod
+from PULSE.mod.base import BaseMod
 
 class EchoMod(BaseMod):
     """
@@ -20,8 +20,8 @@ class EchoMod(BaseMod):
 
 class BreakpointMod(BaseMod):
     """
-    A module that calls breakpoints within :meth:`~PULSE.module.util.BreakpointMod.pulse`
-    at the :meth:`~PULSE.module.util.BreakpointMod._mesaure_input_size` subroutine call 
+    A module that calls breakpoints within :meth:`~PULSE.mod.util.BreakpointMod.pulse`
+    at the :meth:`~PULSE.mod.util.BreakpointMod._mesaure_input_size` subroutine call 
     (before the iteration loop in pulse),
     
     This is intended to provide inspection points within an operational
@@ -56,25 +56,25 @@ class LogGateMod(BaseMod):
         self.bounding_max = self.max_pulse_size
 
 
-class RCGateMod(BaseMod):
-    """Use a regularized coulomb relationship for dynamically scaling
-    the max_pulse_size of this Mod
+# class RCGateMod(BaseMod):
+#     """Use a regularized coulomb relationship for dynamically scaling
+#     the max_pulse_size of this Mod
 
-    See Joughin, Smith, and Schoof (2019, GRL)
-    replace :math:`\\tau_b` with max_pulse_size
-    replace :math:`u_b` with len(self.output) = :math:`O`
+#     See Joughin, Smith, and Schoof (2019, GRL)
+#     replace :math:`\\tau_b` with max_pulse_size
+#     replace :math:`u_b` with len(self.output) = :math:`O`
 
-    max_pulse_size = -C * \left(\frac{|O|}{|O| + O_0}\right)^{1/m} \frac{O}{|O|}
+#     max_pulse_size = -C * \left(\frac{|O|}{|O| + O_0}\right)^{1/m} \frac{O}{|O|}
 
-    Parameters to assign
-    C - prefactor
-    m - exponent
-    O_0 - reference output size
+#     Parameters to assign
+#     C - prefactor
+#     m - exponent
+#     O_0 - reference output size
 
-    :param BaseMod: _description_
-    :type BaseMod: _type_
-    """
-    def __init__(self):
+#     :param BaseMod: _description_
+#     :type BaseMod: _type_
+#     """
+#     def __init__(self):
 
 
     

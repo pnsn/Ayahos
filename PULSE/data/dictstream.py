@@ -281,10 +281,22 @@ class DictStream(Stream):
     * Not all inherited methods from ObsPy :class:`~obspy.core.stream.Stream` are gauranteed to be supported. 
     
     * Please submit a bug report if you find one that you'd like to use that hasn't been supported!
+
+    DictStream Class Methods
+    ========================
     """
     _max_processing_info = 100
     supported_keys = list(MLTrace().get_id_keys().keys())
     def __init__(self, traces=[], header={}, key_attr='id', **options):
+        """Initialize a :class:`~PULSE.data.dictstream.DictStream` object
+
+        :param traces: ObsPy Trace-like object, or iterable collections thereof, defaults to [].
+        :type traces: obspy.core.trace.Trace-like or list-like collections thereof, optional. See Notes.
+        :param header: Non-default parameters to pass to the initialization of this DictStream's :class:`~PULSE.data.dictstream.DictStreamStats` attribute, defaults to {}
+        :type header: dict, optional
+        :param key_attr: Attribute of each MLTrace (or ObsPy Trace-like object converted into a PULSE MLTrace) to use for **DictStream.traces** key values, defaults to 'id'
+        :type key_attr: str, optional
+        """        
         # initialize as empty stream
         super().__init__()
         # Create logger
@@ -708,8 +720,7 @@ class DictStream(Stream):
 
 
     def isin(self, iterable, key_attr=None, ascopy=False):
-        """ TODO: Merge this into select
-        Return a subset view (or copy) of the contents of this
+        """Return a subset view (or copy) of the contents of this
         DictStream with keys that conform to an iterable set
         of strings.
 
@@ -729,6 +740,8 @@ class DictStream(Stream):
                             alter the source DictStream's contents
         :: OUTPUT ::
         :return out: [PULSE.data.dictstream.DictStream] subset view/copy
+
+        TODO: Merge this into select
         """
         out = self.__class__(header=self.stats.copy(), key_attr = self.key_attr)
         matches = []
@@ -750,10 +763,18 @@ class DictStream(Stream):
         using the :meth:`~fnmatch.filter` method.
 
         This is the inverse of the :meth:`~PULSE.data.dictstream.DictStream.fnselect` method
-        .. rubric::
+
+        :param iterable: one or many fnmatch-compliant strings
+        :type iterable: str, or list-like thereof
+        :param ascopy: should the output DictStream contain deepcopys of the original MLTraces
+            that do not match string(s) in **iterable**? Defaults to False.
+        :type ascopy: bool, optional
+        :returns:
+            **out** -- (*PULSE.data.dictstream.DictStream*) - inverse subset of MLTraces
+
+        .. rubric:: E.g., exclude North and East components
         >>> dst = DictStream(traces=read())
         >>> dst.fnexclude('*.*.*.??[NE].*')
-
         --Stats--
             common_id: BW.RJOB.--.EHZ..
         min_starttime: 2009-08-24T00:20:03.000000Z
@@ -765,13 +786,6 @@ class DictStream(Stream):
         1 MLTrace(s) in DictStream
         BW.RJOB.--.EHZ.. : BW.RJOB.--.EHZ.. | 2009-08-24T00:20:03.000000Z - 2009-08-24T00:20:32.990000Z | 100.0 Hz, 3000 samples
 
-        :param iterable: one or many fnmatch-compliant strings
-        :type iterable: str, or list-like thereof
-        :param ascopy: should the output DictStream contain deepcopys of the original MLTraces
-            that do not match string(s) in **iterable**? Defaults to False.
-        :type ascopy: bool, optional
-        :returns:
-            **out** -- (*PULSE.data.dictstream.DictStream*) - inverse subset of MLTraces
         """        
         out = self.__class__(header=self.stats.copy(), key_attr = self.key_attr)
         matches = []
@@ -798,13 +812,10 @@ class DictStream(Stream):
 
 
     def _get_unique_id_elements(self):
-        """
-        Compose a dictionary containing lists of unique id elements: Network, Station, Location, Channel, Model, Weight in this DictStream
+        """Compose a dictionary containing lists of unique id elements: Network, Station, Location, Channel, Model, Weight in this DictStream
 
-        :: OUTPUT ::
-        :return out: [dict] output dictionary keyed
-                by the above elements and valued
-                as lists of strings
+        :return:
+          - **out** (*dict* -- output dictionary keyed by the above elements and valued as lists of strings
         """
         N, S, L, C, M, W = [], [], [], [], [], []
         for _tr in self:

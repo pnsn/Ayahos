@@ -1,5 +1,5 @@
 """
-:module: PULSE.module.unit.package
+:module: PULSE.mod.unit.package
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
@@ -11,8 +11,8 @@
 
 Classes
 -------
-:class:`~PULSE.module.bundle.SequenceMod`
-:class:`~PULSE.module.bundle.ParallelMod` (WIP)
+:class:`~PULSE.mod.bundle.SequenceMod`
+:class:`~PULSE.mod.bundle.ParallelMod` (WIP)
 """
 """
 :module: module.coordinating.sequence
@@ -40,7 +40,7 @@ import sys, configparser
 import numpy as np
 import pandas as pd
 from collections import deque
-from PULSE.module.base import BaseMod
+from PULSE.mod.base import BaseMod
 
 class SequenceMod(BaseMod):
     """
@@ -146,7 +146,7 @@ class SequenceMod(BaseMod):
         if not isinstance(new_dict, dict):
             raise TypeError('new_dict must be type dict')
         elif not all(isinstance(_m, BaseMod) for _m in new_dict.values()):
-            raise TypeError('new_dict can only have values of type PULSE.module._base.BaseMod')
+            raise TypeError('new_dict can only have values of type PULSE.mod._base.BaseMod')
         else:
             pass
         # Run updates on sequence
@@ -265,7 +265,7 @@ class SequenceMod(BaseMod):
         """
         POLYMORPHIC
 
-        Last updated with :class:`~PULSE.module.bundle.SequenceMod`
+        Last updated with :class:`~PULSE.mod.bundle.SequenceMod`
 
         always return status = True
         Execute max_pulse_size iterations regardless of internal processes
@@ -283,7 +283,7 @@ class SequenceMod(BaseMod):
     def _unit_input_from_input(self, input):
         """
         POLYMORPHIC
-        Last updated with :class: `~PULSE.module.bundle.SequenceMod` 
+        Last updated with :class: `~PULSE.mod.bundle.SequenceMod` 
 
         Pass the standard input directly to the first module in sequence
 
@@ -298,7 +298,7 @@ class SequenceMod(BaseMod):
     def _unit_process(self, unit_input):
         """
         POLYMORPHIC
-        Last updated with :class: `~PULSE.module.bundle.SequenceMod`
+        Last updated with :class: `~PULSE.mod.bundle.SequenceMod`
 
         Chain pulse() methods of modules in sequence
         passing unit_input as the input to the first 
@@ -326,7 +326,7 @@ class SequenceMod(BaseMod):
     def _capture_unit_output(self, unit_output):
         """
         POLYMORPHIC
-        Last updated by :class: `~PULSE.module.bundle.SequenceMod`
+        Last updated by :class: `~PULSE.mod.bundle.SequenceMod`
 
         Termination point - output capture is handled by the last
         Wyrm-Type object in sequence and aliased to this SequenceMod's
@@ -342,7 +342,7 @@ class SequenceMod(BaseMod):
     def _should_next_iteration_run(self, unit_output):
         """
         POLYMORPHIC
-        Last updated by :class: `~PULSE.module.bundle.SequenceMod`
+        Last updated by :class: `~PULSE.mod.bundle.SequenceMod`
 
         Signal early stopping (status = False) if unit_output == 0
 
@@ -361,7 +361,7 @@ class SequenceMod(BaseMod):
     def _update_report(self):
         """
         POLYMORPHIC
-        Last updated with :class:`~PULSE.module.bundle.SequenceMod`
+        Last updated with :class:`~PULSE.mod.bundle.SequenceMod`
 
         Get the mean value line for each module and add information
         on the pulserate, number of logged pulses, and memory period
@@ -386,7 +386,7 @@ class SequenceMod(BaseMod):
 
 # class SequenceBuilderMod(SequenceMod):
 #     """
-#     Defines a self-building :class:`~PULSE.module.sequence.SequenceMod` child-class using regularly formatted
+#     Defines a self-building :class:`~PULSE.mod.sequence.SequenceMod` child-class using regularly formatted
 #     inputs from a configuration file (*.ini) using the ConfigParser Python library
 
 #     :param config_file: file name and path for the desired configuration file, which must contain the sections decribed below
@@ -396,7 +396,7 @@ class SequenceMod(BaseMod):
 #     config_file.ini format
 #     '''
 #     [Sequence_Module]   # <- Re-assign to match with **starting_section** in your .ini file to allow for multiple calls
-#     class: PULSE.module.sequence.SequenceBuilderMod
+#     class: PULSE.mod.sequence.SequenceBuilderMod
 #     sequence: Sequence_0
 #     max_pulse_size: 1000
 #     ...
@@ -415,7 +415,7 @@ class SequenceMod(BaseMod):
 #     special_keys=['sequence','class']
 #     def __init__(self, config_file, starting_section='Sequence_Module', additional_special_keys=[]):
 #         """
-#         Initialize a :class:`~PULSE.module.sequence.SequenceBuilderMod` object
+#         Initialize a :class:`~PULSE.mod.sequence.SequenceBuilderMod` object
 #         """
 
 #         # Initialize config parser

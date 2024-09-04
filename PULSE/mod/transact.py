@@ -1,5 +1,5 @@
 """
-:module: PULSE.module.transact
+:module: PULSE.mod.transact
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
@@ -17,7 +17,7 @@ Classes
 import logging
 from collections import deque
 from PyEW import EWModule
-from PULSE.module.base import BaseMod
+from PULSE.mod.base import BaseMod
 from PULSE.data.mltrace import wave2mltrace
 from PULSE.data.message import Logo
 from PULSE.util.pyew import is_empty_message, is_wave_msg
@@ -329,13 +329,13 @@ class TransactMod(BaseMod):
         """Initialize a TransactMod object
 
         :param module: Pre-initialized EWModule object with connections established
-        :type module: PULSE.module.transact.PyEWMod
+        :type module: PULSE.mod.transact.PyEWMod
         :param conn_name: connection name of a valid connection in module.connection
         :type conn_name: str
         :param pulse_method: name of the EWModule messaging method to use, defaults to 'get_wave'
         :type pulse_method: str, optional
             Supported: 'get_wave','put_wave','get_msg','put_msg','get_bytes','put_bytes'
-            also see    :class:`~PULSE.module.transact.PyEWMod`
+            also see    :class:`~PULSE.mod.transact.PyEWMod`
         :param msg_type: Earthworm message code, defaults to 19 (TYPE_TRACEBUFF2)
         :type msg_type: int, optional
             NOTE: cross reference with your installation's `earthworm_global.d` file
@@ -351,7 +351,7 @@ class TransactMod(BaseMod):
         if isinstance(module, PyEWMod):
             self.module = module
         else:
-            raise TypeError(f'module must be type PULSE.module.transact.PyEWMod, not type {type(module)}')
+            raise TypeError(f'module must be type PULSE.mod.transact.PyEWMod, not type {type(module)}')
         
         if conn_name not in module.connections.keys():
             raise KeyError(f'conn_name {conn_name} is not a named connection in the input module')
@@ -385,7 +385,7 @@ class TransactMod(BaseMod):
     def _should_this_iteration_run(self, input, input_size, iter_number):
         """
         POLYMORPHIC
-        Last updated with :class:`~PULSE.module.transact.TransactMod`
+        Last updated with :class:`~PULSE.mod.transact.TransactMod`
 
         For "put" pulse_method, use BaseMod's _continue_iteration() inherited method
         to see if there are unassessed objects in input
@@ -415,7 +415,7 @@ class TransactMod(BaseMod):
     def _unit_input_from_input(self, input):
         """
         POLYMORPHIC
-        Last updated with :class:`~PULSE.module.transact.TransactMod`
+        Last updated with :class:`~PULSE.mod.transact.TransactMod`
 
         If using a "get" pulse_method, input is unused and returns None
         
@@ -437,7 +437,7 @@ class TransactMod(BaseMod):
     def _unit_process(self, unit_input):
         """
         POLYMORPHIC
-        Last updated with :class:`~PULSE.module.transact.TransactMod`
+        Last updated with :class:`~PULSE.mod.transact.TransactMod`
 
         "get" pulse_methods fetch a message from the specified EW RING
         "put" pulse_methods put unit_input onto the specified EW RING
@@ -463,7 +463,7 @@ class TransactMod(BaseMod):
     def _capture_unit_out(self, unit_output):
         """
         POLYMORPHIC
-        Last updated with :class:`~PULSE.module.transact.TransactMod`
+        Last updated with :class:`~PULSE.mod.transact.TransactMod`
 
         "get" pulse_methods use Wyrm's _capture_unit_output()
         "put" pulse_methods do nothing (pass)
@@ -485,12 +485,12 @@ class TransactMod(BaseMod):
     def _should_next_iteration_run(self, unit_output):
         """
         POLYMORPHIC
-        Last updated with :class:`~PULSE.module.transact.TransactMod`
+        Last updated with :class:`~PULSE.mod.transact.TransactMod`
 
         Do not start next iteration if unit_output looks like an
         empty message for "get" type pulse_method
 
-        :param unit_output: unit output from :meth: `~PULSE.module.transact.TransactMod._unit_process`
+        :param unit_output: unit output from :meth: `~PULSE.mod.transact.TransactMod._unit_process`
         :type unit_output: dict, tuple, or list, depends on pulse_method
         :return status: Should the next iteration be run, based on unit_output?
         :rtype status: bool

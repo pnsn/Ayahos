@@ -1,5 +1,5 @@
 """
-:module: PULSE.module.window
+:module: PULSE.mod.window
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
@@ -9,7 +9,7 @@
 
 Classes
 -------
-:class:`~PULSE.module.window.WindowMod`
+:class:`~PULSE.mod.window.WindowMod`
 """
 import sys
 import seisbench.models as sbm
@@ -18,7 +18,7 @@ from obspy import UTCDateTime
 from PULSE.data.mltrace import MLTrace
 from PULSE.data.dictstream import DictStream
 from PULSE.data.window import Window
-from PULSE.module.base import BaseMod
+from PULSE.mod.base import BaseMod
 
 
 class WindowMod(BaseMod):
@@ -91,7 +91,7 @@ class WindowMod(BaseMod):
         :param reference_completeness_threshold: completeness fraction needed for reference component traces to pass QC, defaults to 0.95
             Specified value must be :math:`\in [0,1]`. This value is used when assessing if a window is ready to be generated
             Also see
-                :meth:`~PULSE.module.window.WindowMod.update_window_tracker`
+                :meth:`~PULSE.mod.window.WindowMod.update_window_tracker`
                 :meth:`~PULSE.data.window.Window.apply_fill_rule`
         :type reference_completeness_threshold: float, optional
         :param other_completeness_threshold: completeness fraction needed for "other" component traces to pass QC, defaults to 0.8
@@ -114,7 +114,7 @@ class WindowMod(BaseMod):
         :type fnfilter: NoneType or str
         :param pulse_type: style of running pulse, defaults to 'network'
             Supported values:
-                'network' - attempt to create one window from each instrument per iteration in a call of :meth:`~PULSE.module.window.WindowMod.pulse`
+                'network' - attempt to create one window from each instrument per iteration in a call of :meth:`~PULSE.mod.window.WindowMod.pulse`
                 TODO: Implement these or remove this feature
                 vv NOT IMPLEMENTED vv
                 'site' - create a window/windows for a given site per pulse iteration, tracking
@@ -290,7 +290,8 @@ class WindowMod(BaseMod):
         :type model: seisbench.models.WaveformModel
         """
         if not isinstance(model, sbm.WaveformModel):
-            self.raise_log('TypeError',''
+            # TODO: Complete this raise_log statement
+            # self.raise_log('TypeError',''
             sys.exit(1)
         elif model.name != 'WaveformModel':
             if model.sampling_rate is not None:
@@ -310,7 +311,7 @@ class WindowMod(BaseMod):
     # PULSE POLYMORPHIC SUBROUTINES #
     #################################
     def pulse(self, input):
-        """Explicit definition of inherited pulse method from :class:`~PULSE.module._base.BaseMod`
+        """Explicit definition of inherited pulse method from :class:`~PULSE.mod._base.BaseMod`
         included for readability and updated documentation
 
         This pulse method iterates across unique site, instrument, model, and ML model weight code keys for a
@@ -320,7 +321,7 @@ class WindowMod(BaseMod):
         generated, the data and metadata are copied from the input MLTrace object(s) and metadata regarding window
         generation are updated to reflect the next expected window.
 
-        For more information on this method's behaviors, see :meth:`~PULSE.module.window.WindowMod._unit_process`
+        For more information on this method's behaviors, see :meth:`~PULSE.mod.window.WindowMod._unit_process`
 
         :param input: 
         :type input: _type_
@@ -334,10 +335,10 @@ class WindowMod(BaseMod):
     def _should_this_iteration_run(self, input, input_measure, iter_number):
         """
         POLYMORPHIC METHOD
-        Last updated with :class:`~PULSE.module.window.WindowMod`
+        Last updated with :class:`~PULSE.mod.window.WindowMod`
 
         unconditional pass - early stopping is handled by
-        :meth:`~PULSE.module.window.WindowMod._should_next_iteration_run`
+        :meth:`~PULSE.mod.window.WindowMod._should_next_iteration_run`
 
         :param input: standard input
         :type input: PULSE.data.dictstream.DictStream
@@ -352,14 +353,14 @@ class WindowMod(BaseMod):
     def _unit_input_from_input(self, input):
         """
         POLYMORPHIC METHOD
-        Last updated with :class:`~PULSE.module.window.WindowMod
+        Last updated with :class:`~PULSE.mod.window.WindowMod
 
         unit_input is a view of the input and a sanity check is done to make sure
         that `input` is type :class:`~PULSE.data.dictstream.DictStream`
 
-        :param input: input to :meth:`~PULSE.module.window.WindowMod.pulse`
+        :param input: input to :meth:`~PULSE.mod.window.WindowMod.pulse`
         :type input: PULSE.data.dictstream.DictStream
-        :return unit_input: view of input to :meth:`~PULSE.module.window.WindowMod.pulse`
+        :return unit_input: view of input to :meth:`~PULSE.mod.window.WindowMod.pulse`
         :rtype: PULSE.data.dictstream.DictStream
         """
         if isinstance(input, DictStream):
@@ -372,11 +373,11 @@ class WindowMod(BaseMod):
     def _unit_process(self, unit_input):
         """
         POLYMORPHIC METHOD
-        Last updated with :class:`~PULSE.module.window.WindowMod`
+        Last updated with :class:`~PULSE.mod.window.WindowMod`
         Conducts the following steps
         1)  Scans across all MLTrace(Buff) entries in a :class:`~PULSE.data.dictstream.DictStream`
             and update entries in the **WindowMod.window_tracker** attribute using their metadata.
-                uses :meth:`~PULSE.module.window.WindowMod.__update_window_tracker`
+                uses :meth:`~PULSE.mod.window.WindowMod.__update_window_tracker`
 
         2)  nested iteration across site codes, instrument codes, and model codes in **WindowMod.window_tracker**
             to see if a given site/instrument/model combination in the tracker is flagged as 'ready'.
@@ -453,7 +454,7 @@ class WindowMod(BaseMod):
     def _capture_unit_output(self, unit_output):
         """
         POLYMORPHIC METHOD
-        Last updated with :class:`~PULSE.module.window.WindowMod`
+        Last updated with :class:`~PULSE.mod.window.WindowMod`
 
         Attaches the unit_output to **WindowMod.output** using :meth:`~collections.deque.__iadd__`
         and assesses if **WindowMod.output** is oversized (i.e., len(self.output) > self.max_output_size).
@@ -474,10 +475,10 @@ class WindowMod(BaseMod):
     def _should_next_iteration_run(self, unit_output):
         """
         POLYMORPHIC METHOD
-        Last updated with :class:`~PULSE.module.window.WindowMod`
+        Last updated with :class:`~PULSE.mod.window.WindowMod`
 
-        Assess if any new windows were generated by the last call of :meth:`~PULSE.module.window.WindowMod._unit_process`
-        and signal continuation of :meth:`~PULSE.module.window.WindowMod.pulse` iterations if at least one new window was generated
+        Assess if any new windows were generated by the last call of :meth:`~PULSE.mod.window.WindowMod._unit_process`
+        and signal continuation of :meth:`~PULSE.mod.window.WindowMod.pulse` iterations if at least one new window was generated
         I.e., len(unit_output) > 0 --> status = True
 
         :param unit_output: output from last call of _unit_process
@@ -492,7 +493,7 @@ class WindowMod(BaseMod):
 
     def update_window_tracker(self, dictstream):
         """
-        Core subroutine for :meth:`~PULSE.module.window.Window._unit_process` used to update windowing metadata
+        Core subroutine for :meth:`~PULSE.mod.window.Window._unit_process` used to update windowing metadata
         held in **WindowMod.window_tracker**
 
         Scans across MLTrace(Buff)s in an input DictStream with a component code matching the self.ref['component']

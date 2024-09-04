@@ -1,5 +1,5 @@
 """
-:module: PULSE.module.unit.process
+:module: PULSE.mod.unit.process
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
@@ -12,8 +12,8 @@
 
 Classes
 -------
-:class:`~PULSE.module.process.InPlaceMod`
-:class:`~PULSE.module.process.OutputMod`
+:class:`~PULSE.mod.process.InPlaceMod`
+:class:`~PULSE.mod.process.OutputMod`
 """
 
 import logging, sys
@@ -22,7 +22,7 @@ from obspy import UTCDateTime
 from PULSE.data.mltrace import MLTrace
 from PULSE.data.dictstream import DictStream
 from PULSE.data.window import Window
-from PULSE.module.base import BaseMod
+from PULSE.mod.base import BaseMod
 
 Logger = logging.getLogger(__name__)
 
@@ -197,7 +197,7 @@ class OutputMod(InPlaceMod):
     def _unit_process(self, unit_input):
         """
         POLYMORPHIC
-        Last update with :class:`~PULSE.module.process.OutputMod`
+        Last update with :class:`~PULSE.mod.process.OutputMod`
 
         Run the specified class method (and kwargs) on the unit input
         and return the output of that class method

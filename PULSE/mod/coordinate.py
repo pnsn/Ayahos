@@ -1,5 +1,5 @@
 """
-:module: PULSE.module.coordinate
+:module: PULSE.mod.coordinate
 :author: Nathan T. Stevens
 :email: ntsteven@uw.edu
 :org: Pacific Northwest Seismic Network
@@ -9,14 +9,14 @@
 
 Classes
 -------
-:class:`~PULSE.module.coordinate.PulseMod_EW`
+:class:`~PULSE.mod.coordinate.PulseMod_EW`
 
-TODO: Eventually migrate general sequence construction to PULSE.module.sequence.SequenceBuilderMod
+TODO: Eventually migrate general sequence construction to PULSE.mod.sequence.SequenceBuilderMod
 """
 import threading, logging, time, sys, configparser, inspect
 from PULSE.util.pyew import is_wave_msg
-from PULSE.module.sequence import SequenceMod
-from PULSE.module.transact import PyEWMod
+from PULSE.mod.sequence import SequenceMod
+from PULSE.mod.transact import PyEWMod
 
 Logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ Logger = logging.getLogger(__name__)
 class PulseMod_EW(SequenceMod):
     """
     The PULSE_EW class comprises an extended :class:`~PyEW.EWModule` object
-    (:class:`~PULSE.module.ew_transact.PyEWMod`) and a sequence of PULSE modules
+    (:class:`~PULSE.mod.ew_transact.PyEWMod`) and a sequence of PULSE modules
     that make an operational python module that communicates with the Earthworm message transport system
     
     This class inherits its sequencing methods and attributes from :class:`~PULSE.wyrms.sequencewyrm.sequenceWyrm`
@@ -76,7 +76,7 @@ class PulseMod_EW(SequenceMod):
 
     def __init__(self, config_file):
         """Create a PULSE object
-        Inherits the sequence attribute and pulse() method from :class:`~PULSE.module.sequence.SequenceMod`
+        Inherits the sequence attribute and pulse() method from :class:`~PULSE.mod.sequence.SequenceMod`
 
         :param wait_sec: number of seconds to wait between completion of one pulse sequence of
             the Wyrm-like objects in self.sequence and the next, defaults to 0
@@ -96,7 +96,7 @@ class PulseMod_EW(SequenceMod):
             Wyrm-like object
         """
         # # Inherit and build module using SequenceBuilderMod inheritance
-        # # NOTE: uses polymorphic adaptation of :meth:`~PULSE.module.sequence.SequenceBuilderMod.parse_unit_module_config_section`
+        # # NOTE: uses polymorphic adaptation of :meth:`~PULSE.mod.sequence.SequenceBuilderMod.parse_unit_module_config_section`
         # super().__init__(config_file=config_file,
         #                  starting_section=starting_section)
 
@@ -262,7 +262,7 @@ class PulseMod_EW(SequenceMod):
     
     def pulse(self):
         """
-        Overwrites the inherited :meth:`~PULSE.module.coordinate.SequenceBuildMod.pulse` method
+        Overwrites the inherited :meth:`~PULSE.mod.coordinate.SequenceBuildMod.pulse` method
         that broadcasts a pair of logging errors pointing to use PULSE.run()
         as the operational 
         """        

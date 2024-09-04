@@ -1,12 +1,12 @@
-from collections import deque
-import pandas as pd
-from obspy import UTCDateTime
-from obspy.clients.fdsn import Client
-from obspy.clients.fdsn.routing.federator_routing_client import FederatorRoutingClient
-from obsplus import WaveBank
-from PULSE.module.base import BaseMod
-from PULSE.data.dictstream import DictStream
-from PULSE.util.pyew import trace2wave
+# from collections import deque
+# import pandas as pd
+# from obspy import UTCDateTime
+# from obspy.clients.fdsn import Client
+# from obspy.clients.fdsn.routing.federator_routing_client import FederatorRoutingClient
+# from obsplus import WaveBank
+# from PULSE.mod.base import BaseMod
+# from PULSE.data.dictstream import DictStream
+# from PULSE.util.pyew import trace2wave
 # from PULSE.util.latency import read_latency_file
 
 # TODO: MODULE IN DEVELOPMENT / WORK IN PROGRESS (WIP)
@@ -181,7 +181,7 @@ from PULSE.util.pyew import trace2wave
 #     def _should_next_iteration_run(self, unit_output):
 #         """
 #         POLYMORPHIC
-#         Last updated with :class:`~PULSE.module.client.ClientMod`
+#         Last updated with :class:`~PULSE.mod.client.ClientMod`
         
 #         If there are still packet arrival times that post-date the
 #         last record time (_rectime1), continue iterations, otherwise

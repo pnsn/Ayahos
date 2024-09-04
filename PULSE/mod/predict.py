@@ -1,6 +1,6 @@
 #TODO: Header
 
-import torch, copy, logging, sys, os
+import torch, copy, logging, sys
 import numpy as np
 import seisbench.models as sbm
 from collections import deque
@@ -8,7 +8,7 @@ from obspy import UTCDateTime
 from PULSE.data.mltrace import MLTrace
 from PULSE.data.dictstream import DictStream
 from PULSE.data.window import Window
-from PULSE.module.base import BaseMod
+from PULSE.mod.base import BaseMod
 
 Logger = logging.getLogger(__name__)
 ###################################################################################
@@ -364,25 +364,25 @@ class SeisBenchMod(BaseMod):
     #############################
     # _unit_process subroutines #
     #############################
-    def __run_prediction(self, weighted_model, batch_data, reshape_output=True):
-        """
-        Run a prediction on an input batch of windowed data using a specified model on
-        self.device. Provides checks that batch_data is on self.device and an option to
-        enforce a uniform shape of batch_preds and batch_data.
+    # def __run_prediction(self, weighted_model, batch_data, reshape_output=True):
+    #     """
+    #     Run a prediction on an input batch of windowed data using a specified model on
+    #     self.device. Provides checks that batch_data is on self.device and an option to
+    #     enforce a uniform shape of batch_preds and batch_data.
 
-        :: INPUT ::
-        :param weighted_model: ML model with pretrained weights loaded (and potentialy precompiled) with
-        :type weighted_model: seisbench.models.WaveformModel
-        :param batch_data: data array with scaling appropriate to the input layer of `weighed_model` 
-        :type batch_data: torch.Tensor or numpy.ndarray
-        :param reshape_output: if batch_preds has a different shape from batch_data, should batch_preds be reshaped to match?
-        :type reshape_output: bool
-        :return detached_batch_preds: prediction outputs, detached from non-cpu processor if applicable
-        :rtype detached_batch_preds: numpy.ndarray
-        """
+    #     :: INPUT ::
+    #     :param weighted_model: ML model with pretrained weights loaded (and potentialy precompiled) with
+    #     :type weighted_model: seisbench.models.WaveformModel
+    #     :param batch_data: data array with scaling appropriate to the input layer of `weighed_model` 
+    #     :type batch_data: torch.Tensor or numpy.ndarray
+    #     :param reshape_output: if batch_preds has a different shape from batch_data, should batch_preds be reshaped to match?
+    #     :type reshape_output: bool
+    #     :return detached_batch_preds: prediction outputs, detached from non-cpu processor if applicable
+    #     :rtype detached_batch_preds: numpy.ndarray
+    #     """
 
         
-        return detached_batch_preds
+    #     return detached_batch_preds
 
 
 # # If we have at least one tensor to predict on, proceed

@@ -2,7 +2,7 @@
 import logging, argparse, os, warnings
 from logging.handlers import TimedRotatingFileHandler
 # Get the Module Constructor Class 
-from PULSE.module.coordinate import PulseMod_EW
+from PULSE.mod.coordinate import PulseMod_EW
 
 # Suppress warnings - just stick to logging
 with warnings.catch_warnings():

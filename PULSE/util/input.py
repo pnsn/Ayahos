@@ -140,37 +140,38 @@ def bounded_intlike(x, name="x", minimum=1, maximum=None, inclusive=True):
             raise ValueError(f"{name} must be in the bounds ({minimum}, {maximum})")
 
 
-def bounded_floatlike(x, name="x", minimum=1, maximum=None, inclusive=True):
-    """
-    If input x is an float-like value in a specified bounded interval,
-    return float(x), otherwise raise errors
+# def bounded_floatlike(x, name="x", minimum=1, maximum=None, inclusive=True):
+#     """
+#     TODO: OBSOLITED
+#     If input x is an float-like value in a specified bounded interval,
+#     return float(x), otherwise raise errors
 
-    :: INPUTS ::
-    :param x: [int] or [float] value to assess
-    :param name: [str] name of parameter to include in error messages
-    :param minimum: [float-like], [-inf], [None]
-                minimum bound value - see bounded_value()
-    :param maximum: [float-like], [inf], [None]
-                maximum bound value - see bounded_value()
-    :param inclusive: [bool] - include min/max in bound?
+#     :: INPUTS ::
+#     :param x: [int] or [float] value to assess
+#     :param name: [str] name of parameter to include in error messages
+#     :param minimum: [float-like], [-inf], [None]
+#                 minimum bound value - see bounded_value()
+#     :param maximum: [float-like], [inf], [None]
+#                 maximum bound value - see bounded_value()
+#     :param inclusive: [bool] - include min/max in bound?
 
-    :: OUTPUT ::
-    :return float(x): if x is float-like and in bounds, return output of float(x)
-                    if x is not float-like, raise TypeError
-                    if x is float-like but out of bounds, raise ValueError
-    """
-    if not isinstance(x, (int, float)):
-        raise TypeError(f"{name} must be float-like")
-    if not np.isfinite(x):
-        if maximum not in [None, inf, np.inf] or minimum not in [None, -inf, -np.inf]:
-            raise ValueError(f"{name} must be finite")
-    if bounded_value(x, minimum=minimum, maximum=maximum, inclusive=inclusive):
-        return float(x)
-    else:
-        if inclusive:
-            raise ValueError(f"{name} must be in the bounds [{minimum}, {maximum}]")
-        else:
-            raise ValueError(f"{name} must be in the bounds ({minimum}, {maximum})")
+#     :: OUTPUT ::
+#     :return float(x): if x is float-like and in bounds, return output of float(x)
+#                     if x is not float-like, raise TypeError
+#                     if x is float-like but out of bounds, raise ValueError
+#     """
+#     if not isinstance(x, (int, float)):
+#         raise TypeError(f"{name} must be float-like")
+#     if not np.isfinite(x):
+#         if maximum not in [None, inf, np.inf] or minimum not in [None, -inf, -np.inf]:
+#             raise ValueError(f"{name} must be finite")
+#     if bounded_value(x, minimum=minimum, maximum=maximum, inclusive=inclusive):
+#         return float(x)
+#     else:
+#         if inclusive:
+#             raise ValueError(f"{name} must be in the bounds [{minimum}, {maximum}]")
+#         else:
+#             raise ValueError(f"{name} must be in the bounds ({minimum}, {maximum})")
 
 
 def iterable_characters(x, name="x", listlike_types=(list, deque, np.array)):

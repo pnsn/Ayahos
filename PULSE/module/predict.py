@@ -8,7 +8,7 @@ from obspy import UTCDateTime
 from PULSE.data.mltrace import MLTrace
 from PULSE.data.dictstream import DictStream
 from PULSE.data.window import Window
-from PULSE.module._base import _BaseMod
+from PULSE.module.base import BaseMod
 
 Logger = logging.getLogger(__name__)
 ###################################################################################
@@ -16,7 +16,7 @@ Logger = logging.getLogger(__name__)
 ###################################################################################
 
 # @add_class_name_to_docstring
-class SeisBenchMod(_BaseMod):
+class SeisBenchMod(BaseMod):
     """
     Conduct ML model predictions on preprocessed data ingested as a deque of
     Window objects using one or more pretrained model weights. Following

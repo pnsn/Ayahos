@@ -5,11 +5,11 @@
 :org: Pacific Northwest Seismic Network
 :license: AGPL-3.0
 :purpose:
-    This contains the definition for the _BaseMod class that serves serves as a parent class for all other PULSE module classes.
+    This contains the definition for the BaseMod class that serves serves as a parent class for all other PULSE module classes.
 
 Classes
 -------
-:class:`~PULSE.module._base._BaseMod`
+:class:`~PULSE.module._base.BaseMod`
 """
 
 from numpy import nan
@@ -33,21 +33,21 @@ def add_class_name_to_docstring(cls):
 Logger = logging.getLogger(__name__)
 
 # @add_class_name_to_docstring
-class _BaseMod(object):
+class BaseMod(object):
     """Fundamental base class template all other *Mod classes with the following
     template methods and attributes:
 
-    :meth:_BaseMod.pulse() - performs multiple iterations of the following polymorphic subroutines
-        :meth:`~_BaseMod._should_this_iteration_run` - check if this iteration in pulse should be run
-        :meth:`~_BaseMod._unit_input_from_input` - get the object input for :meth:`~_BaseMod._unit_process`
-        :meth:`~_BaseMod._unit_process` - execute a single operation on the input object
-        :meth:`~_BaseMod._capture_unit_output` - do something to save the output of :meth:`~_BaseMod._unit_process`
-        :meth:`~_BaseMod._should_next_iteration_run` - decide if the next iteration should be run
+    :meth:BaseMod.pulse() - performs multiple iterations of the following polymorphic subroutines
+        :meth:`~BaseMod._should_this_iteration_run` - check if this iteration in pulse should be run
+        :meth:`~BaseMod._unit_input_from_input` - get the object input for :meth:`~BaseMod._unit_process`
+        :meth:`~BaseMod._unit_process` - execute a single operation on the input object
+        :meth:`~BaseMod._capture_unit_output` - do something to save the output of :meth:`~BaseMod._unit_process`
+        :meth:`~BaseMod._should_next_iteration_run` - decide if the next iteration should be run
 
-    #: _BaseMod.output - collector of outputs from :meth:`~_BaseMod._unit_process` via :meth:`~_BaseMod._capture_unit_output`.
-    #: _BaseMod.Logger - logging.Logger instance associated with a given module
+    #: BaseMod.output - collector of outputs from :meth:`~BaseMod._unit_process` via :meth:`~BaseMod._capture_unit_output`.
+    #: BaseMod.Logger - logging.Logger instance associated with a given module
 
-    :param max_pulse_size: maximum number of iterations to run for each call of :meth:`~PULSE.module._base._BaseMod.pulse`, defaults to 10
+    :param max_pulse_size: maximum number of iterations to run for each call of :meth:`~PULSE.module._base.BaseMod.pulse`, defaults to 10
     :type max_pulse_size: int, optional
     :param meta_memory: maximum age of metadata logging in seconds, defaults to 3600.
     :type meta_memory: float, optional
@@ -55,7 +55,7 @@ class _BaseMod(object):
                 Positive values turn reporting on
                 "None" value turns reporting off
     :type report_period: float or NoneType, optional
-    :param max_output_size: maximum number of items to keep in this _BaseMod.output attribute, defaults to 100.
+    :param max_output_size: maximum number of items to keep in this BaseMod.output attribute, defaults to 100.
     :type max_output_size: int, optional
 
     """
@@ -66,9 +66,9 @@ class _BaseMod(object):
         meta_memory=3600,
         report_period=False,
         max_output_size=100):
-        """Initialize a :class:`~PULSE.module._base._BaseMod object`
+        """Initialize a :class:`~PULSE.module._base.BaseMod object`
 
-        :param max_pulse_size: maximum number of iterations to run for each call of :meth:`~PULSE.module._base._BaseMod.pulse`, defaults to 10
+        :param max_pulse_size: maximum number of iterations to run for each call of :meth:`~PULSE.module._base.BaseMod.pulse`, defaults to 10
         :type max_pulse_size: int, optional
         :param meta_memory: maximum age of metadata logging in seconds, defaults to 3600.
         :type meta_memory: float, optional
@@ -76,7 +76,7 @@ class _BaseMod(object):
                     Positive values turn reporting on
                     "None" value turns reporting off
         :type report_period: float or NoneType, optional
-        :param max_output_size: maximum number of items to keep in this _BaseMod.output attribute, defaults to 100.
+        :param max_output_size: maximum number of items to keep in this BaseMod.output attribute, defaults to 100.
         :type max_output_size: int, optional
         """
 
@@ -155,7 +155,7 @@ class _BaseMod(object):
     
     def __repr__(self):
         """
-        Return a string representation string of essential user data for this _BaseMod object
+        Return a string representation string of essential user data for this BaseMod object
         """
         rstr = f'{self.__class__}\n'
         rstr += f"Max Pulse Size: {self.max_pulse_size}\nOutput: {len(self.output)} (type {type(self.output)})"
@@ -163,7 +163,7 @@ class _BaseMod(object):
 
     def __str__(self):
         """
-        Return self.__class__ string for this _BaseMod object
+        Return self.__class__ string for this BaseMod object
         """
         rstr = self.__class__ 
         #(max_pulse_size={self.max_pulse_size})'
@@ -171,34 +171,34 @@ class _BaseMod(object):
     
     def copy(self):
         """
-        Return a deepcopy of this _BaseMod object
+        Return a deepcopy of this BaseMod object
         """
         return deepcopy(self)
 
     def pulse(self, input):
         """
         TEMPLATE METHOD
-        Last updated with :class:`~PULSE.module._base._BaseMod`
+        Last updated with :class:`~PULSE.module._base.BaseMod`
 
         Run up to max_pulse_size iterations of _unit_process()
 
-        NOTE: Houses the following polymorphic methods that can be modified for _BaseMod child classes
-        :meth:`~PULSE.module._base._BaseMod._should_this_iteration_run`
+        NOTE: Houses the following polymorphic methods that can be modified for BaseMod child classes
+        :meth:`~PULSE.module._base.BaseMod._should_this_iteration_run`
             check if iteration should continue (early stopping opportunity)
-        :meth:`~PULSE.module._base._BaseMod._unit_input_from_input`
-            get input object for:meth:`~PULSE.module._base._BaseMod._unit_process
-        :meth:`~PULSE.module._base._BaseMod._unit_process`
+        :meth:`~PULSE.module._base.BaseMod._unit_input_from_input`
+            get input object for:meth:`~PULSE.module._base.BaseMod._unit_process
+        :meth:`~PULSE.module._base.BaseMod._unit_process`
             run core process
-        :meth:`~PULSE.module._base._BaseMod._capture_unit_output`
-            attach :meth:`~PULSE.module._base._BaseMod._unit_process` output to self.output
-        :meth:`~PULSE.module._base._BaseMod._should_next_iteration_run`
+        :meth:`~PULSE.module._base.BaseMod._capture_unit_output`
+            attach :meth:`~PULSE.module._base.BaseMod._unit_process` output to self.output
+        :meth:`~PULSE.module._base.BaseMod._should_next_iteration_run`
             check if the next iteration should occur (early stopping opportunity)
-        :meth:`~PULSE.module._base._BaseMod._update_metadata`
+        :meth:`~PULSE.module._base.BaseMod._update_metadata`
             update metadata dataframe with a summary of pulse activity
 
         :param input: standard input
         :type input: collections.deque
-            also see PULSE.core.module._base._BaseMod._unit_input_from_input
+            also see PULSE.core.module._base.BaseMod._unit_input_from_input
         :return output: aliased access to this object's **output** attribute
         :rtype output: typically collections.deque or PULSE.core.dictstream.DictStream
         """ 
@@ -253,15 +253,15 @@ class _BaseMod(object):
     def _measure_input_size(self, input):
         """
         POLYMORPHIC METHOD
-        Last updated with :class:`~PULSE.module._base._BaseMod`
+        Last updated with :class:`~PULSE.module._base.BaseMod`
 
         take a reference measurement for the input before starting
         iterations within the pulse() method.
 
         This version measures the length of input.
 
-        :param input: input provided to :meth:`~PULSE.module._base._BaseMod.pulse`
-        :type input: varies, deque for :class:`~PULSE.module._base._BaseMod`
+        :param input: input provided to :meth:`~PULSE.module._base.BaseMod.pulse`
+        :type input: varies, deque for :class:`~PULSE.module._base.BaseMod`
         :return input_size: representative measure of input
         :rtype: int-like
         """        
@@ -273,9 +273,9 @@ class _BaseMod(object):
 
     def _should_this_iteration_run(self, input, input_size, iter_number):
         """
-        POLYMORPHIC METHOD - last updated with :class:`~PULSE.module._base._BaseMod`
+        POLYMORPHIC METHOD - last updated with :class:`~PULSE.module._base.BaseMod`
 
-        Should this iteration in :meth:`~PULSE.module._base._BaseMod.pulse` be run?
+        Should this iteration in :meth:`~PULSE.module._base.BaseMod.pulse` be run?
         
         Criteria:
          - input is type collections.deque
@@ -302,10 +302,10 @@ class _BaseMod(object):
     def _unit_input_from_input(self, input):
         """
         POLYMORPHIC METHOD
-        Last updated with :class:`~PULSE.module._base._BaseMod`
+        Last updated with :class:`~PULSE.module._base.BaseMod`
 
-        Get the input object for :meth:`~PULSE.module._base._BaseMod._unit_process` from
-        the `input` provided to :meth:`~PULSE.module._base._BaseMod.pulse`
+        Get the input object for :meth:`~PULSE.module._base.BaseMod._unit_process` from
+        the `input` provided to :meth:`~PULSE.module._base.BaseMod.pulse`
 
         :param input: standard input object
         :type input: collections.deque
@@ -326,7 +326,7 @@ class _BaseMod(object):
     def _unit_process(self, unit_input):
         """
         POLYMORPHIC METHOD
-        Last updated with :class: `~PULSE.module._base._BaseMod`
+        Last updated with :class: `~PULSE.module._base.BaseMod`
 
         return unit_output = unit_input
 
@@ -341,7 +341,7 @@ class _BaseMod(object):
     def _capture_unit_output(self, unit_output):
         """
         POLYMORPHIC METHOD
-        Last updated with :class: `~PULSE.module._base._BaseMod`
+        Last updated with :class: `~PULSE.module._base.BaseMod`
 
         Append unit_output to self.output
 
@@ -361,7 +361,7 @@ class _BaseMod(object):
     def _should_next_iteration_run(self, unit_output):
         """
         POLYMORPHIC METHOD
-        Last updated with :class:`~PULSE.module._base._BaseMod`
+        Last updated with :class:`~PULSE.module._base.BaseMod`
 
         check if the next iteration should be run based on unit_output
 
@@ -378,7 +378,7 @@ class _BaseMod(object):
     def _update_metadata(self, pulse_starttime, input_size, nproc, early_stop_code):
         """
         POLYMORPHIC METHOD
-        Last updated with :class:`~PULSE.module._base._BaseMod`
+        Last updated with :class:`~PULSE.module._base.BaseMod`
 
         Captures metadata from the most recent pulse and updates
         the representative reporting string attribute *self.report*
@@ -412,7 +412,7 @@ class _BaseMod(object):
 
     def _update_report(self):
         """
-        Update the **_BaseMod.report** attribute with a synopsis of saved metadata
+        Update the **BaseMod.report** attribute with a synopsis of saved metadata
         """        
         # Update Report       
         df_last = self._metadata[self._metadata.time == self._metadata.time.max()]
@@ -422,7 +422,7 @@ class _BaseMod(object):
         self.report.time = self.report.time.apply(lambda x: pd.Timestamp(x, unit='s'))
 
     def _update_pulse_rate(self):
-        """Update the estimate of average pulse rate from logged metadata and update the **_BaseMod._pulse_rate** attribute
+        """Update the estimate of average pulse rate from logged metadata and update the **BaseMod._pulse_rate** attribute
         """
         # Calculate pulse rate
         nd = len(self._metadata)
@@ -433,7 +433,7 @@ class _BaseMod(object):
 
     def _generate_report_string(self):
         """Generate a string representation of metadata logging for output to the command line
-        comprising a formatted header and the current **_BaseMod.report** attribute elements
+        comprising a formatted header and the current **BaseMod.report** attribute elements
 
         :return: report string
         :rtype: str

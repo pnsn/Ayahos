@@ -14,7 +14,7 @@ Classes
 """
 import logging, sys
 from numpy import isfinite
-from PULSE.module._base import _BaseMod
+from PULSE.module.base import BaseMod
 from PULSE.data.mltrace import MLTrace
 from PULSE.data.mltracebuff import MLTraceBuff
 from PULSE.data.dictstream import DictStream
@@ -23,7 +23,7 @@ from PULSE.util.pyew import is_wave_msg, wave2mltrace
 Logger = logging.getLogger(__name__)
 
 # @add_class_name_to_docstring
-class BufferMod(_BaseMod):
+class BufferMod(BaseMod):
     """
     Module class for buffering/stacking MLTrace objects into a :class:`~PULSE.data.dictstream.DictStream` containing
     sets of :class:`~PULSE.data.mltracebuff.MLTraceBuff` objects with options to format the method by which identically
@@ -55,7 +55,7 @@ class BufferMod(_BaseMod):
         :type method: int or str, optional
         :param max_pulse_size: maximum number of items to pull from source deque for each call of :meth:`~PULSE.module.buffer.BufferMod.pulse`, defaults to 10000
         :type max_pulse_size: int, optional
-            also see :meth:`~PULSE.module._base._BaseMod.pulse`
+            also see :meth:`~PULSE.module._base.BaseMod.pulse`
         :param **add_kwargs: key word argument collector to pass to MLTraceBuffer's initialization **kwargs
             that in turn pass to :meth:`~PULSE.data.mltrace.MLTrace.__add__`
             NOTE: add_kwargs with matching keys to pre-specified values will be ignored to prevent multiple call errors
@@ -101,13 +101,13 @@ class BufferMod(_BaseMod):
         :type method: int or str, optional
         :param max_pulse_size: maximum number of items to pull from source deque for each call of :meth:`~PULSE.module.buffer.BufferMod.pulse`, defaults to 10000
         :type max_pulse_size: int, optional
-            also see :meth:`~PULSE.module._base._BaseMod.pulse`
+            also see :meth:`~PULSE.module._base.BaseMod.pulse`
         :param **add_kwargs: key word argument collector to pass to MLTraceBuffer's initialization **kwargs
             that in turn pass to :meth:`~PULSE.data.mltrace.MLTrace.__add__`
             NOTE: add_kwargs with matching keys to pre-specified values will be ignored to prevent multiple call errors
         :type **add_kwargs: kwargs
         """
-        # Inherit from _BaseMod
+        # Inherit from BaseMod
         super().__init__(
             max_pulse_size=max_pulse_size,
             meta_memory=meta_memory,

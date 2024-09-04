@@ -17,7 +17,7 @@ Classes
 import logging
 from collections import deque
 from PyEW import EWModule
-from PULSE.module._base import _BaseMod
+from PULSE.module.base import BaseMod
 from PULSE.data.mltrace import wave2mltrace
 from PULSE.data.message import Logo
 from PULSE.util.pyew import is_empty_message, is_wave_msg
@@ -299,7 +299,7 @@ class PyEWMod(EWModule):
             super().put_bytes(conn_idx, msg_type, msg)  
 
 
-class TransactMod(_BaseMod):   
+class TransactMod(BaseMod):   
     """
     Class that facilitates transactions between memory rings in the Earthworm
     Message Transport System and the Python environment. This wraps an active 
@@ -387,7 +387,7 @@ class TransactMod(_BaseMod):
         POLYMORPHIC
         Last updated with :class:`~PULSE.module.transact.TransactMod`
 
-        For "put" pulse_method, use _BaseMod's _continue_iteration() inherited method
+        For "put" pulse_method, use BaseMod's _continue_iteration() inherited method
         to see if there are unassessed objects in input
 
         For "get" pulse_method, assume iteration 0 should proceed,
@@ -404,7 +404,7 @@ class TransactMod(_BaseMod):
         """        
         # If passing messages from deque to ring, check if there are messages to pass
         if 'put' in self.pulse_method:
-            # Use _BaseMod._should_this_iteration_run() method
+            # Use BaseMod._should_this_iteration_run() method
             status = super()._should_this_iteration_run(input, input_size, iter_number)
         # If passing messages from ring to deque, default to True
         elif 'get' in self.pulse_method:

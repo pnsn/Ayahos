@@ -26,11 +26,10 @@ from PULSE.data.mltrace import MLTrace
 
 class WindowStats(DictStreamStats):
     """Child-class of :class:`~PULSE.data.dictstream.DictStreamStats` that extends
-    contained metadata to include the reference component code, component code aliases,
-    completeness thresholds for reference and non-reference ("other") component codes,
-    and desired starttime, sampling_rate, and npts to reference during pre-processing
-    on the way to making a :class:`~seisbench.models.WaveformModel`-compliant input
-    data tensor.
+    contained metadata to include a set of reference values and metadata that inform
+    pre-processing, carry metadata cross ML prediction operations using SeisBench 
+    :class:`~seisbench.models.WaveformModel`-based models, and retain processing information
+    on outputs of these predictions.
 
     :param header: collector for non-default values (i.e., not in WindowStats.defaults)
         to use when initializing a WindowStats object, defaults to {}

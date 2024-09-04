@@ -1,6 +1,6 @@
-from PULSE.module._base import _BaseMod
+from PULSE.module.base import BaseMod
 
-class EchoMod(_BaseMod):
+class EchoMod(BaseMod):
     """
     A module that sends the __repr__ of unit_input objects
     to logging 
@@ -18,7 +18,7 @@ class EchoMod(_BaseMod):
         return unit_input
     
 
-class BreakpointMod(_BaseMod):
+class BreakpointMod(BaseMod):
     """
     A module that calls breakpoints within :meth:`~PULSE.module.util.BreakpointMod.pulse`
     at the :meth:`~PULSE.module.util.BreakpointMod._mesaure_input_size` subroutine call 
@@ -40,7 +40,7 @@ class BreakpointMod(_BaseMod):
         return input_size
     
 
-class LogGateMod(_BaseMod):
+class LogGateMod(BaseMod):
     def __init__(
             self,
             max_pulse_size=1000,
@@ -56,7 +56,7 @@ class LogGateMod(_BaseMod):
         self.bounding_max = self.max_pulse_size
 
 
-class RCGateMod(_BaseMod):
+class RCGateMod(BaseMod):
     """Use a regularized coulomb relationship for dynamically scaling
     the max_pulse_size of this Mod
 
@@ -71,8 +71,8 @@ class RCGateMod(_BaseMod):
     m - exponent
     O_0 - reference output size
 
-    :param _BaseMod: _description_
-    :type _BaseMod: _type_
+    :param BaseMod: _description_
+    :type BaseMod: _type_
     """
     def __init__(self):
 

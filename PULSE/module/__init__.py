@@ -1,5 +1,5 @@
 # Root Classes
-from PULSE.module._base import _BaseMod
+from PULSE.module.base import _BaseMod
 from PULSE.module.transact import PyEWMod
 # First Generation
 from PULSE.module.sequence import SequenceMod
@@ -14,6 +14,6 @@ from PULSE.module.trigger import BuffTriggerMod
 from PULSE.module.coordinate import PulseMod_EW
 
 
-__all__ = ['_BaseMod', 'PyEWMod',
+__all__ = ['BaseMod', 'PyEWMod',
            'SequenceMod', 'BufferMod','InPlaceMod', 'WindowMod', 'SeisBenchMod',
            'OutputMod', 'BuffTriggerMod', 'PulseMod_EW']

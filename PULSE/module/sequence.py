@@ -40,9 +40,9 @@ import sys, configparser
 import numpy as np
 import pandas as pd
 from collections import deque
-from PULSE.module._base import _BaseMod
+from PULSE.module.base import BaseMod
 
-class SequenceMod(_BaseMod):
+class SequenceMod(BaseMod):
     """
     Unit module class facilitating chained execution of pulse(x) class methods
     for a sequence module unit_inputects, with each module.pulse(x) taking the prior
@@ -76,7 +76,7 @@ class SequenceMod(_BaseMod):
         :param max_pulse_size: number of times to run the sequence of pulses, default is 1
         :type max_pulse_size: int
         """
-        # Inherit from _BaseMod
+        # Inherit from BaseMod
         super().__init__(max_pulse_size=max_pulse_size,
                          meta_memory=meta_memory,
                          report_period=report_period,
@@ -84,23 +84,23 @@ class SequenceMod(_BaseMod):
         if isinstance(log_pulse_summary, bool):
             self.log_pulse_summary = log_pulse_summary
         # sequence compat. checks
-        if isinstance(sequence, _BaseMod):
+        if isinstance(sequence, BaseMod):
             self.sequence = {0: sequence}
         elif isinstance(sequence, dict):
-            if all(isinstance(_w, _BaseMod) for _w in sequence.values()):
+            if all(isinstance(_w, BaseMod) for _w in sequence.values()):
                 self.sequence = sequence
             else:
-                raise TypeError('All elements in sequence must be type _BaseMod')
+                raise TypeError('All elements in sequence must be type BaseMod')
             
         # Handle case where a list or deque are provided
         elif isinstance(sequence, (list, deque)):
-            if all(isinstance(_w, _BaseMod) for _w in sequence):
+            if all(isinstance(_w, BaseMod) for _w in sequence):
                 # Default keys are the sequence index of a given module
                 self.sequence = {_k: _v for _k, _v in enumerate(sequence)}
             else:
-                raise TypeError('All elements in sequence must be type _BaseMod')
+                raise TypeError('All elements in sequence must be type BaseMod')
         else:
-            raise TypeError('sequence must be a single _BaseMod-type unit_input or a list or dictionary thereof')
+            raise TypeError('sequence must be a single BaseMod-type unit_input or a list or dictionary thereof')
         
         # wait_sec compat. checks
         if not isinstance(wait_sec, (int, float)):
@@ -111,7 +111,7 @@ class SequenceMod(_BaseMod):
             self.wait_sec = wait_sec
         # Create a list representation of keys
         self.names = list(sequence.keys())
-        # Alias the output of the last module in sequence to self.output (inherited from _BaseMod)
+        # Alias the output of the last module in sequence to self.output (inherited from BaseMod)
         if len(self.sequence) > 0:
             self._alias_sequence_output()
 
@@ -145,8 +145,8 @@ class SequenceMod(_BaseMod):
         # Safety catches identical to those in __init__
         if not isinstance(new_dict, dict):
             raise TypeError('new_dict must be type dict')
-        elif not all(isinstance(_m, _BaseMod) for _m in new_dict.values()):
-            raise TypeError('new_dict can only have values of type PULSE.module._base._BaseMod')
+        elif not all(isinstance(_m, BaseMod) for _m in new_dict.values()):
+            raise TypeError('new_dict can only have values of type PULSE.module._base.BaseMod')
         else:
             pass
         # Run updates on sequence

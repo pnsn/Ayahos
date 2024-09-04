@@ -18,10 +18,10 @@ from obspy import UTCDateTime
 from PULSE.data.mltrace import MLTrace
 from PULSE.data.dictstream import DictStream
 from PULSE.data.window import Window
-from PULSE.module._base import _BaseMod
+from PULSE.module.base import BaseMod
 
 
-class WindowMod(_BaseMod):
+class WindowMod(BaseMod):
     """
     The WindowMod class takes windowing information from an input seisbench.models.WaveformModel object and user-defined component
     mapping and data completeness metrics and provides a pulse method that iterates across entries in an input DictStream object and
@@ -133,7 +133,7 @@ class WindowMod(_BaseMod):
         :param **options: key-word argument collector to pass to :meth:`~PULSE.data.mltrace.MLTrace.trim_copy`
         :type **options: kwargs
         """
-        # Initialize/inherit from _BaseMod
+        # Initialize/inherit from BaseMod
         super().__init__(max_pulse_size=max_pulse_size,
                          meta_memory=meta_memory,
                          report_period=report_period,
@@ -310,7 +310,7 @@ class WindowMod(_BaseMod):
     # PULSE POLYMORPHIC SUBROUTINES #
     #################################
     def pulse(self, input):
-        """Explicit definition of inherited pulse method from :class:`~PULSE.module._base._BaseMod`
+        """Explicit definition of inherited pulse method from :class:`~PULSE.module._base.BaseMod`
         included for readability and updated documentation
 
         This pulse method iterates across unique site, instrument, model, and ML model weight code keys for a

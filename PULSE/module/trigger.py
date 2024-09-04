@@ -17,14 +17,14 @@ Classes
 import logging, sys
 from PULSE.data.mltrace import MLTrace
 from PULSE.data.dictstream import DictStream
-from PULSE.module._base import _BaseMod
+from PULSE.module.base import BaseMod
 from PULSE.data.trigger import Trigger, GaussTrigger, QuantTrigger, Logo
 from obspy.signal.trigger import trigger_onset
 import numpy as np
 
 Logger = logging.getLogger(__name__)
 
-class BuffTriggerMod(_BaseMod):
+class BuffTriggerMod(BaseMod):
     """
     A unit module that conducts incremental triggering on :class:`~PULSE.data.mltracebuff.MLTraceBuff` objects
     using their *fold* attribute and window overlap lengths to only trigger on data that will not receive further

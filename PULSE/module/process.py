@@ -22,11 +22,11 @@ from obspy import UTCDateTime
 from PULSE.data.mltrace import MLTrace
 from PULSE.data.dictstream import DictStream
 from PULSE.data.window import Window
-from PULSE.module._base import _BaseMod
+from PULSE.module.base import BaseMod
 
 Logger = logging.getLogger(__name__)
 
-class InPlaceMod(_BaseMod):
+class InPlaceMod(BaseMod):
     """
     A submodule for applying a class method with specified key-word arguments to objects
     sourced from an input deque and passed to an output deque (self.output) following processing.
@@ -62,7 +62,7 @@ class InPlaceMod(_BaseMod):
         :type max_pulse_size: int, optional
         """
 
-        # Initialize/inherit from _BaseMod
+        # Initialize/inherit from BaseMod
         super().__init__(max_pulse_size=max_pulse_size,
                          meta_memory=meta_memory,
                          report_period=report_period,
@@ -86,12 +86,12 @@ class InPlaceMod(_BaseMod):
     # def import_class(self, class_path_str):
     #     self.pclass = super().import_class(class_path_str)
         
-    # Inherited from _BaseMod
+    # Inherited from BaseMod
     # def _continue_iteration()
     # def _capture_unit_out()
         
     def _unit_input_from_input(self, input):
-        # Use checks from _BaseMod on input
+        # Use checks from BaseMod on input
         unit_input = super()._unit_input_from_input(input)
         # Then apply checks from pclass
         if isinstance(unit_input, self.pclass):
@@ -104,7 +104,7 @@ class InPlaceMod(_BaseMod):
         """unit_process for InPlaceMod
 
         Check if the input deque and iteration number
-        meet iteration continuation criteria inherited from _BaseMod
+        meet iteration continuation criteria inherited from BaseMod
 
         Check if the next object popleft'd off `x` is type self.pclass
         

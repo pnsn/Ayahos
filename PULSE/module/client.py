@@ -4,7 +4,7 @@ from obspy import UTCDateTime
 from obspy.clients.fdsn import Client
 from obspy.clients.fdsn.routing.federator_routing_client import FederatorRoutingClient
 from obsplus import WaveBank
-from PULSE.module._base import _BaseMod
+from PULSE.module.base import BaseMod
 from PULSE.data.dictstream import DictStream
 from PULSE.util.pyew import trace2wave
 # from PULSE.util.latency import read_latency_file
@@ -12,7 +12,7 @@ from PULSE.util.pyew import trace2wave
 # TODO: MODULE IN DEVELOPMENT / WORK IN PROGRESS (WIP)
 
 
-# class ClientMod(_BaseMod):
+# class ClientMod(BaseMod):
 #     def __init__(
 #             self,
 #             client,
@@ -44,7 +44,7 @@ from PULSE.util.pyew import trace2wave
 
 
 
-# class ClientMod(_BaseMod):
+# class ClientMod(BaseMod):
 #     def __init__(self,
 #                  client,
 #                  latency_file,

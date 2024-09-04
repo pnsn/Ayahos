@@ -73,14 +73,12 @@ in the attached `LICENSE <https://github.com/pnsn/PULSE/blob/develop/LICENSE>`_ 
 
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 4
    :caption: Contents:
 
    self
-   PULSE.data.rst
-   PULSE.module.rst
-   PULSE.sequences.rst
-   PULSE.util.rst
+   modules.rst
+
 
 Indices and tables
 ==================

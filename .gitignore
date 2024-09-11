@@ -178,7 +178,6 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-docs/source/modules.rst
 live_example/data/tmp/ew2file_pew_keeper
 live_example/params/*.ndx
 live_example/data/pick_ew/*.p2k
@@ -190,8 +189,3 @@ diagrams/Retailleau_etal_2022_PFD_remake.png
 diagrams/ANSS_presentation_live_example_EW_PFD.png
 diagrams/ANSS_presentation_MOD_PULSE_level3view_hztl.png
 PULSE.code-workspace
-docs/source/PULSE.data.rst
-docs/source/PULSE.module.rst
-docs/source/PULSE.rst
-docs/source/PULSE.sequences.rst
-docs/source/PULSE.util.rst

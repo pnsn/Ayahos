@@ -1,16 +1,18 @@
-PULSE.mod package
-=================
+mod Package
+===========
 
-Submodules
-----------
+Module Classes & Methods
+------------------------
 
-PULSE.mod.base module
----------------------
+.. toctree::
+   :maxdepth: 1
+   :caption: Classes:
+   
+   class_modules/mod/base.rst
+   .. class_modules/mod/sequence.rst
 
-.. automodule:: PULSE.mod.base
-   :members:
-   :undoc-members:
-   :show-inheritance:
+
+
 
 .. PULSE.mod.buffer module
 .. -----------------------

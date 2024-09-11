@@ -12,13 +12,15 @@
 """
 
 from numpy import nan
-import pandas as pd
 from copy import deepcopy
 from collections import deque
-import logging, sys, datetime, os
+import logging, sys, os
+from obspy.core.util.attribdict import AttribDict
+from obspy.core.utcdatetime import UTCDateTime
 
 # Logger at module level
 Logger = logging.getLogger(__name__)
+
 
 # @add_class_name_to_docstring
 class BaseMod(object):
@@ -29,25 +31,13 @@ class BaseMod(object):
     :param maxlen: maximum number of items to keep in this object's *output* attribute, defaults to None.
         This is passed as the **collections.deque.maxlen** attribute of **BaseMod.output**
     :type maxlen: int, optional
-    :var output: object that holds outputs from :meth:`~PULSE.mod.base.BaseMod.run_unit_process`. A :class:`~collections.deque` object.
 
-        also see :meth:`~PULSE.mod.base.BaseMod.store_unit_output`
+    :var output: a :class:`~collections.deque` with **maxlen** set by :param:`~maxlen` that holds outputs from :meth:`~PULSE.mod.base.BaseMod.pulse` calls
+    :var stats: a :class:`~PULSE.mod.base.PulseStats` object that holds metadata from the last call of :meth:`~PULSE.mod.base.BaseMod.pulse`
     :var max_pulse_size: maximum number of iterations for single call of :meth:`~PULSE.mod.base.BaseMod.pulse` 
     :var maxlen: maximum size of the **BaseMod.output** attribute. This is enforced with the :class:`~collections.deque` **maxlen** behavior. 
     :var Logger: a :class:`~logging.Logger` object named to match this class (BaseMod)
-    :var _last_pulse_stats: a :class:`~dict` object summarizing stats from the last call of :meth:`~PULSE.mod.base.BaseMod.pulse`
-        **start** (*datetime.datetime*) -- start time of last pulse
-        **end** (*datetime.datetime*) - -end time of last pulse
-        **exit** (*str*) -- string describing the nature of the :meth:`~PULSE.mod.base.BaseMod.pulse` conclusion
-            'early' - triggered early stopping due to :meth:`~PULSE.mod.base.BaseMod.should_this_iteration_run`
-            'late' - triggered early stopping due to :meth:`~PULSE.mod.base.BaseMod.should_next_iteration_run`
-            'max' - if iterations reached **BaseMod.max_pulse_size**
-        **count** (*int*) -- number of iterations completed in the call
-        **in0** (*int*) -- measure of the input to pulse at the start of the call
-        **in1** (*int*) -- measure of the input to pulse at the end of the call
-        **out0** (*int*) -- measure of **BaseMod.output** at the start of the call
-        **out1** (*int*) -- measure of **BaseMod.output** at the end of the call
-        All values start as None
+
     """
 
     def __init__(self, max_pulse_size=1, maxlen=None, name_suffix=None):
@@ -75,25 +65,19 @@ class BaseMod(object):
             self._suffix = f'_{name_suffix}'
 
         # Set up logging at the module object level
-        self.Logger = logging.getLogger(f'{self.__name__()}')
+        self.Logger = logging.getLogger(f'{self.__name__(full=False)}')
         # Initialize output
         self.output = deque(maxlen=maxlen)
         self.maxlen = maxlen
-        # Initialize pulse metadata
-        self._last_pulse_stats = {'start': None,
-                                  'end': None,
-                                  'stop': None,
-                                  'count': None,
-                                  'in0': None,
-                                  'in1': None,
-                                  'out0': None,
-                                  'out1': None}
-
-        
-
+        # Initialize pulse metadata holder
+        self.stats = PulseStats()
+        self.stats.modname = self.__name__(full=False)
+        # Initialize flag for continuing pulse iterations
+        self._continue_pulsing = True
 
     def __name__(self, full=False):
         """Return the camel-case name of this class with/without the submodule extension
+
         :param full: use the full class path? Defaults to False
         :type full: bool, optional
         :return: class name
@@ -104,17 +88,19 @@ class BaseMod(object):
         else:
             return self.__class__.__name__ + self._suffix
     
-    def __repr__(self):
+    def __repr__(self, full=False):
         """
         Return a string report essential user data for this BaseMod object
         """
-        rstr = f'Module Name: {self.__name__(full=False)}\n'
-        rstr += f"Max Pulse Size: {self.max_pulse_size}\n"
-        rstr += f"Max Output Size: {self.maxlen}\n"
-        rstr += " - Last Pulse Stats - \n"
-        for _k, _v in self._last_pulse_stats.items():
-            rstr += f'{_k}: {_v}\n'
-            # \nOutput: {len(self.output)} (type {type(self.output)})"
+        rstr = f'Name: {self.__name__(full=False)}\n'
+        rstr += f"Output Size: {self.stats.out1}/{self.maxlen}\n"
+        rstr += f"Max Iterations: {self.max_pulse_size}\n"
+        if full:
+            rstr += " - Last Pulse Stats - \n"
+            rstr += self.stats.__str__()
+        else:
+            rstr += f'Last Pulse Rate: {self.stats["pulse rate"]:.2f} Hz (No. Iterations: {self.stats.niter})'
+        
         return rstr
 
     def __str__(self):
@@ -127,66 +113,77 @@ class BaseMod(object):
         return deepcopy(self)
 
     def pulse(self, input):
-        """Abstracted method for :mod:`~PULSE.mod` classes that executes one or more unit-tasks
-        depending on the behaviors of sub-routine methods specific to each of these clases.
-
-        :param input: class-specific input
-        :type input: class-specific. See the **measure_input** method for this class
+        """TEMPLATE METHOD
         
+        Specifics for :class:`~PULSE.mod.base.BaseMod`
+
+        :param input: collection of objects that will have elements removed using :meth:`~collections.deque.popleft` 
+            and appended to **BaseMod.output** using :meth:`~collections.deque.append`
+        :type input: collections.deque
         :return:
-          - **output** (*class-specific*) -- aliased access to this object's **output** attribute.
-
-        This method is inherited by all :mod:`~PULSE.mod` classes and has the following structure
+            - **output** (*collections.deque*) -- view of this BaseMod object's **BaseMod.deque** attribute
         
-        1) :meth:`~PULSE.mod.base.BaseMod.measure_input` - measure the input to determine the maximum number of iterations to run, up to *max_pulse_size*.
-        ITERATION LOOP
-            2) :meth:`~PULSE.mod.base.BaseMod.should_this_iteration_run` - determine if this iteration should be run, or if iterations should be stopped early.
-            3) :meth:`~PULSE.mod.base.BaseMod.get_unit_input` - extract an object from **input** that will be used for the next step
-            4) :meth:`~PULSE.mod.base.BaseMod.run_unit_process` - run the unit process for this class.
-            5) :meth:`~PULSE.mod.base.BaseMod.store_unit_output` - merge the output from the previous step into the *output* attribute of this object
-            6) :meth:`~PULSE.mod.base.BaseMod.should_next_iteration_run` - determine if the next iteration should be run.
+        TEMPLATE EXPLANATION
 
-        The start-time and end-time of this call of pulse, along with the number of completed iterations, are stored in private attributes
+        Template method for all :mod:`~PULSE.mod` classes that executes a number of unit-tasks
+        depending on the behaviors of sub-routine methods specific to each of these clases.
+        This method also updates values in the **stats** attribute with metadata from the most
+        recent call of this method.
+
+        This method is inherited by all :mod:`~PULSE.mod` classes and has the following structure:
+        
+        A) Update **stats** 'starttime', 'in0', and 'out0' values
+
+        B) Iteration Loop (up to **max_pulse_size** iterations)
+
+            1) :meth:`~PULSE.mod.base.BaseMod.get_unit_input` - extract an object from **input** that will be used for the next step
+            2) :meth:`~PULSE.mod.base.BaseMod.run_unit_process` - run the unit process for this class.
+            3) :meth:`~PULSE.mod.base.BaseMod.store_unit_output` - merge the output from the previous step into the *output* attribute of this object
+        
+        C) Update **stats** 'stop', 'niter', 'endtime', 'in1', and 'out1' values
+
         """ 
         # Capture pulse stats at beginning of call and measure/check input
-        self._last_pulse_stats.update({'start': datetime.datetime.now(),
-                                       'in0': self.measure_input(input),
-                                       'out0': self.measure_output()})
-        # Start process counter
-        nproc = 0
+        self.stats.starttime = UTCDateTime.now()
+        self.stats.in0 = self.check_input(input)
+        self.stats.out0 = self.measure_output()
+        self._continue_pulsing = True
         for _n in range(self.max_pulse_size):
-            # Check if this iteration should run
-            if self.should_this_iteration_run(_n):
-                pass
-            else:
-                self._last_pulse_stats.update({'stop': 'early'})
-                break
             # get single object for unit_process
             unit_input = self.get_unit_input(input)
-            # Execute unit process
-            unit_output = self.run_unit_process(unit_input)
-            # Increase process counter
-            nproc += 1
+            # Run unit process if unit_input is not False
+            if self._continue_pulsing:
+                # Execute unit process
+                unit_output = self.run_unit_process(unit_input)
+            # Otherwise break for-loop & flag as early stopping
+            else:
+                self.stats.stop = 'early0'
+                break
+
             # Capture output
             self.store_unit_output(unit_output)
             # Check if pulse should conclude early
-            if self.should_next_iteration_run(unit_output):
+            if self._continue_pulsing:
                 pass
             else:
                 # Break iteration late & update 'stop' reason
-                self._last_pulse_stats.upadte({'stop': 'late'})
+                self.stats.stop = 'early1'
                 break
         # If completed due to max_pulse_size iterations
         if _n + 1 == self.max_pulse_size:
-            self._last_pulse_stats.update({'stop': 'max'})
+            self.stats.stop = 'max'
         # Capture pulse stats at conclusion of call
-        self._last_pulse_stats.update({'in1': self.measure_input(input),
-                                       'out1': self.measure_output(),
-                                       'count': nproc,
-                                       'end': datetime.datetime.now()})
+        self.stats.in1 = self.check_input(input)
+        self.stats.out1 = self.measure_output()
+        try:
+            self.stats.niter = _n + 1
+        except NameError:
+            self.stats.niter = 0
+        self.stats.endtime = UTCDateTime.now()
+
         return self.output
 
-    def measure_input(self, input):
+    def check_input(self, input):
         """
         POLYMORPHIC METHOD
 
@@ -213,113 +210,160 @@ class BaseMod(object):
 
         Last updated with :class`~PULSE.module.base.BaseMod`
 
-        Returns output of len(self.output)
+        Measure the length of the **BaseMod.output** attribute
 
         :return:
          - **output_size** (*int*) -- length of **self.output**
         """        
         return len(self.output)
-
-    def should_this_iteration_run(self, iter_number):
-        """POLYMORPHIC METHOD  
-
-        last updated with :class:`~PULSE.mod.base.BaseMod`
-
-        Should this iteration inside :meth:`~PULSE.mod.base.BaseMod.pulse` be run?
-        
-        Criteria:
-         - the max_pulse_inputs
-
-        :param iter_number: iteration number
-        :type iter_number: int
-        :return status: continue to next iteration?
-        :rtype status: bool
-        """
-        input_size = self._last_pulse_stats['in0']
-        # if input is non-empty
-        if len(input) > 0:
-            # and iter_number +1 is l.e. length of input
-            if iter_number + 1 <= input_size:
-                # Signal to run this 
-                status = True
-        else:
-            status = False
-        return status
     
     def get_unit_input(self, input):
-        """
-        POLYMORPHIC METHOD
+        """POLYMORPHIC METHOD
+
         Last updated with :class:`~PULSE.module.base.BaseMod`
 
         Get the input object for :meth:`~PULSE.module.base.BaseMod.run_unit_process` from
         the `input` provided to :meth:`~PULSE.module.base.BaseMod.pulse`
 
-        :param input: deque of objects to pass to **run_unit_process**
+        :param input: deque of objects
         :type input: collections.deque
-        :return unit_input: unit_input popleft'd from input
-        :rtype unit_input: any
-        """        
+        :return:
+         - **unit_input** (*object* or *bool*) -- object removed from **input** using :meth:`~collections.deque.popleft`.
+                if input is empty, this method returns `False`, triggering early iteration stopping in :meth:`~PULSE.mod.base.BaseMod.pulse`
+        """ 
         if isinstance(input, deque):
-            unit_input = input.popleft()
+            if self.stats.in0 > 0:
+                unit_input = input.popleft()
+            else:
+                unit_input = None
+                self._continue_pulsing = False
             return unit_input
         else:
-            self.Logger.error(f'input object was incorrect type')
-            sys.exit(1)        
+            self.Logger.error(f'input must be type collections.deque. Exiting on EX_DATAERR ({os.EX_DATAERR})')
+            sys.exit(os.EX_DATAERR)        
 
     def run_unit_process(self, unit_input):
-        """
-        POLYMORPHIC METHOD
+        """POLYMORPHIC METHOD
+
         Last updated with :class: `~PULSE.module.base.BaseMod`
 
-        return unit_output = unit_input
+        Returns the input object as output
 
-        :param obj: input object
-        :type obj: any
-        :return unit_output: output object
-        :rtype unit_output: any
+        :param unit_input: any unit input object, except False, which is reserved for early stopping
+        :type unit_input: object
+        :return:
+         - **unit_output** (*object*)
         """
         unit_output = unit_input
         return unit_output        
     
     def store_unit_output(self, unit_output):
-        """
-        POLYMORPHIC METHOD
-        Last updated with :class: `~PULSE.module.base.BaseMod`
-
-        Append unit_output to self.output
-
-        run Mod().output.append(unit_output)
-
-        :param unit_output: standard output object from unit_process
-        :type unit_output: any
-        """        
-        self.output.append(unit_output)
-        
-    def should_next_iteration_run(self, unit_output):
         """POLYMORPHIC METHOD
 
-        Last updated with :class:`~PULSE.module.base.BaseMod`
+        Last updated with :class: `~PULSE.module.base.BaseMod`
 
-        Check if the next iteration should be run based on unit_output
+        Attach unit_output to self.output using :meth:`~collections.deque.append`
 
-        Returns status = True unconditionally
-
-        :param unit_output: output run_unit_process
-        :type unit_output: 
-        :return:
-         - **status** (*bool*) -- should the next iteration be run? Always returns True.
-         
-        """
-        if isinstance(unit_output, object):
-            status = True
-        else:
-            self.Logger.critical('Somehow produced a non-object unit_output... quitting.')
-            sys.exit(1)
-        return status
+        :param unit_output: unit output from :meth:`~PULSE.mod.base.BaseMod.run_unit_process`
+        :type unit_output: object
+        """        
+        self.output.append(unit_output)
+        # NOTE: This is another place where self._continue_pulsing can be updated for early stopping type 1
+        
     
 
+class PulseStats(AttribDict):
+    """A :class:`~obspy.core.util.attribdict.AttribDict` child-class for holding metadata
+    from a given call of :meth:`~PULSE.mod.base.BaseMod.pulse`. 
+    
+    :var modname: name of the associated module
+    :var starttime: POSIX start time of the last call of **pulse**
+    :var endtime: UTC end time of the last call of **pulse**
+    :var niter: number of iterations completed
+    :var in0: input size at the start of the call
+    :var in1: input size at the end of the call
+    :var out0: output size at the start of the call
+    :var out1: output size at the end of the call
+    :var runtime: number of seconds it took for the call to run
+    :var pulse rate: iterations per second
+    :var stop: Reason iterations stopped
 
-    # def capture_pulse_iteration_metadata(self, pulse_starttime, input_size, nproc, early_stop_code):
+    Explanation of **stop** values
+       - 'max' -- :meth:`~PULSE.mod.BaseMod.pulse` reached the **max_pulse_size** iteration limit
+       - 'early0' -- flagged for early stopping before executing the unit-process in an iteration
+       - 'early1' -- flagged for early stopping after executing the unit-process in an iteration
+     """    
+    readonly = ['pulse rate','runtime']
+    _refresh_keys = {'starttime','endtime','niter'}
+    defaults = {'modname': '',
+                'starttime': 0,
+                'endtime': 0,
+                'stop': '',
+                'niter': 0,
+                'in0': 0,
+                'in1': 0,
+                'out0': 0,
+                'out1': 0,
+                'runtime':0,
+                'pulse rate': 0}
+    _types = {'modname': str,
+              'starttime':float,
+              'endtime':float,
+              'stop': str,
+              'niter':int,
+              'in0':int,
+              'in1':int,
+              'out0':int,
+              'out1':int,
+              'runtime':float,
+              'pulse rate':float}
+    
+
+    def __init__(self, header={}):
+        """Create an empty :class:`~PULSE.mod.base.PulseStats` object"""
+        super(PulseStats, self).__init__(header)
+
+    def __setitem__(self, key, value):
+        if key in self._refresh_keys:
+            if key == 'starttime':
+                value = float(value)
+            elif key == 'endtime':
+                value = float(value)
+            elif key == 'niter':
+                value = float(value)
+            # Set current key
+            super(PulseStats, self).__setitem__(key, value)
+            # Set derived value: runtime
+            self.__dict__['runtime'] = self.endtime - self.starttime
+            # Set derived value: pulse rate
+            if self.runtime > 0:
+                self.__dict__['pulse rate'] = self.niter / self.runtime
+            else:
+                self.__dict__['pulse rate'] = 0.
+            return
+        if isinstance(value, dict):
+            super(PulseStats, self).__setitem__(key, AttribDict(value))
+        else:
+            super(PulseStats, self).__setitem__(key, value)
+
+
+    __setattr__ = __setitem__
+
+    def __getitem__(self, key, default=None):
+        return super(PulseStats, self).__getitem__(key, default)
+
+    def __str__(self):
+        prioritized_keys = ['modname','pulse rate','stop','niter',
+                            'in0','in1','out0','out1',
+                            'starttime','endtime','runtime']
+        return self._pretty_str(priorized_keys=prioritized_keys)
+
+    def _repr_pretty_(self, p, cycle):
+        p.text(str(self))
+
+    #TODO: Make averaging 
+
+    # def capture_pulse_iteration_metadata(self, pulse_starttime, input_size, niter, early_stop_code):
     #     """
     #     POLYMORPHIC METHOD
     #     Last updated with :class:`~PULSE.module.base.BaseMod`
@@ -331,8 +375,8 @@ class BaseMod(object):
     #     :type pulse_starttime: pandas.core.timestamp.Timestamp
     #     :param input_size: size of the input at the start of a call of pulse()
     #     :type input_size: int
-    #     :param nproc: number of unit processes completed in this pulse
-    #     :type nproc: int
+    #     :param niter: number of unit processes completed in this pulse
+    #     :type niter: int
     #     :param early_stop_code: integer standin for True (1) and False (0) if the pulse hit an early termination clause
     #     :type early_stop_code: int
     #     """        
@@ -341,7 +385,7 @@ class BaseMod(object):
     #     runtime = (timestamp - pulse_starttime)
     #     output_size = len(self.output)
     #     df_line = pd.DataFrame(dict(zip(self._keys_meta,
-    #                                    [timestamp, nproc, runtime, input_size, output_size, early_stop_code])),
+    #                                    [timestamp, niter, runtime, input_size, output_size, early_stop_code])),
     #                            index=[0])
     #     # Append line to dataframe
     #     if len(self._metadata) == 0:
@@ -454,7 +498,7 @@ class BaseMod(object):
         #     if self.should_next_iteration_run(unit_output):
         #         pass
         #     else:
-        #         self._update_metadata(pulse_starttime, input_size, nproc, 1)
+        #         self._update_metadata(pulse_starttime, input_size, niter, 1)
         #         break
         # # Get alias of self.output as output
         # output = self.output
@@ -463,7 +507,7 @@ class BaseMod(object):
 
         # # If the 
         # if _n + 1 == self.max_pulse_size:
-        #     self._update_metadata(pulse_starttime, input_size, nproc, 0)
+        #     self._update_metadata(pulse_starttime, input_size, niter, 0)
 
         # self._update_report()
         # # self._update_pulse_rate()

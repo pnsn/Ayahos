@@ -15,8 +15,8 @@ from numpy import nan
 from copy import deepcopy
 from collections import deque
 import logging, sys, os
-from obspy.core.util.attribdict import AttribDict
 from obspy.core.utcdatetime import UTCDateTime
+from PULSE.data.header import PulseStats
 
 # Logger at module level
 Logger = logging.getLogger(__name__)
@@ -231,17 +231,13 @@ class BaseMod(object):
          - **unit_input** (*object* or *bool*) -- object removed from **input** using :meth:`~collections.deque.popleft`.
                 if input is empty, this method returns `False`, triggering early iteration stopping in :meth:`~PULSE.mod.base.BaseMod.pulse`
         """ 
-        if isinstance(input, deque):
-            if self.stats.in0 > 0:
-                unit_input = input.popleft()
-            else:
-                unit_input = None
-                self._continue_pulsing = False
-            return unit_input
+        if self.ckeck_input(input) > 0:
+            unit_input = input.popleft()
         else:
-            self.Logger.error(f'input must be type collections.deque. Exiting on EX_DATAERR ({os.EX_DATAERR})')
-            sys.exit(os.EX_DATAERR)        
-
+            unit_input = None
+            self._continue_pulsing = False
+        return unit_input
+        
     def run_unit_process(self, unit_input):
         """POLYMORPHIC METHOD
 
@@ -270,97 +266,7 @@ class BaseMod(object):
         self.output.append(unit_output)
         # NOTE: This is another place where self._continue_pulsing can be updated for early stopping type 1
         
-    
-
-class PulseStats(AttribDict):
-    """A :class:`~obspy.core.util.attribdict.AttribDict` child-class for holding metadata
-    from a given call of :meth:`~PULSE.mod.base.BaseMod.pulse`. 
-    
-    :var modname: name of the associated module
-    :var starttime: POSIX start time of the last call of **pulse**
-    :var endtime: UTC end time of the last call of **pulse**
-    :var niter: number of iterations completed
-    :var in0: input size at the start of the call
-    :var in1: input size at the end of the call
-    :var out0: output size at the start of the call
-    :var out1: output size at the end of the call
-    :var runtime: number of seconds it took for the call to run
-    :var pulse rate: iterations per second
-    :var stop: Reason iterations stopped
-
-    Explanation of **stop** values
-       - 'max' -- :meth:`~PULSE.mod.BaseMod.pulse` reached the **max_pulse_size** iteration limit
-       - 'early0' -- flagged for early stopping before executing the unit-process in an iteration
-       - 'early1' -- flagged for early stopping after executing the unit-process in an iteration
-     """    
-    readonly = ['pulse rate','runtime']
-    _refresh_keys = {'starttime','endtime','niter'}
-    defaults = {'modname': '',
-                'starttime': 0,
-                'endtime': 0,
-                'stop': '',
-                'niter': 0,
-                'in0': 0,
-                'in1': 0,
-                'out0': 0,
-                'out1': 0,
-                'runtime':0,
-                'pulse rate': 0}
-    _types = {'modname': str,
-              'starttime':float,
-              'endtime':float,
-              'stop': str,
-              'niter':int,
-              'in0':int,
-              'in1':int,
-              'out0':int,
-              'out1':int,
-              'runtime':float,
-              'pulse rate':float}
-    
-
-    def __init__(self, header={}):
-        """Create an empty :class:`~PULSE.mod.base.PulseStats` object"""
-        super(PulseStats, self).__init__(header)
-
-    def __setitem__(self, key, value):
-        if key in self._refresh_keys:
-            if key == 'starttime':
-                value = float(value)
-            elif key == 'endtime':
-                value = float(value)
-            elif key == 'niter':
-                value = float(value)
-            # Set current key
-            super(PulseStats, self).__setitem__(key, value)
-            # Set derived value: runtime
-            self.__dict__['runtime'] = self.endtime - self.starttime
-            # Set derived value: pulse rate
-            if self.runtime > 0:
-                self.__dict__['pulse rate'] = self.niter / self.runtime
-            else:
-                self.__dict__['pulse rate'] = 0.
-            return
-        if isinstance(value, dict):
-            super(PulseStats, self).__setitem__(key, AttribDict(value))
-        else:
-            super(PulseStats, self).__setitem__(key, value)
-
-
-    __setattr__ = __setitem__
-
-    def __getitem__(self, key, default=None):
-        return super(PulseStats, self).__getitem__(key, default)
-
-    def __str__(self):
-        prioritized_keys = ['modname','pulse rate','stop','niter',
-                            'in0','in1','out0','out1',
-                            'starttime','endtime','runtime']
-        return self._pretty_str(priorized_keys=prioritized_keys)
-
-    def _repr_pretty_(self, p, cycle):
-        p.text(str(self))
-
+ 
     #TODO: Make averaging 
 
     # def capture_pulse_iteration_metadata(self, pulse_starttime, input_size, niter, early_stop_code):

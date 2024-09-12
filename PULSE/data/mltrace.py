@@ -20,63 +20,13 @@ from decorator import decorator
 from obspy import Stream, read, UTCDateTime
 from obspy.core.trace import Trace, Stats
 from obspy.core.util.misc import flat_not_masked_contiguous
+from PULSE.data.header import MLStats
 from PULSE.util.seisbench import pretrained_dict
 from PULSE.util.stats import estimate_quantiles, estimate_moments
 from PULSE.util.pyew import is_wave_msg
 
 Logger = logging.getLogger(__name__)
 
-###################################################################################
-# Machine Learning Stats Class Definition #########################################
-###################################################################################
-
-class MLStats(Stats):
-    """Extends the :class:`~obspy.core.mltrace.Stats` class to encapsulate additional metadata associated with machine learning enhanced time-series processing.
-
-    Added/modified defaults are:
-     - 'location' = '--'
-     - 'model' - name of the ML model associated with a MLTrace
-     - 'weight' - name of the ML model weights associated with a MLTrace
-
-    :param header: initial non-default values with which to populate this MLStats object
-    :type header: dict
-    """
-    # set of read only attrs
-    readonly = ['endtime']
-    # add additional default values to obspy.core.mltrace.Stats's defaults
-    defaults = copy.deepcopy(Stats.defaults)
-    defaults.update({
-        'location': '--',
-        'model': '',
-        'weight': '',
-        'processing': []
-    })
-
-    # dict of required types for certain attrs
-    _types = copy.deepcopy(Stats._types)
-    _types.update({
-        'model': str,
-        'weight': str
-    })
-
-    def __init__(self, header={}):
-        """Create a :class:`~PULSE.data.mltrace.MLStats` object
-
-        :param header: initial non-default values with which to populate this MLStats object
-        :type header: dict
-        """        
-        super(Stats, self).__init__(header)
-        if self.location == '':
-            self.location = self.defaults['location']
-
-    def __str__(self):
-        """
-        Return better readable string representation of this :class:`~PULSE.data.mltrace.MLStats` object.
-        """
-        prioritized_keys = ['model','weight','station','channel', 'location', 'network',
-                          'starttime', 'endtime', 'sampling_rate', 'delta',
-                          'npts', 'calib']
-        return self._pretty_str(prioritized_keys)
 
 ###################################################################################
 # DISABLE _add_processing_info DECORATOR ##########################################

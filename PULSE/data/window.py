@@ -12,88 +12,16 @@
     and provides additional class methods for pre-processing one or more MLTrace objects into a data tensor ready for input to a machine
     learning model (i.e., those derived from :class:`~seisbench.models.WaveformModel`.
 """
-import copy
 import numpy as np
 import pandas as pd
 import seisbench.models as sbm
-from obspy import Trace, Stream, UTCDateTime
-from PULSE.data.dictstream import DictStream, DictStreamStats
+from obspy import Trace, Stream
+from PULSE.data.dictstream import DictStream
 from PULSE.data.mltrace import MLTrace
-
-###############################################################################
-# WindowStats Class Definition ##########################################
-###############################################################################
-
-class WindowStats(DictStreamStats):
-    """Child-class of :class:`~PULSE.data.dictstream.DictStreamStats` that extends
-    contained metadata to include a set of reference values and metadata that inform
-    pre-processing, carry metadata cross ML prediction operations using SeisBench 
-    :class:`~seisbench.models.WaveformModel`-based models, and retain processing information
-    on outputs of these predictions.
-
-    :param header: collector for non-default values (i.e., not in WindowStats.defaults)
-        to use when initializing a WindowStats object, defaults to {}
-    :type header: dict, optional
-
-    also see:
-     - :class:`~PULSE.data.dictstream.DictStreamStats`
-     - :class:`~obspy.core.util.attribdict.AttribDict`
-    """    
-    # NTS: Deepcopy is necessary to not overwrite _types and defaults for parent class
-    _types = copy.deepcopy(DictStreamStats._types)
-    _types.update({'ref_component': str,
-                   'aliases': dict,
-                   'thresholds': dict,
-                   'reference_starttime': (UTCDateTime, type(None)),
-                   'reference_npts': (int, type(None)),
-                   'reference_sampling_rate': (float, type(None))})
-    defaults = copy.deepcopy(DictStreamStats.defaults)
-    defaults.update({'ref_component': 'Z',
-                     'aliases': {'Z': 'Z3',
-                                 'N': 'N1',
-                                 'E': 'E2'},
-                     'thresholds': {'ref': 0.95, 'other': 0.8},
-                     'reference_starttime': None,
-                     'reference_sampling_rate': None,
-                     'reference_npts': None})
-    
-    def __init__(self, header={}):
-        """Initialize a WindowStats object
-
-        :param header: collector for non-default values (i.e., not in WindowStats.defaults)
-            to use when initializing a WindowStats object, defaults to {}
-        :type header: dict, optional
-
-        also see:
-         - :class:`~PULSE.data.dictstream.DictStreamStats`
-         - :class:`~obspy.core.util.attribdict.AttribDict`
-        """        
-        # Initialize super + updates to class attributes
-        super(WindowStats, self).__init__()
-        # THEN update self with header inputs
-        self.update(header)
-
-    def __str__(self):
-        prioritized_keys = ['ref_component',
-                            'common_id',
-                            'aliases',
-                            'reference_starttime',
-                            'reference_sampling_rate',
-                            'reference_npts',
-                            'processing']
-
-        hidden_keys = ['min_starttime',
-                       'max_starttime',
-                       'min_endtime',
-                       'max_endtime']
-
-        return self._pretty_str(prioritized_keys, hidden_keys)
-
-    def _repr_pretty_(self, p, cycle):
-        p.text(str(self))
+from PULSE.data.header import WindowStats
     
 ###############################################################################
-# Component Stream Class Definition ###########################################
+# Window Class Definition ###########################################
 ###############################################################################
         
 class Window(DictStream):

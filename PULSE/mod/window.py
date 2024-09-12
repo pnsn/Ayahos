@@ -7,6 +7,9 @@
 :purpose:
     This conatins the class definition for a module that facilitates data window generation
 
+    # TODO: Need to write pulse subroutines with simplified structure
+
+
 Classes
 -------
 :class:`~PULSE.mod.window.WindowMod`

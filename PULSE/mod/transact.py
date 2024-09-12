@@ -8,7 +8,9 @@
     This conatins the class definition for a module that facilitates data transfer
     between the Python and Earthworm Message Transport System using established connections
     
+# TODO: Need to write pulse subroutines with simplified structure
 
+    
 Classes
 -------
 :class:`~ewflow.module.transact.TransactMod`

@@ -1,4 +1,14 @@
-#TODO: Header
+"""
+:module: PULSE.mod.predict
+:auth: Nathan T. Stevens
+:email: ntsteven (at) uw.edu
+:org: Pacific Northwest Seismic Network
+:license: AGPL-3.0
+:purpose: This module houses class definition(s) for PULSE module objects
+    that facilitate machine-learning prediction execution on pre-processed data.
+# TODO: Need to write pulse subroutines with simplified structure
+
+"""#TODO: Header
 
 import torch, copy, logging, sys
 import numpy as np

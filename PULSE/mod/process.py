@@ -9,6 +9,8 @@
     conduct in-place alterations to data objects or capture outputs of data objects'
     class-method outputs
 
+# TODO: Need to write pulse subroutines with simplified structure
+
 
 Classes
 -------

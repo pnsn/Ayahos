@@ -11,6 +11,8 @@ Classes
 -------
 :class:`~PULSE.mod.coordinate.PulseMod_EW`
 
+# TODO: Need to write pulse subroutines with simplified structure
+
 TODO: Eventually migrate general sequence construction to PULSE.mod.sequence.SequenceBuilderMod
 """
 import threading, logging, time, sys, configparser, inspect

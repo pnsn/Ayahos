@@ -10,7 +10,7 @@
 # from PULSE.util.latency import read_latency_file
 
 # TODO: MODULE IN DEVELOPMENT / WORK IN PROGRESS (WIP)
-
+# TODO: Need to write pulse subroutines with simplified structure
 
 # class ClientMod(BaseMod):
 #     def __init__(

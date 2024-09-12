@@ -9,6 +9,9 @@
     objects containing characteristic response function (ML phase pick probability) time series and conversion of triggers
     into :class:`~PULSE.data.trigger.Trigger` objects.
 
+# TODO: Need to write pulse subroutines with simplified structure
+
+
 Classes
 -------
 :class:`~PULSE.mod.trigger.TriggerMod`

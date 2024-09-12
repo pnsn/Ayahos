@@ -4,9 +4,9 @@ mod package
 .. toctree::
    :maxdepth: 2
 
-   mod.base.rst
-
-
+   base.rst
+   sequence.rst
+   buffer.rst
 
 
 .. Sequence Module Class

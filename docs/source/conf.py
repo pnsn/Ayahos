@@ -34,14 +34,18 @@ release = _version(project)
 needs_sphinx = '7.4.7' # Initial docs development version
 
 extensions = [
+    "sphinx.ext.intersphinx",
     "sphinx.ext.autodoc",
+    "sphinx.ext.autosummary",
     "sphinx_rtd_theme"
 ]
 
 templates_path = ['_templates']
 exclude_patterns = []
 autodoc_member_order = 'bysource'
+master_doc = 'index'
 
+exclude_patterns=['_static','_templates','side_storage']
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
@@ -49,3 +53,10 @@ autodoc_member_order = 'bysource'
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
 pygments_style ='sphinx'
+
+
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3/', None),
+    'numpy': ('https://numpy.org/doc/stable/', None),
+    'obspy': ('https://docs.obspy.org/', None),
+}

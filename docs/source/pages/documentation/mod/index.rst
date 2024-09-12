@@ -1,21 +1,24 @@
-mod Package
+mod package
 ===========
 
-Module Classes & Methods
-------------------------
-
 .. toctree::
-   :maxdepth: 1
-   :caption: Classes:
-   
-   class_modules/mod/base.rst
-   .. class_modules/mod/sequence.rst
+   :maxdepth: 2
+
+   mod.base.rst
 
 
 
 
-.. PULSE.mod.buffer module
-.. -----------------------
+.. Sequence Module Class
+.. ---------------------
+
+.. .. automodule:: PULSE.mod.sequence
+..    :members:
+..    :undoc-members:
+..    :show-inheritance:
+
+.. BufferMod Class
+.. ---------------
 
 .. .. automodule:: PULSE.mod.buffer
 ..    :members:

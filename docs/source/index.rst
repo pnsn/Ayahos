@@ -19,43 +19,16 @@ PULSE:
  * uses `PyEarthworm <https://github.com/Boritech-Solutions/PyEarthworm>`_ to directly interface with the Earthworm Message Transport System native to `Earthworm <https://earthwormcentral.org>`_ and operate PULSE programs as Earthworm-recognizable Modules. Example provided in :mod:`~live_example`.
 
 
-.. This project was inspired by, and builds upon, the workflow presented in .. ref: Retailleau2022
+To learn more about the PULSE API, see the code :ref:`documentation_overview`.
 
+To see how to install PULSE on your local machine, see the :ref:`installation` page.
 
+.. To see a working example of PULSE on live streaming data, see the :ref:`live_example`.
 
-Installation
-------------
-1. Install `Earthworm 7.10 <http://www.earthwormcentral.org/documentation4/index.html>`_.
-2. Install `miniconda <https://docs.anaconda.com/miniconda/miniconda-install/>`_.
-3. Create and activate a `conda` environment:
+.. Getting Started
+.. ---------------
 
-   .. code-block:: console
-
-      conda create -n PULSE pip git  
-      conda activate PULSE  
-
-4. Source your Earthworm environment (required for PyEarthworm installation):
-
-   .. code-block:: console
-
-      source /path/to/your/earthworm/params/ew_your_os_type.bash
-
-5. Install `PyEarthworm` from GitHub:
-
-   .. code-block:: console 
-
-      pip install git+https://github.com/Boritech-Solutions/PyEarthworm
-
-6. Install `PULSE` from GitHub:
-
-   .. code-block:: console
-
-      pip install git+https://github.com/pnsn/PULSE.git@develop
-
-Getting Started
----------------
-
-We provide a live example :mod:`live_example` that operates a
+.. We provide a live example :mod:`live_example` that operates a
 
 Development
 -----------
@@ -73,14 +46,13 @@ in the attached `LICENSE <https://github.com/pnsn/PULSE/blob/develop/LICENSE>`_ 
 
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Contents:
+   :maxdepth: 4
+   :hidden:
 
    self
-   packages/PULSE.mod.rst
-   packages/PULSE.data.rst
-   .. packages/PULSE.sequences.rst
-   .. packages/PULSE.util.rst
+   pages/installation.rst
+   pages/live_example.rst
+   pages/documentation/overview.rst
 
 Indices and tables
 ==================

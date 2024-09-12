@@ -8,24 +8,32 @@ Logger = logging.getLogger(__name__)
 class MLTraceBuff(MLTrace):
 
     def __init__(self,
-        max_length=1,
+        bufflen=1,
         add_method=1,
         pre_blinding=None,
         restricted_appends=True,
+        reference_edge='end',
         dtype=np.float32,
         **options):
         """
         Initialize an MLTraceBuff object containing no data and default metadata
 
-        :: INPUTS ::
-        :param max_length: maximum record length in seconds, defaults to 1.
-        :type max_length: positive float-like, optional
+        :param bufflen: record length in seconds, defaults to 1.
+            When the MLTraceBuff has its first data append, the **data** and **fold** vectors
+            are allocated in memory for bufflen*sampling_rate samples, regardless of the number of
+            samples in the data being appended. This differs from ObsPy's RTTrace, which allows spill-over.
+        :type bufflen: float-like, optional
         :param pre_blinding: pre_blinding to apply to traces appended to this MLTraceBuff (including the initial trace), defaults to None.
             Also see :meth:`~PULSE.data.mltrace.MLTrace.apply_blinding`.
         :type pre_blinding: NoneType, positive int, or 2-tuple of positive int, optional
         :param restricted_appends: should restrictions on appends that would add chronologically older data to the buffer
             See :meth:`~PULSE.data.mltracebuff.MLTraceBuff.append` for more details
         :type restricted_appends: bool
+        :param reference_edge: in the event of a first-append that over-fills the MLTraceBuff **data** and/or **fold**
+            vectors, this specifies which edge of the data being appended is used as reference
+            for trimming off data, defaults to "end".
+            Supported values:
+            - "end" -- 
         :param options: key word argument collector sent to calls of :meth:`~PULSE.data.mltrace.MLTrace.__add__` 
             within :meth:`~PULSE.data.mltracebuff.MLTraceBuff.append`. **options** are saved as the **options** attribute
 
@@ -42,16 +50,16 @@ class MLTraceBuff(MLTrace):
         """
         # Initialize as an MLTrace object
         super().__init__()
-        # Compatability checks for max_length
-        if isinstance(max_length, (int, float)):
-            if max_length > 0:
-                if max_length > 1200:
-                    Logger.warning('MLTraceBuff max_length > 1200 sec may take a lot of memory')
-                self.max_length = float(max_length)
+        # Compatability checks for bufflen
+        if isinstance(bufflen, (int, float)):
+            if bufflen > 0:
+                if bufflen > 1200:
+                    Logger.warning('MLTraceBuff bufflen > 1200 sec may take a lot of memory')
+                self.bufflen = float(bufflen)
             else:
-                raise ValueError('max_length must be positive')
+                raise ValueError('bufflen must be positive')
         else:
-            raise TypeError('max_length must be float-like')
+            raise TypeError('bufflen must be float-like')
         # pre_blinding compatability
         if pre_blinding is None or not pre_blinding:
             self._pre_blinding = False
@@ -109,7 +117,7 @@ class MLTraceBuff(MLTrace):
             Uses :meth:`~PULSE.data.mltrace.MLTrace.__add__` to add **other** to **mltracebuff**.
 
         * Near Future Append 
-            If some contents of the buffer and **other** coexist within the current **max_length** window. 
+            If some contents of the buffer and **other** coexist within the current **bufflen** window. 
             
             Data in the buffer are shifted to match **mltracebuff.stats.endtime** to **other.stats.endtime** and **other**
             is added using :meth:`~PULSE.data.mltrace.MLTrace.__add__`.
@@ -166,14 +174,14 @@ class MLTraceBuff(MLTrace):
             # (FUTURE APPEND) If other ends at or after self (FUTURE APPEND)
             if other.stats.endtime >= self.stats.endtime:
                 # If other starts within buffer range of self end
-                if other.stats.starttime - self.max_length < self.stats.endtime:
+                if other.stats.starttime - self.bufflen < self.stats.endtime:
                     # Conduct future append (always unrestricted)
                     # Logger.debug(f'sliding buffer endtime from {self.stats.endtime} to {other.stats.endtime}')
                     self._slide_buffer(other.stats.endtime, reference_type='endtime')
                     # Logger.debug(f'updated endtime {self.stats.endtime}')
                     self.__add__(other, **self._options)
-                    # self.enforce_max_length(reference='endtime')
-                # If other starts later that self end + max_length - big gap
+                    # self.enforce_bufflen(reference='endtime')
+                # If other starts later that self end + bufflen - big gap
                 else:
                     # Run as a first append if id matches
                     if self.id == other.id:
@@ -183,7 +191,7 @@ class MLTraceBuff(MLTrace):
             # (PAST APPEND) If other starts at or before self
             elif other.stats.starttime <= self.stats.starttime:
                 # FAR PAST
-                if self.stats.starttime - other.stats.endtime >= self.max_length:
+                if self.stats.starttime - other.stats.endtime >= self.bufflen:
                     # IF restriction in place
                     if self._restricted:
                         # Return self (cancel append)
@@ -226,13 +234,13 @@ class MLTraceBuff(MLTrace):
 
         Conduct the initial append of some obspy.Trace-like object to this MLTraceBuff
         object, scraping essential header data, and populating the MLTraceBuff.data and .fold
-        attributes to the max_length definied when initializing the the MLTraceBuff object
+        attributes to the bufflen definied when initializing the the MLTraceBuff object
 
         :: INPUTS ::
         :param other: [obspy.Trace] or [ewflow.MLTrace] like object
                         data and metadata to append to this initialized MLTraceBuff object
         :param reference_edge: [str] in the event that the appended trace has more data than
-                        max_length allows, this specifies which endpoint of `other` is used
+                        bufflen allows, this specifies which endpoint of `other` is used
                         as a fixed referece (i.e., the end that is not truncated)
                         Supported arguments
                             'starttime' - use other.stats.starttime as the fixed reference
@@ -248,7 +256,7 @@ class MLTraceBuff(MLTrace):
                 if _k in other.stats.keys():
                     self.stats.update({_k:other.stats[_k]})
             # Inflate buffer to occupy memory allocation
-            max_data = round(self.max_length*self.stats.sampling_rate)
+            max_data = round(self.bufflen*self.stats.sampling_rate)
             # Initialize as a masked data array...
             self.data = np.ma.MaskedArray(np.full(max_data, fill_value=np.nan),
                                         mask=np.full(max_data, fill_value=True))
@@ -274,7 +282,7 @@ class MLTraceBuff(MLTrace):
                     else:
                         self.fold[:other.stats.npts] = np.ones(shape=other.data.shape)
                 elif reference_edge == 'endtime':
-                    self.stats.starttime = other.stats.endtime - self.max_length
+                    self.stats.starttime = other.stats.endtime - self.bufflen
                     if not isinstance(other.data, np.ma.MaskedArray):
                         self.data.data[-other.stats.npts:] = other.data
                         self.data.mask[-other.stats.npts:] = False
@@ -300,7 +308,7 @@ class MLTraceBuff(MLTrace):
             else:
                 # If referencing to the endtime
                 if reference_edge == 'endtime':
-                    self.stats.starttime = other.stats.endtime - self.max_length
+                    self.stats.starttime = other.stats.endtime - self.bufflen
                     self.data = other.trim(starttime=self.stats.starttime).data
                     if 'fold' in dir(other):
                         self.fold = other.fold

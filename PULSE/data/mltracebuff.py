@@ -9,8 +9,9 @@ class MLTraceBuff(MLTrace):
 
     def __init__(self,
         max_length=1,
-        blinding=None,
-        restrict_past_append=True,
+        add_method=1,
+        pre_blinding=None,
+        restricted_appends=True,
         dtype=np.float32,
         **options):
         """
@@ -19,12 +20,12 @@ class MLTraceBuff(MLTrace):
         :: INPUTS ::
         :param max_length: maximum record length in seconds, defaults to 1.
         :type max_length: positive float-like, optional
-        :param blinding: Blinding to apply to traces appended to this MLTraceBuff (including the initial trace), defaults to None.
+        :param pre_blinding: pre_blinding to apply to traces appended to this MLTraceBuff (including the initial trace), defaults to None.
             Also see :meth:`~PULSE.data.mltrace.MLTrace.apply_blinding`.
-        :type blinding: NoneType, positive int, or 2-tuple of positive int, optional
-        :param restrict_past_append: should restrictions on appends that would add chronologically older data to the buffer
+        :type pre_blinding: NoneType, positive int, or 2-tuple of positive int, optional
+        :param restricted_appends: should restrictions on appends that would add chronologically older data to the buffer
             See :meth:`~PULSE.data.mltracebuff.MLTraceBuff.append` for more details
-        :type restrict_past_append: bool
+        :type restricted_appends: bool
         :param options: key word argument collector sent to calls of :meth:`~PULSE.data.mltrace.MLTrace.__add__` 
             within :meth:`~PULSE.data.mltracebuff.MLTraceBuff.append`. **options** are saved as the **options** attribute
 
@@ -32,8 +33,8 @@ class MLTraceBuff(MLTrace):
         :var fold: :class:`~numpy.ndarray` vector that holds data fold values
         :var stats: :class:`~PULSE.data.mltrace.MLTraceStats` object that holds additional header information
         :var _other: dict that holds key-word arguments passed to :meth:`~PULSE.data.mltrace.MLTrace.__add__` each time it is called
-        :var _blinding: bool or 2-tuple that holds blinding information passed to :meth:`~PULSE.data.mltrace.MLTrace.apply_blinding`
-        :var _RPA: bool flag for **restrict_past_append** setting
+        :var _pre_blinding: bool or 2-tuple that holds pre_blinding information passed to :meth:`~PULSE.data.mltrace.MLTrace.apply_pre_blinding`
+        :var _restricted: bool flag for **restricted_appends** setting
         :var _has_data: bool flag for if this MLTraceBuff has ever had any data appended to it.
 
         TODO: Incorporate dtype into __init__
@@ -51,21 +52,21 @@ class MLTraceBuff(MLTrace):
                 raise ValueError('max_length must be positive')
         else:
             raise TypeError('max_length must be float-like')
-        # Blinding compatability
-        if blinding is None or not blinding:
-            self._blinding = False
-        elif isinstance(blinding, (list, tuple)):
-            if len(blinding) == 2:
-                if all(int(_b) >= 0 for _b in blinding):
-                    self._blinding = (int(blinding[0]), int(blinding[1]))
+        # pre_blinding compatability
+        if pre_blinding is None or not pre_blinding:
+            self._pre_blinding = False
+        elif isinstance(pre_blinding, (list, tuple)):
+            if len(pre_blinding) == 2:
+                if all(int(_b) >= 0 for _b in pre_blinding):
+                    self._pre_blinding = (int(pre_blinding[0]), int(pre_blinding[1]))
                 else:
                     raise ValueError
-            elif len(blinding) == 1:
-                if int(blinding[0]) >= 0:
-                    self._blinding = (int(blinding[0]), int(blinding[0]))
-        elif isinstance(blinding, (int, float)):
-            if int(blinding) >= 0:
-                self._blinding = (int(blinding), int(blinding))
+            elif len(pre_blinding) == 1:
+                if int(pre_blinding[0]) >= 0:
+                    self._pre_blinding = (int(pre_blinding[0]), int(pre_blinding[0]))
+        elif isinstance(pre_blinding, (int, float)):
+            if int(pre_blinding) >= 0:
+                self._pre_blinding = (int(pre_blinding), int(pre_blinding))
             else:
                 raise ValueError
         else:
@@ -73,10 +74,10 @@ class MLTraceBuff(MLTrace):
          
 
         # Compatability check for restrict past appends
-        if not isinstance(restrict_past_append, bool):
+        if not isinstance(restricted_appends, bool):
             raise TypeError
         else:
-            self._RPA = restrict_past_append
+            self._restricted = restricted_appends
         # Capture kwargs for __add__
         self._options = options
         # Initialize _has_data private flag attribute
@@ -86,8 +87,8 @@ class MLTraceBuff(MLTrace):
     def append(self, other):
         """Core method for adding data to this MLTraceBuff object. This method applies a series of additional
         pre-append cross checks on new data being introduced to the **mltracebuff** that include timing and
-        trace-size checks. It enforces the **restrict_past_append** rule set when the **mltracebuff** was
-        initialized and applies blinding to incoming traces if this option is used. 
+        trace-size checks. It enforces the **restricted_appends** rule set when the **mltracebuff** was
+        initialized and applies pre_blinding to incoming traces if this option is used. 
 
         
         context and buffer-size
@@ -153,9 +154,9 @@ class MLTraceBuff(MLTrace):
         else:
             raise TypeError('input other must be type obspy.core.trace.Trace or a child-class thereof')
         
-        # Apply blinding (if specified) to incoming trace
-        if self._blinding:
-            other.apply_blinding(blinding=self._blinding)
+        # Apply pre_blinding (if specified) to incoming trace
+        if self._pre_blinding:
+            other.apply_pre_blinding(pre_blinding=self._pre_blinding)
 
         # If this is a first append
         if not self._has_data:
@@ -184,7 +185,7 @@ class MLTraceBuff(MLTrace):
                 # FAR PAST
                 if self.stats.starttime - other.stats.endtime >= self.max_length:
                     # IF restriction in place
-                    if self._RPA:
+                    if self._restricted:
                         # Return self (cancel append)
                         pass
                     # IF restriction is not in place, run as first_append
@@ -196,7 +197,7 @@ class MLTraceBuff(MLTrace):
                 # NEAR PAST
                 else:
                     # If restricting past appends - trim other and append to buffer
-                    if self._RPA:
+                    if self._restricted:
                         # Trim other
                         other.trim(starttime=self.stats.starttime)
                         self.__add__(other, **self._options)

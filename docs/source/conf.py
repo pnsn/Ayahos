@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.abspath("../../PULSE/"))
 
 project = 'PULSE'
 author = 'Nathan T. Stevens, Pacific Northwest Seismic Network'
-copyright = f'2023-{datetime.now().year}, {author}'
+copyright = f'2023-{datetime.now().year}, {author}, AGPL-3.0'
 
 release = _version(project)
 
@@ -41,7 +41,6 @@ extensions = [
 ]
 
 templates_path = ['_templates']
-exclude_patterns = []
 autodoc_member_order = 'bysource'
 master_doc = 'index'
 

@@ -16,7 +16,7 @@ from PULSE.mod.process import InPlaceMod
 from PULSE.mod.predict import SeisBenchMod
 
 
-class SBM_Pipeline_Seq(SequenceMod)
+class SBM_Pipeline_Seq(SequenceMod):
 
 # import sys
 # from PULSE.module import WindowMod, SequenceMod, InPlaceMod, SeisBenchMod

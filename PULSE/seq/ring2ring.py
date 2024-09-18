@@ -19,7 +19,7 @@ from PULSE.mod.sequence import SequenceMod
 from PULSE.mod.pyew import PyEWMod, EWTransactMod
 
 
-class EW_R2R_Mod(SequenceMod):
+class EW_R2R_Seq(SequenceMod):
 
     def __init__(self,
         pyew_module,

@@ -10,6 +10,14 @@ machine learning models.
 TODO: Code currently commented out. Needs to be completed based on the layout of the "live_example"
 
 """
+from PULSE.mod.sequence import SequenceMod
+from PULSE.mod.window import WindowMod
+from PULSE.mod.process import InPlaceMod
+from PULSE.mod.predict import SeisBenchMod
+
+
+class SBM_Pipeline_Seq(SequenceMod)
+
 # import sys
 # from PULSE.module import WindowMod, SequenceMod, InPlaceMod, SeisBenchMod
 

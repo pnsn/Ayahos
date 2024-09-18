@@ -107,7 +107,7 @@ class PyEWMod(EWModule):
             self.Logger.info(f'Attached to ring {_id}, index {len(self.connections)}, alias: {_name}')
 
     def __repr__(self):
-        rstr = 'EWFlow<->Earthworm Module\n'
+        rstr = 'PULSE<->Earthworm Module\n'
         rstr += f'MOD_ID: {self.mod_id} | INST_ID: {self.inst_id} | '
         rstr += f'HB_PERIOD: {self.hb_period} | DEFAULT_RING: {self.def_ring_id}\n'
         rstr += 'Connections\n      Name      |  ID  \n'
@@ -301,7 +301,7 @@ class PyEWMod(EWModule):
             super().put_bytes(conn_idx, msg_type, msg)  
 
 
-class TransactMod(BaseMod):   
+class EWTransactMod(BaseMod):   
     """
     Class that facilitates transactions between memory rings in the Earthworm
     Message Transport System and the Python environment. This wraps an active 

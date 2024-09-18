@@ -1,4 +1,4 @@
-""":module: PULSE.sequences.seisbench_preprocess
+""":module: PULSE.seq.sbm_pipeline
 :auth: Nathan T. Stevens
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network

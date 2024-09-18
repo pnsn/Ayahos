@@ -11,11 +11,6 @@
 
 # TODO: Need to write pulse subroutines with simplified structure
 
-
-Classes
--------
-:class:`~PULSE.mod.process.InPlaceMod`
-:class:`~PULSE.mod.process.OutputMod`
 """
 
 import logging, sys
@@ -92,7 +87,7 @@ class InPlaceMod(BaseMod):
     # def _continue_iteration()
     # def _capture_unit_out()
         
-    def _unit_input_from_input(self, input):
+    def get_unit_input(self, input):
         # Use checks from BaseMod on input
         unit_input = super()._unit_input_from_input(input)
         # Then apply checks from pclass
@@ -102,7 +97,7 @@ class InPlaceMod(BaseMod):
             self.Logger.critical(f'object popped from input mismatch {self.pclass} != {type(unit_input)}')
             raise TypeError
         
-    def _unit_process(self, unit_input):
+    def run_unit_process(self, unit_input):
         """unit_process for InPlaceMod
 
         Check if the input deque and iteration number
@@ -129,6 +124,11 @@ class InPlaceMod(BaseMod):
         if self.pclass in [MLTrace, DictStream, Window]:
             unit_input.stats.processing.append([self.__name__(full=False), self.pmethod, UTCDateTime()])
         return unit_output
+    
+    def capture_unit_output(self, unit_output):
+        super().capture_unit_output(unit_output)
+        
+
     
 
 class OutputMod(InPlaceMod):

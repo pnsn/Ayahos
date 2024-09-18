@@ -9,10 +9,6 @@
 
     # TODO: Need to write pulse subroutines with simplified structure
 
-
-Classes
--------
-:class:`~PULSE.mod.window.WindowMod`
 """
 import sys
 import seisbench.models as sbm

@@ -1,77 +1,92 @@
 PULSE.data package
 ==================
 
-Submodules
-----------
+This package contains class definitions for data and metadata handling objects
 
-PULSE.data.dictstream module
-----------------------------
+Trace-like classes
+------------------
 
-.. automodule:: PULSE.data.dictstream
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-PULSE.data.header module
-------------------------
-
-.. automodule:: PULSE.data.header
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-PULSE.data.message module
--------------------------
-
-.. automodule:: PULSE.data.message
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-PULSE.data.mltrace module
--------------------------
+mltrace
+_______
 
 .. automodule:: PULSE.data.mltrace
    :members:
    :undoc-members:
    :show-inheritance:
 
-PULSE.data.mltracebuff module
------------------------------
+mltracebuff
+___________
 
 .. automodule:: PULSE.data.mltracebuff
    :members:
    :undoc-members:
    :show-inheritance:
 
-PULSE.data.pick module
-----------------------
+Stream-like classes
+-------------------
 
-.. automodule:: PULSE.data.pick
+dictstream
+__________
+
+.. automodule:: PULSE.data.dictstream
    :members:
    :undoc-members:
    :show-inheritance:
 
-PULSE.data.trigger module
--------------------------
-
-.. automodule:: PULSE.data.trigger
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-PULSE.data.window module
-------------------------
+window
+______
 
 .. automodule:: PULSE.data.window
    :members:
    :undoc-members:
    :show-inheritance:
 
-Module contents
----------------
+Stats-like classes
+------------------
 
-.. automodule:: PULSE.data
+.. automodule:: PULSE.data.header
    :members:
    :undoc-members:
    :show-inheritance:
+
+(Py)Earthworm message classes
+-----------------------------
+
+.. automodule:: PULSE.data.message
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. Module contents
+.. ---------------
+
+.. .. automodule:: PULSE.data
+..    :members:
+..    :undoc-members:
+..    :show-inheritance:
+
+.. PULSE.data.message module
+.. -------------------------
+
+.. .. automodule:: PULSE.data.message
+..    :members:
+..    :undoc-members:
+..    :show-inheritance:
+
+
+.. PULSE.data.pick module
+.. ----------------------
+
+.. .. automodule:: PULSE.data.pick
+..    :members:
+..    :undoc-members:
+..    :show-inheritance:
+
+.. PULSE.data.trigger module
+.. -------------------------
+
+.. .. automodule:: PULSE.data.trigger
+..    :members:
+..    :undoc-members:
+..    :show-inheritance:
+

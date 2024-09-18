@@ -7,19 +7,15 @@
 :purpose:
     This contains the definition for the BufferModule class that hosts a :class:`~PULSE.data.dictstream.DictStream`
     object containing :class:`~PULSE.data.mltracebuff.MLTraceBuff` objects keyed to the Buffers' id attribute
-
-Classes
--------
-:class:`~PULSE.mod.buffer.BufferMod`
 """
 import logging, sys, os
-from collections import deque
-from numpy import isfinite
+# from collections import deque
+# from numpy import isfinite
 from PULSE.mod.base import BaseMod
 from PULSE.data.mltrace import MLTrace
 from PULSE.data.mltracebuff import MLTraceBuff
 from PULSE.data.dictstream import DictStream
-from PULSE.util.pyew import is_wave_msg, wave2mltrace
+# from PULSE.util.pyew import is_wave_msg, wave2mltrace
 
 Logger = logging.getLogger(__name__)
 
@@ -188,19 +184,6 @@ class BufferMod(BaseMod):
         """        
         output = super().pulse(input)
         return output
-    
-    # def check_input(self, input):
-    #     """POLYMORPHIC METHOD
-        
-    #     Inherited, unchanged :meth:`~PULSE.mod.base.BaseMod.check_input` method from :class:`~PULSE.mod.base.BaseMod`
-
-    #     :param input: input collection of items
-    #     :type input: collections.deque
-    #     :return: length of input
-    #     :rtype: int
-    #     """        
-    #     input_size = super().check_input(input)
-    #     return input_size
 
     def get_unit_input(self, input):
         """POLYMORPHIC METHOD

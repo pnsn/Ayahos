@@ -8,7 +8,7 @@
     that facilitate machine-learning prediction execution on pre-processed data.
 # TODO: Need to write pulse subroutines with simplified structure
 
-"""#TODO: Header
+"""
 
 import torch, copy, logging, sys
 import numpy as np
@@ -20,12 +20,6 @@ from PULSE.data.dictstream import DictStream
 from PULSE.data.window import Window
 from PULSE.mod.base import BaseMod
 
-Logger = logging.getLogger(__name__)
-###################################################################################
-# MLDETECT WYRM CLASS DEFINITION - FOR BATCHED PREDICTION IN A PULSED MANNER ####
-###################################################################################
-
-# @add_class_name_to_docstring
 class SeisBenchMod(BaseMod):
     """
     Conduct ML model predictions on preprocessed data ingested as a deque of

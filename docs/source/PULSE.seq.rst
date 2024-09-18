@@ -1,13 +1,20 @@
 PULSE.seq package
 =======================
 
-Example module sequences
-------------------------
+composed sequences
+------------------
 
 sbm\_pipeline
 _____________
 
-.. automodule:: PULSE.sequences.sbm_pipeline
+.. automodule:: PULSE.seq.sbm_pipeline
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+ring2ring
+_________
+.. automodule:: PULSE.seq.ring2ring
    :members:
    :undoc-members:
    :show-inheritance:

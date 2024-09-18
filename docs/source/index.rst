@@ -41,8 +41,8 @@ Getting Started
    self
    PULSE.data.rst
    PULSE.mod.rst
-   PULSE.sequences.rst
-
+   PULSE.seq.rst
+   
 .. Overview
 .. --------
 

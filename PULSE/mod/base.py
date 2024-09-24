@@ -113,7 +113,7 @@ class BaseMod(object):
         return deepcopy(self)
 
     def pulse(self, input):
-        """TEMPLATE METHOD
+        """CORE POLYMORPHIC METHOD
         
         Specifics for :class:`~PULSE.mod.base.BaseMod`
 
@@ -123,9 +123,10 @@ class BaseMod(object):
         :return:
             - **output** (*collections.deque*) -- view of this BaseMod object's **BaseMod.deque** attribute
         
-        TEMPLATE EXPLANATION
+        .. rubric:: Pulse Template Explanation
 
-        Template method for all :mod:`~PULSE.mod` classes that executes a number of unit-tasks
+        This definition of :meth:`~PULSE.mod.base.BaseMod.pulse` is used by all
+        :mod:`~PULSE.mod` classes an that executes a number of unit-tasks
         depending on the behaviors of sub-routine methods specific to each of these clases.
         This method also updates values in the **stats** attribute with metadata from the most
         recent call of this method.
@@ -145,8 +146,9 @@ class BaseMod(object):
         """ 
         # Capture pulse stats at beginning of call and measure/check input
         self.stats.starttime = UTCDateTime.now()
-        self.stats.in0 = self.check_input(input)
+        self.stats.in0 = self.measure_input(input)
         self.stats.out0 = self.measure_output()
+        # Convert flag to proceed with pulse
         self._continue_pulsing = True
         for _n in range(self.max_pulse_size):
             # get single object for unit_process
@@ -183,7 +185,7 @@ class BaseMod(object):
 
         return self.output
 
-    def check_input(self, input):
+    def measure_input(self, input):
         """
         POLYMORPHIC METHOD
 
@@ -231,8 +233,17 @@ class BaseMod(object):
          - **unit_input** (*object* or *bool*) -- object removed from **input** using :meth:`~collections.deque.popleft`.
                 if input is empty, this method returns `False`, triggering early iteration stopping in :meth:`~PULSE.mod.base.BaseMod.pulse`
         """ 
-        if self.ckeck_input(input) > 0:
+        # Check input type and exit if it is incorrect type
+        if not isinstance(input, deque):
+            self.Logger.critical(f'input is not type deque. Quitting on DATAERR ({os.EX_DATAERR})')
+            sys.exit(os.EX_DATAERR)
+        # Proceed if input is correct type
+        else:
+            pass
+        # If there are elements to pull from input, pull one    
+        if self.measure_input(input) > 0:
             unit_input = input.popleft()
+        # If the deque is empty, flag early stopping and return None
         else:
             unit_input = None
             self._continue_pulsing = False
@@ -267,7 +278,38 @@ class BaseMod(object):
         # NOTE: This is another place where self._continue_pulsing can be updated for early stopping type 1
         
  
-    #TODO: Make averaging 
+    def import_class(self, class_path_str):
+        """Use the full extension ID of a class object to import that class within
+        the local scope of this class-method and return the class object for use
+        elsewhere
+
+        e.g. class_path_str = 'obspy.core.trace.Trace'
+          runs exec('from obspy.core.trace import Trace')
+          and returns obj = Trace
+
+        :param class_path_str: class extension ID
+        :type class_path_str: str
+        :return: class defining object
+        :rtype: type
+        """        
+        if not isinstance(class_path_str, str):
+            raise TypeError('class_path_str must be type str')
+        elif '.' not in class_path_str:
+            raise ValueError('class_path_str is not .-delimited. Does not look like a class __name__')
+        
+        parts = class_path_str.split('.')
+        path = '.'.join(parts[:-1])
+        clas = parts[-1]
+        try:
+            exec(f'from {path} import {clas}')
+            obj = eval(f'{clas}')
+            return obj
+        except ImportError:
+            self.Logger.critical(f'ImportError: failed to import {class_path_str}. Exiting on CANTCREAT ({os.EX_CANTCREAT})')
+            sys.exit(1)
+
+
+    #TODO: Make averaging __add__ for mltrace?
 
     # def capture_pulse_iteration_metadata(self, pulse_starttime, input_size, niter, early_stop_code):
     #     """
@@ -338,35 +380,7 @@ class BaseMod(object):
     #     return f'{header}\n{self.report}\n'
     
 
-    # def import_class(self, class_path_str):
-    #     """Use the full extension ID of a class object to import that class within
-    #     the local scope of this class-method and return the class object for use
-    #     elsewhere
 
-    #     e.g. class_path_str = 'obspy.core.trace.Trace'
-    #       runs exec('from obspy.core.trace import Trace')
-    #       and returns obj = Trace
-
-    #     :param class_path_str: class extension ID
-    #     :type class_path_str: str
-    #     :return: class defining object
-    #     :rtype: type
-    #     """        
-    #     if not isinstance(class_path_str, str):
-    #         raise TypeError('class_path_str must be type str')
-    #     elif '.' not in class_path_str:
-    #         raise ValueError('class_path_str is not .-delimited. Does not look like a class __name__')
-        
-    #     parts = class_path_str.split('.')
-    #     path = '.'.join(parts[:-1])
-    #     clas = parts[-1]
-    #     try:
-    #         exec(f'from {path} import {clas}')
-    #         obj = eval(f'{clas}')
-    #         return obj
-    #     except ImportError:
-    #         self.Logger.critical(f'failed to import {class_path_str}')
-    #         sys.exit(1)
 
     # def raise_log(self, etype, emsg='', level='critical', exit_code=1):
     #     """Convenience wrapper for writing *Error messages to logging.

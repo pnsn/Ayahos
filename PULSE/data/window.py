@@ -12,7 +12,7 @@
     and provides additional class methods for pre-processing one or more MLTrace objects into a data tensor ready for input to a machine
     learning model (i.e., those derived from :class:`~seisbench.models.WaveformModel`.
 """
-import logging, os, sys
+import logging, os, sys, warnings
 import numpy as np
 import pandas as pd
 import seisbench.models as sbm
@@ -82,57 +82,138 @@ class Window(DictStream):
         # Primary component present check
         if self.stats.primary_component not in self.traces.keys():
             raise ValueError(f'No traces in this Window have the primary_component code {self.stats.primary_component}.')
-        # Primary component viable check
-        elif self.primary.get_fvalid_subset() < self.stats.primary_threshold:
-            raise ValueError(f'Insufficient valid data in primary mltrace: {self.primary.get_fvalid_subset()} < {self.stats.primary_threshold} (data < threshold)')
-        else:
-            self._primary_passing = True
+        
 
     def get_primary(self):
         return self[self.stats.primary_component]
     
     primary = property(get_primary)
 
- 
 
-    def __repr__(self, extended=False):
-        """
-        Provide a user-friendly string representation of the contents and key parameters of this
-        Window object. 
+    # def __repr__(self, extended=False):
+    #     """
+    #     Provide a user-friendly string representation of the contents and key parameters of this
+    #     Window object. 
 
-        :param extended: option to show an extended form of the Window should 
-                         there be a large number of unique component codes (an uncommon use case)
-        :type extend: bool, optional
+    #     :param extended: option to show an extended form of the Window should 
+    #                      there be a large number of unique component codes (an uncommon use case)
+    #     :type extend: bool, optional
 
-        :return rstr: representative string
-        :rtype rstr: str
-        """
-        rstr = self.stats.__str__()
-        if len(self.traces) > 0:
-            id_length = max(len(_tr.id) for _tr in self.traces.values())
-        else:
-            id_length=0
-        if len(self.traces) > 0:
-            rstr += f'\n{len(self.traces)} {type(self[0]).__name__}(s) in {type(self).__name__}\n'
-        else:
-            rstr += f'\nNothing in {type(self).__name__}\n'
-        if len(self.traces) <= 20 or extended is True:
-            for _l, _tr in self.traces.items():
-                rstr += f'{_l:} : {_tr.__str__(id_length)}\n'
-        else:
-            _l0, _tr0 = list(self.traces.items())[0]
-            _lf, _trf = list(self.traces.items())[-1]
-            rstr += f'{_l0:} : {_tr0.__repr__(id_length=id_length)}\n'
-            rstr += f'...\n({len(self.traces) - 2} other traces)\n...\n'
-            rstr += f'{_lf:} : {_trf.__repr__(id_length=id_length)}\n'
-            rstr += f'[Use "print({type(self).__name__}.__repr__(extended=True))" to print all labels and MLTraces]'
-        return rstr
+    #     :return rstr: representative string
+    #     :rtype rstr: str
+    #     """
+    #     rstr = self.stats.__str__()
+    #     if len(self.traces) > 0:
+    #         id_length = max(len(_tr.id) for _tr in self.traces.values())
+    #     else:
+    #         id_length=0
+    #     if len(self.traces) > 0:
+    #         rstr += f'\n{len(self.traces)} {type(self[0]).__name__}(s) in {type(self).__name__}\n'
+    #     else:
+    #         rstr += f'\nNothing in {type(self).__name__}\n'
+    #     if len(self.traces) <= 20 or extended is True:
+    #         for _l, _tr in self.traces.items():
+    #             rstr += f'{_l:} : {_tr.__str__(id_length)}\n'
+    #     else:
+    #         _l0, _tr0 = list(self.traces.items())[0]
+    #         _lf, _trf = list(self.traces.items())[-1]
+    #         rstr += f'{_l0:} : {_tr0.__repr__(id_length=id_length)}\n'
+    #         rstr += f'...\n({len(self.traces) - 2} other traces)\n...\n'
+    #         rstr += f'{_lf:} : {_trf.__repr__(id_length=id_length)}\n'
+    #         rstr += f'[Use "print({type(self).__name__}.__repr__(extended=True))" to print all labels and MLTraces]'
+    #     return rstr
 
     
 
     ###############################################################################
     # FILL RULE METHODS ###########################################################
     ###############################################################################
+    def check_fvalid(self, key, tolerance=1e-3):
+        """Check if the fraction of valid data in a given trace meets threshold
+        criteria
+
+        :param key: key of the intended trace in **Window.traces**
+        :type key: str
+        :param tolerance: tolerance level for small changes in fvalid values due to data modification (e.g., resampling),
+             defaults to 0.001.
+        :type tolerance: float, optional
+        :raises KeyError: _description_
+        :return:
+         - **passing** (*bool*) -- does this trace pass it's assigned threshold criterion?
+        """        
+        if key not in self.traces.keys():
+            raise KeyError(f'{key} is not present.')
+        else:
+            fv = self[key].get_fvalid_subset(starttime=self.stats.target_starttime,
+                                             endtime=self.stats.target_endtime,
+                                             threshold=self.stats.fold_threshold_level)
+        if key == self.stats.primary_component:
+            if fv >= self.stats.primary_threshold - tolerance:
+                passing = True
+            else:
+                passing = False  
+        else:
+            if fv >= self.stats.secondary_threshold - tolerance:
+                passing = True
+            else:
+                passing = False
+        
+        return passing
+
+
+    def apply_fill_rule(self, secondary_components='NE', rule='clone_primary', tolerance=1e-3):
+        if rule not in ['zeros','clone_primary','clone_secondary']:
+            raise ValueError(f'rule {rule} not supported.')
+        else:
+            pass
+        
+        component_list = secondary_components + self.stats.primary_component
+        if len(component_list) != 3:
+            raise ValueError(f'must have 2 secondary_components and one primary component listed. Current component list: {component_list}')
+        # Run valid fraction checks
+        fv_checks = {}
+        for comp in component_list:
+            if comp in self.traces.keys():
+                fv_checks.update({comp: self.check_fvalid(comp, tolerance=tolerance)})
+            else:
+                fv_checks.update({comp: False})
+
+        if all(_v for _v in fv_checks.values()):
+            pass
+        elif rule == 'zeros':
+            self.zeros_fill(fv_checks)
+        elif rule == 'clone_primary':
+            self.clone_primary_fill(fv_checks)
+        elif rule == 'clone_secondary':
+            self.clone_secondary_fill(fv_checks)
+
+    def zeros_fill(self, fv_checks):
+        # If the primary trace has enough data
+        if fv_checks[self.stats.primary_component]:
+            # Create a 0-trace with metadata copied from the primary trace
+            tr0 = self.primary.copy().to_zero(method='both')
+        # If the primary has insufficient data, kick error
+        else:
+            raise ValueError('primary component has insufficient data')
+        # Iterate across component codes and threshold statuses
+        for _k, _v in fv_checks.items():
+            # If this is a secondary trace
+            if _k != self.stats.primary_component:
+                # If the trace did not pass the fvalid threshold
+                if not _v:
+                    # Replace with 0-trace copy with updated component code
+                    self.traces.update({_k:tr0.copy().set_comp(_k)})
+                # If the secondary trace passed fvalid threshold, retain it
+                else:
+                    continue
+            # If this is the primary trace, continue to next iteration
+            else:
+                continue
+
+                
+        
+
+
     def apply_fill_rule(self, rule='zeros'):
         """Summative class-method for assessing if channels have enough valid data
         in the "reference" and "other" components and apply the specified channel fill `rule`
@@ -165,9 +246,11 @@ class Window(DictStream):
         :type rule: str, optional
                 
         """      
+
+
         thresh_dict = {}
-        primary_thresh = self.stats.thresholds['primary']
-        secondary_thresh = self.stats.thresholds['secondary']
+        primary_thresh = self.stats.primary_threshold
+        secondary_thresh = self.stats.secondary_threshold
         for _k in self.stats.aliases.keys():
             if _k == self.stats.primary_component:
                 thresh_dict.update({_k: primary_thresh})

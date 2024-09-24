@@ -201,6 +201,7 @@ class WindowStats(DictStreamStats):
     _types.update({'primary_component': str,
                    'primary_threshold': float,
                    'secondary_threshold': float,
+                   'fold_threshold_level': float,
                    'target_starttime': (UTCDateTime, type(None)),
                    'target_npts': (int, type(None)),
                    'target_sampling_rate': (float, type(None)),
@@ -209,6 +210,7 @@ class WindowStats(DictStreamStats):
     defaults.update({'primary_component': 'Z',
                      'primary_threshold': 0.95,
                      'secondary_threshold': 0.8,
+                     'fold_threshold_level': 1.,
                      'target_starttime': None,
                      'target_sampling_rate': None,
                      'target_npts': None,
@@ -238,6 +240,11 @@ class WindowStats(DictStreamStats):
                 super(DictStreamStats,self).__setitem__(key,value)
             else:
                 raise ValueError(f'{key} must be in (0, 1]. {value} is out of bounds.')
+        if key == 'fold_threshold_level':
+            if 0 <= value:
+                super(DictStreamStats, self).__setitem__(key,value)
+            else:
+                raise ValueError(f'{key} must be non-negative. {value} is out of bounds')
         if key in self._refresh_keys:
             if key == 'target_sampling_rate':
                 # Target Sampling Rate
@@ -255,8 +262,11 @@ class WindowStats(DictStreamStats):
 
 
     def __str__(self):
-        prioritized_keys = ['primary_component',
-                            'common_id',
+        prioritized_keys = ['common_id',
+                            'primary_component',
+                            'primary_threshold',
+                            'secondary_threshold',
+                            'fold_threshold_level',
                             'target_starttime',
                             'target_sampling_rate',
                             'target_npts',

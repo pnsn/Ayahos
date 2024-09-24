@@ -185,42 +185,59 @@ class BufferMod(BaseMod):
         output = super().pulse(input)
         return output
 
+    def measure_input(self, input):
+        """POLYMORPHIC METHOD
+
+        :class:`~PULSE.mod.buffer.BufferMod` uses the :meth:`~PULSE.mod.base.BaseMod.measure_input` from
+        :class:`~PULSE.mod.base.BaseMod` without alterations.
+
+        :param input: collection of objects
+        :type input: collections.deque
+        :return:
+         - **input_size** (*int*) -- length of input
+        :rtype: _type_
+        """        
+        return super().measure_input(input)
+    
+    def measure_output(self):
+        """POLYMORPHIC METHOD
+
+        :class:`~PULSE.mod.buffer.BufferMod` uses the :meth:`~PULSE.mod.base.BaseMod.measure_output` from
+        :class:`~PULSE.mod.base.BaseMod` without alterations.
+        
+        Return the length of **BufferMod.output**
+
+        :return: 
+         - **output_size** (*int*) -- length of **output**
+        :rtype: _type_
+        """        
+        return super().measure_output()
+    
+        
     def get_unit_input(self, input):
         """POLYMORPHIC METHOD
 
-        Last updated in :class:`~PULSE.mod.buffer.BufferMod`
+        :class:`~PULSE.mod.buffer.BufferMod` uses the :meth:`~PULSE.mod.base.BaseMod.get_unit_input` from
+        :class:`~PULSE.mod.base.BaseMod` without alterations.
 
-        Detaches a MLTrace-like object from a :class:`~collections.deque` input
-
-        Provides a trigger for early stopping (early0) if input is an empty deque
-
-        :param input: collection of MLTrace-like objects (or valid inputs). See :class:`~PULSE.data.mltrace.MLTrace`
+        :param input: collection of :class:`~obspy.core.trace.Trace`-like objects
         :type input: collections.deque
-        :return:
-        - **unit_input** (*MLTrace-like*) -- MLTrace-like object. Returns None if input empty.
+        :return: 
+         - **unit_output** (*obspy.core.trace.Trace*-like or *NoneType*) -- Trace-like object popleft'd from **input** or None
         """        
-        # Empty `input` & check that it is correct type
-        if self.check_input(input) == 0:
-            # Set None for output value
-            unit_input = None
-            # Flag for early iteration stopping
-            self._continue_pulsing = False
-        # Non-empty `input` steps
-        else:
-            # Pop off unit_input
-            unit_input = input.popleft()
-        return unit_input
+        return super().get_unit_input(input)
 
     def run_unit_process(self, unit_input):
         """POLYMORPHIC METHOD
 
         Last updated with :class:`~PULSE.mod.buffer.BufferMod`
 
-        Converts the unit_input into :class:`~PULSE.data.mltrace.MLTrace` object using
-        class-methods in :class:`~PULSE.data.mltrace.MLTrace` if it isn't already an MLTrace.
+        Converts **unit_input** into a :class:`~PULSE.data.mltrace.MLTrace` object using
+        **unit_input** as an input argument for the __init__ method of the :class:`~PULSE.data.mltrace.MLTrace` class 
+        if **unit_input** is not already an MLTrace.
 
-        :param unit_input: MLTrace-like object
-        :type unit_input: obspy.core.trace.Trace, dict (if using PyEW wave objects), PULSE.data.mltrace.MLTrace
+        :param unit_input: Trace-like object
+        :type unit_input: obspy.core.trace.Trace, PULSE.data.mltrace.MLTrace 
         :return:
          - **unit_output** (*PULSE.data.mltrace.MLTrace*) - MLTrace representation of the **unit_input**
         """
@@ -236,14 +253,17 @@ class BufferMod(BaseMod):
                 sys.exit(os.EX_DATAERR)
         return unit_output
 
-    def capture_unit_output(self, unit_output):
+    def store_unit_output(self, unit_output):
         """POLYMORPHIC METHOD
 
         Last updated with :class:`~PULSE.mod.buffer.BufferMod`
 
-        Appends an MLTrace object to the **BufferMod.output** attribute, using the MLTrace's **id**
-        as the key-value. If the **id** is not a key in **output** a new :class:`~PULSE.data.mltracebuff.MLTraceBuff`
-        object is initalized using the **unit_output** provided. If the **id** is already a key in **output**
+        Appends an MLTrace object to the **BufferMod.output** attribute, using the MLTrace's **id** as the key-value.
+        
+        If the **id** is not a key in **output**, a new :class:`~PULSE.data.mltracebuff.MLTraceBuff`
+        object is initalized using the **unit_output** provided. 
+        
+        If the **id** is already a key in **output**
         the **unit_output** is appended to the existing MLTraceBuff entry.
 
         New MLTraceBuff objects are added to **output** using :meth:`~PULSE.data.dictstream.DictStream.extend`

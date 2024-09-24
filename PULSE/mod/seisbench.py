@@ -183,12 +183,30 @@ class SeisBenchMod(BaseMod):
     #################################
     # PULSE POLYMORPHIC SUBROUTINES #
     #################################
+    def pulse(self, input):
+        """TEMPLATE METHOD
 
-    # def _continue_iteration(self, input, iterno):
-    #     if len(input) == 0:
+        Documentation for the `pulse` method for :class:`~PULSE.mod.seisbench.SeisBenchMod`
 
-    # Inherit from Wyrm
-    # _continue_iteration() - input must be a non-empty deque and iterno +1 < len(input)
+        This method is a bare-bones wrapper for :meth:`~PULSE.mod.base.BaseMod.pulse`
+
+        This polymorph of :meth:`~PULSE.mod.base.BaseMod.pulse` that builds batches of :class:`~torch.Tensor` objects
+        from input collections of :class:`~PULSE.data.window.Window` objects as inputs to a single :class:`~seisbench.models.WaveformModel` architecture
+        and one or more pre-trained weight sets. It propagates and updates metadata across the prediction operation, generating new 
+        :class:`~PULSE.data.window.Window` objects that host predicted values and associated metadata as outputs.
+
+        :param input: collection of PULSE.data.window.Window objects appropriately scaled and pre-processed for the relevant 
+        """
+        output = super().pulse(input)
+        return output
+
+    def get_unit_input(self, input):
+        if self.check_input(input) == 0:
+            self._continue_pulsing = False
+            unit_input = None
+        elif self.che:
+
+        
 
     def _should_this_iteration_run(self, input, input_measure, iterno):
         status = False

@@ -191,7 +191,7 @@ class MLTrace(Trace):
         fold_view = self.fold[ii:ff]
         return data_view, fold_view
 
-    def view_trim(self, starttime=None, endtime=None, pad=False, fill_value=None):
+    def view_copy(self, starttime=None, endtime=None, pad=False, fill_value=None):
         """
         Create a trimmed copy of this MLTrace where the subset data are fetched as a view and then copied
         into a new :class:`~PULSE.data.mltrace.MLTrace` object.

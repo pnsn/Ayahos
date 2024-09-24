@@ -14,6 +14,7 @@
      
 """
 import copy
+from math import inf
 from obspy import UTCDateTime
 from obspy.core.trace import Stats
 from obspy.core.util.attribdict import AttribDict
@@ -194,22 +195,24 @@ class WindowStats(DictStreamStats):
      - :class:`~obspy.core.util.attribdict.AttribDict`
     """    
     # NTS: Deepcopy is necessary to not overwrite _types and defaults for parent class
+    _readonly = ['target_endtime']
+    _refresh_keys = ['target_starttime','target_npts','target_sampling_rate']
     _types = copy.deepcopy(DictStreamStats._types)
-    _types.update({'ref_component': str,
-                   'aliases': dict,
-                   'thresholds': dict,
-                   'reference_starttime': (UTCDateTime, type(None)),
-                   'reference_npts': (int, type(None)),
-                   'reference_sampling_rate': (float, type(None))})
+    _types.update({'primary_component': str,
+                   'primary_threshold': float,
+                   'secondary_threshold': float,
+                   'target_starttime': (UTCDateTime, type(None)),
+                   'target_npts': (int, type(None)),
+                   'target_sampling_rate': (float, type(None)),
+                   'target_endtime': (UTCDateTime, type(None))})
     defaults = copy.deepcopy(DictStreamStats.defaults)
-    defaults.update({'ref_component': 'Z',
-                     'aliases': {'Z': 'Z3',
-                                 'N': 'N1',
-                                 'E': 'E2'},
-                     'thresholds': {'ref': 0.95, 'other': 0.8},
-                     'reference_starttime': None,
-                     'reference_sampling_rate': None,
-                     'reference_npts': None})
+    defaults.update({'primary_component': 'Z',
+                     'primary_threshold': 0.95,
+                     'secondary_threshold': 0.8,
+                     'target_starttime': None,
+                     'target_sampling_rate': None,
+                     'target_npts': None,
+                     'target_endtime': None})
     
     def __init__(self, header={}):
         """Initialize a WindowStats object
@@ -227,13 +230,37 @@ class WindowStats(DictStreamStats):
         # THEN update self with header inputs
         self.update(header)
 
+
+    def __setitem__(self, key, value):
+        if key in ['primary_threshold','secondary_threshold']:
+            # Primary Threshold
+            if 0 < value <= 1:
+                super(DictStreamStats,self).__setitem__(key,value)
+            else:
+                raise ValueError(f'{key} must be in (0, 1]. {value} is out of bounds.')
+        if key in self._refresh_keys:
+            if key == 'target_sampling_rate':
+                # Target Sampling Rate
+                if isinstance(value, float):
+                    if inf > value > 0:
+                        super(DictStreamStats, self).__setitem__(key, value)
+                    else:
+                        raise ValueError(f'{key} must be a positive, rational float-like value or NoneType')
+            # FIXME: Not updating target_endtime...
+            if not any(isinstance(self[_e], type(None)) for _e in ['target_starttime','target_sampling_rate','target_npts']):
+                timediff = self.target_npts/self.target_sampling_rate
+                self.__dict__['target_endtime'] = self.target_starttime + timediff
+            return
+        super(DictStreamStats, self).__setitem__(key, value)
+
+
     def __str__(self):
-        prioritized_keys = ['ref_component',
+        prioritized_keys = ['primary_component',
                             'common_id',
-                            'aliases',
-                            'reference_starttime',
-                            'reference_sampling_rate',
-                            'reference_npts',
+                            'target_starttime',
+                            'target_sampling_rate',
+                            'target_npts',
+                            'target_endtime',
                             'processing']
 
         hidden_keys = ['min_starttime',

@@ -12,6 +12,7 @@
     and provides additional class methods for pre-processing one or more MLTrace objects into a data tensor ready for input to a machine
     learning model (i.e., those derived from :class:`~seisbench.models.WaveformModel`.
 """
+import logging, os, sys
 import numpy as np
 import pandas as pd
 import seisbench.models as sbm
@@ -23,18 +24,18 @@ from PULSE.data.header import WindowStats
 ###############################################################################
 # Window Class Definition ###########################################
 ###############################################################################
-        
+
+Logger = logging.getLogger(__name__)
+
 class Window(DictStream):
-    """A child-class of DictStream that strictly uses trace component codes as
-    keys and is intended to faciliate processing of a collection of windowed
-    traces from a single seismometer. It provides additional class methods extending
-    :class:`~PULSE.data.dictstream.DictStream`.
+    """A child-class of :class:`~PULSE.data.dictstream.DictStream` that uses trace component codes as
+    keys and is intended to faciliate processing of a collection of windowed traces from a single seismometer. 
 
     :param traces: list of MLTrace-like objects to insert at initialization
     :type traces: list or PULSE.data.mltrace.MLTrace-like
-    :param ref_component: reference component code, used in assessing data completeness, defaults to "Z".
-    :type ref_component: str, optional
-    :param header: non-default values to pass to the header of this Window object, defaults to {}.
+    :param primary_component: component code for the primary trace used in assessing data completeness, defaults to "Z".
+    :type primary_component: str, optional
+    :param header: non-default values to pass to the :class:`~PULSE.data.header.WindowStats` object on initialization, defaults to {}.
     :type header: dict, optional
     
     **options: collector for key-word arguments passed to :meth:`~PULSE.data.window.Window.__add__` in determining
@@ -44,7 +45,10 @@ class Window(DictStream):
     def __init__(
             self,
             traces,
-            ref_component='Z',
+            primary_component='Z',
+            target_starttime=None,
+            target_sampling_rate=None,
+            target_window_npts=None,
             header={},
             **options):
         """
@@ -52,8 +56,8 @@ class Window(DictStream):
 
         :param traces: list of MLTrace-like objects to insert at initialization
         :type traces: list or PULSE.data.mltrace.MLTrace-like
-        :param ref_component: reference component code, used in assessing data completeness, defaults to "Z".
-        :type ref_component: str, optional
+        :param primary_component: reference component code, used in assessing data completeness, defaults to "Z".
+        :type primary_component: str, optional
         :param header: non-default values to pass to the header of this Window object, defaults to {}.
         :type header: dict, optional
         
@@ -61,86 +65,35 @@ class Window(DictStream):
             how entries in `traces` with matching component codes are merged.
             also see :meth:`~PULSE.data.dictstream.DictStream.__add__`
         """
-        # Initialize & inherit from DictStream
-        super().__init__()
-        # Initialize Stream Header
+        # Initialize & inherit from DictStream as an empty dictstream using 'comp' key attributes
+        super().__init__(key_attr='comp')
+        header.update({'primary_component': primary_component,
+                       'target_starttime': target_starttime,
+                       'target_sampling_rate': target_sampling_rate,
+                       'target_window_npts': target_window_npts})
+        # Initialize WindowStats Header & use this to compatability check other components
         self.stats = WindowStats(header=header)
-        if isinstance(ref_component, str):
-            if ref_component in self.stats.aliases.keys():
-                self.stats.ref_component = ref_component
-            else:
-                raise ValueError(f'ref_component must be a key value in Window.stats.aliases')
-        else:
-            raise TypeError('ref_component must be type str')
-        
-        if isinstance(traces, Trace):
-            traces = [traces]
-        elif isinstance(traces, (Stream, list, tuple)):
-            if not all(isinstance(tr, Trace) for tr in traces):
-                raise TypeError('all input traces must be type MLTrace')
-        else:
-            raise TypeError("input 'traces' must be a single MLTrace or iterable set of MLTrace objects")
-        # Add traces using the Window __add__ method that converts non MLTrace objects into MLTrace objects
-        # if self.validate_trace_ids(self, other=traces)
+
+        # Add traces - safety checks for repeat components handled in extend()
         self.extend(traces, **options)
+        # Update common_id -- TODO: may want to shift this to a DictStreamStats method?
         self.stats.common_id = self.get_common_id()
-        # if self.ref['component'] in self.traces.keys():
-        #     self.stats.reference_id = self.traces[self.ref['component']].id
 
-    def extend(self, traces, **options):
-        """Extend (add more) trace(s) to this Window, checking if non-unique component codes are compliant
+        # Primary component present check
+        if self.stats.primary_component not in self.traces.keys():
+            raise ValueError(f'No traces in this Window have the primary_component code {self.stats.primary_component}.')
+        # Primary component viable check
+        elif self.primary.get_fvalid_subset() < self.stats.primary_threshold:
+            raise ValueError(f'Insufficient valid data in primary mltrace: {self.primary.get_fvalid_subset()} < {self.stats.primary_threshold} (data < threshold)')
+        else:
+            self._primary_passing = True
+
+    def get_primary(self):
+        return self[self.stats.primary_component]
     
-        LOGIC TREE
-        If the component code(s) of the trace(s) is/are included in this object's `window.stats.aliases` attribute
-            - If the component code is new, it is added using :meth:`~dict.update`
-            - If the component code already exists in the Window, if the trace-like objects are compliant, they are merged using :meth:`~PULSE.data.mltrace.MLTrace.__add__` method
+    primary = property(get_primary)
 
-        Following a successful update/__add__ operation, the metadata held in this object's `window.stats`
-        attribute are updated using the 
-
-        :param traces: set of traces to add to this Window, keying on their component codes
-        :type traces: obspy.core.trace.Trace like
-        
-        **options: collector for key-word arguments passed to :meth:`~PULSE.data.mltrace.MLTrace.__add__` (see description above)
-        """
-        # If extending with a single trace object
-        if isinstance(traces, Trace):
-            traces = [traces]
-
-        # Iterate across traces
-        for tr in traces:
-            if not isinstance(tr, MLTrace):
-                tr = MLTrace(tr)
-            comp = tr.stats.component
-            # If component is a primary key
-            if comp in self.stats.aliases.keys():
-                # And that key is not in the current holdings
-                if comp not in self.traces.keys():
-                    self.traces.update({comp: tr})
-                else:
-                    self.traces[comp].__add__(tr, **options)
-                self.stats.update_time_range(self.traces[comp])
-            # If component is an aliased key    
-            elif comp in ''.join(self.stats.aliases.values()):
-                # Get the matching alias/key pair
-                for _k, _v in self.stats.aliases.items():
-                    if comp in _v:
-                        # If primary key not in current holdings
-                        if _k not in self.traces.keys():
-                            self.traces.update({_k: tr})
-                        else:
-                            self.traces[_k].__add__(tr, **options)
-                        self.stats.update_time_range(self.traces[_k])
-                        break
-                    else:
-                        pass
-            # If component is not in the alias list, skip
-            else:
-                self.logger.debug(f'component code for {tr.id} is not in stats.aliases. Skipping this trace')
-                pass
-                # breakpoint()
-                # raise ValueError('component code for {tr.id} is not in the self.stats.aliases dictionary')
-
+ 
 
     def __repr__(self, extended=False):
         """
@@ -190,14 +143,14 @@ class Window(DictStream):
         If the "reference" channel does not have sufficient valid data the method will return a ValueError.
 
         Data validity for each trace is assessed using the :meth:`~PULSE.data.mltrace.MLTrace.get_fvalid_subset`
-        method with the starttime `window.stats.reference_starttime` attribute and the endtime implied by the
-        `window.stats.reference_npts` and `window.stats.reference_sampling_rate` attributes. 
+        method with the starttime `window.stats.target_starttime` attribute and the endtime implied by the
+        `window.stats.target_npts` and `window.stats.target_sampling_rate` attributes. 
         
         The threshold criteria for a give trace to be considered "valid" is a get_fvalid_subset output value
         that meets or exceeds the relevant threshold value in `window.stats.thresholds`
 
         :param rule: channel fill rule to apply to non-reference channels that are
-                    missing or fail to meet the `other_thresh` requirement, defaults to 'zeros'
+                    missing or fail to meet the `secondary_thresh` requirement, defaults to 'zeros'
                     Supported Values
                         'zeros' - fill missing/insufficient "other" traces with 0-valued data and fold vectors
                             - see :meth:`~PULSE.data.window.Window._apply_zeros`
@@ -213,13 +166,13 @@ class Window(DictStream):
                 
         """      
         thresh_dict = {}
-        ref_thresh = self.stats.thresholds['ref']
-        other_thresh = self.stats.thresholds['other']
+        primary_thresh = self.stats.thresholds['primary']
+        secondary_thresh = self.stats.thresholds['secondary']
         for _k in self.stats.aliases.keys():
-            if _k == self.stats.ref_component:
-                thresh_dict.update({_k: ref_thresh})
+            if _k == self.stats.primary_component:
+                thresh_dict.update({_k: primary_thresh})
             else:
-                thresh_dict.update({_k: other_thresh})
+                thresh_dict.update({_k: secondary_thresh})
 
         # Check if all expected components are present and meet threshold
         checks = [thresh_dict.keys() == self.traces.keys(),
@@ -252,15 +205,15 @@ class Window(DictStream):
         :type thresh_dict: dict
         :raises ValueError: raised if the `ref` component has insufficient data
         """
-        ref_comp = self.stats.ref_component
-        ref_thresh = self.stats.thresholds['ref']
-        ref_other = self.stats.thresholds['other']
+        ref_comp = self.stats.primary_component
+        primary_thresh = self.stats.thresholds['primary']
+        ref_other = self.stats.thresholds['secondary']
         # Get reference trace
         ref_tr = self.traces[ref_comp]
         # Safety catch that at least the reference component does have enough data
-        if ref_tr.get_fvalid_subset() < ref_thresh:
+        if ref_tr.get_fvalid_subset() < primary_thresh:
             # Attempted fix for small decrease in valid fraction due to resampling
-            if np.abs((ref_tr.get_fvalid_subset() - ref_thresh)/ref_thresh) < 0.01:
+            if np.abs((ref_tr.get_fvalid_subset() - primary_thresh)/primary_thresh) < 0.01:
                 pass
             else:
                 breakpoint()
@@ -299,7 +252,7 @@ class Window(DictStream):
         :raise ValueError: If ref trace has insufficient data
         """
         # Get reference trace
-        ref_comp = self.stats.ref_component
+        ref_comp = self.stats.primary_component
         ref_tr = self[ref_comp]
         # Get 
         if ref_tr.fvalid < thresh_dict[ref_comp]:
@@ -334,7 +287,7 @@ class Window(DictStream):
                         thresholds below which the associated component is rejected
         :type thresh_dict: dict
         """
-        ref_comp = self.stats.ref_component
+        ref_comp = self.stats.primary_component
         # Run through each component and see if it passes thresholds
         pass_dict = {}
         for _k, _tr in self.traces.items():
@@ -410,13 +363,13 @@ class Window(DictStream):
     ###############################################################################
             
     def check_windowing_status(self,
-                               reference_starttime=None,
-                               reference_sampling_rate=None,
-                               reference_npts=None,
+                               target_starttime=None,
+                               target_sampling_rate=None,
+                               target_npts=None,
                                mode='summary'):
         """
         Check if the data timing and sampling in this Window are synchronized
-        with the reference_* [starttime, sampling_rate, npts] attributes in its Stats object
+        with the target_* [starttime, sampling_rate, npts] attributes in its Stats object
         or those specified as arguments in this check_sync() call. Options are provided for
         different slices of the boolean representation of trace-attribute-reference sync'-ing
 
@@ -424,15 +377,15 @@ class Window(DictStream):
         as the output
 
         :: INPUTS ::
-        :param reference_starttime: if None - use self.stats.reference_starttime
+        :param target_starttime: if None - use self.stats.target_starttime
                                     if UTCDateTime - use this value for sync check on starttime
-        :type reference_starttime: None or obspy.core.utcdatetime.UTCDateTime
-        :param reference_sampling_rate: None - use self.stats.reference_sampling_rate
+        :type target_starttime: None or obspy.core.utcdatetime.UTCDateTime
+        :param target_sampling_rate: None - use self.stats.target_sampling_rate
                                     float - use this value for sync check on sampling_rate
-        :type reference_sampling_rate: None or float
-        :param reference_npts: None - use self.stats.reference_npts
+        :type target_sampling_rate: None or float
+        :param target_npts: None - use self.stats.target_npts
                                     int - use this value for sync check on npts
-        :type reference_npts: None or int
+        :type target_npts: None or int
         :param mode: output mode
                         'summary' - return the output of bool_array.all()
                         'trace' - return a dictionary of all() outputs of elements 
@@ -451,26 +404,26 @@ class Window(DictStream):
         :rtype status: bool, dict, or pandas.core.dataframe.DataFrame
         """
         ref = {}
-        if reference_starttime is not None:
-            ref.update({'starttime': reference_starttime})
-        elif self.stats.reference_starttime is not None:
-            ref.update({'starttime': self.stats.reference_starttime})
+        if target_starttime is not None:
+            ref.update({'starttime': target_starttime})
+        elif self.stats.target_starttime is not None:
+            ref.update({'starttime': self.stats.target_starttime})
         else:
-            raise ValueError('Neither stats.reference_starttime or kwarg reference_starttime are assigned')
+            raise ValueError('Neither stats.target_starttime or kwarg target_starttime are assigned')
         
-        if reference_sampling_rate is not None:
-            ref.update({'sampling_rate': reference_sampling_rate})
-        elif self.stats.reference_sampling_rate is not None:
-            ref.update({'sampling_rate': self.stats.reference_sampling_rate})
+        if target_sampling_rate is not None:
+            ref.update({'sampling_rate': target_sampling_rate})
+        elif self.stats.target_sampling_rate is not None:
+            ref.update({'sampling_rate': self.stats.target_sampling_rate})
         else:
-            raise ValueError('Neither stats.reference_sampling_rate or kwarg reference_sampling_rate are assigned')
+            raise ValueError('Neither stats.target_sampling_rate or kwarg target_sampling_rate are assigned')
              
-        if reference_npts is not None:
-            ref.update({'npts': reference_npts})
-        elif self.stats.reference_npts is not None:
-            ref.update({'npts': self.stats.reference_npts})
+        if target_npts is not None:
+            ref.update({'npts': target_npts})
+        elif self.stats.target_npts is not None:
+            ref.update({'npts': self.stats.target_npts})
         else:
-            raise ValueError('Neither stats.reference_npts or kwarg reference_npts are assigned')
+            raise ValueError('Neither stats.target_npts or kwarg target_npts are assigned')
         
         holder = []
         for _tr in self.traces.values():
@@ -532,7 +485,7 @@ class Window(DictStream):
         """        
         # Get reference values from header
         ref = {}
-        for _k in ['reference_starttime','reference_npts','reference_sampling_rate']:
+        for _k in ['target_starttime','target_npts','target_sampling_rate']:
             ref.update({'_'.join(_k.split("_")[1:]): self.stats[_k]})
         resamplekw.update({'sampling_rate':ref['sampling_rate']})
         trimkw.update({'starttime': ref['starttime'],
@@ -568,15 +521,15 @@ class Window(DictStream):
             raise TypeError('sample_tol must be float')
         elif not 0 <= sample_tol < 0.1:
             raise ValueError('sample_tol must be a small float value \in [0, 0.1)')
-        starttime = self.stats.reference_starttime
+        starttime = self.stats.target_starttime
         if starttime is None:
-            raise ValueError('reference_starttime must be specified in this Window\'s `stats`')
-        npts = self.stats.reference_npts
+            raise ValueError('target_starttime must be specified in this Window\'s `stats`')
+        npts = self.stats.target_npts
         if npts is None:
-            raise ValueError('reference_npts must be specified in this Window\'s `stats`')
-        sampling_rate = self.stats.reference_sampling_rate
+            raise ValueError('target_npts must be specified in this Window\'s `stats`')
+        sampling_rate = self.stats.target_sampling_rate
         if sampling_rate is None:
-            raise ValueError('reference_sampling_rate must be specified in this Window\'s `stats`')
+            raise ValueError('target_sampling_rate must be specified in this Window\'s `stats`')
 
         endtime = starttime + (npts-1)/sampling_rate
 
@@ -638,7 +591,7 @@ class Window(DictStream):
         if any(isinstance(_tr.data, np.ma.MaskedArray) for _tr in self):
             status = False
         # Check starttime sync
-        elif not all(_tr.stats.starttime == self.stats.reference_starttime for _tr in self):
+        elif not all(_tr.stats.starttime == self.stats.target_starttime for _tr in self):
             status = False
         # Check npts is consistent
         elif not all(_tr.stats.npts == model.in_samples for _tr in self):
@@ -647,7 +600,7 @@ class Window(DictStream):
         elif not all(_k in model.component_order for _k in self.traces.keys()):
             status = False
         # Check that sampling rate is sync'd
-        elif not all(_tr.stats.sampling_rate == self.stats.reference_sampling_rate for _tr in self):
+        elif not all(_tr.stats.sampling_rate == self.stats.target_sampling_rate for _tr in self):
             status = False
         # Passing (or really failing) all of the above
         else:
@@ -681,3 +634,65 @@ class Window(DictStream):
         else:
             raise ValueError('not all traces in this Window have matching npts')
         
+
+
+   # def extend(self, other, **options):
+    #     """Extend (add more) trace(s) to this Window, checking if non-unique component codes are compliant
+    
+    #     LOGIC TREE
+    #     If the component code(s) of the trace(s) is/are included in this object's `window.stats.aliases` attribute
+    #         - If the component code is new, it is added using :meth:`~dict.update`
+    #         - If the component code already exists in the Window, if the trace-like objects are compliant, they are merged using :meth:`~PULSE.data.mltrace.MLTrace.__add__` method
+
+    #     Following a successful update/__add__ operation, the metadata held in this object's `window.stats`
+    #     attribute are updated using the 
+
+    #     :param other: trace-like object(s) to add to this Window, keying on their component codes
+    #     :type other: obspy.core.trace.Trace like
+        
+    #     **options: collector for key-word arguments passed to :meth:`~PULSE.data.mltrace.MLTrace.__add__` (see description above)
+    #     """
+    #     # If extending with a single trace object
+    #     if isinstance(other, Trace):
+    #         other = [other]
+    #     elif isinstance(other, (list, Stream)):
+    #         if all(isinstance(_e, Trace) for _e in other):
+    #             pass
+    #         else:
+    #             raise TypeError('Not all elements in other are obspy.core.trace.Trace-like.')
+    #     else:
+    #         raise TypeError('other must be obspy.core.trace.Trace-like, obspy.core.stream.Stream-like, or a list of Trace-like objects.')
+
+    #     # Iterate across other
+    #     for mlt in other:
+    #         # If it is not an MLTrace, make it one
+    #         if not isinstance(mlt, MLTrace):
+    #             mlt = MLTrace(mlt)
+    #         # If component is a primary key
+    #         if mlt.comp in self.stats.primary_component:
+    #             # And that key is not in the current holdings
+    #             if comp not in self.traces.keys():
+    #                 self.traces.update({comp: tr})
+    #             else:
+    #                 self.traces[comp].__add__(tr, **options)
+    #             self.stats.update_time_range(self.traces[comp])
+    #         # If component is an aliased key    
+    #         elif comp in ''.join(self.stats.aliases.values()):
+    #             # Get the matching alias/key pair
+    #             for _k, _v in self.stats.aliases.items():
+    #                 if comp in _v:
+    #                     # If primary key not in current holdings
+    #                     if _k not in self.traces.keys():
+    #                         self.traces.update({_k: tr})
+    #                     else:
+    #                         self.traces[_k].__add__(tr, **options)
+    #                     self.stats.update_time_range(self.traces[_k])
+    #                     break
+    #                 else:
+    #                     pass
+    #         # If component is not in the alias list, skip
+    #         else:
+    #             self.logger.debug(f'component code for {tr.id} is not in stats.aliases. Skipping this trace')
+    #             pass
+    #             # breakpoint()
+    #             # raise ValueError('component code for {tr.id} is not in the self.stats.aliases dictionary')

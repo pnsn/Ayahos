@@ -4,13 +4,14 @@
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network
 :license: AGPL-3.0
-:purpose:
-    This module provides the class definitions for :class:`~PULSE.data.window.Window` and :class:`~PULSE.data.window.WindowStats`
-    that are child classes of :class:`~PULSE.data.dictstream.DictStream` and :class:`~PULSE.data.dictstream.DictStreamStats`, respectively.
 
-    The Window class keys :class:`~PULSE.data.mltrace.MLTrace`-type objects by their component code, rather than full **id** attribute
-    and provides additional class methods for pre-processing one or more MLTrace objects into a data tensor ready for input to a machine
-    learning model (i.e., those derived from :class:`~seisbench.models.WaveformModel`.
+.. rubric:: Purpose
+This module provides the class definitions for :class:`~PULSE.data.window.Window` and :class:`~PULSE.data.window.WindowStats`
+that are child classes of :class:`~PULSE.data.dictstream.DictStream` and :class:`~PULSE.data.dictstream.DictStreamStats`, respectively.
+
+The Window class keys :class:`~PULSE.data.mltrace.MLTrace`-type objects by their component code, rather than full **id** attribute
+and provides additional class methods for pre-processing one or more MLTrace objects into a data tensor ready for input to a machine
+learning model (i.e., those derived from :class:`~seisbench.models.WaveformModel`.
 """
 import logging, os, sys, warnings
 import numpy as np
@@ -128,25 +129,36 @@ class Window(DictStream):
     ###############################################################################
     # FILL RULE METHODS ###########################################################
     ###############################################################################
+
     def check_fvalid(self, key, tolerance=1e-3):
         """Check if the fraction of valid data in a given trace meets threshold
         criteria
 
         :param key: key of the intended trace in **Window.traces**
         :type key: str
-        :param tolerance: tolerance level for small changes in fvalid values due to data modification (e.g., resampling),
-             defaults to 0.001.
+        :param tolerance: Small-value tolerance bound to account for machine precision rounding
+            or data modifications (e.g., resampling) that might slightly reduce a previously
+            passing fvalid trace below the specified threshold in **Window.stats**.
+            Must be a value in :math:`\in[0, 1)`, defaults to 1e-3.
         :type tolerance: float, optional
-        :raises KeyError: _description_
         :return:
          - **passing** (*bool*) -- does this trace pass it's assigned threshold criterion?
         """        
+        # Compatability check for tolerance
+        if not isinstance(tolerance, float):
+            raise TypeError('tolerance must be type float')
+        if 0 <= tolerance < 1:
+            pass
+        else:
+            raise ValueError('tolerance must be a value in [0, 1)')
+        # Compatability check for key
         if key not in self.traces.keys():
             raise KeyError(f'{key} is not present.')
         else:
             fv = self[key].get_fvalid_subset(starttime=self.stats.target_starttime,
                                              endtime=self.stats.target_endtime,
                                              threshold=self.stats.fold_threshold_level)
+        
         if key == self.stats.primary_component:
             if fv >= self.stats.primary_threshold - tolerance:
                 passing = True
@@ -157,44 +169,128 @@ class Window(DictStream):
                 passing = True
             else:
                 passing = False
-        
         return passing
+    
+    def run_fvalid_checks(self, tolerance=1e-3):
+        """Run :meth:`~PULSE.data.window.Window.check_fvalid` on all traces
+        present in this Window and return a dictionary keyed with component
+        codes and valued with True/False indicating if traces pass or fail
+        the fvalid threshold check. The primary_component keyed trace has 
+        the primary_threshold applied, while all other traces have the secondary_threshold
+        applied.
 
+        also see :meth:`~PULSE.data.window.Window.check_fvalid`
 
-    def apply_fill_rule(self, secondary_components='NE', rule='clone_primary', tolerance=1e-3):
-        if rule not in ['zeros','clone_primary','clone_secondary']:
+        :param tolerance: tolerance level for :meth:`~PULSE.data.window.Window.check_fvalid`, defaults to 1e-3.
+        :type tolerance: float, optional
+        :return:
+         - **results** (*dict*) -- check_fvalid results for each MLTrace in this Window
+        """ 
+        return {_k: self.check_fvalid(_k, tolerance=tolerance) for _k in self.traces.keys()}
+
+    def set_secondary_components(self, secondary_components='NE'):
+        # Compatability check for secondary_components
+        if not isinstance(secondary_components, str):
+            raise TypeError('secondary_components must be type str.')
+        elif len(secondary_components) != 2:
+            raise ValueError('Must provide 2 secondary_components. E.g., "12", "NE".')
+        elif secondary_components[0] == secondary_components[1]:
+            raise ValueError('Elements of secondary_components must be unique characters')
+        else:
+            component_list = secondary_components + self.stats.primary_component
+        # Set component_list
+        self.stats.secondary_components = secondary_components
+        # De-index any non-listed traces
+        popped_traces = []
+        for _k in self.traces.keys():
+            if _k not in component_list:
+                popped_traces.append(self.traces.pop(_k))
+        
+        return popped_traces
+
+    def apply_fill_rule(self, secondary_components='NE', rule='clone_primary_fill', tolerance=1e-3):
+        """Apply a component-fill rule to this Window that uses the primary component trace
+        and specified secondary components. If secondary components do not exist or have an insufficient
+        valid amount of data (i.e., fvalid < secondary_threshold - tolerance) they will be generated
+        following the specified component-fill rule. If there are traces in this Window that do not
+        match the primary or secondary components specified, they will be removed from this Window and
+        returned as an output of this method.
+
+        Documentation for specific rules:
+         - :meth:`~PULSE.data.window.Window.zeros_fill` - fill missing/below-threshold secondary traces with 0-data/fold traces
+         - :meth:`~PULSE.data.window.Window.clone_primary_fill` - fill missing/below-threshold secondary traces with primary-data/0-fold traces
+         - :meth:`~PULSE.data.window.Window.clone_secondary_fill` - try to fill missing/below-threshold secondary trace with present & passing secondary trace,
+            failing that reverts to `clone_primary_fill` behavior
+
+        :param secondary_components: 2-element string that , defaults to 'NE'
+        :type secondary_components: str, optional
+        :param rule: name of the fill method to apply, defaults to 'clone_primary_fill'. See options above.
+        :type rule: str, optional
+        :param tolerance: allowable tolerance for small fvalid misfits when compared to threshold values in **Window.stats**, defaults to 1e-3.
+            Must be a value in [0, 1)
+        :type tolerance: float, optional
+        :return: 
+         - **popped_traces** (*list* of *PULSE.data.mltrace.MLTrace*) -- list of traces removed from the window that do not match the
+                primary or secondary component codes provided. See :meth:`~PULSE.data.window.Window.set_secondary_components
+        """        
+        # Compatability check for rule
+        if rule not in ['zeros_fill','clone_primary_fill','clone_secondary_fill']:
             raise ValueError(f'rule {rule} not supported.')
         else:
             pass
-        
-        component_list = secondary_components + self.stats.primary_component
-        if len(component_list) != 3:
-            raise ValueError(f'must have 2 secondary_components and one primary component listed. Current component list: {component_list}')
-        # Run valid fraction checks
-        fv_checks = {}
-        for comp in component_list:
-            if comp in self.traces.keys():
-                fv_checks.update({comp: self.check_fvalid(comp, tolerance=tolerance)})
-            else:
-                fv_checks.update({comp: False})
 
+        # Set secondary_components and form component list
+        popped_traces = self.set_secondary_components(secondary_components=secondary_components)
+        component_list = self.stats.primary_component + self.stats.secondary_components
+        
+        # Run valid fraction checks
+        fv_checks = self.run_fvalid_checks(tolerance=tolerance)
+        for comp in component_list:
+            if comp not in fv_checks.keys():
+                fv_checks.update({comp: False})
+        
+        # If all checks pass, do nothing
         if all(_v for _v in fv_checks.values()):
             pass
-        elif rule == 'zeros':
+        elif rule == 'zeros_fill':
             self.zeros_fill(fv_checks)
-        elif rule == 'clone_primary':
+        elif rule == 'clone_primary_fill':
             self.clone_primary_fill(fv_checks)
-        elif rule == 'clone_secondary':
+        elif rule == 'clone_secondary_fill':
             self.clone_secondary_fill(fv_checks)
+        else:
+            raise ValueError(f'rule has somehow been changed to a non-compliant value {rule}...')
+        
+        return popped_traces
+
 
     def zeros_fill(self, fv_checks):
+        """Apply the fill rule from :cite:`Retailleau2022` for missing horizontal components.
+        
+        For any secondary component mltraces that did not pass the fv_check, or are absent:
+
+        Replace them with a copy of the primary_component mltrace that has 0-vectors for both its data and fold attributes (a 0-trace).
+        The component code of the failing/absent secondary component is applied to the 0-trace.
+
+        Uses the following methods from :class:`~PULSE.data.mltrace.MLTrace`:
+         - :meth:`~PULSE.data.mltrace.MLTrace.to_zero` with **method='both'**
+         - :meth:`~PULSE.data.mltrace.MLTrace.set_comp`
+
+        :param fv_checks: dictionary with primary and secondary component character keys and True/False values
+            Generated by :meth:`~PULSE.data.window.Window.check_fvalid`
+        :type fv_checks: dict
+        """
+        
+        if self.stats.primary_component not in self.traces.keys():
+            raise KeyError(f'primary_component {self.stats.primary_component} is not a key in this Window.')        
         # If the primary trace has enough data
-        if fv_checks[self.stats.primary_component]:
+        elif fv_checks[self.stats.primary_component]:
             # Create a 0-trace with metadata copied from the primary trace
             tr0 = self.primary.copy().to_zero(method='both')
         # If the primary has insufficient data, kick error
         else:
             raise ValueError('primary component has insufficient data')
+
         # Iterate across component codes and threshold statuses
         for _k, _v in fv_checks.items():
             # If this is a secondary trace
@@ -211,235 +307,95 @@ class Window(DictStream):
                 continue
 
                 
+    def clone_primary_fill(self, fv_checks):
+        """Apply the fill rule from :cite:`Ni2023` for missing horizontal components.
         
+        For any secondary component mltraces that did not pass the fv_check, or are absent:
+        Replace them with a clone of the primary_component mltrace that retains its data vector, but has
+        a 0-vector for its fold attribute to convey that no unique information is provided by the clone. 
+        The component code of the failing/absent secondary component is applied to the clone. 
 
+        Uses the following methods from :class:`~PULSE.data.mltrace.MLTrace`:
+         - :meth:`~PULSE.data.mltrace.MLTrace.to_zero` with **method='fold'**
+         - :meth:`~PULSE.data.mltrace.MLTrace.set_comp`
 
-    def apply_fill_rule(self, rule='zeros'):
-        """Summative class-method for assessing if channels have enough valid data
-        in the "reference" and "other" components and apply the specified channel fill `rule`
-        for addressing "other" components that have insufficient valid data or are missing.
-
-        If one or more "other" component codes 
-
-        If the "reference" channel does not have sufficient valid data the method will return a ValueError.
-
-        Data validity for each trace is assessed using the :meth:`~PULSE.data.mltrace.MLTrace.get_fvalid_subset`
-        method with the starttime `window.stats.target_starttime` attribute and the endtime implied by the
-        `window.stats.target_npts` and `window.stats.target_sampling_rate` attributes. 
-        
-        The threshold criteria for a give trace to be considered "valid" is a get_fvalid_subset output value
-        that meets or exceeds the relevant threshold value in `window.stats.thresholds`
-
-        :param rule: channel fill rule to apply to non-reference channels that are
-                    missing or fail to meet the `secondary_thresh` requirement, defaults to 'zeros'
-                    Supported Values
-                        'zeros' - fill missing/insufficient "other" traces with 0-valued data and fold vectors
-                            - see :meth:`~PULSE.data.window.Window._apply_zeros`
-                            - e.g., Retailleau et al. (2022)
-                        'clone_ref' - clone the "reference" trace if any "other" traces are missing/insufficient
-                            - see :meth:`~PULSE.data.window.Window._apply_clone_ref`
-                            - e.g., Ni et al. (2023)
-                        'clone_other' - if an "other" trace is missing/insufficient but one "other" trace is present and sufficient,
-                            clone the present and sufficient "other" trace. If both "other" traces are missing, uses the "clone_ref" subroutine
-                            - see :meth`~PULSE.data.window.Window._apply_clone_other`
-                            - e.g., Lara et al. (2023)
-        :type rule: str, optional
-                
-        """      
-
-
-        thresh_dict = {}
-        primary_thresh = self.stats.primary_threshold
-        secondary_thresh = self.stats.secondary_threshold
-        for _k in self.stats.aliases.keys():
-            if _k == self.stats.primary_component:
-                thresh_dict.update({_k: primary_thresh})
-            else:
-                thresh_dict.update({_k: secondary_thresh})
-
-        # Check if all expected components are present and meet threshold
-        checks = [thresh_dict.keys() == self.traces.keys(),
-                  all(_v.get_fvalid_subset() >= thresh_dict[_k] for _k, _v in self.traces.items())]
-        # If so, do nothing
-        if all(checks):
-            pass
-        # Otherwise apply rule
-        elif rule == 'zeros':
-            self._apply_zeros(thresh_dict)
-        elif rule == 'clone_ref':
-            self._apply_clone_ref(thresh_dict)
-        elif rule == 'clone_other':
-            self._apply_clone_other(thresh_dict)
-        else:
-            raise ValueError(f'rule {rule} not supported. Supported values: "zeros", "clone_ref", "clone_other"')
-
-    def _apply_zeros(self, thresh_dict): 
-        """Apply the channel filling rule "zeros" (e.g., Retailleau et al., 2022)
-        where both "other" (horzontal) components are set as zero-valued traces
-        if one or both are missing/overly gappy.
-
-        0-valued traces are assigned fold values of 0 to reflect the absence of
-        added information.
-
-        :param thresh_dict: directory with keys matching keys in 
-                        self.traces.keys() (i.e., alised component characters)
-                        and values :math:`\in [0, 1]` representing fractional completeness
-                        thresholds below which the associated component is rejected
-        :type thresh_dict: dict
-        :raises ValueError: raised if the `ref` component has insufficient data
+        :param fv_checks: dictionary with primary and secondary component character keys and True/False values
+            Generated by :meth:`~PULSE.data.window.Window.run_fvalid_checks` for the primary_component and secondary_components codes
+        :type fv_checks: dict
         """
-        ref_comp = self.stats.primary_component
-        primary_thresh = self.stats.thresholds['primary']
-        ref_other = self.stats.thresholds['secondary']
-        # Get reference trace
-        ref_tr = self.traces[ref_comp]
-        # Safety catch that at least the reference component does have enough data
-        if ref_tr.get_fvalid_subset() < primary_thresh:
-            # Attempted fix for small decrease in valid fraction due to resampling
-            if np.abs((ref_tr.get_fvalid_subset() - primary_thresh)/primary_thresh) < 0.01:
-                pass
+        if self.stats.primary_component not in self.traces.keys():
+            raise KeyError(f'primary_component {self.stats.primary_component} is not a key in this Window.')  
+        elif fv_checks[self.stats.primary_component]:
+            tr0 = self.primary.copy().to_zero(method='fold')
+        else:
+            raise ValueError('primary component trace has insufficient data')
+        # Iterate over all test results
+        for _k, _v in fv_checks.items():
+            # If this is not the primary component
+            if _k != self.stats.primary_component:
+                # If the secondary_component failed
+                if not _v:
+                    # Replace it with a 0-trace clone with the appropriate component code
+                    self.traces.update({_k:tr0.copy().set_comp(_k)})
+                # If secondary_component passed, continue to next component
+                else:
+                    continue
+            # If this is the primary component, continue to the next component
             else:
-                breakpoint()
-                raise ValueError('insufficient valid data in reference trace')
+                continue
+    
+    def clone_secondary_fill(self, fv_checks):
+        """Apply the fill rule from :cite:`Lara2023` if only one secondary component is present and passing, 
+        otherwise apply the fill rule from :cite:`Ni2023` -- :meth:`~PULSE.data.window.Window.clone_primary_fill`.
+        
+        If only one secondary compoent mltrace is present and passes the fv_check, clone that secondary component
+        mltrace to fill in for the other missing/failing secondary trace. The clone has it's fold attribute
+        set to a 0-vector to convey that no unique information is provided by the clone.
+
+        Uses the following methods from :class:`~PULSE.data.mltrace.MLTrace`:
+         - :meth:`~PULSE.data.mltrace.MLTrace.to_zero` with **method='fold'**
+         - :meth:`~PULSE.data.mltrace.MLTrace.set_comp`
+
+        If both secondary component mltraces are absent or fail the fv_check, :meth:`~PULSE.data.window.Window.clone_primary_fill`
+        is used instead.
+
+        :param fv_checks: dictionary with primary and secondary component character keys and True/False values
+            Generated by :meth:`~PULSE.data.window.Window.run_fvalid_checks`
+        :type fv_checks: dict
+        """
+        # Safety check on primary_components
+        if self.stats.primary_component not in self.traces.keys():
+            raise KeyError(f'primary_component {self.stats.primary_component} is not a key in this Window.')  
+        elif fv_checks[self.stats.primary_component]:
+            pc = self.stats.primary_component
+        else:
+            raise ValueError('primary component trace has insufficient data')
+        # Safety check on secondary_components reflects a 3-component 
+        scc = self.stats.get_unique_secondary_components()
+        if len(scc) != 2:
+            raise NotImplementedError('Current version of this rule only works with 3-component data')
         else:
             pass
-        # Iterate across entries in the threshold dictionary
-        for _k in thresh_dict.keys():
-            # For "other" components
-            if _k != ref_comp:
-                # Create copy of reference trace
-                tr0 = ref_tr.copy()
-                # Relabel
-                tr0.set_comp(_k)
-                # Set data and fold to zero
-                tr0.to_zero(method='both')
-                # Update 
-                self.traces.update({_k: tr0})
-
-    def _apply_clone_ref(self, thresh_dict):
-        """
-        Apply the channel filling rule "clone reference" (e.g., Ni et al., 2023)
-        where the reference channel (vertical component) is cloned onto both
-        horizontal components if one or both horizontal (other) component data
-        are missing or are sufficiently gappy. 
-        
-        Cloned traces are assigned fold values of 0 to reflect the absence of
-        additional information contributed by this trace.
-
-        :: INPUTS ::
-        :param thresh_dict: dictionary with keys matching keys in 
-                        self.traces.keys() (i.e., alised component characters)
-                        and values \in [0, 1] representing fractional completeness
-                        thresholds below which the associated component is rejected
-        :type thresh_dict: dict
-        :raise ValueError: If ref trace has insufficient data
-        """
-        # Get reference trace
-        ref_comp = self.stats.primary_component
-        ref_tr = self[ref_comp]
-        # Get 
-        if ref_tr.fvalid < thresh_dict[ref_comp]:
-            raise ValueError('insufficient valid data in reference trace')
+        # Case 1: all components pass, do nothing
+        if all(fv_checks.values()):
+            return
+        # Case 2: both secondary components fail, use clone_primary_fill
+        elif not any(fv_checks[_s] for _s in scc) and fv_checks[pc]:
+            self.clone_primary_fill(fv_checks)
+        # Case 3: one secondary component passes
+        elif fv_checks[scc[0]] != fv_checks[scc[1]]:
+            # If the first listed component is present and valid
+            if fv_checks[scc[0]]:
+                self.traces[scc[1]] = self.traces[scc[0]].copy().to_zero(method='fold').set_comp(scc[1])
+            # If the second listed component is present and valid
+            elif fv_checks[scc[1]]:
+                self.traces[scc[0]] = self.traces[scc[1]].copy().to_zero(method='fold').set_comp(scc[0])
+        # Safety catch
         else:
-            pass
-        for _k in thresh_dict.keys():
-            if _k != ref_comp:
-                # Create copy of reference trace
-                trC = ref_tr.copy()
-                # Relabel component
-                trC.set_comp(_k)
-                # Zero-out fold on copies
-                trC.to_zero(method='fold')
-                # Update zero-fold copies as new "other" component(s)
-                self.traces.update({_k: trC})
+            raise ValueError('Logic error - should not get here')
 
-    def _apply_clone_other(self, thresh_dict):
-        """
-        Apply the channel filling rule "clone other" (e.g., Lara et al., 2023)
-        where the reference channel (vertical component) is cloned onto both
-        horizontal components if both "other" component traces (horizontal components)
-        are missing or are sufficiently gappy, but if one "other" component is present
-        and valid, clone that to the missing/overly-gappy other "other" component.
-        
-        Cloned traces are assigned fold values of 0 to reflect the absence of
-        additional information contributed by this trace.
 
-        :param thresh_dict: dictionary with keys matching keys in 
-                        self.traces.keys() (i.e., alised component characters)
-                        and values \in [0, 1] representing fractional completeness
-                        thresholds below which the associated component is rejected
-        :type thresh_dict: dict
-        """
-        ref_comp = self.stats.primary_component
-        # Run through each component and see if it passes thresholds
-        pass_dict = {}
-        for _k, _tr in self.traces.items():
-            pass_dict.update({_k: _tr.fvalid >= thresh_dict[_k]})
 
-        # If the reference component is present but fails to pass, kick error
-        if ref_comp in pass_dict.keys():
-            if not pass_dict[ref_comp]:
-                raise ValueError('insufficient valid data in reference trace')
-            else:
-                pass
-        # If the reference component is absent, kick error
-        else:
-            raise KeyError("reference component is not in this Window's keys")
-        
-        # If all expected components are present
-        if pass_dict.keys() == thresh_dict.keys():
-            # If all components pass thresholds
-            if all(pass_dict.values()):
-                # Do nothing
-                pass
-
-            # If at least one "other" component passed checks
-            elif any(_v if _k != ref_comp else False for _k, _v in pass_dict.items()):
-                # Iterate across components in 
-                for _k, _v in pass_dict.items():
-                    # If not the reference component and did not pass
-                    if _k != ref_comp and not _v:
-                        # Grab component code that will be cloned over
-                        cc = _k
-                    # If not the reference component and did pass
-                    if _k != ref_comp and _v:
-                        # Create a clone of the passing "other" component
-                        trC = _v.copy()
-                # Zero out the fold of the cloned component and overwrite it's component code
-                trC.to_zero(method='fold').set_comp(cc)
-                # Write cloned, relabeled "other" trace to the failing trace's position
-                self.traces.update({cc: trC})
-
-            # If only the reference trace passed, run _apply_clone_ref() method instead
-            else:
-                self._apply_clone_ref(thresh_dict)
-
-        # If ref and one "other" component are present
-        elif ref_comp in pass_dict.keys() and len(pass_dict) > 1:
-            # ..and they both pass checks
-            if all(pass_dict.items()):
-                # Iterate across all expected components
-                for _c in thresh_dict.keys():
-                    # to find the missing component 
-                    # (case where all components are present & passing is handled above) 
-                    # catch the missing component code
-                    if _c not in pass_dict.keys():
-                        cc = _c
-                    # and use the present "other" as a clone template
-                    elif _c != ref_comp:
-                        trC = self[_c].copy()
-                # Stitch results from the iteration loop together
-                trC.set_comp(cc)
-                # Zero out fold
-                trC.to_zero(method='fold')
-                # And update traces with clone
-                self.traces.update({cc: trC})
-            # If the single "other" trace does not pass, use _apply_clone_ref method
-            else:
-                self._apply_clone_ref(thresh_dict)
-        # If only the reference component is present & passing
-        else:
-            self._apply_clone_ref(thresh_dict)
     
     ###############################################################################
     # Synchronization Methods #####################################################
@@ -779,3 +735,232 @@ class Window(DictStream):
     #             pass
     #             # breakpoint()
     #             # raise ValueError('component code for {tr.id} is not in the self.stats.aliases dictionary')
+
+
+
+    # def apply_fill_rule(self, rule='zeros'):
+    #     """Summative class-method for assessing if channels have enough valid data
+    #     in the "reference" and "other" components and apply the specified channel fill `rule`
+    #     for addressing "other" components that have insufficient valid data or are missing.
+
+    #     If one or more "other" component codes 
+
+    #     If the "reference" channel does not have sufficient valid data the method will return a ValueError.
+
+    #     Data validity for each trace is assessed using the :meth:`~PULSE.data.mltrace.MLTrace.get_fvalid_subset`
+    #     method with the starttime `window.stats.target_starttime` attribute and the endtime implied by the
+    #     `window.stats.target_npts` and `window.stats.target_sampling_rate` attributes. 
+        
+    #     The threshold criteria for a give trace to be considered "valid" is a get_fvalid_subset output value
+    #     that meets or exceeds the relevant threshold value in `window.stats.thresholds`
+
+    #     :param rule: channel fill rule to apply to non-reference channels that are
+    #                 missing or fail to meet the `secondary_thresh` requirement, defaults to 'zeros'
+    #                 Supported Values
+    #                     'zeros' - fill missing/insufficient "other" traces with 0-valued data and fold vectors
+    #                         - see :meth:`~PULSE.data.window.Window._apply_zeros`
+    #                         - e.g., Retailleau et al. (2022)
+    #                     'clone_ref' - clone the "reference" trace if any "other" traces are missing/insufficient
+    #                         - see :meth:`~PULSE.data.window.Window._apply_clone_ref`
+    #                         - e.g., Ni et al. (2023)
+    #                     'clone_other' - if an "other" trace is missing/insufficient but one "other" trace is present and sufficient,
+    #                         clone the present and sufficient "other" trace. If both "other" traces are missing, uses the "clone_ref" subroutine
+    #                         - see :meth`~PULSE.data.window.Window._apply_clone_other`
+    #                         - e.g., Lara et al. (2023)
+    #     :type rule: str, optional
+                
+    #     """      
+
+
+    #     thresh_dict = {}
+    #     primary_thresh = self.stats.primary_threshold
+    #     secondary_thresh = self.stats.secondary_threshold
+    #     for _k in self.stats.aliases.keys():
+    #         if _k == self.stats.primary_component:
+    #             thresh_dict.update({_k: primary_thresh})
+    #         else:
+    #             thresh_dict.update({_k: secondary_thresh})
+
+    #     # Check if all expected components are present and meet threshold
+    #     checks = [thresh_dict.keys() == self.traces.keys(),
+    #               all(_v.get_fvalid_subset() >= thresh_dict[_k] for _k, _v in self.traces.items())]
+    #     # If so, do nothing
+    #     if all(checks):
+    #         pass
+    #     # Otherwise apply rule
+    #     elif rule == 'zeros':
+    #         self._apply_zeros(thresh_dict)
+    #     elif rule == 'clone_ref':
+    #         self._apply_clone_ref(thresh_dict)
+    #     elif rule == 'clone_other':
+    #         self._apply_clone_other(thresh_dict)
+    #     else:
+    #         raise ValueError(f'rule {rule} not supported. Supported values: "zeros", "clone_ref", "clone_other"')
+
+    # def _apply_zeros(self, thresh_dict): 
+    #     """Apply the channel filling rule "zeros" (e.g., Retailleau et al., 2022)
+    #     where both "other" (horzontal) components are set as zero-valued traces
+    #     if one or both are missing/overly gappy.
+
+    #     0-valued traces are assigned fold values of 0 to reflect the absence of
+    #     added information.
+
+    #     :param thresh_dict: directory with keys matching keys in 
+    #                     self.traces.keys() (i.e., alised component characters)
+    #                     and values :math:`\in [0, 1]` representing fractional completeness
+    #                     thresholds below which the associated component is rejected
+    #     :type thresh_dict: dict
+    #     :raises ValueError: raised if the `ref` component has insufficient data
+    #     """
+    #     ref_comp = self.stats.primary_component
+    #     primary_thresh = self.stats.thresholds['primary']
+    #     ref_other = self.stats.thresholds['secondary']
+    #     # Get reference trace
+    #     ref_tr = self.traces[ref_comp]
+    #     # Safety catch that at least the reference component does have enough data
+    #     if ref_tr.get_fvalid_subset() < primary_thresh:
+    #         # Attempted fix for small decrease in valid fraction due to resampling
+    #         if np.abs((ref_tr.get_fvalid_subset() - primary_thresh)/primary_thresh) < 0.01:
+    #             pass
+    #         else:
+    #             breakpoint()
+    #             raise ValueError('insufficient valid data in reference trace')
+    #     else:
+    #         pass
+    #     # Iterate across entries in the threshold dictionary
+    #     for _k in thresh_dict.keys():
+    #         # For "other" components
+    #         if _k != ref_comp:
+    #             # Create copy of reference trace
+    #             tr0 = ref_tr.copy()
+    #             # Relabel
+    #             tr0.set_comp(_k)
+    #             # Set data and fold to zero
+    #             tr0.to_zero(method='both')
+    #             # Update 
+    #             self.traces.update({_k: tr0})
+
+    # def _apply_clone_ref(self, thresh_dict):
+    #     """
+    #     Apply the channel filling rule "clone reference" (e.g., Ni et al., 2023)
+    #     where the reference channel (vertical component) is cloned onto both
+    #     horizontal components if one or both horizontal (other) component data
+    #     are missing or are sufficiently gappy. 
+        
+    #     Cloned traces are assigned fold values of 0 to reflect the absence of
+    #     additional information contributed by this trace.
+
+    #     :: INPUTS ::
+    #     :param thresh_dict: dictionary with keys matching keys in 
+    #                     self.traces.keys() (i.e., alised component characters)
+    #                     and values \in [0, 1] representing fractional completeness
+    #                     thresholds below which the associated component is rejected
+    #     :type thresh_dict: dict
+    #     :raise ValueError: If ref trace has insufficient data
+    #     """
+    #     # Get reference trace
+    #     ref_comp = self.stats.primary_component
+    #     ref_tr = self[ref_comp]
+    #     # Get 
+    #     if ref_tr.fvalid < thresh_dict[ref_comp]:
+    #         raise ValueError('insufficient valid data in reference trace')
+    #     else:
+    #         pass
+    #     for _k in thresh_dict.keys():
+    #         if _k != ref_comp:
+    #             # Create copy of reference trace
+    #             trC = ref_tr.copy()
+    #             # Relabel component
+    #             trC.set_comp(_k)
+    #             # Zero-out fold on copies
+    #             trC.to_zero(method='fold')
+    #             # Update zero-fold copies as new "other" component(s)
+    #             self.traces.update({_k: trC})
+
+    # def _apply_clone_other(self, thresh_dict):
+    #     """
+    #     Apply the channel filling rule "clone other" (e.g., Lara et al., 2023)
+    #     where the reference channel (vertical component) is cloned onto both
+    #     horizontal components if both "other" component traces (horizontal components)
+    #     are missing or are sufficiently gappy, but if one "other" component is present
+    #     and valid, clone that to the missing/overly-gappy other "other" component.
+        
+    #     Cloned traces are assigned fold values of 0 to reflect the absence of
+    #     additional information contributed by this trace.
+
+    #     :param thresh_dict: dictionary with keys matching keys in 
+    #                     self.traces.keys() (i.e., alised component characters)
+    #                     and values \in [0, 1] representing fractional completeness
+    #                     thresholds below which the associated component is rejected
+    #     :type thresh_dict: dict
+    #     """
+    #     ref_comp = self.stats.primary_component
+    #     # Run through each component and see if it passes thresholds
+    #     pass_dict = {}
+    #     for _k, _tr in self.traces.items():
+    #         pass_dict.update({_k: _tr.fvalid >= thresh_dict[_k]})
+
+    #     # If the reference component is present but fails to pass, kick error
+    #     if ref_comp in pass_dict.keys():
+    #         if not pass_dict[ref_comp]:
+    #             raise ValueError('insufficient valid data in reference trace')
+    #         else:
+    #             pass
+    #     # If the reference component is absent, kick error
+    #     else:
+    #         raise KeyError("reference component is not in this Window's keys")
+        
+    #     # If all expected components are present
+    #     if pass_dict.keys() == thresh_dict.keys():
+    #         # If all components pass thresholds
+    #         if all(pass_dict.values()):
+    #             # Do nothing
+    #             pass
+
+    #         # If at least one "other" component passed checks
+    #         elif any(_v if _k != ref_comp else False for _k, _v in pass_dict.items()):
+    #             # Iterate across components in 
+    #             for _k, _v in pass_dict.items():
+    #                 # If not the reference component and did not pass
+    #                 if _k != ref_comp and not _v:
+    #                     # Grab component code that will be cloned over
+    #                     cc = _k
+    #                 # If not the reference component and did pass
+    #                 if _k != ref_comp and _v:
+    #                     # Create a clone of the passing "other" component
+    #                     trC = _v.copy()
+    #             # Zero out the fold of the cloned component and overwrite it's component code
+    #             trC.to_zero(method='fold').set_comp(cc)
+    #             # Write cloned, relabeled "other" trace to the failing trace's position
+    #             self.traces.update({cc: trC})
+
+    #         # If only the reference trace passed, run _apply_clone_ref() method instead
+    #         else:
+    #             self._apply_clone_ref(thresh_dict)
+
+    #     # If ref and one "other" component are present
+    #     elif ref_comp in pass_dict.keys() and len(pass_dict) > 1:
+    #         # ..and they both pass checks
+    #         if all(pass_dict.items()):
+    #             # Iterate across all expected components
+    #             for _c in thresh_dict.keys():
+    #                 # to find the missing component 
+    #                 # (case where all components are present & passing is handled above) 
+    #                 # catch the missing component code
+    #                 if _c not in pass_dict.keys():
+    #                     cc = _c
+    #                 # and use the present "other" as a clone template
+    #                 elif _c != ref_comp:
+    #                     trC = self[_c].copy()
+    #             # Stitch results from the iteration loop together
+    #             trC.set_comp(cc)
+    #             # Zero out fold
+    #             trC.to_zero(method='fold')
+    #             # And update traces with clone
+    #             self.traces.update({cc: trC})
+    #         # If the single "other" trace does not pass, use _apply_clone_ref method
+    #         else:
+    #             self._apply_clone_ref(thresh_dict)
+    #     # If only the reference component is present & passing
+    #     else:
+    #         self._apply_clone_ref(thresh_dict)

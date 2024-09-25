@@ -283,6 +283,24 @@ class WindowStats(DictStreamStats):
     def _repr_pretty_(self, p, cycle):
         p.text(str(self))
 
+    def get_unique_secondary_components(self):
+        """Return a list of unique secondary_components characters
+
+        :return: 
+         - **uniques** (*list*) -- list of unique elements.
+        """
+        uniques = []   
+        if self.secondary_components is None:
+            pass
+        elif (self.secondary_components, str):
+            uniques = []
+            for _c in self.secondary_components:
+                if _c not in uniques:
+                    uniques.append(_c)
+        else:
+            raise TypeError('secondary_components must be type str or NoneType')
+        return uniques
+
 ###############################
 # PulseStats Class Definition #
 ###############################

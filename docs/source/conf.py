@@ -37,9 +37,17 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
+    "sphinx.ext.viewcode",
     "sphinx_rtd_theme",
     "sphinxcontrib.bibtex"
 ]
+
+def linkcode_resolve(domain, info):
+    if domain != 'py':
+        return None
+    if not info['module']:
+        return None
+    filename = info['module']
 
 templates_path = ['_templates']
 autodoc_member_order = 'bysource'

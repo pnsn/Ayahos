@@ -12,10 +12,10 @@ PULSE is an open-source project that bridges the gaps between emerging seismic a
 written in Python and live-streaming seismic data analysis environments. 
 
 It builds on the `ObsPy <https://obspy.org>`_ and `Numpy <https://numpy.org>`_ APIs to provide familiar, optimized
-data and metadata handling between streaming environments and tools typically focused on post-processing.
+data and metadata handling between streaming environments and tools typically focused on post-processing :cite:`ObsPy,NumPy` .
 
 This first release focuses on linking the `Earthworm` streaming environment and the easy-to-interchange machine learning phase detection
-and labeling models hosted in `SeisBench`. It builds on the concepts presented in Retailleau (2022).
+and labeling models hosted in `SeisBench`, building on the workflow in :cite:`Retailleau2022`.
 
 .. this HTML populates links in the main body
 .. raw:: html
@@ -42,6 +42,7 @@ Getting Started
    PULSE.data.rst
    PULSE.mod.rst
    PULSE.seq.rst
+   references.rst
    
 .. Overview
 .. --------

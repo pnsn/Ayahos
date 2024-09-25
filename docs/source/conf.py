@@ -37,7 +37,8 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
-    "sphinx_rtd_theme"
+    "sphinx_rtd_theme",
+    "sphinxcontrib.bibtex"
 ]
 
 templates_path = ['_templates']
@@ -45,7 +46,8 @@ autodoc_member_order = 'bysource'
 master_doc = 'index'
 
 exclude_patterns=['_static','_templates','side_storage']
-
+bibtex_bibfiles = ['references.bib']
+bibtex_reference_style = 'author_year'
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 

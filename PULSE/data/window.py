@@ -127,7 +127,7 @@ class Window(DictStream):
     
 
     ###############################################################################
-    # FILL RULE METHODS ###########################################################
+    # METADATA CHECKING METHODS ###################################################
     ###############################################################################
 
     def check_fvalid(self, key, tolerance=1e-3):
@@ -188,6 +188,74 @@ class Window(DictStream):
         """ 
         return {_k: self.check_fvalid(_k, tolerance=tolerance) for _k in self.traces.keys()}
 
+    
+    def check_target_attribute(self, key, attr='starttime'):
+        """Determine if a given mltrace in this Window object meets the target value
+        of a given attribute in **Window.stats**.
+
+        :param key: key from **Window.traces** to test
+        :type key: str
+        :param attr: name of the mltrace header attribute to check, defaults to 'starttime'.
+            Supported values: starttime, endtime, sampling_rate, npts
+        :type attr: str, optional
+        :return:
+         - **result** (*bool*) -- does the value match?
+        
+        """
+        if key not in self.keys():
+            raise KeyError(f'key {key} not present')
+        else:
+            _mltr = self[key]
+        if attr.lower() in ['starttime','endtime','sampling_rate','npts']:
+            attr = attr.lower()
+            tattr = 'target_%s'%(attr)
+        else:
+            raise ValueError(f'attr value {attr} not supported.')
+        result = _mltr.stats[attr] == self.stats[tattr]
+        return result
+
+    def check_windowing_status(self, mode='summary'):
+        """Check if all traces present in this :class:`~PULSE.data.window.Window` object
+        have starttime, sampling_rate, npts, endtime values that match target attribute values
+        in its **Window.stats** attribute.
+
+        :param mode: determines how the **output** is formatted, defaults to 'summary'.
+            'summary' - a single bool value if all tests pass or not for all channels
+            'channel' - a dictionary keyed by mltrace channel codes and valued with a single bool value
+                    whether the channel passes all tests.
+            'full' - a dictionary keyed by attribute names and valued with dictionaries as
+        :type mode: str, optional
+        :return:
+         - **output** (*dict* or *bool*) - output as determined by specified **mode** selection.
+        """        
+        results = {}
+        for key in self.keys():
+            results.update({key: {}})
+            for attr in ['starttime','sampling_rate','npts','endtime']:
+                result = self.check_target_attribute(key, attr=attr)
+                results[key].update({attr: result})
+        
+        if mode.lower() == 'summary':
+            output = all(all(_v2 for _v2 in _v1.values()) for _v1 in results.values())
+        elif mode.lower() == 'channel':
+            output = {key: all(result[key].values()) for key in results.keys()}
+        elif mode.lower() == 'full':
+            output = results
+        else:
+            raise ValueError(f'mode {mode} not supported.')
+
+        return output
+
+    def check_tensor_readiness(self, target_ntraces=3, mode='summary'):
+        report = {'ntraces': len(self) == target_ntraces,
+                  'attr': self.check_windowing_status(mode=mode)}
+        if mode.lower() == 'summary':
+            output = all(report.values())
+        
+    ##################################
+    # SECONDARY COMPONENT METHODS ####
+    ##################################
+
     def set_secondary_components(self, secondary_components='NE'):
         # Compatability check for secondary_components
         if not isinstance(secondary_components, str):
@@ -207,6 +275,53 @@ class Window(DictStream):
                 popped_traces.append(self.traces.pop(_k))
         
         return popped_traces
+
+    ##########################
+    # PREPROCESSING METHODS ##
+    ##########################
+
+    def align_to_targets(self, fill_value=0, window='hann', **kwargs):
+        """Wrapper for the :meth:`~PULSE.data.mltrace.MLTrace.treat_gaps` and
+        :meth:`~PULSE.data.mltrace.MLTrace.align_sampling` methods, which are
+        which is applied to all traces in this Window using target attribute values 
+        (starttime, npts, sampling_rate) as inputs. 
+
+
+        :param fill_value: fill_value used by subroutine calls of :meth:`~PULSE.data.mltrace.MLTrace.trim`,
+            defaults to 0
+        :type fill_value: int, float, or None, optional
+        :param window: name of the windowing method to use in subroutine calls of :meth:`~PULSE.data.mltrace.MLTrace.resample`,
+            defaults to 'hann'
+        :type window: str, optional
+        :param kwargs: key-word argument collector passed to subroutine calls of :meth:`~PULSE.data.mltrace.MLTrace.interpolate`
+        """
+        # Run safety check that no reference values are none
+        if any(self.stats[_e] is None for _e in ['target_starttime','target_npts','target_sampling_rate']):
+            raise TypeError('Cannot use this method if any target value is NoneType')
+        # Run checks up front to skip a lot of logic tree steps if things are copacetic 
+        check_results = self.check_windowing_status(mode='full')
+        # Iterate across all traces in this Window
+        for comp, _mlt in self.items():
+            # Get their specific results
+            result = check_results[comp]
+            
+            # Check 1: All checks passed by this component - continue to next component
+            if all(result.values()):
+                continue
+            else:
+                _mlt.align_sampling(
+                    starttime=self.stats.target_starttime,
+                    sampling_rate=self.stats.target_sampling_rate,
+                    npts=self.stats.target_npts,
+                    fill_value=fill_value,
+                    window=window,
+                    **kwargs)
+
+    def 
+
+    ########################
+    # FILL RULE METHODS ####
+    ########################
 
     def apply_fill_rule(self, secondary_components='NE', rule='clone_primary_fill', tolerance=1e-3):
         """Apply a component-fill rule to this Window that uses the primary component trace

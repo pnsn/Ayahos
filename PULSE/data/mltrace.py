@@ -642,6 +642,8 @@ class MLTrace(Trace):
     #############################
     # TIME<->INDEX METHODS ######
     #############################
+    ## TODO: Perhaps move these to a utility methods section (also crops up in PULSE.data.window.Window.sync_to_target_window)
+
     def utcdatetime_to_nearest_index(self, utcdatetime):
         """get the index of the nearest sample in `data` to a provided :class:`~obspy.core.utcdatetime.UTCDateTime` reference time
 
@@ -655,6 +657,7 @@ class MLTrace(Trace):
         """        
         return round((utcdatetime - self.stats.starttime)*self.stats.sampling_rate)
 
+
     def is_utcdatetime_in_sampling(self, utcdatetime):
         """check if a given utcdatetime timestamp aligns with the sampling mesh of this MLTrace
 
@@ -666,11 +669,6 @@ class MLTrace(Trace):
         """        
         npts = (utcdatetime - self.stats.starttime)*self.stats.sampling_rate
         return npts == int(npts)
-     
-
-
-
-
     
     def get_fvalid_subset(self, starttime=None, endtime=None, threshold=1):
         """Get the fraction of valid (non-masked & fold >= threshold) data contained in this trace (or a subset view thereof)
@@ -1166,7 +1164,91 @@ class MLTrace(Trace):
             self.trim(**trimkw)
 
         return self
+
+    def align_sampling(self, starttime=None, sampling_rate=None, npts=None, fill_value=None, window='hann', **kwargs):
+        """Given a discrete, time-domain index defined by a starttime, sampling_rate,
+        and number of samples, apply trimming, padding, interpolation, and/or resampling
+        to estimate data and fold values at sample points on this new time index.
+
+        This method wraps
+          - :meth:`~PULSE.data.mltrace.MLTrace.trim` to pad or trim data and fold vectors
+          - :meth:`~PULSE.data.mltrace.MLTrace.resample` to change sampling rates
+          - :meth:`~PULSE.data.mltrace.MLTrace.interpolate` to estimate data values on the
+          specified sampling index if the source sampling index is mis-aligned at a sample-by-sample level.
+
+        :param starttime: starttime for the new time index, defaults to None.
+            None value uses the starttime of this MLTrace as the reference starttime
+        :type starttime: UTCDateTime or None, optional
+        :param sampling_rate: sampling_rate for the new time index, defaults to None
+            None value uses the sampling_rate of this MLTrace as the reference sampling_rate
+        :type sampling_rate: float-like or None, optional
+        :param npts: the number of samples in the new time index, defaults to None
+            None value uses the npts of this MLTrace as the reference npts
+        :type npts: int-like or None, optional
+        :param fill_value: Default padding value with which to fill missing samples,
+                passed to :meth:`~PULSE.data.mltrace.MLTrace.trim`, defaults to None
+            None value will be superceded by the leading data sample in this MLTrace
+                in a particular case where interpolation is required and the specified starttime
+                is before the starttime of this MLTrace, in which case padding samples are added
+                to encompass the new starttime and subsequently trimmed off.
+        :type fill_value: int, float or None, optional
+        :param window: name of the window method to use for resampling, defaults to 'hann'.
+            also see :meth:`~obspy.core.trace.Trace.resample`, and references therein
+        :type window: str, optional
+        :param kwargs: key word argument collector for passing additional arguments to
+            :meth:`~PULSE.data.mltrace.MLTrace.interpolate`.
+        """        
+        # Test 0: Handle None inputs for required values
+        if not isinstance(starttime, UTCDateTime):
+            starttime = self.stats.starttime
+        if not isinstance(sampling_rate, (int, float)):
+            sampling_rate = self.stats.sampling_rate
+        elif sampling_rate < 0:
+            raise ValueError('sampling_rate must be non-negative')
+        if not isinstance(npts, int):
+            npts = self.stats.npts
+        elif npts < 0:
+            raise ValueError('npts must be non-negative')
+        # Explicitly calculate target endtime
+        endtime = starttime + npts/sampling_rate
+
+        # Test 1: If starttime does not line up with target starttime
+        if self.stats.starttime != starttime:
+            # Check 1.1: Interpolation not required, just trimming to start trace at starttime
+            if self.is_utcdatetime_in_sampling(starttime):
+                self.trim(starttime=starttime,pad=True,fill_value=fill_value)
+            # Check 1.2: Interpolation needed to re-align sampling indices
+            else:
+                # Safety catch on NoneType fill_value
+                if not isinstance(fill_value, (int, float)):
+                    leading_fill_value = self.data[0]
+                else:
+                    leading_fill_value = fill_value
+                # Pad by 5 extra samples beyond the target starttime with the leading data value
+                self.trim(starttime=starttime - self.stats.delta*5,
+                          pad=True,
+                          fill_value=leading_fill_value)
+                self.interpolate(sampling_rate=self.stats.sampling_rate,
+                                    starttime=starttime,
+                                    **kwargs)
+                
+        # Test 2: If sampling_rate does not line up with target sampling_rate
+        if self.stats.sampling_rate != sampling_rate:
+            # Check 2.1: is this downsampling? If so (no_filter=False) apply auto-lowpass (chebychev-2)
+            no_filter = self.stats.sampling_rate < sampling_rate
+            self.resample(sampling_rate,
+                          no_filter=no_filter,
+                          window=window)
+
+        # Test 3: If npts does not equate, pad
+        if self.stats.npts != npts:
+            self.trim(starttime=starttime,
+                      endtime=endtime,
+                      pad=True,
+                      fill_value=fill_value,
+                      nearest_sample=True)
         
+
     def sync_to_window(self, starttime=None, endtime=None, fill_value=None, pad_after=True, **kwargs):
         """
         Syncyronize the time sampling index of this trace to a specified

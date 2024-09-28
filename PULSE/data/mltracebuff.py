@@ -5,6 +5,19 @@ from PULSE.data.mltrace import MLTrace
 
 Logger = logging.getLogger(__name__)
 
+
+###################################################################################
+# DISABLE _add_processing_info DECORATOR ##########################################
+###################################################################################
+
+@decorator
+def _add_processing_info(func, *args, **kwargs):
+    """
+    Overwrite the _add_processing_info decorator from :class:`~obspy.core.trace.Trace`
+    to prevent run-away documentation
+    """
+    return
+
 class MLTraceBuff(MLTrace):
 
     def __init__(self,

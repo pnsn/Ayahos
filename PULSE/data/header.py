@@ -91,9 +91,8 @@ class MLStats(Stats):
                 index = 0
             elif ref == 'endtime':
                 index = self.npts
-        if isinstance(utcdatetime, UTCDateTime):
+        elif isinstance(utcdatetime, UTCDateTime):
             index = round((utcdatetime - self[ref])*self.sampling_rate)
-            index += self.npts
         else:
              raise TypeError('utcdatetime must be type obspy.core.utcdatetime.UTCDateTime or None')
         return index

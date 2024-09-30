@@ -90,13 +90,19 @@ class MLStats(Stats):
             if ref == 'starttime':
                 index = 0
             elif ref == 'endtime':
-                index = self.stats.npts
+                index = self.npts
         if isinstance(utcdatetime, UTCDateTime):
-            index = round((utcdatetime - self[ref])*self.stats.sampling_rate)
-            index += self.stats.npts
+            index = round((utcdatetime - self[ref])*self.sampling_rate)
+            index += self.npts
         else:
              raise TypeError('utcdatetime must be type obspy.core.utcdatetime.UTCDateTime or None')
         return index
+
+    def copy(self):
+        """
+        Return a deep copy of this MLStats object
+        """        
+        return copy.deepcopy(self)
     
 
 ###################################################################################

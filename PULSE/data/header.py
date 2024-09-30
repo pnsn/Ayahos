@@ -70,6 +70,33 @@ class MLStats(Stats):
                           'starttime', 'endtime', 'sampling_rate', 'delta',
                           'npts', 'calib']
         return self._pretty_str(prioritized_keys)
+
+    def utc2nearest_index(self, utcdatetime, ref='starttime'):
+        """Return the integer index value for the nearest time
+        of an input UTCDateTime object in the time index defined
+        by this MLStats's sampling_rate and (starttime OR endtime).
+
+        :param utcdatetime: reference utcdatetime
+        :type utcdatetime: obspy.core.utcdatetime.UTCDateTime or None.
+        :param ref: reference attribute, defaults to starttime
+            Supported values: 'starttime','endtime'
+        :type ref: str, optional
+        :return:
+         - **index** (*int*) - integer index value position
+        """        
+        if ref not in ['starttime','endtime']:
+            raise ValueError(f'ref value {ref} not supported.')
+        if utcdatetime is None:
+            if ref == 'starttime':
+                index = 0
+            elif ref == 'endtime':
+                index = self.stats.npts
+        if isinstance(utcdatetime, UTCDateTime):
+            index = round((utcdatetime - self[ref])*self.stats.sampling_rate)
+            index += self.stats.npts
+        else:
+             raise TypeError('utcdatetime must be type obspy.core.utcdatetime.UTCDateTime or None')
+        return index
     
 
 ###################################################################################

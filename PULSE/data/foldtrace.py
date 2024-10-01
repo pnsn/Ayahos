@@ -1,8 +1,8 @@
 
 import numpy as np
-from obspy.core.stream import Stream
-from obspy.core.utcdatetime import UTCDateTime
-from obspy.core.trace import Trace, Stats, _data_sanity_checks
+# from obspy.core.stream import Stream
+# from obspy.core.utcdatetime import UTCDateTime
+from obspy.core.trace import Trace
 from PULSE.data.header import MLStats
 from obspy.core.util.misc import flat_not_masked_contiguous
 
@@ -22,27 +22,36 @@ class FoldTrace(Trace):
         :type header: None or dict, optional
         :param dtype: default data type to use for **data** and **fold**, defaults to np.float32
         :type dtype: type, optional
-        """        
+        """ 
+        # Initialize dtype placeholder
+        self.dtype = None  
         # Handle case where a Trace is directly passed as an arg
         if isinstance(data, Trace):
             trace = data
             data = trace.data
             header = trace.stats
-        # Initialize as trace with no header
-        super().__init__(data=data,header=None)
-        if dtype is not None:
-            self.data = self.data.astype(dtype)
-        # Upgrade Stats to MLStats
+        # Initialize as empty trace 
+        super().__init__()
+        # Populate data - allows updated _data_sanity_check application
+        self.data=data
+        # Apply dtype adjustment
+        if dtype is None:
+            self.dtype = self.data.dtype
+        else:
+            self.dtype = dtype
+        # Populate updated header class
         if header is None:
-            header = {}
+            header={}
         self.stats = MLStats(header=header)
-        # Populate fold
-        self.fold = np.ones(len(self))
-        if fold is not None:
-            self.__setattr__('fold', fold)
+        # Initialize fold attribute
+        if fold is None:
+            self.fold = np.ones(shape=self.data.shape,
+                                dtype=self.data.dtype)
+        else:
+            self._fold_sanity_checks(fold)
+            self.fold = self._enforce_fold_masking_rules(fold)
 
-
-
+            
     def __setattr__(self, key, value):
         """__setattr__ method of FoldTrace object
 
@@ -51,67 +60,42 @@ class FoldTrace(Trace):
         :param value: _description_
         :type value: _type_
         """
-        # Any change in FoldTrace.data will dynamically set Trace.stats.npts
+        # Any change in FoldTrace.data will dynamically set
+        # FoldTrace.stats.npts and FoldTrace.dtype
         if key == 'data':
-            _data_sanity_checks(value)
+            self._data_sanity_checks(value)
             if self._always_contiguous:
                 value = np.require(value, requirements=['C_CONTIGUOUS'])
             self.stats.npts = len(value)
+            # If dtype is none, use data.dtype to set
+            if self.dtype is None:
+                self.dtype = value.dtype
+            # Otherwise obey self.dtype
+            if self.data.dtype != self.dtype:
+                value.dtype = self.dtype
+            # Only exception should be in __init__
+            if hasattr(self, 'fold'):
+                # Enforce dtype match rule for fold for any changes to data
+                if self.data.dtype != self.fold.dtype:
+                    value.dtype = self.data.dtype
             # Ensure that changes in data dtype is propagated to fold dtype
-            self._enforce_fold_rules()
         # Any change in FoldTrace.fold cannot violate fold rules
         elif key == 'fold':
             # Run fold sanity checks
-            value = self._enforce_fold_rules(value)
+            self._fold_sanity_checks(value)
+            # Enforce fold masking rules
+            value = self._enforce_fold_masking_rules(value)
+
+        # Any call to change dtype affects data and fold
+        elif key == 'dtype':
+            # handle exceptions during __init__
+            if hasattr(self, 'data'):
+                self.data.dtype = value
+            if hasattr(self, 'fold'):
+                self.fold.dtype = value
+
     
         return super(FoldTrace, self).__setattr__(key,value)
-
-
-
-
-    ##################################
-    # DYNAMIC CALL SUPPORTER METHODS #
-    ##################################
-
-    def apply_method(self, method, apply_to_fold=False, **options):
-        method = getattr(super(), method)
-        if apply_to_fold:
-            fold_ftr = self._get_fold_view_trace()
-            getattr(fold_ftr, method)(**options)
-        getattr(self, method)(**options)
-        if apply_to_fold:
-            self.fold = fold_ftr.data
-        # Add a quick note on if fold processing was applied
-        self.stats.processing[-1] += f' PULSE: apply_method(apply_to_fold={apply_to_fold})'
-        
-    def apply_to_gappy(self, method, **options):
-        if isinstance(self.data, np.ma.MaskedArray):
-            fill_value = self.data.fill_value
-            st = self.split()
-            for _e, _ftr in enumerate(st):
-                _ftr.apply_method(method, **options)
-                if _e == 0:
-                    self = _ftr
-                else:
-                    self.__add__(_ftr, method=0, fill_value=fill_value)
-            # Add a note that this used apply_to_gappy        
-            self.stats.processing[-1] += f' PULSE: apply_to_gappy()'
-        else:
-            self.apply_method(method, **options)
-
-
-    ###################
-    # SPECIAL METHODS #
-    ###################
-    def extend(self, other, fill_value=None):
-        self.__add__(other, method=0, fill_value=fill_value)
-
-    def max_stack(self, other, fill_value=None):
-        self.__add__(other, method=2, fill_value=fill_value)
-    
-    def avg_stack(self, other, fill_value=None):
-        self.__add__(other, method=3, fill_value=fill_value)
-
 
     def __add__(self, other, method=0, fill_value=None):
         """Add another Trace-like object to this FoldTrace
@@ -255,9 +239,56 @@ class FoldTrace(Trace):
         output.data = add_data
         output.fold = add_fold
         # Enforce fold rules
-        output._enforce_fold_rules()
+        # output._enforce_fold_rules()
 
         return output
+
+
+    ##################################
+    # DYNAMIC CALL SUPPORTER METHODS #
+    ##################################
+
+    def apply_method(self, method, apply_to_fold=False, **options):
+        method = getattr(super(), method)
+        if apply_to_fold:
+            fold_ftr = self._get_fold_view_trace()
+            getattr(fold_ftr, method)(**options)
+        getattr(self, method)(**options)
+        if apply_to_fold:
+            self.fold = fold_ftr.data
+        # Add a quick note on if fold processing was applied
+        self.stats.processing[-1] += f' PULSE: apply_method(apply_to_fold={apply_to_fold})'
+        
+    def apply_to_gappy(self, method, **options):
+        if isinstance(self.data, np.ma.MaskedArray):
+            fill_value = self.data.fill_value
+            st = self.split()
+            for _e, _ftr in enumerate(st):
+                _ftr.apply_method(method, **options)
+                if _e == 0:
+                    self = _ftr
+                else:
+                    self.__add__(_ftr, method=0, fill_value=fill_value)
+            # Add a note that this used apply_to_gappy        
+            self.stats.processing[-1] += f' PULSE: apply_to_gappy()'
+        else:
+            self.apply_method(method, **options)
+
+
+    ###################
+    # SPECIAL METHODS #
+    ###################
+    def extend(self, other, fill_value=None):
+        self.__add__(other, method=0, fill_value=fill_value)
+
+    def max_stack(self, other, fill_value=None):
+        self.__add__(other, method=2, fill_value=fill_value)
+    
+    def avg_stack(self, other, fill_value=None):
+        self.__add__(other, method=3, fill_value=fill_value)
+
+
+    
     
     def __iadd__(self, other, **options):
         """_summary_
@@ -349,17 +380,14 @@ class FoldTrace(Trace):
     # FOLD-SPECIFIC PRIVATE METHODS #
     #################################
 
-    def _enforce_fold_rules(self, value):
-        """Enforce defining rules for the fold attribute
+    def _enforce_fold_masking_rules(self, value):
+        """Enforce rules for fold related to masked arrays
+        for a candidate fold value
 
-        Rule 2) fold data-type must match data data-type
-        Rule 3) masked data are automatically 0 fold, but not vice versa
-        Rule 4) If fold has masked values, fill them with 0's
+        Rule 1) masked data are automatically 0 fold, but not vice versa
+        Rule 2) If fold has masked values, fill them with 0's
+        Rule 3) fold.dtype matches FoldTrace.dtype
         """
-        self._fold_sanity_checks(value)
-        # Enforce dtype match
-        if self.data.dtype != value.dtype:
-            value.dtype = value.dtype.astype(self.data.dtype)
         # Enforce masked data values = 0 fold
         if isinstance(self.data, np.ma.MaskedArray):
             value[self.data.mask] = 0
@@ -367,7 +395,20 @@ class FoldTrace(Trace):
         if isinstance(value, np.ma.MaskedArray):
             value.fill_value = 0
             value = value.filled()
+        if value.dtype != self.dtype:
+            value = value.astype(self.dtype)
         return value
+
+    def _data_sanity_checks(self, value):
+        """Adapted version of obspy's _data_sanity_checks
+        to be consistent with error raise types
+        """
+        if not isinstance(value, np.ndarray):
+            raise TypeError('FoldTrace.data must be type np.ndarray')
+        if value.ndim != 1:
+            msg = f'NumPy array for FoldTrace.data has bad shape ({value.shape}). '
+            msg += 'Only 1-d arrays are allowed.'
+            raise ValueError(msg)
 
     def _fold_sanity_checks(self, value):
         """Complement to _data_sanity_checks from obspy.core.trace
@@ -375,17 +416,11 @@ class FoldTrace(Trace):
         Check fold rules:
         0) fold must be numpy.ndarray
         1) fold shape must match data shape
-
-        :param value: _description_
-        :type value: _type_
-        :raises ValueError: _description_
-        :raises ValueError: _description_
-        :raises TypeError: _description_
         """        
         if not isinstance(value, np.ndarray):
-            raise TypeError('value must be a numpy.ndarray')   
+            raise TypeError('FoldTrace.fold must be a numpy.ndarray')   
         if self.data.shape != value.shape:
-            raise ValueError('value shape must match FoldTrace.data shape')
+            raise ValueError('FoldTrace.fold shape must match FoldTrace.data shape')
 
     def _get_fold_view_trace(self):
         """Create a new FoldTrace object with data that houses

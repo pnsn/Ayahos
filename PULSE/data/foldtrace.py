@@ -2,13 +2,13 @@
 import numpy as np
 from obspy.core.stream import Stream
 from obspy.core.utcdatetime import UTCDateTime
-from obspy.core.trace import Trace, Stats
+from obspy.core.trace import Trace, Stats, _data_sanity_checks
 from PULSE.data.header import MLStats
 from obspy.core.util.misc import flat_not_masked_contiguous
 
 class FoldTrace(Trace):
 
-    def __init__(self, data=np.array([]), fold=None, header=None, dtype=np.float32):
+    def __init__(self, data=np.array([]), fold=None, header=None, dtype=None):
         """Create a :class:`~PULSE.data.foldtrace.FoldTrace` object
 
         :param data: Input data array, defaults to np.array([])
@@ -33,14 +33,41 @@ class FoldTrace(Trace):
         if dtype is not None:
             self.data = self.data.astype(dtype)
         # Upgrade Stats to MLStats
+        if header is None:
+            header = {}
         self.stats = MLStats(header=header)
         # Populate fold
-        if fold is None:
-            self.fold = np.ones(len(self), dtype=self.data.dtype)
-        elif isinstance(fold, np.ndarray):
-            self.fold = fold
-        # Enforce rules for fold
-        self._enforce_fold_rules()
+        self.fold = np.ones(len(self))
+        if fold is not None:
+            self.__setattr__('fold', fold)
+
+
+
+    def __setattr__(self, key, value):
+        """__setattr__ method of FoldTrace object
+
+        :param key: _description_
+        :type key: _type_
+        :param value: _description_
+        :type value: _type_
+        """
+        # Any change in FoldTrace.data will dynamically set Trace.stats.npts
+        if key == 'data':
+            _data_sanity_checks(value)
+            if self._always_contiguous:
+                value = np.require(value, requirements=['C_CONTIGUOUS'])
+            self.stats.npts = len(value)
+            # Ensure that changes in data dtype is propagated to fold dtype
+            self._enforce_fold_rules()
+        # Any change in FoldTrace.fold cannot violate fold rules
+        elif key == 'fold':
+            # Run fold sanity checks
+            value = self._enforce_fold_rules(value)
+    
+        return super(FoldTrace, self).__setattr__(key,value)
+
+
+
 
     ##################################
     # DYNAMIC CALL SUPPORTER METHODS #
@@ -322,29 +349,43 @@ class FoldTrace(Trace):
     # FOLD-SPECIFIC PRIVATE METHODS #
     #################################
 
-    def _enforce_fold_rules(self):
+    def _enforce_fold_rules(self, value):
         """Enforce defining rules for the fold attribute
 
-        Rule 0) fold must be a numpy.ndarray
-        Rule 1) fold shape must match data shape
         Rule 2) fold data-type must match data data-type
         Rule 3) masked data are automatically 0 fold, but not vice versa
         Rule 4) If fold has masked values, fill them with 0's
         """
-        if not isinstance(self.fold, np.ndarray):
-            raise TypeError('Fold must be a numpy.ndarray')   
-        if self.data.shape != self.fold.shape:
-            raise ValueError('Fold shape must match FoldTrace.data shape')
-        # Enforce fold.dtype == data.dtype
-        if self.data.dtype != self.fold.dtype:
-            self.fold.dtype = self.fold.dtype.astype(self.data.dtype)
+        self._fold_sanity_checks(value)
+        # Enforce dtype match
+        if self.data.dtype != value.dtype:
+            value.dtype = value.dtype.astype(self.data.dtype)
         # Enforce masked data values = 0 fold
         if isinstance(self.data, np.ma.MaskedArray):
-            self.fold[self.data.mask] = 0
+            value[self.data.mask] = 0
         # Enforce masked fold values -> 0 fold
-        if isinstance(self.fold, np.ma.MaskedArray):
-            self.fold.fill_value = 0
-            self.fold = self.fold.filled()
+        if isinstance(value, np.ma.MaskedArray):
+            value.fill_value = 0
+            value = value.filled()
+        return value
+
+    def _fold_sanity_checks(self, value):
+        """Complement to _data_sanity_checks from obspy.core.trace
+
+        Check fold rules:
+        0) fold must be numpy.ndarray
+        1) fold shape must match data shape
+
+        :param value: _description_
+        :type value: _type_
+        :raises ValueError: _description_
+        :raises ValueError: _description_
+        :raises TypeError: _description_
+        """        
+        if not isinstance(value, np.ndarray):
+            raise TypeError('value must be a numpy.ndarray')   
+        if self.data.shape != value.shape:
+            raise ValueError('value shape must match FoldTrace.data shape')
 
     def _get_fold_view_trace(self):
         """Create a new FoldTrace object with data that houses

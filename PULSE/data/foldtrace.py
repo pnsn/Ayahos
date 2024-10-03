@@ -8,7 +8,7 @@ from obspy.core.util.misc import flat_not_masked_contiguous
 
 class FoldTrace(Trace):
 
-    def __init__(self, data=np.array([]), fold=None, header=None, dtype=None):
+    def __init__(self, data=np.array([], dtype=np.float64), fold=None, header=None):
         """Create a :class:`~PULSE.data.foldtrace.FoldTrace` object
 
         :param data: Input data array, defaults to np.array([])
@@ -20,84 +20,78 @@ class FoldTrace(Trace):
         :type fold: None or numpy.ndarray, optional
         :param header: non-default metadata values, defaults to None
         :type header: None or dict, optional
-        :param dtype: default data type to use for **data** and **fold**, defaults to np.float32
-        :type dtype: type, optional
-        """ 
-        # Initialize dtype placeholder
-        self.dtype = None  
+        """
+        self.dtype = None
+        if header is None:
+            header = {}
         # Handle case where a Trace is directly passed as an arg
         if isinstance(data, Trace):
             trace = data
             data = trace.data
             header = trace.stats
-        # Initialize as empty trace 
-        super().__init__()
-        # Populate data - allows updated _data_sanity_check application
-        self.data=data
-        # Apply dtype adjustment
-        if dtype is None:
-            self.dtype = self.data.dtype
+        elif isinstance(data, np.ndarray):
+            pass
         else:
-            self.dtype = dtype
-        # Populate updated header class
+            raise TypeError('data must be a NumPy ndarray or an ObsPy Trace-like object')
+        # Grab reference dtype
+        self.dtype = data.dtype
+        # Initialize as empty trace
+        super().__init__()
+        # Populate stats
         if header is None:
-            header={}
+            header = {}
         self.stats = MLStats(header=header)
-        # Initialize fold attribute
+        # Populate data (which updates dtype and stats.npts)
+        self.data = data
+        # Initialize fold
         if fold is None:
             self.fold = np.ones(shape=self.data.shape,
                                 dtype=self.data.dtype)
         else:
             self._fold_sanity_checks(fold)
             self.fold = self._enforce_fold_masking_rules(fold)
-
+        
             
     def __setattr__(self, key, value):
         """__setattr__ method of FoldTrace object
+
+        dtype heirarchy
+        1) data.dtype
+        2) dtype
+        3) fold.dtype
 
         :param key: _description_
         :type key: _type_
         :param value: _description_
         :type value: _type_
         """
-        # Any change in FoldTrace.data will dynamically set
-        # FoldTrace.stats.npts and FoldTrace.dtype
         if key == 'data':
+            # Compatability check
             self._data_sanity_checks(value)
+            # Ensure contiguous if on
             if self._always_contiguous:
                 value = np.require(value, requirements=['C_CONTIGUOUS'])
-            self.stats.npts = len(value)
-            # If dtype is none, use data.dtype to set
-            if self.dtype is None:
+            # Ensure dtype match
+            if hasattr(self,'dtype'):
                 self.dtype = value.dtype
-            # Otherwise obey self.dtype
-            if self.data.dtype != self.dtype:
-                value.dtype = self.dtype
-            # Only exception should be in __init__
-            if hasattr(self, 'fold'):
-                # Enforce dtype match rule for fold for any changes to data
-                if self.data.dtype != self.fold.dtype:
-                    value.dtype = self.data.dtype
-            # Ensure that changes in data dtype is propagated to fold dtype
-        # Any change in FoldTrace.fold cannot violate fold rules
+            if hasattr(self,'fold'):
+                if self.fold.dtype != value.dtype:
+                    self.fold = self.fold.astype(value.dtype)
+            self.stats.npts = len(value)
+        # If setting fold
         elif key == 'fold':
-            # Run fold sanity checks
+            # Compatability check
             self._fold_sanity_checks(value)
-            # Enforce fold masking rules
-            value = self._enforce_fold_masking_rules(value)
-
-        # Any call to change dtype affects data and fold
-        elif key == 'dtype':
-            # handle exceptions during __init__
-            if hasattr(self, 'data'):
-                self.data.dtype = value
-            if hasattr(self, 'fold'):
-                self.fold.dtype = value
-
-    
+            # Ensure contiguous if on
+            if self._always_contiguous:
+                value = np.require(value, requirements=['C_CONTIGUOUS'])
+            # Ensure dtype match
+            if self.dtype != value.dtype:
+                value = value.astype(self.dtype)
+            
         return super(FoldTrace, self).__setattr__(key,value)
-
-    def __add__(self, other, method=0, fill_value=None):
+    
+    def __add__(self, other, method=0, fill_value=None, internal_dtype=np.float64):
         """Add another Trace-like object to this FoldTrace
         Overwrites the functionalities of :meth:`~obspy.core.trace.Trace.__add__`
             
@@ -152,12 +146,14 @@ class FoldTrace(Trace):
         if self.stats.calib != other.stats.calib:
             raise TypeError
         
+        # Create output holder
+        output = self.__class__()
         # Get relative temporal positions of traces
         # Self leads other by starttime
         if self.stats.starttime < other.stats.starttime:
             lt = self
             rt = other
-        elif self.stats.startime > other.stats.starttime:
+        elif self.stats.starttime > other.stats.starttime:
         # Other leads self by starttime
             lt = other
             rt = self
@@ -174,31 +170,52 @@ class FoldTrace(Trace):
             # starttime and endtime match (and sanity checks pass)
             else:
                 # If data are identical, sum folds and return
-                if self.data == other.data:
-                    self.fold = np.sum(np.c_[self.fold, other.fold],axis=1)
-                    return
+                if all(self.data == other.data):
+                    output.stats = self.stats
+                    output.data = self.data
+                    output.fold = np.sum(np.c_[self.fold, other.fold], axis=1)
+                    output.verify()
+                    return output
                 # If data are not identical, proceed with merge
                 else:
+                    output.stats = self.stats
+                    if method == 0:
+                        self.data = np.ma.masked_array(data=np.zeros(self.stats.npts),
+                                                       mask=[True]*self.stats.npts,
+                                                       fill_value=fill_value)
+                    elif method == 1:
+                        raise NotImplementedError
+                    elif method == 2:
+                        self.data = np.nanmax(np.c_[self.data, other.data], axis=1)
+                    elif method == 3:
+                        self.data = np.nansum(np.c_[self.data*self.fold,
+                                                    other.data*other.fold], axis=1)
+                        self.data /= np.sum(np.c_[self.fold, other.fold], axis=1)
+                    self.fold = np.sum(np.c_[self.fold, other.fold], axis=1)
+                    output.verify()
+                    return 
+                    breakpoint()
                     lt = self
                     rt = other
-        # Create output holder
-        output = self.__class__(header=lt.stats.copy())
+
         # Get relative indices
         i1 = lt.stats.npts
         i2 = lt.stats.utc2nearest_index(rt.stats.starttime,ref='starttime')
         i3 = lt.stats.utc2nearest_index(rt.stats.endtime,ref='starttime')
+        # Get maximum index
+        imax = np.max([i1, i2, i3])
         # Create (2, new_npts) data array with default value of NaN
-        data = np.full(shape=(2,i3+1), fill_value=np.nan, dtype=self.data.dtype)
-        add_data = np.full(shape=i3+1, fill_value=np.nan, dtype=self.data.dtype)
+        data = np.full(shape=(2,imax+1), fill_value=np.nan, dtype=internal_dtype)
+        add_data = np.full(shape=imax+1, fill_value=np.nan, dtype=internal_dtype)
         # Insert data from both FoldTraces
-        data[0,:i1] = lt.data
-        data[1,i2:] = rt.data
+        data[0,:i1] = lt.data.astype(internal_dtype)
+        data[1,i2:] = rt.data.astype(internal_dtype)
         # Create (2 by new_npts) fold array with default value of 0
-        fold = np.full(shape=data.shape, fill_value=0, dtype=self.data.dtype)
-        add_fold = np.full(shape=add_data.shape, fill_value=0, dtype=self.data.dtype)
+        fold = np.full(shape=data.shape, fill_value=0, dtype=internal_dtype)
+        add_fold = np.full(shape=add_data.shape, fill_value=0, dtype=internal_dtype)
         # Insert fold from both FoldTraces
-        fold[0,:i1] = lt.fold
-        fold[1,i2:] = rt.fold
+        fold[0,:i1] = lt.fold.astype(internal_dtype)
+        fold[1,i2:] = rt.fold.astype(internal_dtype)
         # Find gaps in data
         gaps = ~np.isfinite(data).any(axis=0)
         # Find overlaps in data
@@ -207,27 +224,30 @@ class FoldTrace(Trace):
         ## PROCESS FOLD IDENTICALLY FOR (almost) ALL METHODS
         # Find where there are gaps and set fold to 0, sum overlaps
         add_fold = np.sum(fold, axis=0)
-
         ## PROCESS DATA - DIFFERENTLY DEPENDING ON METHOD
+        # FOR ALL - assign single values as values, otherwise assign nan
+        add_data = np.where(gaps | overlaps, np.nan, np.nansum(data, axis=0))
+
         # Method 0) Behavior of Trace.__add__(method=0)
         if method == 0:
             # Merge the finite values where there aren't overlaps or gaps
-            add_data[~gaps & ~overlaps] = np.nansum(data, axis=0)
+            # add_data = np.where(gaps | overlaps, np.nan, np.nansum(data, axis=0))
+            pass
         # Method 1) Behavior of Trace.__add__(method=1)
         if method == 1:
             raise NotImplementedError('ObsPy simple overlap interpolation not used for PULSE')
 
         # Method 2) Max stacking
         if method == 2:
-            # Find where therere are gaps and set them to np.nan
-            add_data[~gaps] = np.nansum(data, axis=0)
+            # Fill overlaps with max values
+            if any(overlaps):
+                add_data = np.where(overlaps, np.nanmax(data,axis=0), add_data)
 
         # Method 3) Fold-weighted stacking
         if method == 3:
-            # Set standard values where there are no gaps or overlaps
-            add_data[~gaps & ~overlaps] = np.nansum(data, axis=0)
             # Find where there are overlaps and use fold to get the weighted average
-            add_data[overlaps] = np.sum(data*fold, axis=0)/add_fold[overlaps]
+            if any(overlaps):
+                add_data = np.where(overlaps, np.sum(data*fold, axis=0)/add_fold, add_data)
         
         # CLEANUP
         # Enforce masked array if gaps exist
@@ -235,8 +255,10 @@ class FoldTrace(Trace):
             add_data = np.ma.MaskedArray(data=add_data,
                                          mask=~np.isfinite(add_data),
                                          fill_value=fill_value)
-        # Assign data & fold
-        output.data = add_data
+        # Assign data with reverted dtype & fold (with implicity dtype reversion)
+        # Create output holder
+        output.stats = lt.stats.copy()
+        output.data = add_data.astype(lt.dtype)
         output.fold = add_fold
         # Enforce fold rules
         # output._enforce_fold_rules()
@@ -434,6 +456,18 @@ class FoldTrace(Trace):
         ftr = FoldTrace(data=self.fold, header=self.stats.copy())
         return ftr
 
+
+    def verify(self):
+        super().verify()
+        if isinstance(self.fold, np.ndarray) and\
+            self.fold.dtype.byteorder not in ['=', '|']:
+            raise Exception('FoldTrace fold should be stored as np.ndarray in the system specific byte order')
+        if self.fold.shape != self.data.shape:
+            raise Exception('FoldTrace.data shape and FoldTrace.fold shape mismatch %s != %s'%\
+                            (str(self.data.shape), str(self.fold.shape)))
+        if self.data.dtype != self.fold.dtype:
+            raise Exception('FoldTrace.data dtype and FoldTrace.fold dtype mismatch %s != %s'%\
+                            (str(self.data.dtype), str(self.fold.dtype)))
 
     # PROPERTY METHODS AND ASSIGNMENTS #
 

@@ -34,7 +34,7 @@ class TestFoldTrace(TestTrace):
         # Check that data is masked array
         assert isinstance(mftr.data, np.ma.MaskedArray)
         # Check that data dtype matches class dtype
-        assert mftr.dtype == data.dtype
+        assert mftr.data.dtype == data.dtype
         
         # Trace input
         tr = load_logo_trace()
@@ -42,7 +42,7 @@ class TestFoldTrace(TestTrace):
         # Check length
         assert len(ftr) == len(tr)
         # Check that FoldTrace.dtype is input Trace.data dtype
-        assert ftr.dtype == tr.data.dtype
+        assert ftr.data.dtype == tr.data.dtype
 
         # other data types will raise
         with pytest.raises(TypeError):
@@ -78,7 +78,7 @@ class TestFoldTrace(TestTrace):
         tr = load_logo_trace()  
         header = tr.stats
         # Header from explicit input
-        ftr = FoldTrace(header=header)
+        ftr = FoldTrace(data=tr.data, header=header)
         assert isinstance(ftr.stats, MLStats)
         for _k in header.defaults.keys():
             assert header[_k] == ftr.stats[_k]
@@ -94,55 +94,249 @@ class TestFoldTrace(TestTrace):
         with pytest.raises(ValueError):
             ftr = FoldTrace(header=['a'])
 
-    def test_init_dtype(self):
-        # DTYPE INPUT TESTS
-        data = load_logo_trace()
-        # Check explicit, conflicting assigned dtype
-        data = data.astype(np.float64)
-        # dtype overrides data dtype
-        ftr = FoldTrace(data=data,
-                        dtype=np.float32)
-        # Check dtype matches assigned
-        assert ftr.dtype == np.float32
-        assert ftr.data.dtype == np.float32
 
-        ftr = FoldTrace(dtype=int)
-        assert ftr.dtype == int
-        assert ftr.data.dtype == int
-        assert ftr.fold.dtype == int
-
-        # dtype overrides data and fold dtype
-        ftr = FoldTrace(data=data,
-                        fold=np.ones(shape=data.shape, dtype=np.int16),
-                        dtype=np.float32)
-        assert ftr.dtype == np.float32
-        assert ftr.data.dtype == np.float32
-        assert ftr.fold.dtype == np.float32
-
-        # Check implicit assignment of dtype via data
-        ftr = FoldTrace(data=data,
-                        fold=np.ones(shape=data.shape, dtype=np.int16))
-        assert ftr.dtype == data.dtype
-        assert ftr.data.dtype == ftr.dtype
-        assert ftr.fold.dtype == ftr.dtype
-
-        # other dtype type raises
+    def test_setattr_data(self):
+        """Tests the __setattr__ method for FoldTrace
+        """
+        # NumPy ndaray
+        ftr = FoldTrace()
+        # Check default dtype
+        assert ftr.data.dtype == np.float64
+        # Set to different data
+        ftr.data = np.arange(4, dtype=np.int64)
+        assert len(ftr) == 4
+        assert len(ftr.data) == 4
+        assert ftr.dtype == np.int64
+        # Check that assigning data does not update fold values
+        assert len(ftr.fold) == 0
+        # Check that assigning data updates fold dtype
+        assert ftr.fold.dtype == np.int64
+        # other type raisese
         with pytest.raises(TypeError):
-            FoldTrace(dtype='abc')
+            ftr.data = [1,2,3,4]
+        with pytest.raises(TypeError):
+            ftr.data = (1,2,3,4)
+        with pytest.raises(TypeError):
+            ftr.data = '1234'
 
+    def test_setattr_fold(self):
         
-        
+        ftr = FoldTrace(data=np.arange(4, dtype=np.float64))
+        # Explicit fold set
+        ftr.fold = np.ones(4, dtype=np.int64)
+        # Assert length
+        assert len(ftr.fold) == 4
+        # Assert reference dtype
+        assert ftr.fold.dtype == np.float64
+        # Assert still all ones
+        assert all(ftr.fold==1)
 
-    # def test_setattr(self):
-    #     """Tests the __setattr__ method for FoldTrace
-    #     """
-    #     # NumPy ndaray
+    def test_add_trace_with_gap(self):
+        # set up
+        ftr1 = FoldTrace(data=np.arange(1000))
+        ftr1.stats.sampling_rate = 200
+        start = ftr1.stats.starttime
+        ftr1.verify()
+
+        ftr2 = FoldTrace(data=np.arange(0, 1000)[::-1])
+        ftr2.stats.sampling_rate = 200
+        ftr2.stats.starttime = start + 10   
+        ftr2.verify()
+        # Assemble output suite
+        options = [ftr1 + ftr2,
+                   ftr1.__add__(ftr2, fill_value=0),
+                   ftr1.__add__(ftr2, method=2),
+                   ftr1.__add__(ftr2, method=3)]
+        with pytest.raises(NotImplementedError):
+            ftr1.__add__(ftr2, method=1)
+
+        for _e, ftr in enumerate(options):
+            ftr.verify()
+            # stats
+            assert ftr.stats.starttime == start
+            assert ftr.stats.endtime == start + 14.995
+            assert ftr.stats.sampling_rate == 200
+            assert ftr.stats.npts == 3000
+            # dtype
+            assert ftr.dtype == ftr1.data.dtype
+            assert np.ma.is_masked(ftr.data)
+            # fill value
+            if _e == 1:
+                assert ftr.data.fill_value == 0
+            else:
+                assert ftr.data.fill_value == 999999
+            # data
+            assert len(ftr) == 3000
+            assert ftr[0] == 0
+            assert ftr[999] == 999
+            assert ftr[2000] == 999
+            assert ftr[2999] == 0   
+            # fold
+            assert len(ftr.fold) == 3000
+            assert ftr.fold[0] == 1
+            assert ftr.fold[999] == 1
+            assert ftr.fold[1001] == 0
+            assert ftr.fold[1999] == 0
+            assert ftr.fold[2000] == 1
+
+
+    def test_add_with_overlap(self):
+        # set up
+        ftr1 = FoldTrace(data=np.arange(1000))
+        ftr1.stats.sampling_rate = 200
+        start = ftr1.stats.starttime
+        assert all(ftr1.fold == 1)
+        ftr2 = FoldTrace(data=np.arange(0, 1000)[::-1])
+        ftr2.stats.sampling_rate = 200
+        ftr2.stats.starttime = start + 4
+        assert all(ftr2.fold == 1)
+        ftr3 = ftr2.copy()
+        ftr3.fold = ftr3.fold*2.
+        assert all(ftr3.fold == 2)
+
+        # Assemble output suite
+        options = [ftr1 + ftr2,
+                   ftr1.__add__(ftr2, fill_value=0),
+                   ftr1.__add__(ftr2, method=2),
+                   ftr1.__add__(ftr2, method=3),
+                   ftr1.__add__(ftr3, method=3)]
+        with pytest.raises(NotImplementedError):
+            ftr1.__add__(ftr2, method=1)
+
+        for _e, ftr in enumerate(options):
+            ftr.verify()
+        # stats
+        assert ftr.stats.starttime == start
+        assert ftr.stats.endtime == start + 8.995
+        assert ftr.stats.sampling_rate == 200
+        assert ftr.stats.npts == 1800
+        # data
+        assert len(ftr) == 1800
+        assert ftr[0] == 0
+        assert ftr[799] == 799
+        if _e in [0,1]:
+            assert ftr[800].mask
+            assert ftr[999].mask
+            if _e == 0:
+                ftr.data.fill_value = 999999
+            elif _e == 1:
+                ftr.data.fill_value == 0
+        elif _e == 2:
+            ftr[800] == 1000
+            ftr[999] == 1000
+        elif _e == 3:
+            ftr[800] == np.mean([1000,801])
+            ftr[999] == np.mean([801,1000])
+        elif _e == 4:
+            ftr[800] == np.mean([801, 2000])
+            ftr[999] == np.mean([801, 2000])
+        assert ftr[1000] == 799
+        assert ftr[1799] == 0
+        # verify
+        ftr.verify()           
+
+    def test_add_same_trace(self):
+        ftr1 = FoldTrace(data=np.arange(1001))
+        options = [ftr1 + ftr1,
+                   ftr1.__add__(ftr1, method=0),
+                   ftr1.__add__(ftr1, method=2),
+                   ftr1.__add__(ftr1, method=3)]
+        for ftr in options:
+            assert ftr.stats == ftr1.stats
+            np.testing.assert_array_equal(ftr.data, ftr1.data)
+            np.testing.assert_array_equal(ftr.fold, ftr1.fold*2)
+
+    def test_add_within_trace(self):
+        # set up
+        ftr1 = FoldTrace(data=np.arange(1001))
+        ftr1.stats.sampling_rate = 200
+        start = ftr1.stats.starttime
+        ftr2 = FoldTrace(data=np.arange(201))
+        ftr2.stats.sampling_rate = 200
+        ftr2.stats.starttime = start + 2
+        ftr2.fold *= 2
+        options = [ftr1 + ftr2,
+                   ftr2 + ftr1,
+                   ftr1.__add__(ftr2, method=0, fill_value=0),
+                   ftr1.__add__(ftr2, method=2),
+                   ftr1.__add__(ftr2, method=3)]
+        for _e, ftr in enumerate(options):
+            assert ftr.stats == ftr1.stats
+            # Dropout adding
+            if _e in [0,1,2]:
+                mask = np.zeros(len(ftr1)).astype(np.bool_)
+                mask[400:601] = True
+                np.testing.assert_array_equal(ftr.data.mask, mask)
+                np.testing.assert_array_equal(ftr.data.data[:400], ftr1.data[:400])
+                np.testing.assert_array_equal(ftr.data.data[601:], ftr1.data[601:])
+                if _e == 2:
+                    ftr.data.fill_value == 0
+                else:
+                    ftr.data.fill_value == 999999
+            else:
+                assert not isinstance(ftr.data, np.ma.MaskedArray)
+                # Max stacking
+                if _e == 3:
+                    np.testing.assert_array_equal(ftr.data[400:601],np.arange(401,600))
+                # Avg stacking
+                if _e == 4:
+                    foldweighted=np.mean([[np.arange(201)*2, np.arange(400,601)]])
+                    np.testing.assert_array_equal(ftr.data[400:601], foldweighted)
+
+    # def test_init_dtype(self):
+    #     # DTYPE INPUT TESTS
+    #     data = load_logo_vector()
+    #     # Check explicit, conflicting assigned dtype
+    #     data.dtype = np.float64
+    #     # dtype overrides data dtype
+    #     ftr = FoldTrace(data=data,
+    #                     dtype=np.float32)
+    #     # Check dtype matches assigned
+    #     assert ftr.dtype == np.float32
+    #     assert ftr.data.dtype == np.float32
+
+    #     ftr = FoldTrace(dtype=int)
+    #     assert ftr.dtype == int
+    #     assert ftr.data.dtype == int
+    #     assert ftr.fold.dtype == int
+
+    #     # # dtype overrides data and fold dtype
+    #     # ftr = FoldTrace(data=data,
+    #     #                 fold=np.ones(shape=data.shape, dtype=np.int16),
+    #     #                 dtype=np.float32)
+    #     # assert ftr.dtype == np.float32
+    #     # assert ftr.data.dtype == np.float32
+    #     # assert ftr.fold.dtype == np.float32
+
+    #     # Check  assignment of dtype via data
+    #     ftr = FoldTrace(data=data,
+    #                     fold=np.ones(shape=data.shape, dtype=np.int16))
+    #     assert ftr.data.dtype == ftr.dtype
+    #     assert ftr.fold.dtype == ftr.dtype
+
+    #     # other dtype type raises
+    #     with pytest.raises(TypeError):
+    #         FoldTrace(dtype='abc')
+
+
+
+    # def test_setattr_dtype(self):
+    #     # Empty FoldTrace default dtype (from default data value)
     #     ftr = FoldTrace()
-    #     ftr.data = np.arange(4, dtype=np.float32)
-    #     assert len(ftr) == 4
-    #     assert len(ftr.data) == 4
-    #     # Check that assigning data does not update fold values
-    #     assert len(ftr.fold) == 0
+    #     print(ftr.dtype)
+    #     assert ftr.dtype == np.int64
+    #     assert ftr.data.dtype == np.int64
+    #     assert ftr.fold.dtype == np.int64
+    #     # Explicit dtype setting
+    #     ftr.dtype = np.float32
+    #     assert ftr.dtype == np.float32
+    #     assert ftr.data.dtype == np.float32
+    #     assert ftr.fold.dtype == np.float32
+    #     # Implicit data-defined dtype setting
+    #     ftr = FoldTrace()
+
+    # def test_setattr_fold(self):
+    #     ftr = FoldTrace(data=np.arange(4))
     #     # Check that assigning fold must conform to fold_rules
     #     ftr.fold = np.ones(4, dtype=np.float64)
     #     assert len(ftr.fold) == 4

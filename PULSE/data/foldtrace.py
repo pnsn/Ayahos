@@ -205,17 +205,19 @@ class FoldTrace(Trace):
         # Get maximum index
         imax = np.max([i1, i2, i3])
         # Create (2, new_npts) data array with default value of NaN
-        data = np.full(shape=(2,imax+1), fill_value=np.nan, dtype=internal_dtype)
-        add_data = np.full(shape=imax+1, fill_value=np.nan, dtype=internal_dtype)
+        data = np.full(shape=(2,imax), fill_value=np.nan, dtype=internal_dtype)
+        add_data = np.full(shape=imax, fill_value=np.nan, dtype=internal_dtype)
         # Insert data from both FoldTraces
         data[0,:i1] = lt.data.astype(internal_dtype)
-        data[1,i2:] = rt.data.astype(internal_dtype)
+        # FIXME: Testing fails with array input size mismatch
+        data[1,i2:i3+1] = rt.data.astype(internal_dtype)
         # Create (2 by new_npts) fold array with default value of 0
         fold = np.full(shape=data.shape, fill_value=0, dtype=internal_dtype)
         add_fold = np.full(shape=add_data.shape, fill_value=0, dtype=internal_dtype)
         # Insert fold from both FoldTraces
         fold[0,:i1] = lt.fold.astype(internal_dtype)
-        fold[1,i2:] = rt.fold.astype(internal_dtype)
+        # FIXME: Testing fails with array input size mismatch
+        fold[1,i2:i3+1] = rt.fold.astype(internal_dtype)
         # Find gaps in data
         gaps = ~np.isfinite(data).any(axis=0)
         # Find overlaps in data

@@ -277,10 +277,10 @@ class TestFoldTrace(TestTrace):
                 assert not isinstance(ftr.data, np.ma.MaskedArray)
                 # Max stacking
                 if _e == 3:
-                    np.testing.assert_array_equal(ftr.data[400:601],np.arange(401,600))
+                    np.testing.assert_array_equal(ftr.data[400:601],ftr1.data[400:601])
                 # Avg stacking
                 if _e == 4:
-                    foldweighted=np.mean([[np.arange(201)*2, np.arange(400,601)]])
+                    foldweighted=np.mean(np.r_[ftr2.data, ftr2.data, ftr1.data[400,601]],axis=1)
                     np.testing.assert_array_equal(ftr.data[400:601], foldweighted)
 
     # def test_init_dtype(self):

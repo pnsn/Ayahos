@@ -431,4 +431,37 @@ class TestFoldTrace(TestTrace):
         ftr1.data = ftr1.data.astype(np.float32)
         assert ftr0 != ftr1
 
-        
+    def test_detrend(self):
+        """
+        Test detrend method of trace
+        """
+        t = np.arange(10)
+        data = 0.1 * t + 1.
+        tr = FoldTrace(data=data.copy())
+
+        tr.detrend(type='simple')
+        # Assert data change
+        np.testing.assert_array_almost_equal(tr.data, np.zeros(10))
+        # Assert no fold change
+        np.testing.assert_array_equal(tr.fold, np.ones(tr.count(), dtype=tr.dtype))
+        tr.data = data.copy()
+        tr.detrend(type='linear')
+        np.testing.assert_array_almost_equal(tr.data, np.zeros(10))
+        # Assert no fold change
+        np.testing.assert_array_equal(tr.fold, np.ones(tr.count(), dtype=tr.dtype))
+
+        data = np.zeros(10)
+        data[3:7] = 1.
+
+        tr.data = data.copy()
+        tr.detrend(type='simple')
+        np.testing.assert_almost_equal(tr.data[0], 0.)
+        np.testing.assert_almost_equal(tr.data[-1], 0.)
+        # Assert no fold change
+        np.testing.assert_array_equal(tr.fold, np.ones(tr.count(), dtype=tr.dtype))
+        tr.data = data.copy()
+        tr.detrend(type='linear')
+        np.testing.assert_almost_equal(tr.data[0], -0.4)
+        np.testing.assert_almost_equal(tr.data[-1], -0.4)
+        # Assert no fold change
+        np.testing.assert_array_equal(tr.fold, np.ones(tr.count(), dtype=tr.dtype))        

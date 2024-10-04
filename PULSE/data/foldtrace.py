@@ -306,6 +306,24 @@ class FoldTrace(Trace):
         return output
 
 
+    # POLYMORPHIC METHODS - DATA ONLY
+    # def detrend(self, type='simple', **options):
+    #     options.update({'type': type})
+    #     super().detrend(self, **options)
+    #     self.fold = self._enforce_fold_masking_rules(self.fold)
+    #     self.verify()
+    #     return self
+
+
+    def filter(self, type, **options):
+        super().filter(self, type, **options)
+        self.fold = self._enforce_fold_masking_rules(self.fold)
+        self.verify()
+        return self
+    
+    # def 
+
+
     ##################################
     # DYNAMIC CALL SUPPORTER METHODS #
     ##################################

@@ -312,7 +312,16 @@ class FoldTrace(Trace):
         Trace.taper(self, max_percentage, type=type, max_length=max_length, side=side, **kwargs)
         return self
 
+    def resample(self, sampling_rate, window='hann', no_filter=True, strict_length=False, fold_taper=0.05, **kwargs):
+        # TODO: interpolate fold and scale by resampling factor
+        fold_tr = self.get_fold_trace()
+        Trace.resample(fold_tr, sampling_rate, window=window, no_filter=no_filter, strict_length=strict_length)
 
+        Trace.resample(self, sampling_rate, window=window, no_filter=no_filter, strict_length=strict_length)
+        # FIXME: Attend to Gibbs Phenomena in self.fold
+        Trace.taper(fold_tr, fold_taper, **kwargs)
+        self.fold = fold_tr.data
+        return self
 
     # POLYMORPHIC METHODS - DATA ONLY
     # def detrend(self, type='simple', **options):

@@ -610,3 +610,10 @@ class TestFoldTrace(TestTrace):
         assert np.all(tr.fold[:3] < 1.)
         assert np.all(tr.fold[3:8] == 1.)
         assert np.all(tr.fold[8:] < 1.)
+
+    def test_resample(self):
+        data = np.arange(101, dtype=np.float32)
+        tr = FoldTrace(data=data)
+        tr2 = tr.copy()
+        tr2.resample(2)
+        breakpoint()

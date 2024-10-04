@@ -385,3 +385,50 @@ class TestFoldTrace(TestTrace):
             # Assert that all data types are the same
             for array_ in (bigtrace.data, bigtrace_sort.data):
                 assert my_array.dtype == array_.dtype
+
+    def test_iadd(self):
+        # set up
+        ftr0 = FoldTrace(data=np.arange(1000))
+        ftr0.stats.sampling_rate = 200
+        start = ftr0.stats.starttime
+        assert all(ftr0.fold == 1)
+        ftr1 = ftr0.copy()
+        assert ftr0 == ftr1
+        ftr2 = FoldTrace(data=np.arange(0, 1000)[::-1])
+        ftr2.stats.sampling_rate = 200
+        ftr2.stats.starttime = start + 2
+        assert all(ftr2.fold == 1)
+
+        ftr1 += ftr2
+        # assert ftr0 != ftr1
+        assert ftr1 == ftr0 + ftr2
+        for method in [2,3]:
+            ftr = ftr0.copy()
+            ftr.__iadd__(ftr2, method=method)
+            assert ftr == ftr0.__add__(ftr2, method=method)
+    
+    def test_eq(self):
+        tr = load_logo_trace()
+        ftr0 = FoldTrace(tr)
+        # Assert mismatch type
+        assert tr != ftr0
+        # Assert identical
+        ftr1 = ftr0.copy()
+        assert ftr0 == ftr1
+        # Assert mismatch stats
+        ftr1.stats.network='OU'
+        assert ftr0 != ftr1
+        # Assert mismatch data
+        ftr1 = ftr0.copy()
+        ftr1.data = np.zeros(ftr0.data.shape)
+        assert ftr0 != ftr1
+        # Assert mismatch fold
+        ftr1 = ftr0.copy()
+        ftr1.fold = ftr1.fold*2
+        assert ftr0 != ftr1
+        # Assert mismatch dtype
+        ftr1 = ftr0.copy()
+        ftr1.data = ftr1.data.astype(np.float32)
+        assert ftr0 != ftr1
+
+        

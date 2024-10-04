@@ -335,31 +335,18 @@ class FoldTrace(Trace):
             self.stats.processing[-1] += f' PULSE: apply_to_gappy()'
         else:
             self.apply_method(method, **options)
-
-
-    ###################
-    # SPECIAL METHODS #
-    ###################
-    def extend(self, other, fill_value=None):
-        self.__add__(other, method=0, fill_value=fill_value)
-
-    def max_stack(self, other, fill_value=None):
-        self.__add__(other, method=2, fill_value=fill_value)
-    
-    def avg_stack(self, other, fill_value=None):
-        self.__add__(other, method=3, fill_value=fill_value)
-
-
-    
     
     def __iadd__(self, other, **options):
-        """_summary_
+        """Provide rich implementation of += operator
 
         :param other: _description_
         :type other: _type_
         """        
-        self = self.__add__(other, **options)
-
+        added = self.__add__(other, **options)
+        self.stats = added.stats
+        self.data = added.data
+        self.fold = added.fold
+        return self
 
     def __repr__(self, id_length=None):
         """Provide a human readable string describing the contents of this

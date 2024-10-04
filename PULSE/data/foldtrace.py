@@ -91,7 +91,20 @@ class FoldTrace(Trace):
             
         return super(FoldTrace, self).__setattr__(key,value)
     
-    def __add__(self, other, method=0, fill_value=None, internal_dtype=np.float64):
+    def __eq__(self, other):
+        if not isinstance(other, FoldTrace):
+            return False
+        if not self.stats == other.stats:
+            return False
+        if not np.array_equal(self.data, other.data):
+            return False
+        if not np.array_equal(self.fold, other.fold):
+            return False
+        if not self.dtype == other.dtype:
+            return False
+        return True
+
+    def __add__(self, other, method=0, fill_value=None, idtype=np.float64):
         """Add another Trace-like object to this FoldTrace
         Overwrites the functionalities of :meth:`~obspy.core.trace.Trace.__add__`
             
@@ -102,6 +115,12 @@ class FoldTrace(Trace):
         :param fill_value: fill value passed to numpy.ma.MaskedArray if there are
             masked values, defaults to None
         :type fill_value: scalar, optional
+        :param idtype: data type to use inside this operation to allow use
+            of np.nan values, defaults to numpy.float64.
+            Supported values:
+                numpy.float32
+                numpy.float64
+        :type idtype: type, optional
 
         .. rubric:: Notable differences from Trace.__add__
          - Requires **other** to pass sanity checks
@@ -131,7 +150,12 @@ class FoldTrace(Trace):
              - Fold-weighted mean of samples is evaluated for overlapping samples
              - fold of overlapping samples is added
 
-        """        
+        """
+        # internal dtype catch
+        if idtype in [np.float32, np.float64]:
+            pass
+        else:
+            raise ValueError(f'idtype {idtype} not supported. Only numpy.float32 and numpy.float64') 
         # Run sanity checks
         if not isinstance(other, FoldTrace):
             raise TypeError
@@ -171,54 +195,68 @@ class FoldTrace(Trace):
             else:
                 # If data are identical, sum folds and return
                 if all(self.data == other.data):
+                    # Stats first, so npts can be updated by __setattr__('data')
                     output.stats = self.stats
                     output.data = self.data
-                    output.fold = np.sum(np.c_[self.fold, other.fold], axis=1)
+                    # fold next, so masked samples can have fold set to 0 by __setattr__('data')
+                    output.fold = output._enforce_fold_masking_rules(np.sum(np.c_[self.fold, other.fold], axis=1))
+                    # __setattr__('data')
+                    # output.data = self.data
+                    # Make sure we didn't goof
                     output.verify()
                     return output
-                # If data are not identical, proceed with merge
+                # If data are not identical, but have all the same sample times
+                # Apply merge rules as normal
                 else:
-                    output.stats = self.stats
-                    if method == 0:
-                        self.data = np.ma.masked_array(data=np.zeros(self.stats.npts),
-                                                       mask=[True]*self.stats.npts,
-                                                       fill_value=fill_value)
-                    elif method == 1:
-                        raise NotImplementedError
-                    elif method == 2:
-                        self.data = np.nanmax(np.c_[self.data, other.data], axis=1)
-                    elif method == 3:
-                        self.data = np.nansum(np.c_[self.data*self.fold,
-                                                    other.data*other.fold], axis=1)
-                        self.data /= np.sum(np.c_[self.fold, other.fold], axis=1)
-                    self.fold = np.sum(np.c_[self.fold, other.fold], axis=1)
-                    output.verify()
-                    return 
-                    breakpoint()
                     lt = self
                     rt = other
 
-        # Get relative indices
+        # Get relative indices for numpy array slicing & scaling (2, new_npts) data and fold
+        i0 = None
         i1 = lt.stats.npts
         i2 = lt.stats.utc2nearest_index(rt.stats.starttime,ref='starttime')
-        i3 = lt.stats.utc2nearest_index(rt.stats.endtime,ref='starttime')
-        # Get maximum index
-        imax = np.max([i1, i2, i3])
+        # Add one to conform to numpy slicing syntax
+        i3 = lt.stats.utc2nearest_index(rt.stats.endtime,ref='starttime') + 1
+        # Get maximum index value
+        imax = np.max([i1, i3])
+        # If lt has last sample, assign it's end index as None
+        if i1 == imax:
+            i1 = None
+            new_npts = lt.stats.npts
+        # If rt has last sample, assign it's end index as None
+        elif i3 == imax:
+            i3 = None
+            new_npts = imax
+        # If rt has first sample along with lt, set it's start index as None
+        if i2 == 0:
+            i2 = None
         # Create (2, new_npts) data array with default value of NaN
-        data = np.full(shape=(2,imax), fill_value=np.nan, dtype=internal_dtype)
-        add_data = np.full(shape=imax, fill_value=np.nan, dtype=internal_dtype)
-        # Insert data from both FoldTraces
-        data[0,:i1] = lt.data.astype(internal_dtype)
-        # FIXME: Testing fails with array input size mismatch
-        data[1,i2:i3+1] = rt.data.astype(internal_dtype)
+        data = np.full(shape=(2,new_npts), fill_value=np.nan, dtype=idtype)
+        add_data = np.full(shape=(new_npts,), fill_value=np.nan, dtype=idtype)
+        # Extract data vectors, convert to idtype, and pad masked values with NaN
+        if isinstance(lt.data, np.ma.MaskedArray):
+            ldata = lt.data.astype(idtype).filled(fill_value=np.nan)
+        else:
+            ldata = lt.data.astype(idtype)
+        # Fold should already reflect the masked/not-masked
+        lfold = lt.fold.astype(idtype)
+
+        if isinstance(rt.data, np.ma.MaskedArray):
+            rdata = rt.data.astype(idtype).filled(fill_value=np.nan)
+        else:
+            rdata = rt.data.astype(idtype)
+        rfold = rt.fold.astype(idtype)
+
+        data[0,i0:i1] = ldata
+        data[1,i2:i3] = rdata
         # Create (2 by new_npts) fold array with default value of 0
-        fold = np.full(shape=data.shape, fill_value=0, dtype=internal_dtype)
-        add_fold = np.full(shape=add_data.shape, fill_value=0, dtype=internal_dtype)
+        fold = np.full(shape=data.shape, fill_value=0, dtype=idtype)
+        add_fold = np.full(shape=add_data.shape, fill_value=0, dtype=idtype)
         # Insert fold from both FoldTraces
-        fold[0,:i1] = lt.fold.astype(internal_dtype)
-        # FIXME: Testing fails with array input size mismatch
-        fold[1,i2:i3+1] = rt.fold.astype(internal_dtype)
-        # Find gaps in data
+        fold[0,i0:i1] = lfold
+        fold[1,i2:i3] = rfold
+
+        # Find gaps in data (including masked values)
         gaps = ~np.isfinite(data).any(axis=0)
         # Find overlaps in data
         overlaps = np.isfinite(data).all(axis=0)
@@ -258,13 +296,13 @@ class FoldTrace(Trace):
                                          mask=~np.isfinite(add_data),
                                          fill_value=fill_value)
         # Assign data with reverted dtype & fold (with implicity dtype reversion)
-        # Create output holder
+        # Assign stats first so stats.npts can be updated with __setattr__('data')
         output.stats = lt.stats.copy()
         output.data = add_data.astype(lt.dtype)
-        output.fold = add_fold
-        # Enforce fold rules
-        # output._enforce_fold_rules()
-
+        # Assign fold next so fold for masked samples can be updated to 0 with __setattr__('data')
+        output.fold = output._enforce_fold_masking_rules(add_fold)
+        # # Finally, update data & apply knock-on changes from __setattr__
+        # output.data = add_data.astype(lt.dtype)
         return output
 
 
@@ -322,10 +360,6 @@ class FoldTrace(Trace):
         """        
         self = self.__add__(other, **options)
 
-    def __eq__(self, other):
-        if not np.array_equal(self.fold, other.fold):
-            return False
-        super().__eq__(self, other)
 
     def __repr__(self, id_length=None):
         """Provide a human readable string describing the contents of this

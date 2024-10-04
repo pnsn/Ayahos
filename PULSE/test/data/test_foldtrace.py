@@ -255,11 +255,17 @@ class TestFoldTrace(TestTrace):
         ftr2.stats.sampling_rate = 200
         ftr2.stats.starttime = start + 2
         ftr2.fold *= 2
+        
+        ftr3 = ftr1.copy()
+        ftr3.data = ftr3.data.astype(np.float32)
+        ftr4 = ftr2.copy()
+        ftr4.data = ftr4.data.astype(np.float32)
         options = [ftr1 + ftr2,
                    ftr2 + ftr1,
                    ftr1.__add__(ftr2, method=0, fill_value=0),
                    ftr1.__add__(ftr2, method=2),
-                   ftr1.__add__(ftr2, method=3)]
+                   ftr1.__add__(ftr2, method=3),
+                   ftr3.__add__(ftr4, method=3)]
         for _e, ftr in enumerate(options):
             assert ftr.stats == ftr1.stats
             # Dropout adding
@@ -277,124 +283,105 @@ class TestFoldTrace(TestTrace):
                 assert not isinstance(ftr.data, np.ma.MaskedArray)
                 # Max stacking
                 if _e == 3:
+                    # assert that overlapping 
                     np.testing.assert_array_equal(ftr.data[400:601],ftr1.data[400:601])
                 # Avg stacking
-                if _e == 4:
-                    foldweighted=np.mean(np.r_[ftr2.data, ftr2.data, ftr1.data[400,601]],axis=1)
+                if _e in [4,5]:
+                    foldweighted=np.sum(np.c_[ftr2.data*2, ftr1.data[400:601]],axis=1)
+                    foldweighted = foldweighted/3.
+                    foldweighted = foldweighted.astype(ftr.dtype)
                     np.testing.assert_array_equal(ftr.data[400:601], foldweighted)
 
-    # def test_init_dtype(self):
-    #     # DTYPE INPUT TESTS
-    #     data = load_logo_vector()
-    #     # Check explicit, conflicting assigned dtype
-    #     data.dtype = np.float64
-    #     # dtype overrides data dtype
-    #     ftr = FoldTrace(data=data,
-    #                     dtype=np.float32)
-    #     # Check dtype matches assigned
-    #     assert ftr.dtype == np.float32
-    #     assert ftr.data.dtype == np.float32
+    def test_add_gap_and_overlap(self):
+        # set up
+        ftr1 = FoldTrace(data=np.arange(1000))
+        ftr1.stats.sampling_rate = 200
+        start = ftr1.stats.starttime
+        ftr2 = FoldTrace(data=np.arange(1000)[::-1])
+        ftr2.stats.sampling_rate = 200
+        ftr2.stats.starttime = start + 4
+        ftr3 = FoldTrace(data=np.arange(1000)[::-1])
+        ftr3.stats.sampling_rate = 200
+        ftr3.stats.starttime = start + 12
+        # overlap
+        overlap = ftr1 + ftr2
+        assert len(overlap) == 1800
+        mask = np.zeros(1800).astype(np.bool_)
+        mask[800:1000] = True
+        np.testing.assert_array_equal(overlap.data.mask, mask)
+        # Check that all masked samples have fold = 0
+        assert all(overlap.fold[overlap.data.mask] == 0)
+        np.testing.assert_array_equal(overlap.data.data[:800], ftr1.data[:800])
+        np.testing.assert_array_equal(overlap.data.data[1000:], ftr2.data[200:])
+        # overlap + gap
+        overlap_gap = overlap + ftr3
+        assert len(overlap_gap) == 3400
+        mask = np.zeros(3400).astype(np.bool_)
+        mask[800:1000] = True
+        mask[1800:2400] = True
+        np.testing.assert_array_equal(overlap_gap.data.mask, mask)
+        assert all(overlap_gap.fold[overlap_gap.data.mask]==0)
+        np.testing.assert_array_equal(overlap_gap.data.data[:800],
+                                      ftr1.data[:800])
+        np.testing.assert_array_equal(overlap_gap.data.data[1000:1800],
+                                      ftr2.data[200:])
+        np.testing.assert_array_equal(overlap_gap.data.data[2400:], ftr3.data)
+        # gap
+        gap = ftr2 + ftr3
+        assert len(gap) == 2600
+        mask = np.zeros(2600).astype(np.bool_)
+        mask[1000:1600] = True
+        np.testing.assert_array_equal(gap.data.mask, mask)
+        assert all(gap.fold[gap.data.mask]==0)
+        np.testing.assert_array_equal(gap.data.data[:1000], ftr2.data)
+        np.testing.assert_array_equal(gap.data.data[1600:], ftr3.data)
 
-    #     ftr = FoldTrace(dtype=int)
-    #     assert ftr.dtype == int
-    #     assert ftr.data.dtype == int
-    #     assert ftr.fold.dtype == int
+    def test_add_into_gap(self):
+        """
+        Test __add__ method of the Trace class
+        Adding a trace that fits perfectly into gap in a trace
+        """
+        my_array = np.arange(6, dtype=np.int32)
+        stats = load_logo_trace().stats
+        start = stats['starttime']
+        bigtrace = FoldTrace(data=np.array([], dtype=np.int32), header=stats)
+        bigtrace_sort = bigtrace.copy()
+        stats['npts'] = len(my_array)
+        my_trace = FoldTrace(data=my_array, header=stats)
 
-    #     # # dtype overrides data and fold dtype
-    #     # ftr = FoldTrace(data=data,
-    #     #                 fold=np.ones(shape=data.shape, dtype=np.int16),
-    #     #                 dtype=np.float32)
-    #     # assert ftr.dtype == np.float32
-    #     # assert ftr.data.dtype == np.float32
-    #     # assert ftr.fold.dtype == np.float32
+        stats['npts'] = 2
+        ftr1 = FoldTrace(data=my_array[0:2].copy(), header=stats)
+        stats['starttime'] = start + 2
+        ftr2 = FoldTrace(data=my_array[2:4].copy(), header=stats)
+        stats['starttime'] = start + 4
+        ftr3 = FoldTrace(data=my_array[4:6].copy(), header=stats)
 
-    #     # Check  assignment of dtype via data
-    #     ftr = FoldTrace(data=data,
-    #                     fold=np.ones(shape=data.shape, dtype=np.int16))
-    #     assert ftr.data.dtype == ftr.dtype
-    #     assert ftr.fold.dtype == ftr.dtype
+        bftr1 = bigtrace
+        bftr2 = bigtrace_sort
+        for method in [0, 2, 3]:
+            # Random
+            bigtrace = bftr1.copy()
+            bigtrace = bigtrace.__add__(ftr1, method=method)
+            bigtrace = bigtrace.__add__(ftr3, method=method)
+            bigtrace = bigtrace.__add__(ftr2, method=method)
 
-    #     # other dtype type raises
-    #     with pytest.raises(TypeError):
-    #         FoldTrace(dtype='abc')
+            # Sorted
+            bigtrace_sort = bftr2.copy()
+            bigtrace_sort = bigtrace_sort.__add__(ftr1, method=method)
+            bigtrace_sort = bigtrace_sort.__add__(ftr2, method=method)
+            bigtrace_sort = bigtrace_sort.__add__(ftr3, method=method)
 
-
-
-    # def test_setattr_dtype(self):
-    #     # Empty FoldTrace default dtype (from default data value)
-    #     ftr = FoldTrace()
-    #     print(ftr.dtype)
-    #     assert ftr.dtype == np.int64
-    #     assert ftr.data.dtype == np.int64
-    #     assert ftr.fold.dtype == np.int64
-    #     # Explicit dtype setting
-    #     ftr.dtype = np.float32
-    #     assert ftr.dtype == np.float32
-    #     assert ftr.data.dtype == np.float32
-    #     assert ftr.fold.dtype == np.float32
-    #     # Implicit data-defined dtype setting
-    #     ftr = FoldTrace()
-
-    # def test_setattr_fold(self):
-    #     ftr = FoldTrace(data=np.arange(4))
-    #     # Check that assigning fold must conform to fold_rules
-    #     ftr.fold = np.ones(4, dtype=np.float64)
-    #     assert len(ftr.fold) == 4
-    #     assert ftr.fold.dtype == np.float32
-
-    #     # NumPy ndarray with defined dtype
-    #     ftr.data = np.arange(4, dtype=np.float32)
-    #     assert len(ftr) == 4
-    #     assert ftr.data.dtype == np.float32
-    #     assert ftr.fold.dtype == np.float32
-        
-    #     # NumPy masked array
-    #     ftr.data = np.ma.array([0,1,2,3,4],
-    #                            mask=[True, False, False, True, False])
-    #     ftr.fold = np.ones(5)
-    #     # Check lengths
-    #     assert len(ftr) == 5
-    #     assert len(ftr.fold) == 5
-    #     # Check that masked = fold -> 0 is enforced
-    #     assert all(ftr.fold == np.array([0,1,1,0,1]))
-    #     # Check that dtype is enforced
-    #     assert ftr.fold.dtype == ftr.data.dtype
-
-    #     # Other types will raise
-    #     tr = FoldTrace()
-    #     ftr = FoldTrace(data=np.arange(4))
-    #     with pytest.raises(TypeError):
-    #         tr.__setattr__('data', [0,1,2,3])
-    #     with pytest.raises(TypeError):
-    #         ftr.__setattr__('fold', [0,1,1,0])
-    #     with pytest.raises(TypeError):
-    #         tr.__setattr__('data', (0,1,2,3))
-    #     with pytest.raises(TypeError):
-    #         ftr.__setattr__('fold', (0, 1, 1, 0))
-    #     with pytest.raises(TypeError):
-    #         tr.__setattr__('data', '1234')
-    #     with pytest.raises(TypeError):
-    #         ftr.__setattr__('fold', '1234')
-        
-    #     # Incorrect shape of fold will raise
-    #     with pytest.raises(ValueError):
-    #         ftr.__setattr__('fold', np.ones(5))
-
-    # def test_enforce_fold_rules(self):
-    #     """Test suite for the _enforce_fold_rules method
-    #     of FoldTrace
-    #     """ 
-    #     ftr = FoldTrace(load_logo_trace(), dtype=np.float64)
-    #     # Test dtype adjustment
-    #     assert ftr.fold.dtype == np.float64
-    #     ftr.fold = ftr.fold.astype(dtype=np.float32)
-    #     assert ftr.fold.dtype == np.float64
-
-
-    # # def test_add_with_gap(self):
-    # #     ftr = FoldTrace()
-
-
-    # # def test_get_fold_view_trace(self):
-
-
+            for ftr in (bigtrace, bigtrace_sort):
+                assert isinstance(ftr, FoldTrace)
+                assert not isinstance(ftr.data, np.ma.masked_array)
+            # Assert all data are the same
+            assert (bigtrace_sort.data == my_array).all()
+            # Assert everything is the same via __eq__
+            assert bigtrace_sort == my_trace
+            # Assert all data are the same, despite different add order
+            assert (bigtrace.data == my_array).all()
+            # Assert everything is the same via __eq__ despite different __add__ order
+            assert bigtrace == my_trace
+            # Assert that all data types are the same
+            for array_ in (bigtrace.data, bigtrace_sort.data):
+                assert my_array.dtype == array_.dtype

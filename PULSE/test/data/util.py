@@ -15,8 +15,8 @@ def load_logo_trace():
     tr = Trace(data=load_logo_vector(),
                header={'network':'UW',
                        'station':'PULSE',
-                       'location':'--',
-                       'channel':'LGO'})
+                       'location':'LO',
+                       'channel':'GO1'})
     return tr
 
 def make_gappy_trace(tr,fill_value=-999, frac1=0.25, frac2=0.5):

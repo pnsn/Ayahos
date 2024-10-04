@@ -1,5 +1,4 @@
-import os
-import pytest
+import os, pytest, warnings
 from obspy import Trace, UTCDateTime, Stream
 from obspy.core.tests.test_trace import TestTrace
 from PULSE.test.data.util import *
@@ -464,4 +463,150 @@ class TestFoldTrace(TestTrace):
         np.testing.assert_almost_equal(tr.data[0], -0.4)
         np.testing.assert_almost_equal(tr.data[-1], -0.4)
         # Assert no fold change
-        np.testing.assert_array_equal(tr.fold, np.ones(tr.count(), dtype=tr.dtype))        
+        np.testing.assert_array_equal(tr.fold, np.ones(tr.count(), dtype=tr.dtype))
+
+    def test_differentiate(self):
+        """
+        Test differentiation method of trace
+        """
+        t = np.linspace(0., 1., 11)
+        data = 0.1 * t + 1.
+        tr = FoldTrace(data=data)
+        tr.stats.delta = 0.1
+        tr.differentiate(method='gradient')
+        np.testing.assert_array_almost_equal(tr.data, np.ones(11) * 0.1)
+        # Assert no fold change
+        np.testing.assert_array_equal(tr.fold, np.ones(tr.count(), dtype=tr.dtype))
+
+    def test_integrate(self):
+        """
+        Test integration method of trace
+        """
+        data = np.ones(101) * 0.01
+        tr = FoldTrace(data=data)
+        tr.stats.delta = 0.1
+        tr.integrate()
+        # Assert time and length of resulting array.
+        assert tr.stats.starttime == UTCDateTime(0)
+        assert tr.stats.npts == 101
+        np.testing.assert_array_almost_equal(
+            tr.data, np.concatenate([[0.0], np.cumsum(data)[:-1] * 0.1]))        
+        # Assert no fold change
+        np.testing.assert_array_equal(tr.fold, np.ones(tr.count(), dtype=tr.dtype))
+
+    def test_verify(self):
+        tr = FoldTrace()
+        tr.verify()
+        tr = FoldTrace(data=np.array([1]))
+        tr.verify()
+        tr = load_townsend_example()[0]
+        tr.verify()
+
+    def test_get_fold_trace(self):
+        data = np.arange(5, dtype=np.float64)
+        tr = FoldTrace(data=data)
+        assert tr.fold.dtype == np.float64
+        trf = tr.get_fold_trace()
+        # Assert trf data is expected fold
+        np.testing.assert_array_equal(trf.data, np.ones(5, dtype=np.float64))
+        # Assert trf data is tr fold
+        np.testing.assert_array_equal(trf.data, tr.fold)
+        # Update one value in trf.data
+        trf.data[2] = 3
+        trf.fold[2] = 0
+        # Assert that update to view data is applied to source fold
+        assert tr.fold[2] == 3
+        # Assert that update to view fold does not affect source data
+        assert tr.data[2] == 2
+        # Assert that changing view stats does not affect source stats
+        trf.stats.network = 'UO'
+        assert tr.stats.network == ''
+
+    def test_taper(self):
+        data = np.ones(101, dtype=np.float64)*3
+        tr = FoldTrace(data=data)
+        tr.taper(max_percentage=0.05, type='cosine')
+        # Assert all data values are at or below original values
+        for _e in range(tr.count()):
+            # Assert that taper does not accentuate data
+            assert 0 <= tr.data[_e] <= 3
+            # Assert that taper does not accentuate fold
+            assert 0 <= tr.fold[_e] <= 1
+            # Assert that taper is applied in-kind to data and fold
+            if _e not in [0, tr.count() - 1]:
+                assert np.abs(tr.data[_e]/tr.fold[_e] - 3) <= 1e-12
+    
+    def test_taper_onesided(self):
+        # setup
+        data = np.ones(11, dtype=np.float32)
+        tr = FoldTrace(data=data)
+        # overlong taper - raises UserWarning for both appications - ignoring
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always", UserWarning)
+            tr.taper(max_percentage=None, side="left")
+        assert len(w) == 2
+        for _w in w:
+            assert _w.category == UserWarning
+
+        assert tr.data[:5].sum() < 5.
+        assert tr.fold[:5].sum() < 5.
+        assert tr.data[6:].sum() == 5.
+        assert tr.fold[6:].sum() == 5.
+
+        data = np.ones(11, dtype=np.float32)
+        tr = FoldTrace(data=data)
+
+        # overlong taper - raises UserWarning for both applications - ignoring
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always", UserWarning)
+            tr.taper(max_percentage=None, side="right")
+        assert len(w) == 2
+        for _w in w:
+            assert _w.category == UserWarning
+
+        assert tr.data[:5].sum() == 5.
+        assert tr.fold[:5].sum() == 5.
+        assert tr.data[6:].sum() < 5.
+        assert tr.fold[6:].sum() < 5.
+
+    def test_taper_length(self):
+        npts = 11
+        type_ = "hann"
+
+        data = np.ones(npts, dtype=np.float32)
+        tr = FoldTrace(data=data, header={'sampling': 1.})
+
+        # test an overlong taper request, still works but raises UserWarning
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always", UserWarning)
+            tr.taper(max_percentage=0.7, max_length=int(npts / 2) + 1)
+        assert len(w) == 2
+        for _w in w:
+            assert _w.category == UserWarning
+
+        data = np.ones(npts)
+        tr = FoldTrace(data=data, header={'sampling': 1.})
+        # first 3 samples get tapered
+        tr.taper(max_percentage=None, type=type_, side="left", max_length=3)
+        # last 5 samples get tapered
+        tr.taper(max_percentage=0.5, type=type_, side="right", max_length=None)
+        assert np.all(tr.data[:3] < 1.)
+        assert np.all(tr.data[3:6] == 1.)
+        assert np.all(tr.data[6:] < 1.)
+
+        assert np.all(tr.fold[:3] < 1.)
+        assert np.all(tr.fold[3:6] == 1.)
+        assert np.all(tr.fold[6:] < 1.)
+
+        data = np.ones(npts, dtype=np.float32)
+        tr = FoldTrace(data=data, header={'sampling': 1.})
+        # first 3 samples get tapered
+        tr.taper(max_percentage=0.5, type=type_, side="left", max_length=3)
+        # last 3 samples get tapered
+        tr.taper(max_percentage=0.3, type=type_, side="right", max_length=5)
+        assert np.all(tr.data[:3] < 1.)
+        assert np.all(tr.data[3:8] == 1.)
+        assert np.all(tr.data[8:] < 1.)
+        assert np.all(tr.fold[:3] < 1.)
+        assert np.all(tr.fold[3:8] == 1.)
+        assert np.all(tr.fold[8:] < 1.)

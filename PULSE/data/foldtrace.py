@@ -36,7 +36,7 @@ class FoldTrace(Trace):
         # Grab reference dtype
         self.dtype = data.dtype
         # Initialize as empty trace
-        super().__init__()
+        super(FoldTrace, self).__init__()
         # Populate stats
         if header is None:
             header = {}
@@ -305,6 +305,14 @@ class FoldTrace(Trace):
         # output.data = add_data.astype(lt.dtype)
         return output
 
+    # POLYMORPHIC METHODS AFFECTING DATA AND FOLD
+    def taper(self, max_percentage, type='hann', max_length=None, side='both', **kwargs):
+        fold_tr = self.get_fold_trace()
+        Trace.taper(fold_tr, max_percentage, type=type, max_length=max_length, side=side, **kwargs)
+        Trace.taper(self, max_percentage, type=type, max_length=max_length, side=side, **kwargs)
+        return self
+
+
 
     # POLYMORPHIC METHODS - DATA ONLY
     # def detrend(self, type='simple', **options):
@@ -315,12 +323,6 @@ class FoldTrace(Trace):
     #     return self
 
 
-    def filter(self, type, **options):
-        super().filter(self, type, **options)
-        self.fold = self._enforce_fold_masking_rules(self.fold)
-        self.verify()
-        return self
-    
     # def 
 
 
@@ -485,7 +487,7 @@ class FoldTrace(Trace):
         if self.data.shape != value.shape:
             raise ValueError('FoldTrace.fold shape must match FoldTrace.data shape')
 
-    def _get_fold_view_trace(self):
+    def get_fold_trace(self):
         """Create a new FoldTrace object with data that houses
         a view of this FoldTrace's fold values and copied metadata
 
@@ -512,35 +514,35 @@ class FoldTrace(Trace):
 
     # PROPERTY METHODS AND ASSIGNMENTS #
 
-    def get_ext_id(self):
+    def get_ml_id(self):
         rstr = self.get_id()
         rstr += f'.{self.stats.model}.{self.stats.weight}'
         return rstr
     
-    id = property(get_ext_id)
+    mlid = property(get_ml_id)
 
     
-    def resample(self, sampling_rate, window='hann', no_filter=True, strict_length=False):
-        # Resample fold first
-        ftr = self._get_fold_view_trace()
-        Trace.resample(
-                ftr,
-                sampling_rate,
-                window=window,
-                no_filter=no_filter,
-                strict_length=strict_length)
-        breakpoint()
-        # Resample data next
-        Trace.resample(
-            sampling_rate,
-            window=window,
-            no_filter=no_filter,
-            strict_length=strict_length)
-        # Re-assign fold-trace to fold
-        self.fold = ftr.data
-        # Round fold to suppresss Gibbs phenomena
-        self.fold = self.fold.round()
-        self.stats.processing[-1] += f' PULSE: fold = resample + round'
+    # def resample(self, sampling_rate, window='hann', no_filter=True, strict_length=False):
+    #     # Resample fold first
+    #     ftr = self._get_fold_view_trace()
+    #     Trace.resample(
+    #             ftr,
+    #             sampling_rate,
+    #             window=window,
+    #             no_filter=no_filter,
+    #             strict_length=strict_length)
+    #     breakpoint()
+    #     # Resample data next
+    #     Trace.resample(
+    #         sampling_rate,
+    #         window=window,
+    #         no_filter=no_filter,
+    #         strict_length=strict_length)
+    #     # Re-assign fold-trace to fold
+    #     self.fold = ftr.data
+    #     # Round fold to suppresss Gibbs phenomena
+    #     self.fold = self.fold.round()
+    #     self.stats.processing[-1] += f' PULSE: fold = resample + round'
 
 
     # def apply_inplace_method_to_masked(self, method, *args, process_fold=True, **kwargs):

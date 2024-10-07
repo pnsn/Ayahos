@@ -121,6 +121,8 @@ class FoldTrace(Trace):
             # Ensure dtype match
             if self.dtype != value.dtype:
                 value = value.astype(self.dtype)
+        elif key == 'stats':
+            value.npts = 
             
         return super(FoldTrace, self).__setattr__(key,value)
     

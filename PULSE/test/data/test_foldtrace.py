@@ -358,6 +358,7 @@ class TestFoldTrace(TestTrace):
         for method in [0, 2, 3]:
             # Random
             bigtrace = btr1.copy()
+            breakpoint()
             bigtrace = bigtrace.__add__(tr1, method=method)
             bigtrace = bigtrace.__add__(tr3, method=method)
             bigtrace = bigtrace.__add__(tr2, method=method)

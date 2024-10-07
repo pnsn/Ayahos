@@ -1,14 +1,17 @@
 
+import warnings, copy
 import numpy as np
 # from obspy.core.stream import Stream
-# from obspy.core.utcdatetime import UTCDateTime
-from obspy.core.trace import Trace
+from obspy.core.utcdatetime import UTCDateTime
+from obspy.core.trace import Trace, Stats
 from PULSE.data.header import MLStats
 from obspy.core.util.misc import flat_not_masked_contiguous
 
+# FIXME: Track down processing metadata bleed
+
 class FoldTrace(Trace):
 
-    def __init__(self, data=np.array([], dtype=np.float64), fold=None, header=None):
+    def __init__(self, data=np.array([]), fold=None, header=None, dtype=np.float64):
         """Create a :class:`~PULSE.data.foldtrace.FoldTrace` object
 
         :param data: Input data array, defaults to np.array([])
@@ -21,35 +24,65 @@ class FoldTrace(Trace):
         :param header: non-default metadata values, defaults to None
         :type header: None or dict, optional
         """
-        self.dtype = None
-        if header is None:
-            header = {}
-        # Handle case where a Trace is directly passed as an arg
+        # Placeholder dtype
+        self.dtype = dtype
+        # Handle case where data is Trace
         if isinstance(data, Trace):
             trace = data
-            data = trace.data
-            header = trace.stats
-        elif isinstance(data, np.ndarray):
-            pass
+            data = trace.data.astype(dtype)
+            header = dict(trace.stats)
+        elif not isinstance(data, np.ndarray):
+            raise TypeError
+        # Init to inherit from Trace
+        if not isinstance(header, (dict, type(None))):
+            raise TypeError('header must be type dict or NoneType')
         else:
-            raise TypeError('data must be a NumPy ndarray or an ObsPy Trace-like object')
-        # Grab reference dtype
-        self.dtype = data.dtype
-        # Initialize as empty trace
-        super(FoldTrace, self).__init__()
-        # Populate stats
-        if header is None:
-            header = {}
-        self.stats = MLStats(header=header)
-        # Populate data (which updates dtype and stats.npts)
-        self.data = data
+            super().__init__(data=data.astype(dtype), header=header)
+        # Upgrade stats class
+        self.stats = MLStats({_k:_v for _k, _v in self.stats.items()})
         # Initialize fold
         if fold is None:
-            self.fold = np.ones(shape=self.data.shape,
-                                dtype=self.data.dtype)
+            self.fold = np.ones(self.data.shape, dtype=self.dtype)
         else:
             self._fold_sanity_checks(fold)
             self.fold = self._enforce_fold_masking_rules(fold)
+
+        
+        
+        # if isinstance(header, (dict)):
+        #     self.stats.update(header)
+        # elif header is None:
+        #     pass
+        # else:
+        #     raise TypeError('header must be type dict')
+
+        # if header is None:
+        #     header = {}
+        # # # Handle case where a Trace is directly passed as an arg
+        # # if isinstance(data, Trace):
+        # #     trace = data
+        # #     data = trace.data
+        # #     header = copy.deepcopy(trace.stats)
+        # if isinstance(data, np.ndarray):
+        #     self.dtype = data.dtype
+        #     self.data = data
+        # else:
+        #     raise TypeError('data must be a NumPy ndarray or an ObsPy Trace-like object')
+        # # Initialize as empty trace
+        # super().__init__()
+        # # Populate stats
+        # if header is None:
+        #     header = {}
+        # self.stats = MLStats(header=header)
+        # # Populate data (which updates dtype and stats.npts)
+        # self.data = data
+        # # Initialize fold
+        # if fold is None:
+        #     self.fold = np.ones(shape=self.data.shape,
+        #                         dtype=self.data.dtype)
+        # else:
+        #     self._fold_sanity_checks(fold)
+        #     self.fold = self._enforce_fold_masking_rules(fold)
         
             
     def __setattr__(self, key, value):
@@ -312,13 +345,67 @@ class FoldTrace(Trace):
         Trace.taper(self, max_percentage, type=type, max_length=max_length, side=side, **kwargs)
         return self
 
+    def interpolate_fold(self, sampling_rate, starttime=None, npts=None):
+        """Resample the **fold** of this FoldTrace object using linear
+        interpolation - used uniformly with all resampling methods inherited
+        from ObsPy Trace
+         - :meth:`~PULSE.data.foldtrace.FoldTrace.interpolate`
+         - :meth:`~PULSE.data.foldtrace.FoldTrace.resample`
+         - :meth:`~PULSE.data.foldtrace.FoldTrace.decimate`
+
+        :param sampling_rate: new reference sampling rate
+        :type sampling_rate: float-like
+        :param starttime: reference start time for interpolation, default is None.
+            None input uses the starttime of this FoldTrace
+        :type starttime: :class:`~obspy.core.utctdatetime.UTCDateTime`
+        :param npts: number of points for the interpolated data, default is None.
+            None input uses the endtime of this FoldTrace to estimate npts
+            such that the nearest sample occurs at or before the endtime
+        :return:
+         - **int_fold** (*numpy.ndarray*) -- interpolated fold vector
+        """
+        # sampling_rate compatability checks
+        if not isinstance(sampling_rate, (int, float)):
+            raise TypeError
+        elif sampling_rate <= 0:
+            raise ValueError
+        elif not np.isfinite(sampling_rate):
+            raise ValueError
+        else:
+            old_sr = self.stats.sampling_rate
+            old_delta = 1./old_sr
+            new_sr = sampling_rate
+            new_delta = 1./new_sr
+        # starttime compatability checks
+        if starttime is None:
+            starttime = self.stats.starttime
+        elif not isinstance(starttime, UTCDateTime):
+            raise TypeError('starttime must be UTCDateTime or None')
+            
+        old_dt = self.stats.endtime - starttime + old_delta
+        max_npts = np.floor(old_dt*sampling_rate)
+        if npts is None:
+            npts = max_npts
+        elif npts > max_npts:
+            raise ValueError(f'specified npts {npts} would exceed the endtime of this FoldTrace (max: {max_npts})')
+        
+        new_endtime = starttime + npts/sampling_rate
+        
+        new_dt = new_endtime - starttime
+        old_times = np.arange(0, old_dt + old_delta, old_delta)
+        new_times = np.arange(0, new_dt + new_delta, new_delta)
+        breakpoint()
+
+        int_fold = np.interp(new_times, old_times, self.fold)
+        return int_fold
+
+
     def interpolate(self,
                     sampling_rate,
                     method='weighted_average_slopes',
                     starttime=None,
                     npts=None,
                     time_shift=0.0,
-                    fold_density=False,
                     *args, **kwargs):
         """Use the ObsPy Trace :meth:`~obspy.core.trace.Trace.interpolate` method on this
         FoldTrace object and resample the **fold** using linear interpolation version of 
@@ -348,13 +435,6 @@ class FoldTrace(Trace):
             scalar = sampling_rate / original sampling_rate, if 0 < scalar < 1, else scalar = 1
         :type fold_density: bool, optional
         """        
-        if fold_density:
-            if sampling_rate > self.stats.sampling_rate:
-                scalar = self.stats.sampling_rate/sampling_rate
-            else:
-                scalar = 1.
-
-        fold_tr = self.get_fold_trace()
         Trace.interpolate(self,
                           sampling_rate,
                           method=method,
@@ -362,19 +442,12 @@ class FoldTrace(Trace):
                           npts=npts,
                           time_shift=time_shift,
                           *args, **kwargs)
-        
-        Trace.interpolate(fold_tr,
-                          sampling_rate,
-                          method='linear',
-                          starttime = self.stats.starttime,
-                          npts = self.stats.npts)
-        self.fold = fold_tr.data
-        if fold_density:
-            self.fold = self.fold*scalar
-        try:
-            self.verify()
-        except:
-            breakpoint()
+        # Interpolate fold using updated stats from **data** processing
+        self.fold = self.interpolate_fold(sampling_rate,
+                                          starttime= self.stats.starttime,
+                                          npts = self.stats.npts)
+
+        self.verify()
         return self
 
     def resample(self,
@@ -382,7 +455,6 @@ class FoldTrace(Trace):
         window='hann',
         no_filter=True,
         strict_length=False,
-        fold_taper=0.05,
         **kwargs):
         """Apply the ObsPy Trace :meth:`~obspy.core.trace.Trace.resample` method to this FoldTrace
         object. Fold is resampled using linear interpolation.
@@ -399,16 +471,23 @@ class FoldTrace(Trace):
         :type fold_taper: float, optional
         :return: _description_
         :rtype: _type_
-        """        
-        # TODO: interpolate fold and scale by resampling factor
-        fold_tr = self.get_fold_trace()
-        Trace.interpolate(fold_tr, sampling_rate, method='linear')
-        breakpoint()
-        # Trace.resample(fold_tr, sampling_rate, window=window, no_filter=no_filter, strict_length=strict_length)
-        Trace.resample(self, sampling_rate, window=window, no_filter=no_filter, strict_length=strict_length)
-
-        breakpoint()
-        self.fold = fold_tr.data
+        """
+        ts0 = self.stats.starttime
+        te0 = self.stats.endtime
+        npts0 = self.stats.npts
+        sr0 = self.stats.sampling_rate
+        dt = te0 - ts0 + (1./sr0)
+        npts1 = int(np.floor(dt*sampling_rate))
+        # Resample fold first
+        self.fold = self.interpolate_fold(sampling_rate, starttime=ts0, npts=npts1)
+        # Resample data
+        Trace.resample(
+            self,
+            sampling_rate,
+            window=window,
+            no_filter=no_filter,
+            strict_length=strict_length,
+            **kwargs)
         return self
 
     # POLYMORPHIC METHODS - DATA ONLY
@@ -595,6 +674,9 @@ class FoldTrace(Trace):
         """        
         ftr = FoldTrace(data=self.fold, header=self.stats.copy())
         return ftr
+
+
+        
 
 
     def verify(self):

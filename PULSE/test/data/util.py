@@ -17,7 +17,7 @@ def load_logo_trace():
                        'station':'PULSE',
                        'location':'LO',
                        'channel':'GO1'})
-    return tr
+    return tr.copy()
 
 def make_gappy_trace(tr,fill_value=-999, frac1=0.25, frac2=0.5):
     ii = int(round(frac1*tr.stats.npts))

@@ -57,8 +57,11 @@ class MLStats(Stats):
 
         :param header: initial non-default values with which to populate this MLStats object
         :type header: dict
-        """        
-        super(Stats, self).__init__(header)
+        """
+        # if isinstance(header, dict):
+        super(MLStats, self).__init__(header)
+        # else:
+        #     raise TypeError('header must be type dict')
         if self.location == '':
             self.location = self.defaults['location']
 

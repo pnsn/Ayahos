@@ -312,14 +312,102 @@ class FoldTrace(Trace):
         Trace.taper(self, max_percentage, type=type, max_length=max_length, side=side, **kwargs)
         return self
 
-    def resample(self, sampling_rate, window='hann', no_filter=True, strict_length=False, fold_taper=0.05, **kwargs):
+    def interpolate(self,
+                    sampling_rate,
+                    method='weighted_average_slopes',
+                    starttime=None,
+                    npts=None,
+                    time_shift=0.0,
+                    fold_density=False,
+                    *args, **kwargs):
+        """Use the ObsPy Trace :meth:`~obspy.core.trace.Trace.interpolate` method on this
+        FoldTrace object and resample the **fold** using linear interpolation version of 
+        the same method. 
+
+        :param sampling_rate: new sampling rate
+        :type sampling_rate: float-like
+        :param method: interpolation method, defaults to 'weighted_average_slopes'
+            Supported methods: see :meth:`~obspy.core.trace.Trace.interpolate` for full descriptino
+            - "lanczos" - (Sinc interpolation) - highest quality, but computationally costly
+            - "weighted_average_slopes" - SAC standard
+            - "slinear" - 1st order spline
+            - "quadratic" - 2nd order spline
+            - "cubic" - 3rd order spline
+            - "linear" - linear interpolation (always used to interpolate **fold**)
+            - "nearest" - nearest neighbor
+            - "zero" - last encountered value
+        :type method: str, optional
+        :param starttime: Start time for the new interpolated FoldTrace, defaults to None
+        :type starttime: :class:`~obspy.core.utcdatetime.UTCDateTime`, optional
+        :param npts: new number of samples, defaults to None
+        :type npts: int, optional
+        :param time_shift: Shift the trace by a specified number of seconds, defaults to 0.0
+            see :meth:`~obspy.core.trace.Trace.interpolate` for more information
+        :type time_shift: float, optional
+        :param fold_density: Should up-sampling result in a scalar reduction of **fold**? Defaults to False
+            scalar = sampling_rate / original sampling_rate, if 0 < scalar < 1, else scalar = 1
+        :type fold_density: bool, optional
+        """        
+        if fold_density:
+            if sampling_rate > self.stats.sampling_rate:
+                scalar = self.stats.sampling_rate/sampling_rate
+            else:
+                scalar = 1.
+
+        fold_tr = self.get_fold_trace()
+        Trace.interpolate(self,
+                          sampling_rate,
+                          method=method,
+                          starttime=starttime,
+                          npts=npts,
+                          time_shift=time_shift,
+                          *args, **kwargs)
+        
+        Trace.interpolate(fold_tr,
+                          sampling_rate,
+                          method='linear',
+                          starttime = self.stats.starttime,
+                          npts = self.stats.npts)
+        self.fold = fold_tr.data
+        if fold_density:
+            self.fold = self.fold*scalar
+        try:
+            self.verify()
+        except:
+            breakpoint()
+        return self
+
+    def resample(self,
+        sampling_rate,
+        window='hann',
+        no_filter=True,
+        strict_length=False,
+        fold_taper=0.05,
+        **kwargs):
+        """Apply the ObsPy Trace :meth:`~obspy.core.trace.Trace.resample` method to this FoldTrace
+        object. Fold is resampled using linear interpolation.
+
+        :param sampling_rate: _description_
+        :type sampling_rate: _type_
+        :param window: _description_, defaults to 'hann'
+        :type window: str, optional
+        :param no_filter: _description_, defaults to True
+        :type no_filter: bool, optional
+        :param strict_length: _description_, defaults to False
+        :type strict_length: bool, optional
+        :param fold_taper: _description_, defaults to 0.05
+        :type fold_taper: float, optional
+        :return: _description_
+        :rtype: _type_
+        """        
         # TODO: interpolate fold and scale by resampling factor
         fold_tr = self.get_fold_trace()
-        Trace.resample(fold_tr, sampling_rate, window=window, no_filter=no_filter, strict_length=strict_length)
-
+        Trace.interpolate(fold_tr, sampling_rate, method='linear')
+        breakpoint()
+        # Trace.resample(fold_tr, sampling_rate, window=window, no_filter=no_filter, strict_length=strict_length)
         Trace.resample(self, sampling_rate, window=window, no_filter=no_filter, strict_length=strict_length)
-        # FIXME: Attend to Gibbs Phenomena in self.fold
-        Trace.taper(fold_tr, fold_taper, **kwargs)
+
+        breakpoint()
         self.fold = fold_tr.data
         return self
 

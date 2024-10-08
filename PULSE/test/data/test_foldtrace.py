@@ -595,6 +595,61 @@ class TestFoldTrace(TestTrace):
         assert all(tr2.data[-2:] == 80)
         assert all(tr2.data[:-2] == tr.data)    
 
+    def test_trim(self):
+        tr = FoldTrace(data=np.arange(101))
+        tr.fold[50:] = 2
+        start = tr.stats.starttime
+        end = tr.stats.endtime
+        # Non-trim
+        tr2 = tr.copy().trim()
+        assert all(tr2.data == tr.data)
+        assert all(tr2.fold == tr.fold)
+        # ltrim imbedded call
+        tr2 = tr.copy().trim(starttime=start + 2)
+        assert all(tr2.data == tr.data[2:])
+        assert all(tr2.fold == tr.fold[2:])
+        # rtrim imbedded call
+        tr2 = tr.copy().trim(endtime=end - 2)
+        assert all(tr2.data == tr.data[:-2])
+        assert all(tr2.fold == tr.fold[:-2])
+        # combined call
+        tr2 = tr.copy().trim(starttime = start + 2,
+                             endtime = end - 2)
+        assert all(tr2.data == tr.data[2:-2])
+        assert all(tr2.fold == tr.fold[2:-2])
+        # combined call with nearest_sample
+        tr2 = tr.copy().trim(starttime = start + 1.25,
+                             endtime = end - 0.01)
+        assert all(tr2.data == tr.data[1:])
+        assert all(tr2.fold == tr.fold[1:])
+        # combined call without nearest_sample
+        tr2 = tr.copy().trim(starttime = start + 1.25,
+                             endtime = end - 0.01,
+                             nearest_sample=False)
+        assert all(tr2.data == tr.data[2:-1])
+        assert all(tr2.fold == tr.fold[2:-1])
+        # combined call with padding
+        tr2 = tr.copy().trim(starttime = start - 2,
+                             endtime = end + 3,
+                             pad=True)
+        assert np.ma.is_masked(tr2.data)
+        assert tr2.count() == 101+5
+        # combined call with padding and fill_value
+        tr2 = tr.copy().trim(starttime = start - 2,
+                             endtime = end + 3,
+                             pad=True,
+                             fill_value = 999)
+        assert not np.ma.is_masked(tr2.data)
+        assert tr2.count() == 101+5
+        assert all(tr2.data[:2] == 999)
+        assert all(tr2.data[-3:] == 999)
+        assert all(tr2.data[2:-3] == tr.data)
+        assert all(tr2.fold[:2] == 0)
+        assert all(tr2.fold[-2:] == 0)
+        assert all(tr2.fold[2:-3] == tr.fold)
+
+
+
     ######################
     ## TEST TAPER SUITE ##
     ######################

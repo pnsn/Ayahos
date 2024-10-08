@@ -715,6 +715,14 @@ class FoldTrace(Trace):
         self.verify()
         return self
     
+    def trim(self, starttime=None, endtime=None, pad=False, nearest_sample=True, fill_value=None):
+        super().trim(starttime=starttime,
+                     endtime=endtime,
+                     pad=pad,
+                     nearest_sample=nearest_sample,
+                     fill_value=fill_value)
+        self.verify()
+        return self
     
         
 

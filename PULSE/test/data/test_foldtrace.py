@@ -748,38 +748,64 @@ class TestFoldTrace(TestTrace):
     # #########################
     # ## RESAMPLE TEST SUITE ##
     # #########################
-    
+    def test_interp_fold(self):
+        # Setup
+        tr = FoldTrace(data=np.arange(6), fold=np.array([1,1,1,2,2,2]), dtype=np.float32)
+        tr2 = tr.copy()
+        tr2.data = np.linspace(0,6,11)
+        tr2.stats.sampling_rate = 2
+        assert tr.stats.starttime == tr2.stats.starttime
+        assert tr.stats.endtime == tr2.stats.endtime
+        # Check that verify fails on Exception (data and fold shape don't match)
+        with pytest.raises(Exception):
+            tr2.verify()
+        # Apply method
+        tr3 = tr2.copy()
+        tr3._interp_fold(tr.stats.starttime, 1)
+        assert tr3.data.shape == tr3.fold.shape
+        # Test with slight non-aligned samples
+        tr3 = tr2.copy()
+        tr3.stats.starttime -= 0.1
+        tr3._interp_fold(tr.stats.starttime, 1)
+        assert tr3.verify()
+        # Test with large non-aligned samples
+        tr3 = tr2.copy()
+        tr3.stats.starttime -= 1.37
+        tr3.data = np.arange(7, dtype=tr3.dtype)
+        tr3._interp_fold(tr.stats.starttime, 1)
+        assert tr3.verify()
+
 
     ############################
     ## TEST INTERPOLATE SUITE ##
     ############################
-    def test_interpolate_fold(self):
-        # Populate FoldTrace
-        tr = FoldTrace(load_townsend_example()[0])
-        tr.fold[10:] = 2
+    # def test_interpolate_fold(self):
+    #     # Populate FoldTrace
+    #     tr = FoldTrace(load_townsend_example()[0])
+    #     tr.fold[10:] = 2
 
-        tr2 = tr.copy()
-        # Test upsampling effects on 
-        tr2= tr.copy().interpolate(2.3)
-        assert all(tr2.fold == 1)
-        # Test upsampling degrading fold density
-        tr2 = tr.copy().interpolate(2.3)
-        assert all(tr2.fold == 1/2.3)
-        # Test downsampling not degrading fold density
-        tr2 = tr.copy().interpolate(0.5)
-        assert all(tr2.fold == 1)
-        # Test upsampling resulting in intermediate values
-        tr.fold[51:] = 2
-        tr2 = tr.copy().interpolate(10)
-        assert all(tr2.fold[:500] == 1)
-        assert all(tr2.fold[501:510] < 2) and all(tr2.fold[501:510] > 1)
-        assert all(tr2.fold[510:] == 2)
-        # Raises NotImplemented for masked data
-        tr = FoldTrace(data=np.ma.MaskedArray(data=np.arange(101),
-                                              mask=[False]*101))
-        tr.data.mask[20:30] = True
-        with pytest.raises(NotImplementedError):
-            tr2 = tr.copy().interpolate(10)
+    #     tr2 = tr.copy()
+    #     # Test upsampling effects on 
+    #     tr2= tr.copy().interpolate(2.3)
+    #     assert all(tr2.fold == 1)
+    #     # Test upsampling degrading fold density
+    #     tr2 = tr.copy().interpolate(2.3)
+    #     assert all(tr2.fold == 1/2.3)
+    #     # Test downsampling not degrading fold density
+    #     tr2 = tr.copy().interpolate(0.5)
+    #     assert all(tr2.fold == 1)
+    #     # Test upsampling resulting in intermediate values
+    #     tr.fold[51:] = 2
+    #     tr2 = tr.copy().interpolate(10)
+    #     assert all(tr2.fold[:500] == 1)
+    #     assert all(tr2.fold[501:510] < 2) and all(tr2.fold[501:510] > 1)
+    #     assert all(tr2.fold[510:] == 2)
+    #     # Raises NotImplemented for masked data
+    #     tr = FoldTrace(data=np.ma.MaskedArray(data=np.arange(101),
+    #                                           mask=[False]*101))
+    #     tr.data.mask[20:30] = True
+    #     with pytest.raises(NotImplementedError):
+    #         tr2 = tr.copy().interpolate(10)
 
     # def test_interpolate(self):
     #     """

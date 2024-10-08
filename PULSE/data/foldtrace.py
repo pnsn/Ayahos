@@ -350,6 +350,88 @@ class FoldTrace(Trace):
         Trace.taper(self, max_percentage, type=type, max_length=max_length, side=side, **kwargs)
         return self
 
+    def interpolate(self, sampling_rate, method='weighted_average_slopes',
+                    starttime=None, npts=None, time_shift=0.0,
+                    *args, **kwargs):
+        # Grab initial stats info
+        old_starttime = self.stats.starttime
+        old_endtime = self.stats.endtime
+        old_npts = self.stats.npts
+        old_sampling_rate = self.stats.sampling_rate
+        Trace.interpolate(self,
+                          sampling_rate,
+                          starttime=starttime,
+                          method=method,
+                          npts=npts,
+                          time_shift=time_shift,
+                          *args,
+                          **kwargs)
+        self.interp_fold(old_starttime, old_sampling_rate, old_npts)
+        return self
+
+    def _interp_fold(self, old_starttime, old_sampling_rate, method='linear'):
+        """Use linear interpolation and 0 padding to resample the **fold** of a FoldTrace
+        that has already had it's data resampled via n ObsPy resampling method.
+
+        :param old_starttime: _description_
+        :type old_starttime: _type_
+        :param old_sampling_rate: _description_
+        :type old_sampling_rate: _type_
+        :param method: _description_, defaults to 'linear'
+        :type method: str, optional
+        :return: _description_
+        :rtype: _type_
+        """        
+        # Create an obspy trace to house fold data
+        trf = Trace(data=self.fold.copy(), header={'starttime': old_starttime,
+                                            'sampling_rate': old_sampling_rate})
+        # Get aliases to a bunch of metadata TODO: clean up unnecessary items
+        old_npts = trf.stats.npts
+        old_endtime = old_starttime + old_npts/old_sampling_rate
+        new_starttime = self.stats.starttime
+        new_endtime = self.stats.endtime
+        new_sr = self.stats.sampling_rate
+        new_npts = self.stats.npts
+        # Apply 0-padding if needed
+        if old_starttime > new_starttime:
+            trf._ltrim(new_starttime - 1./old_sampling_rate,
+                       pad=True, fill_value=0,
+                       nearest_sample=False)
+        if old_endtime < new_endtime:
+            trf._rtrim(new_endtime + 1./old_sampling_rate,
+                       pad=True, fill_value=0,
+                       nearest_sample=False)
+        trf.interpolate(new_sr, method=method, starttime=new_starttime, npts=new_npts)
+        self.fold = trf.data
+        return self
+        
+
+
+    def resample_fold(self, sampling_rate, starttime, endtime, method='linear', **kwargs):
+        fold_tr = self._get_fold_trace().copy()
+        old_delta = self.stats.delta
+        new_delta = 1./sampling_rate
+        # If new starttime is before original starttime
+        if fold_tr.stats.starttime > starttime:
+            # pad out by one extra sample with 0 fold
+            fold_tr._ltrim(starttime - old_delta,
+                           nearest_sample=False,
+                           pad=True, fill_value=0)
+        # If new endtime is after original endtime
+        if fold_tr.stats.endtime < endtime:
+            # pad out by one extra sample with 0 fold
+            fold_tr._rtrim(endtime + old_delta,
+                           nearest_sample=False,
+                           pad=True,
+                           fill_value=0)
+        # Interpolate
+        Trace.interpolate(fold_tr,
+                          sampling_rate,
+                          starttime=starttime,
+                          method=method,
+                          **kwargs)
+
+
     def interpolate_fold(self, sampling_rate, starttime=None, npts=None):
         """Resample the **fold** of this FoldTrace object using linear
         interpolation - used uniformly with all resampling methods inherited
@@ -738,6 +820,7 @@ class FoldTrace(Trace):
         if self.data.dtype != self.fold.dtype:
             raise Exception('FoldTrace.data dtype and FoldTrace.fold dtype mismatch %s != %s'%\
                             (str(self.data.dtype), str(self.fold.dtype)))
+        return True
 
     # PROPERTY METHODS AND ASSIGNMENTS #
 

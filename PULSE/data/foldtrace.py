@@ -11,7 +11,7 @@ from obspy.core.util.misc import flat_not_masked_contiguous
 
 class FoldTrace(Trace):
 
-    def __init__(self, data=np.array([]), fold=None, header=None, dtype=np.float64):
+    def __init__(self, data=None, fold=None, header=None, dtype=None):
         """Create a :class:`~PULSE.data.foldtrace.FoldTrace` object
 
         :param data: Input data array, defaults to np.array([])
@@ -23,66 +23,66 @@ class FoldTrace(Trace):
         :type fold: None or numpy.ndarray, optional
         :param header: non-default metadata values, defaults to None
         :type header: None or dict, optional
+        :param dtype: user-specified dtype to use for **data** and **fold**, defaults to None.
+            None uses the native **dtype** of data
+            Note: During initialization is the only time a FoldTrace object can
+            have it's dtype set via a **dtype** argument. All subsequent changes are
+            affected by changing the dtype of **data**.
+        :type dtype: None or type, optional
         """
-        # Placeholder dtype
-        self.dtype = dtype
+        # Compatability checks on data   
+        if data is None:
+            if dtype is None:
+                self.dtype = np.float64
+                data = np.array([], dtype=self.dtype) 
+        elif isinstance(data, np.ndarray):
+            self._data_sanity_checks(data)
+            # Catch initial dtype - only time dtype can supercede data dtype
+            if dtype is None:
+                self.dtype = data.dtype
+            else:
+                self.dtype = dtype
+                data = data.astype(dtype)
         # Handle case where data is Trace
-        if isinstance(data, Trace):
+        elif isinstance(data, Trace):
             trace = data
-            data = trace.data.astype(dtype)
-            header = dict(trace.stats)
-        elif not isinstance(data, np.ndarray):
-            raise TypeError
+            if dtype is not None:
+                self.dtype = dtype
+                data = trace.data.astype(self.dtype)
+            else:
+                self.dtype = trace.data.dtype
+                data = trace.data
+            header = trace.stats
+        else:
+            raise TypeError('data must be a NumPy ndarray or ObsPy Trace-like object')
         # Init to inherit from Trace
-        if not isinstance(header, (dict, type(None))):
-            raise TypeError('header must be type dict or NoneType')
+        if header is None:
+            header = {}
+        elif isinstance(header, dict):
+            pass
+        elif isinstance(header, Stats):
+            header = dict(header)
         else:
-            super().__init__(data=data.astype(dtype), header=header)
-        # Upgrade stats class
-        self.stats = MLStats({_k:_v for _k, _v in self.stats.items()})
-        # Initialize fold
+            raise TypeError('header must be type dict, ObsPy Stats, or NoneType')
+
         if fold is None:
-            self.fold = np.ones(self.data.shape, dtype=self.dtype)
+            fold = np.ones(data.shape, dtype=self.dtype)
+        elif isinstance(fold, np.ndarray):
+            fold = fold.astype(self.dtype)
         else:
-            self._fold_sanity_checks(fold)
-            self.fold = self._enforce_fold_masking_rules(fold)
+            raise TypeError('fold must be type NumPy ndarray or NoneType')
 
-        
-        
-        # if isinstance(header, (dict)):
-        #     self.stats.update(header)
-        # elif header is None:
-        #     pass
-        # else:
-        #     raise TypeError('header must be type dict')
-
-        # if header is None:
-        #     header = {}
-        # # # Handle case where a Trace is directly passed as an arg
-        # # if isinstance(data, Trace):
-        # #     trace = data
-        # #     data = trace.data
-        # #     header = copy.deepcopy(trace.stats)
-        # if isinstance(data, np.ndarray):
-        #     self.dtype = data.dtype
-        #     self.data = data
-        # else:
-        #     raise TypeError('data must be a NumPy ndarray or an ObsPy Trace-like object')
-        # # Initialize as empty trace
-        # super().__init__()
-        # # Populate stats
-        # if header is None:
-        #     header = {}
-        # self.stats = MLStats(header=header)
-        # # Populate data (which updates dtype and stats.npts)
-        # self.data = data
-        # # Initialize fold
-        # if fold is None:
-        #     self.fold = np.ones(shape=self.data.shape,
-        #                         dtype=self.data.dtype)
-        # else:
-        #     self._fold_sanity_checks(fold)
-        #     self.fold = self._enforce_fold_masking_rules(fold)
+        # Initialize as empty Trace
+        super().__init__()
+        # Upgrade stats class & set values
+        self.stats = MLStats(header)
+        # Set data
+        self.data = data
+        # Check fold against self.data and self.dtype
+        self._fold_sanity_checks(fold)
+        # Set fold
+        self.fold = self._enforce_fold_masking_rules(fold)
+       
         
             
     def __setattr__(self, key, value):
@@ -110,7 +110,8 @@ class FoldTrace(Trace):
             if hasattr(self,'fold'):
                 if self.fold.dtype != value.dtype:
                     self.fold = self.fold.astype(value.dtype)
-            self.stats.npts = len(value)
+            if hasattr(self, 'stats'):
+                self.stats.npts = len(value)
         # If setting fold
         elif key == 'fold':
             # Compatability check
@@ -121,8 +122,10 @@ class FoldTrace(Trace):
             # Ensure dtype match
             if self.dtype != value.dtype:
                 value = value.astype(self.dtype)
+        # Ensure that stats.npts remains consistent with len(data)
         elif key == 'stats':
-            value.npts = 
+            if hasattr(self, 'data'):
+                value.npts = len(self.data)
             
         return super(FoldTrace, self).__setattr__(key,value)
     
@@ -342,7 +345,7 @@ class FoldTrace(Trace):
 
     # POLYMORPHIC METHODS AFFECTING DATA AND FOLD
     def taper(self, max_percentage, type='hann', max_length=None, side='both', **kwargs):
-        fold_tr = self.get_fold_trace()
+        fold_tr = self._get_fold_trace()
         Trace.taper(fold_tr, max_percentage, type=type, max_length=max_length, side=side, **kwargs)
         Trace.taper(self, max_percentage, type=type, max_length=max_length, side=side, **kwargs)
         return self
@@ -665,7 +668,7 @@ class FoldTrace(Trace):
         if self.data.shape != value.shape:
             raise ValueError('FoldTrace.fold shape must match FoldTrace.data shape')
 
-    def get_fold_trace(self):
+    def _get_fold_trace(self):
         """Create a new FoldTrace object with data that houses
         a view of this FoldTrace's fold values and copied metadata
 
@@ -677,7 +680,42 @@ class FoldTrace(Trace):
         ftr = FoldTrace(data=self.fold, header=self.stats.copy())
         return ftr
 
-
+    def _ltrim(self, starttime, pad=False, nearest_sample=True, fill_value=None):
+        npts_old = self.stats.npts
+        # Trim Data
+        Trace._ltrim(self, starttime, pad=pad, nearest_sample=nearest_sample, fill_value=fill_value)
+        npts_new = self.stats.npts
+        # For shortened vectors
+        if npts_old > npts_new:
+            dn = npts_old - npts_new
+            self.fold = self.fold[dn:]
+        # For lengthened vectors - all padding samples get fold = 0
+        elif npts_old < npts_new:
+            dn = npts_new - npts_old
+            new_fold = np.zeros(self.data.shape, dtype=self.dtype)
+            new_fold[dn:] += self.fold
+            self.fold = new_fold
+        else:
+            pass
+        self.verify()
+        return self
+    
+    def _rtrim(self, endtime, pad=False, nearest_sample=True, fill_value=None):
+        npts_old = self.stats.npts
+        Trace._rtrim(self, endtime, pad=pad, nearest_sample=nearest_sample, fill_value=fill_value)
+        npts_new = self.stats.npts
+        if npts_old > npts_new:
+            self.fold = self.fold[:npts_new]
+        elif npts_old < npts_new:
+            new_fold = np.zeros(self.data.shape, dtype=self.dtype)
+            new_fold[:npts_old] += self.fold
+            self.fold = new_fold
+        else:
+            pass
+        self.verify()
+        return self
+    
+    
         
 
 

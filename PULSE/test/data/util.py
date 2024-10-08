@@ -1,9 +1,11 @@
-import os
+from pathlib import Path
 from obspy import read, Trace
 import numpy as np
 
 def load_townsend_example():
-    data = os.path.join('PULSE','test','files','uw61965081_PortTownsend_M4.3.mseed')
+    data_path = Path(__file__).parent.parent
+    data = data_path / 'files' / 'uw61965081_PortTownsend_M4.3.mseed'
+    # data = os.path.join('PULSE','test','files','uw61965081_PortTownsend_M4.3.mseed')
     st = read(data)
     return st
 

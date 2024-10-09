@@ -353,6 +353,32 @@ class FoldTrace(Trace):
     def interpolate(self, sampling_rate, method='weighted_average_slopes',
                     starttime=None, npts=None, time_shift=0.0,
                     *args, **kwargs):
+        """Resample the **data** of this FoldTrace using the :meth:`~obspy.core.trace.Trace.interpolate` method
+        and resample **fold** using linear interpolation via :meth:`~._interp_fold`
+
+        :param sampling_rate: new sampling rate
+        :type sampling_rate: float-like
+        :param method: interpolation method, defaults to 'weighted_average_slopes'
+            Supported methods: see :meth:`~obspy.core.trace.Trace.interpolate` for full descriptino
+            - "lanczos" - (Sinc interpolation) - highest quality, but computationally costly
+            - "weighted_average_slopes" - SAC standard
+            - "slinear" - 1st order spline
+            - "quadratic" - 2nd order spline
+            - "cubic" - 3rd order spline
+            - "linear" - linear interpolation (always used to interpolate **fold**)
+            - "nearest" - nearest neighbor
+            - "zero" - last encountered value
+        :type method: str, optional
+        :param starttime: Start time for the new interpolated FoldTrace, defaults to None
+        :type starttime: :class:`~obspy.core.utcdatetime.UTCDateTime`, optional
+        :param npts: new number of samples, defaults to None
+        :type npts: int, optional
+        :param time_shift: Shift the trace by a specified number of seconds, defaults to 0.0
+            see :meth:`~obspy.core.trace.Trace.interpolate` for more information
+        :type time_shift: float, optional
+        :param *args: positional argument collector passed to internal interpolation method
+        :param **kwargs: key-word argument collector passed to internal interpolation method
+        """            
         # Grab initial stats info
         if np.ma.is_masked(self.data):
             raise Exception('masked data - try using FoldTrace.apply_to_gappy.')

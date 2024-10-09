@@ -354,10 +354,9 @@ class FoldTrace(Trace):
                     starttime=None, npts=None, time_shift=0.0,
                     *args, **kwargs):
         # Grab initial stats info
-        old_starttime = self.stats.starttime
-        old_endtime = self.stats.endtime
-        old_npts = self.stats.npts
-        old_sampling_rate = self.stats.sampling_rate
+        if np.ma.is_masked(self.data):
+            raise Exception('masked data - try using FoldTrace.apply_to_gappy.')
+        old_stats = self.stats.copy()
         Trace.interpolate(self,
                           sampling_rate,
                           starttime=starttime,
@@ -366,216 +365,247 @@ class FoldTrace(Trace):
                           time_shift=time_shift,
                           *args,
                           **kwargs)
-        self.interp_fold(old_starttime, old_sampling_rate, old_npts)
+        self._interp_fold(old_stats.starttime, old_stats.sampling_rate)
         return self
 
-    def _interp_fold(self, old_starttime, old_sampling_rate, method='linear'):
-        """Use linear interpolation and 0 padding to resample the **fold** of a FoldTrace
-        that has already had it's data resampled via n ObsPy resampling method.
+    def resample(self, sampling_rate, window='hann', no_filter=True, strict_length=False):
+        if np.ma.is_masked(self.data):
+            raise Exception('masked data - try using FoldTrace.apply_to_gappy.')
+        old_stats = self.stats.copy()
+        Trace.resample(self,
+                       sampling_rate,
+                       window=window,
+                       no_filter=no_filter,
+                       strict_length=strict_length)
+        self._interp_fold(old_stats.starttime, old_stats.sampling_rate)
+        return self
+    
+    def decimate(self, factor, no_filter=False, strict_length=False):
+        if np.ma.is_masked(self.data):
+            raise Exception('masked data - try using FoldTrace.apply_to_gappy')
+        old_stats = self.stats.copy()
+        Trace.decimate(self, factor, no_filter=no_filter, strict_length=strict_length)
+        self._interp_fold(old_stats.starttime, old_stats.sampling_rate)
+        return self
 
-        :param old_starttime: _description_
-        :type old_starttime: _type_
-        :param old_sampling_rate: _description_
-        :type old_sampling_rate: _type_
-        :param method: _description_, defaults to 'linear'
-        :type method: str, optional
-        :return: _description_
-        :rtype: _type_
+    def _interp_fold(self, old_starttime, old_sampling_rate):
+        """Use linear interpolation and 0 padding to resample the **fold** of a FoldTrace
+        that has already had it's data resampled via an ObsPy resampling method.
+
+        :param old_starttime: the start time of the FoldTrace before **data** was resampled
+        :type old_starttime: :class:`~obspy.core.utcdatetime.UTCDateTime`
+        :param old_sampling_rate: the sampling rate of the FoldTrace before **data** was resampled
+        :type old_sampling_rate: float-like
         """        
         # Create an obspy trace to house fold data
         trf = Trace(data=self.fold.copy(), header={'starttime': old_starttime,
                                             'sampling_rate': old_sampling_rate})
-        # Get aliases to a bunch of metadata TODO: clean up unnecessary items
-        old_npts = trf.stats.npts
-        old_endtime = old_starttime + old_npts/old_sampling_rate
-        new_starttime = self.stats.starttime
-        new_endtime = self.stats.endtime
-        new_sr = self.stats.sampling_rate
-        new_npts = self.stats.npts
+        # Reconstitute necessary metadata values
+        old = trf.stats
+        new = self.stats
+        # old_npts = trf.stats.npts
+        # old_endtime = old_starttime + old_npts/old_sampling_rate
+        # old_delta = 1./old_sampling_rate
+        # new_starttime = self.stats.starttime
+        # new_endtime = self.stats.endtime
+        # new_delta = self.stats.delta
+        # new_npts = self.stats.npts
         # Apply 0-padding if needed
-        if old_starttime > new_starttime:
-            trf._ltrim(new_starttime - 1./old_sampling_rate,
+        if old.starttime > new.starttime:
+            trf._ltrim(new.starttime - 1./old_sampling_rate,
                        pad=True, fill_value=0,
                        nearest_sample=False)
-        if old_endtime < new_endtime:
-            trf._rtrim(new_endtime + 1./old_sampling_rate,
+        if old.endtime < new.endtime:
+            trf._rtrim(new.endtime + 1./old_sampling_rate,
                        pad=True, fill_value=0,
                        nearest_sample=False)
-        trf.interpolate(new_sr, method=method, starttime=new_starttime, npts=new_npts)
-        self.fold = trf.data
-        return self
-        
-
-
-    def resample_fold(self, sampling_rate, starttime, endtime, method='linear', **kwargs):
-        fold_tr = self._get_fold_trace().copy()
-        old_delta = self.stats.delta
-        new_delta = 1./sampling_rate
-        # If new starttime is before original starttime
-        if fold_tr.stats.starttime > starttime:
-            # pad out by one extra sample with 0 fold
-            fold_tr._ltrim(starttime - old_delta,
-                           nearest_sample=False,
-                           pad=True, fill_value=0)
-        # If new endtime is after original endtime
-        if fold_tr.stats.endtime < endtime:
-            # pad out by one extra sample with 0 fold
-            fold_tr._rtrim(endtime + old_delta,
-                           nearest_sample=False,
-                           pad=True,
-                           fill_value=0)
-        # Interpolate
-        Trace.interpolate(fold_tr,
-                          sampling_rate,
-                          starttime=starttime,
-                          method=method,
-                          **kwargs)
-
-
-    def interpolate_fold(self, sampling_rate, starttime=None, npts=None):
-        """Resample the **fold** of this FoldTrace object using linear
-        interpolation - used uniformly with all resampling methods inherited
-        from ObsPy Trace
-         - :meth:`~PULSE.data.foldtrace.FoldTrace.interpolate`
-         - :meth:`~PULSE.data.foldtrace.FoldTrace.resample`
-         - :meth:`~PULSE.data.foldtrace.FoldTrace.decimate`
-
-        :param sampling_rate: new reference sampling rate
-        :type sampling_rate: float-like
-        :param starttime: reference start time for interpolation, default is None.
-            None input uses the starttime of this FoldTrace
-        :type starttime: :class:`~obspy.core.utctdatetime.UTCDateTime`
-        :param npts: number of points for the interpolated data, default is None.
-            None input uses the endtime of this FoldTrace to estimate npts
-            such that the nearest sample occurs at or before the endtime
-        :return:
-         - **int_fold** (*numpy.ndarray*) -- interpolated fold vector
-        """
-        # sampling_rate compatability checks
-        if not isinstance(sampling_rate, (int, float)):
-            raise TypeError
-        elif sampling_rate <= 0:
-            raise ValueError
-        elif not np.isfinite(sampling_rate):
-            raise ValueError
+        # Just make dt vectors referenced to old_starttime and do numpy interpolation
+        new_dt_vect = np.array([new.starttime - old.starttime + x*new.delta for x in range(new.npts)])
+        old_dt_vect = np.array([x*old.delta for x in range(old.npts)])
+        # Make sure the array isn't masked & set masked values to 0
+        if isinstance(trf, np.ma.MaskedArray):
+            old_fold = trf.data.filled(0)
         else:
-            old_sr = self.stats.sampling_rate
-            old_delta = 1./old_sr
-            new_sr = sampling_rate
-            new_delta = 1./new_sr
-        # starttime compatability checks
-        if starttime is None:
-            starttime = self.stats.starttime
-        elif not isinstance(starttime, UTCDateTime):
-            raise TypeError('starttime must be UTCDateTime or None')
+            old_fold = trf.data
+
+        self.fold = np.interp(new_dt_vect,old_dt_vect, old_fold)
+
+        return self
+        
+
+
+        
+
+
+    # # def resample_fold(self, sampling_rate, starttime, endtime, method='linear', **kwargs):
+    # #     fold_tr = self._get_fold_trace().copy()
+    # #     old_delta = self.stats.delta
+    # #     new_delta = 1./sampling_rate
+    # #     # If new starttime is before original starttime
+    # #     if fold_tr.stats.starttime > starttime:
+    # #         # pad out by one extra sample with 0 fold
+    # #         fold_tr._ltrim(starttime - old_delta,
+    # #                        nearest_sample=False,
+    # #                        pad=True, fill_value=0)
+    # #     # If new endtime is after original endtime
+    # #     if fold_tr.stats.endtime < endtime:
+    # #         # pad out by one extra sample with 0 fold
+    # #         fold_tr._rtrim(endtime + old_delta,
+    # #                        nearest_sample=False,
+    # #                        pad=True,
+    # #                        fill_value=0)
+    # #     # Interpolate
+    # #     Trace.interpolate(fold_tr,
+    # #                       sampling_rate,
+    # #                       starttime=starttime,
+    # #                       method=method,
+    # #                       **kwargs)
+
+
+    # # def interpolate_fold(self, sampling_rate, starttime=None, npts=None):
+    # #     """Resample the **fold** of this FoldTrace object using linear
+    # #     interpolation - used uniformly with all resampling methods inherited
+    # #     from ObsPy Trace
+    # #      - :meth:`~PULSE.data.foldtrace.FoldTrace.interpolate`
+    # #      - :meth:`~PULSE.data.foldtrace.FoldTrace.resample`
+    # #      - :meth:`~PULSE.data.foldtrace.FoldTrace.decimate`
+
+    # #     :param sampling_rate: new reference sampling rate
+    # #     :type sampling_rate: float-like
+    # #     :param starttime: reference start time for interpolation, default is None.
+    # #         None input uses the starttime of this FoldTrace
+    # #     :type starttime: :class:`~obspy.core.utctdatetime.UTCDateTime`
+    # #     :param npts: number of points for the interpolated data, default is None.
+    # #         None input uses the endtime of this FoldTrace to estimate npts
+    # #         such that the nearest sample occurs at or before the endtime
+    # #     :return:
+    # #      - **int_fold** (*numpy.ndarray*) -- interpolated fold vector
+    # #     """
+    # #     # sampling_rate compatability checks
+    # #     if not isinstance(sampling_rate, (int, float)):
+    # #         raise TypeError
+    # #     elif sampling_rate <= 0:
+    # #         raise ValueError
+    # #     elif not np.isfinite(sampling_rate):
+    # #         raise ValueError
+    # #     else:
+    # #         old_sr = self.stats.sampling_rate
+    # #         old_delta = 1./old_sr
+    # #         new_sr = sampling_rate
+    # #         new_delta = 1./new_sr
+    # #     # starttime compatability checks
+    # #     if starttime is None:
+    # #         starttime = self.stats.starttime
+    # #     elif not isinstance(starttime, UTCDateTime):
+    # #         raise TypeError('starttime must be UTCDateTime or None')
             
-        old_dt = self.stats.endtime - starttime + old_delta
-        max_npts = np.floor(old_dt*sampling_rate)
-        if npts is None:
-            npts = max_npts
-        elif npts > max_npts:
-            raise ValueError(f'specified npts {npts} would exceed the endtime of this FoldTrace (max: {max_npts})')
+    # #     old_dt = self.stats.endtime - starttime + old_delta
+    # #     max_npts = np.floor(old_dt*sampling_rate)
+    # #     if npts is None:
+    # #         npts = max_npts
+    # #     elif npts > max_npts:
+    # #         raise ValueError(f'specified npts {npts} would exceed the endtime of this FoldTrace (max: {max_npts})')
         
-        new_endtime = starttime + npts/sampling_rate
+    # #     new_endtime = starttime + npts/sampling_rate
         
-        new_dt = new_endtime - starttime
-        old_times = np.arange(0, old_dt + old_delta, old_delta)
-        new_times = np.arange(0, new_dt + new_delta, new_delta)
-        breakpoint()
+    # #     new_dt = new_endtime - starttime
+    # #     old_times = np.arange(0, old_dt + old_delta, old_delta)
+    # #     new_times = np.arange(0, new_dt + new_delta, new_delta)
+    # #     breakpoint()
 
-        int_fold = np.interp(new_times, old_times, self.fold)
-        return int_fold
+    # #     int_fold = np.interp(new_times, old_times, self.fold)
+    # #     return int_fold
 
 
-    def interpolate(self,
-                    sampling_rate,
-                    method='weighted_average_slopes',
-                    starttime=None,
-                    npts=None,
-                    time_shift=0.0,
-                    *args, **kwargs):
-        """Use the ObsPy Trace :meth:`~obspy.core.trace.Trace.interpolate` method on this
-        FoldTrace object and resample the **fold** using linear interpolation version of 
-        the same method. 
+    # def interpolate(self,
+    #                 sampling_rate,
+    #                 method='weighted_average_slopes',
+    #                 starttime=None,
+    #                 npts=None,
+    #                 time_shift=0.0,
+    #                 *args, **kwargs):
+    #     """Use the ObsPy Trace :meth:`~obspy.core.trace.Trace.interpolate` method on this
+    #     FoldTrace object and resample the **fold** using linear interpolation version of 
+    #     the same method. 
 
-        :param sampling_rate: new sampling rate
-        :type sampling_rate: float-like
-        :param method: interpolation method, defaults to 'weighted_average_slopes'
-            Supported methods: see :meth:`~obspy.core.trace.Trace.interpolate` for full descriptino
-            - "lanczos" - (Sinc interpolation) - highest quality, but computationally costly
-            - "weighted_average_slopes" - SAC standard
-            - "slinear" - 1st order spline
-            - "quadratic" - 2nd order spline
-            - "cubic" - 3rd order spline
-            - "linear" - linear interpolation (always used to interpolate **fold**)
-            - "nearest" - nearest neighbor
-            - "zero" - last encountered value
-        :type method: str, optional
-        :param starttime: Start time for the new interpolated FoldTrace, defaults to None
-        :type starttime: :class:`~obspy.core.utcdatetime.UTCDateTime`, optional
-        :param npts: new number of samples, defaults to None
-        :type npts: int, optional
-        :param time_shift: Shift the trace by a specified number of seconds, defaults to 0.0
-            see :meth:`~obspy.core.trace.Trace.interpolate` for more information
-        :type time_shift: float, optional
-        :param fold_density: Should up-sampling result in a scalar reduction of **fold**? Defaults to False
-            scalar = sampling_rate / original sampling_rate, if 0 < scalar < 1, else scalar = 1
-        :type fold_density: bool, optional
-        """        
-        Trace.interpolate(self,
-                          sampling_rate,
-                          method=method,
-                          starttime=starttime,
-                          npts=npts,
-                          time_shift=time_shift,
-                          *args, **kwargs)
-        # Interpolate fold using updated stats from **data** processing
-        self.fold = self.interpolate_fold(sampling_rate,
-                                          starttime= self.stats.starttime,
-                                          npts = self.stats.npts)
+    #     :param sampling_rate: new sampling rate
+    #     :type sampling_rate: float-like
+    #     :param method: interpolation method, defaults to 'weighted_average_slopes'
+    #         Supported methods: see :meth:`~obspy.core.trace.Trace.interpolate` for full descriptino
+    #         - "lanczos" - (Sinc interpolation) - highest quality, but computationally costly
+    #         - "weighted_average_slopes" - SAC standard
+    #         - "slinear" - 1st order spline
+    #         - "quadratic" - 2nd order spline
+    #         - "cubic" - 3rd order spline
+    #         - "linear" - linear interpolation (always used to interpolate **fold**)
+    #         - "nearest" - nearest neighbor
+    #         - "zero" - last encountered value
+    #     :type method: str, optional
+    #     :param starttime: Start time for the new interpolated FoldTrace, defaults to None
+    #     :type starttime: :class:`~obspy.core.utcdatetime.UTCDateTime`, optional
+    #     :param npts: new number of samples, defaults to None
+    #     :type npts: int, optional
+    #     :param time_shift: Shift the trace by a specified number of seconds, defaults to 0.0
+    #         see :meth:`~obspy.core.trace.Trace.interpolate` for more information
+    #     :type time_shift: float, optional
+    #     :param fold_density: Should up-sampling result in a scalar reduction of **fold**? Defaults to False
+    #         scalar = sampling_rate / original sampling_rate, if 0 < scalar < 1, else scalar = 1
+    #     :type fold_density: bool, optional
+    #     """        
+    #     Trace.interpolate(self,
+    #                       sampling_rate,
+    #                       method=method,
+    #                       starttime=starttime,
+    #                       npts=npts,
+    #                       time_shift=time_shift,
+    #                       *args, **kwargs)
+    #     # Interpolate fold using updated stats from **data** processing
+    #     self.fold = self.interpolate_fold(sampling_rate,
+    #                                       starttime= self.stats.starttime,
+    #                                       npts = self.stats.npts)
 
-        self.verify()
-        return self
+    #     self.verify()
+    #     return self
 
-    def resample(self,
-        sampling_rate,
-        window='hann',
-        no_filter=True,
-        strict_length=False,
-        **kwargs):
-        """Apply the ObsPy Trace :meth:`~obspy.core.trace.Trace.resample` method to this FoldTrace
-        object. Fold is resampled using linear interpolation.
+    # def resample(self,
+    #     sampling_rate,
+    #     window='hann',
+    #     no_filter=True,
+    #     strict_length=False,
+    #     **kwargs):
+    #     """Apply the ObsPy Trace :meth:`~obspy.core.trace.Trace.resample` method to this FoldTrace
+    #     object. Fold is resampled using linear interpolation.
 
-        :param sampling_rate: _description_
-        :type sampling_rate: _type_
-        :param window: _description_, defaults to 'hann'
-        :type window: str, optional
-        :param no_filter: _description_, defaults to True
-        :type no_filter: bool, optional
-        :param strict_length: _description_, defaults to False
-        :type strict_length: bool, optional
-        :param fold_taper: _description_, defaults to 0.05
-        :type fold_taper: float, optional
-        :return: _description_
-        :rtype: _type_
-        """
-        ts0 = self.stats.starttime
-        te0 = self.stats.endtime
-        npts0 = self.stats.npts
-        sr0 = self.stats.sampling_rate
-        dt = te0 - ts0 + (1./sr0)
-        npts1 = int(np.floor(dt*sampling_rate))
-        # Resample fold first
-        self.fold = self.interpolate_fold(sampling_rate, starttime=ts0, npts=npts1)
-        # Resample data
-        Trace.resample(
-            self,
-            sampling_rate,
-            window=window,
-            no_filter=no_filter,
-            strict_length=strict_length,
-            **kwargs)
-        return self
+    #     :param sampling_rate: _description_
+    #     :type sampling_rate: _type_
+    #     :param window: _description_, defaults to 'hann'
+    #     :type window: str, optional
+    #     :param no_filter: _description_, defaults to True
+    #     :type no_filter: bool, optional
+    #     :param strict_length: _description_, defaults to False
+    #     :type strict_length: bool, optional
+    #     :param fold_taper: _description_, defaults to 0.05
+    #     :type fold_taper: float, optional
+    #     :return: _description_
+    #     :rtype: _type_
+    #     """
+    #     ts0 = self.stats.starttime
+    #     te0 = self.stats.endtime
+    #     npts0 = self.stats.npts
+    #     sr0 = self.stats.sampling_rate
+    #     dt = te0 - ts0 + (1./sr0)
+    #     npts1 = int(np.floor(dt*sampling_rate))
+    #     # Resample fold first
+    #     self.fold = self.interpolate_fold(sampling_rate, starttime=ts0, npts=npts1)
+    #     # Resample data
+    #     Trace.resample(
+    #         self,
+    #         sampling_rate,
+    #         window=window,
+    #         no_filter=no_filter,
+    #         strict_length=strict_length,
+    #         **kwargs)
+    #     return self
 
     # POLYMORPHIC METHODS - DATA ONLY
     # def detrend(self, type='simple', **options):

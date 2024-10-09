@@ -745,9 +745,9 @@ class TestFoldTrace(TestTrace):
         assert np.all(tr.fold[8:] < 1.)
         
 
-    # #########################
-    # ## RESAMPLE TEST SUITE ##
-    # #########################
+    #########################
+    ## RESAMPLE TEST SUITE ##
+    #########################
     def test_interp_fold(self):
         # Setup
         tr = FoldTrace(data=np.arange(6), fold=np.array([1,1,1,2,2,2]), dtype=np.float32)
@@ -774,6 +774,15 @@ class TestFoldTrace(TestTrace):
         tr3.data = np.arange(7, dtype=tr3.dtype)
         tr3._interp_fold(tr.stats.starttime, 1)
         assert tr3.verify()
+
+    def test_interpolate(self):
+        tr = FoldTrace(data = np.arange(100), dtype=np.float64)
+        tr.fold[50:] = 2
+        test_target_data = np.linspace(0,99,200)
+        tr2 = tr.copy().interpolate(2)
+        assert tr2.data.shape == tr2.fold.shape
+        # np.testing.assert_array_equal(tr2.data, test_target)
+
 
 
     ############################

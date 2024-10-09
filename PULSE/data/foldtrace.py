@@ -344,9 +344,28 @@ class FoldTrace(Trace):
         return output
 
     # POLYMORPHIC METHODS AFFECTING DATA AND FOLD
-    def taper(self, max_percentage, type='hann', max_length=None, side='both', **kwargs):
-        fold_tr = self._get_fold_trace()
-        Trace.taper(fold_tr, max_percentage, type=type, max_length=max_length, side=side, **kwargs)
+    def taper(self, max_percentage, type='hann', max_length=None, side='both', taper_fold=True, **kwargs):
+        """Taper the contents of **data** using :meth:`~obspy.core.trace.Trace.taper` with an option
+        to also taper the **fold** to indicate a reduction in data importance/density at tapered
+        samples.
+
+        The taper is identically applied to **data** and **fold** to reflect that data
+
+        :param max_percentage: Decimal percentage of taper at one end (ranging from 0. to 0.5)
+        :type max_percentage: float
+        :param type: type of taper function, defaults to 'hann'
+            see documentation for :meth:`~obspy.core.trace.Trace.taper` for supported methods
+        :type type: str, optional
+        :param max_length: maximum taper length at one end in seconds, defaults to None
+        :type max_length: float, optional
+        :param side: Specify if both sides or one side ('left' / 'right') should be tapered, defaults to 'both'
+        :type side: str, optional
+        :param taper_fold: should the tapering also be applied to **fold**? Defaults to True
+        :type taper_fold: bool, optional
+        """   
+        if taper_fold:
+            fold_tr = self._get_fold_trace()
+            Trace.taper(fold_tr, max_percentage, type=type, max_length=max_length, side=side, **kwargs)
         Trace.taper(self, max_percentage, type=type, max_length=max_length, side=side, **kwargs)
         return self
 
@@ -395,6 +414,20 @@ class FoldTrace(Trace):
         return self
 
     def resample(self, sampling_rate, window='hann', no_filter=True, strict_length=False):
+        """Resample this FoldTrace
+
+        :param sampling_rate: _description_
+        :type sampling_rate: _type_
+        :param window: _description_, defaults to 'hann'
+        :type window: str, optional
+        :param no_filter: _description_, defaults to True
+        :type no_filter: bool, optional
+        :param strict_length: _description_, defaults to False
+        :type strict_length: bool, optional
+        :raises Exception: _description_
+        :return: _description_
+        :rtype: _type_
+        """        
         if np.ma.is_masked(self.data):
             raise Exception('masked data - try using FoldTrace.apply_to_gappy.')
         old_stats = self.stats.copy()

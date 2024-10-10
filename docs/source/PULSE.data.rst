@@ -6,10 +6,10 @@ This package contains class definitions for data and metadata handling objects
 Trace-like classes
 ------------------
 
-mltrace
-_______
+foldtrace
+_________
 
-.. automodule:: PULSE.data.mltrace
+.. automodule:: PULSE.data.foldtrace
    :members:
    :undoc-members:
    :show-inheritance:

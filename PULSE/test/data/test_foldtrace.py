@@ -130,6 +130,24 @@ class TestFoldTrace(TestTrace):
         # Assert still all ones
         assert all(tr.fold==1)
 
+    def test_astype(self):
+        tr = FoldTrace(data=np.arange(4), dtype=np.float32)
+        assert tr.dtype == np.float32
+        assert tr.data.dtype == np.float32
+        assert tr.fold.dtype == np.float32
+        # Test selection of dtypes
+        for _dt in [None, 'f8', int, np.float32]:
+            tr2 = tr.copy().astype(_dt)
+            if _dt is None:
+                assert tr2.dtype == tr.dtype
+                assert tr2.data.dtype == tr.data.dtype
+                assert tr2.fold.dtype == tr.fold.dtype
+            else:
+                assert tr2.dtype == _dt
+                assert tr2.data.dtype == _dt
+                assert tr2.fold.dtype == _dt
+
+
     def test_add_trace_with_gap(self):
         # set up
         tr1 = FoldTrace(data=np.arange(1000, dtype=np.float64))
@@ -503,6 +521,14 @@ class TestFoldTrace(TestTrace):
         tr.verify()
         
 
+    def test_get_view(self):
+        tr = FoldTrace(data=np.arange(10))
+        view = tr.get_view(starttime = tr.stats.starttime + 2)
+        breakpoint()
+        assert view.count() == 8
+        assert view.stats.starttime == tr.stats.starttime + 2
+        assert view.stats.endtime == tr.stats.endtime
+
     def test_get_fold_trace(self):
         data = np.arange(5, dtype=np.float64)
         tr = FoldTrace(data=data)
@@ -649,6 +675,20 @@ class TestFoldTrace(TestTrace):
         assert all(tr2.fold[2:-3] == tr.fold)
 
 
+    def test_split_single(self):
+        # Setup
+        tr1 = FoldTrace(data=np.arange(10))
+        tr2 = FoldTrace(data=np.arange(10))
+        tr2.stats.starttime += 20
+        gappy_tr = tr1 + tr2
+        # Test split with one internal gap
+        split_st = gappy_tr.copy().split()
+        assert isinstance(split_st, Stream)
+        # breakpoint()
+        assert split_st[0] == tr1
+        split1 = tr1.copy().split()
+        assert isinstance(split1, Stream)
+        assert split1[0] == tr1
 
     ######################
     ## TEST TAPER SUITE ##

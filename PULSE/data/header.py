@@ -89,11 +89,16 @@ class MLStats(Stats):
         """        
         if ref not in ['starttime','endtime']:
             raise ValueError(f'ref value {ref} not supported.')
+        # Handle default reference entry
         if utcdatetime is None:
+            index = None
+        if isinstance(utcdatetime, UTCDateTime):
+            index = (utcdatetime - self[ref])//self.delta
+            # If
+            if self.stats.starttime <= utcdatetime <= self.stats.endtime:
             if ref == 'starttime':
-                index = 0
-            elif ref == 'endtime':
-                index = self.npts
+                
+        if utcdatetime
         elif isinstance(utcdatetime, UTCDateTime):
             index = round((utcdatetime - self[ref])*self.sampling_rate)
         else:

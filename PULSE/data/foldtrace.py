@@ -7,6 +7,7 @@
 :purpose: This module contains the class definition for :class:`~.FoldTrace`, which extends
     the functionalities of the ObsPy :class:`~obspy.core.trace.Trace` class.
 """
+import copy
 import numpy as np
 from obspy.core.trace import Trace, Stats
 from obspy.core.stream import Stream
@@ -316,9 +317,9 @@ class FoldTrace(Trace):
         # Get relative indices for numpy array slicing & scaling (2, new_npts) data and fold
         i0 = None
         i1 = lt.stats.npts
-        i2 = lt.stats.utc2nearest_index(rt.stats.starttime,ref='starttime')
+        i2 = lt.stats.utc2nearest_index(rt.stats.starttime)
         # Add one to conform to numpy slicing syntax
-        i3 = lt.stats.utc2nearest_index(rt.stats.endtime,ref='starttime') + 1
+        i3 = lt.stats.utc2nearest_index(rt.stats.endtime) + 1
         # Get maximum index value
         imax = np.max([i1, i3])
         # If lt has last sample, assign it's end index as None
@@ -662,28 +663,35 @@ class FoldTrace(Trace):
             **data** and **fold** views with an updated copy of metadata in **stats**
         """        
         # Get starting and ending indices
+        # if no specified starttime, use initial starttime
         if starttime is None:
             ii = None
+        # if starttime is specified before the start of this FoldTrace,
+        # start from starttime of this FoldTrace
+        elif starttime <= self.stats.starttime:
+            ii = None
+        # otherwise, calculate the position of the first sample to view
         else:
-            ii = self.stats.utc2nearest_index(starttime,ref='starttime')
-        if ii < 0:
-            ii = 0
+            ii = self.stats.utc2nearest_index(starttime)
+        # if no specified endtime, use initial endtime
         if endtime is None:
-            ff = self.stats.npts - 1
+            ff = None
+        # if endtime is specified after the end of this FoldTrace,
+        # end at the endtime of this FoldTrace
+        elif endtime >= self.stats.endtime:
+            ff = None
+        # otherwise, calculate the position of the last sample to view
         else:
-            ff = self.stats.utc2nearest_index(endtime,ref='endtime')
-        if ff > self.stats.npts:
-            ff = self.stats.npts - 1
-        # Create deep copy of header
+            ff = self.stats.utc2nearest_index(endtime) + 1
+        # ii = self.stats.utc2nearest_index(starttime, ref='starttime')
+        # ff = self.stats.utc2nearest_index(endtime, ref='endtime') + 1
         header = self.stats.copy()
-        # Get starttime of view
-        header.starttime = self.stats.starttime + ii*self.stats.sampling_rate
-        # # Get number of samples of view (updates endtime)
-        header.npts = ff - ii + 1
-        # Generate new trace with views and copied metadata
-        ftr = FoldTrace(data=self.data[ii:ff],
-                        fold=self.fold[ii:ff],
-                        header=header)
+        if ii is not None:
+            header.starttime += ii*self.stats.sampling_rate
+        ftr = FoldTrace(header=header)
+        ftr.data = self.data[ii:ff]
+        ftr.fold = self.fold[ii:ff]
+
         return ftr
     
     #################################
@@ -800,12 +808,9 @@ class FoldTrace(Trace):
     
     def split(self, ascopy=True):
         # If data are not masked, return a stream containing a view of self (NOTE: ObsPy returns a copy of self)
-        out = Stream()
+        views = []
         if not isinstance(self.data, np.ma.masked_array):
-            if ascopy:
-                out += self.copy()
-            else:
-                out += self
+            views.append(self)
         # TODO: enforce transition of MaskedArray but not masked data to filled: in __setattr__?
         # if data are masked and 
         elif isinstance(self.data, np.ma.masked_array) and np.ma.is_masked(self.data):
@@ -816,15 +821,16 @@ class FoldTrace(Trace):
             um_runs = um_runs.reshape(len(um_runs)//2, 2)
             um_runs = [tuple(r) for r in um_runs]
             # breakpoint()
+            views = []
             for irun in um_runs:
                 ts = self.stats.starttime + irun[0]*self.stats.delta
                 te = self.stats.starttime + (irun[1] - 1)*self.stats.delta
                 view = self.get_view(starttime=ts, endtime=te)
-                if ascopy:
-                    out += view.copy()
-                else:
-                    out += view
+                views.append(view)
                 # breakpoint()
+        out = Stream(views)
+        if ascopy:
+            out = copy.deepcopy(out)
         return out
 
 

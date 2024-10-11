@@ -523,11 +523,48 @@ class TestFoldTrace(TestTrace):
 
     def test_get_view(self):
         tr = FoldTrace(data=np.arange(10))
+        # Test None inputs
+        view = tr.get_view()
+        assert tr == view
+        # Test starttime within source time domain
         view = tr.get_view(starttime = tr.stats.starttime + 2)
-        breakpoint()
         assert view.count() == 8
         assert view.stats.starttime == tr.stats.starttime + 2
         assert view.stats.endtime == tr.stats.endtime
+        # Test starttime at start
+        view = tr.get_view(starttime = tr.stats.starttime)
+        assert tr == view
+        # Test starttime before start
+        view = tr.get_view(starttime = tr.stats.starttime - 2)
+        assert tr == view
+        # Test specified endtime within domain
+        view = tr.get_view(endtime = tr.stats.endtime - 1)
+        assert view.count() == 9
+        assert view.stats.starttime == tr.stats.starttime
+        assert view.stats.endtime == tr.stats.endtime - 1
+        # Test endtime at end
+        view = tr.get_view(endtime = tr.stats.endtime)
+        assert tr == view
+        # Test endtime after end
+        view = tr.get_view(endtime = tr.stats.endtime + 1)
+        assert tr == view
+        # Specify both start and endtime
+        view = tr.get_view(starttime = tr.stats.starttime + 2,
+                           endtime = tr.stats.endtime - 2)
+        assert view.count() == 6
+        assert view.stats.starttime == tr.stats.starttime + 2
+        assert view.stats.endtime == tr.stats.endtime - 2
+        assert all(view.data == tr.copy().trim(starttime = view.stats.starttime,
+                                           endtime = view.stats.endtime))
+        # Assert that modifying data in view modifies source data
+        tr_bu = tr.copy()
+        view.data[0] += 1
+        assert view.data[0] == tr_bu.data[2] + 1
+        assert view.data[0] == tr.data[2]
+        view.fold[0] += 1
+        assert view.fold[0] == tr_bu.fold[2] + 1
+        assert view.fold[0] == tr.fold[2]
+
 
     def test_get_fold_trace(self):
         data = np.arange(5, dtype=np.float64)
@@ -675,20 +712,52 @@ class TestFoldTrace(TestTrace):
         assert all(tr2.fold[2:-3] == tr.fold)
 
 
-    def test_split_single(self):
+    def test_split(self):
         # Setup
         tr1 = FoldTrace(data=np.arange(10))
-        tr2 = FoldTrace(data=np.arange(10))
+        tr2 = tr1.copy()
+        tr3 = tr1.copy()
         tr2.stats.starttime += 20
-        gappy_tr = tr1 + tr2
-        # Test split with one internal gap
+        tr3.stats.starttime += 40
+        gappy_tr = tr1 + tr2 + tr3
+        # Test split with internal gaps
         split_st = gappy_tr.copy().split()
         assert isinstance(split_st, Stream)
-        # breakpoint()
+        assert len(split_st) == 3
         assert split_st[0] == tr1
+        assert split_st[1] == tr2
+        assert split_st[2] == tr3
+        # Test split with contiguous data
         split1 = tr1.copy().split()
         assert isinstance(split1, Stream)
         assert split1[0] == tr1
+        # Test split with trailing masked values
+        tr1m = tr1.copy()
+        tr1m.data = np.ma.MaskedArray(data=tr1m.data,
+                                      mask=[False]*10)
+        tr1m.data.mask[8:] = True
+        split1 = tr1m.split()
+        assert isinstance(split1, Stream)
+        assert len(split1) == 1
+        assert not isinstance(split1[0], np.ma.MaskedArray)
+        assert not np.ma.is_masked(split1[0].data)
+        assert split1[0].count() == 8
+
+        # Test ascopy
+        gtr = gappy_tr.copy()
+        # Test ascopy = False (the split stream contains views)
+        gst1 = gtr.split(ascopy=False)
+        for _tr in gst1:
+            _tr.data[0] += 1
+        for _e in [0,20,40]:
+            assert gtr.data[_e] == gappy_tr.data[_e] + 1
+        # Test ascopy = True for completeness
+        gtr = gappy_tr.copy()
+        gst2 = gtr.split(ascopy=True)
+        for _tr in gst2:
+            _tr.data[0] += 1
+        for _e in [0, 20, 40]:
+            assert gtr.data[_e] == gappy_tr.data[_e]
 
     ######################
     ## TEST TAPER SUITE ##

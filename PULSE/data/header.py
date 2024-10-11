@@ -74,7 +74,7 @@ class MLStats(Stats):
                           'npts', 'calib']
         return self._pretty_str(prioritized_keys)
 
-    def utc2nearest_index(self, utcdatetime, ref='starttime'):
+    def utc2nearest_index(self, utcdatetime): #, ref='starttime'):
         """Return the integer index value for the nearest time
         of an input UTCDateTime object in the time index defined
         by this MLStats's sampling_rate and (starttime OR endtime).
@@ -86,24 +86,28 @@ class MLStats(Stats):
         :type ref: str, optional
         :return:
          - **index** (*int*) - integer index value position
-        """        
-        if ref not in ['starttime','endtime']:
-            raise ValueError(f'ref value {ref} not supported.')
-        # Handle default reference entry
+        """     
         if utcdatetime is None:
-            index = None
-        if isinstance(utcdatetime, UTCDateTime):
-            index = (utcdatetime - self[ref])//self.delta
-            # If
-            if self.stats.starttime <= utcdatetime <= self.stats.endtime:
-            if ref == 'starttime':
-                
-        if utcdatetime
+            return 0
         elif isinstance(utcdatetime, UTCDateTime):
-            index = round((utcdatetime - self[ref])*self.sampling_rate)
-        else:
-             raise TypeError('utcdatetime must be type obspy.core.utcdatetime.UTCDateTime or None')
-        return index
+            dt = utcdatetime - self.starttime
+            dn = dt*self.sampling_rate
+            return round(dn)
+        # if ref not in ['starttime','endtime']:
+        #     raise ValueError(f'ref value {ref} not supported.')
+        # # Return None (i.e. the index of the reference time in slice notation)
+        # if utcdatetime is None:
+        #     if ref == 'starttime':
+        #         index = 0
+        #     elif ref == 'endtime':
+        #         index = -1
+        # elif isinstance(utcdatetime, UTCDateTime):
+        #     dt = utcdatetime - self[ref]
+        #     dn = dt*self.sampling_rate
+        #     index = round(dn)
+        # else:
+        #      raise TypeError('utcdatetime must be type obspy.core.utcdatetime.UTCDateTime or None')
+        # return index
 
     def copy(self):
         """

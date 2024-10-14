@@ -1,13 +1,24 @@
-import os, pytest, warnings
-from obspy import Trace, UTCDateTime, Stream, read
+"""
+:module: PULSE.test.data.test_foldtrace
+:auth: Nathan T. Stevens
+:org: Pacific Northwest Seismic Network
+:email: ntsteven (at) uw.edu
+:license: AGPL-3.0
+:purpose: This module contains unit tests for the :class:`~PULSE.data.foldtrace.FoldTrace` class.
+    It builds on the ObsPy :mod:`~obspy.core.test.test_trace` module.
+"""
+
+import pytest, warnings
+from obspy import UTCDateTime, Stream
 from obspy.core.tests.test_trace import TestTrace
 from PULSE.test.data.util import *
 from PULSE.data.foldtrace import FoldTrace
 from PULSE.data.header import MLStats
-from unittest import mock
 
 class TestFoldTrace(TestTrace):
-
+    #########################
+    ## __init__ TEST SUITE ##
+    #########################
     def test_init_data(self):
         """Tests the __init__ method of the FoldTrace class
         for inputs to the **data** argument
@@ -52,6 +63,9 @@ class TestFoldTrace(TestTrace):
             FoldTrace(data='1234')
 
     def test_init_fold(self):
+        """Test suite for the __init__ method of FoldTrace
+        related to kwarg **fold**
+        """        
         # FOLD INPUT TESTS
         data = load_logo_vector()
         tr = FoldTrace(data=data,
@@ -69,19 +83,29 @@ class TestFoldTrace(TestTrace):
         # other fold length will raise
         with pytest.raises(ValueError):
             FoldTrace(data=np.arange(4), fold=np.ones(5))
-
+        with pytest.raises(ValueError):
+            FoldTrace(fold=np.arange(5))
         tr = FoldTrace(data.astype(np.float32))
 
     def test_init_header(self):
+        """Test suite for the __init__ method of FoldTrace
+        related to kwarg **header**
+        """        
         # HEADER INPUT TESTS  
         tr = load_logo_trace()  
         header = tr.stats
-        # Header from explicit input
-        ftr = FoldTrace(data=tr)
+        # Header from explicit input of Stats
+        ftr = FoldTrace(header=header)
         assert isinstance(ftr.stats, MLStats)
         for _k in header.defaults.keys():
+            if _k not in ['npts','endtime']:
+                assert header[_k] == ftr.stats[_k]
+            else:
+                assert header[_k] != ftr.stats[_k]
+        header = {'network': 'UW', 'station': 'GNW', 'location': '--', 'channel':'HHN'}
+        ftr = FoldTrace(header=header)
+        for _k in header.keys():
             assert header[_k] == ftr.stats[_k]
-
         # Header from implicit input via Trace
         ftr = FoldTrace(data=tr)
         # Check inherited metadata
@@ -92,10 +116,13 @@ class TestFoldTrace(TestTrace):
         # TODO: Most of this should be handled in the PULSE.data.header tests
         with pytest.raises(TypeError):
             ftr = FoldTrace(header=['a'])
-
-
+    
+    ############################
+    ## __setattr__ TEST SUITE ##
+    ############################   
     def test_setattr_data(self):
         """Tests the __setattr__ method for FoldTrace
+        related to key **data**
         """
         # NumPy ndaray
         tr = FoldTrace()
@@ -119,7 +146,9 @@ class TestFoldTrace(TestTrace):
             tr.data = '1234'
 
     def test_setattr_fold(self):
-        
+        """Test suite for the __setattr__ method of FoldTrace
+        related to key **fold**
+        """        
         tr = FoldTrace(data=np.arange(4, dtype=np.float64))
         # Explicit fold set
         tr.fold = np.ones(4, dtype=np.int64)
@@ -131,6 +160,8 @@ class TestFoldTrace(TestTrace):
         assert all(tr.fold==1)
 
     def test_astype(self):
+        """Test suite for the astype method of FoldTrace
+        """        
         tr = FoldTrace(data=np.arange(4), dtype=np.float32)
         assert tr.dtype == np.float32
         assert tr.data.dtype == np.float32
@@ -147,8 +178,11 @@ class TestFoldTrace(TestTrace):
                 assert tr2.data.dtype == _dt
                 assert tr2.fold.dtype == _dt
 
-
+    ########################
+    ## __add__ TEST SUITE ##
+    ########################
     def test_add_trace_with_gap(self):
+
         # set up
         tr1 = FoldTrace(data=np.arange(1000, dtype=np.float64))
         tr1.stats.sampling_rate = 200
@@ -193,7 +227,6 @@ class TestFoldTrace(TestTrace):
             assert tr.fold[1001] == 0
             assert tr.fold[1999] == 0
             assert tr.fold[2000] == 1
-
 
     def test_add_with_overlap(self):
         # set up
@@ -401,28 +434,9 @@ class TestFoldTrace(TestTrace):
             for array_ in (bigtrace.data, bigtrace_sort.data):
                 assert my_array.dtype == array_.dtype
 
-    # def test_iadd(self):
-    #     # set up
-    #     tr0 = FoldTrace(data=np.arange(1000))
-    #     tr0.stats.sampling_rate = 200
-    #     start = tr0.stats.starttime
-    #     assert all(tr0.fold == 1)
-    #     tr1 = tr0.copy()
-    #     assert tr0 == tr1
-    #     tr2 = FoldTrace(data=np.arange(0, 1000)[::-1])
-    #     tr2.stats.sampling_rate = 200
-    #     tr2.stats.starttime = start + 2
-    #     assert all(tr2.fold == 1)
-
-    #     tr1 += tr2
-    #     # assert tr0 != tr1
-    #     breakpoint()
-    #     assert tr1 == tr0 + tr2
-    #     for method in [2,3]:
-    #         tr = tr0.copy()
-    #         tr.__iadd__(tr2, method=method)
-    #         assert tr == tr0.__add__(tr2, method=method)
-    
+    ########################################
+    ## SELF CHECK/COMPARITOR METHOD TESTS ##
+    ########################################
     def test_eq(self):
         tr = load_logo_trace()
         tr0 = FoldTrace(data=tr)
@@ -446,7 +460,85 @@ class TestFoldTrace(TestTrace):
         tr1 = tr0.copy()
         tr1.data = tr1.data.astype(np.float32)
         assert tr0 != tr1
+    
+    def test_verify(self):
+        tr = FoldTrace()
+        tr.verify()
+        tr = FoldTrace(data=np.array([1]))
+        tr.verify()
+        tr = FoldTrace(load_townsend_example()[0])
+        tr.verify()
 
+    #############################
+    ## VIEW-BASED METHOD TESTS ##
+    #############################
+    def test_get_view(self):
+        tr = FoldTrace(data=np.arange(10))
+        # Test None inputs
+        view = tr.get_view()
+        assert tr == view
+        # Test starttime within source time domain
+        view = tr.get_view(starttime = tr.stats.starttime + 2)
+        assert view.count() == 8
+        assert view.stats.starttime == tr.stats.starttime + 2
+        assert view.stats.endtime == tr.stats.endtime
+        # Test starttime at start
+        view = tr.get_view(starttime = tr.stats.starttime)
+        assert tr == view
+        # Test starttime before start
+        view = tr.get_view(starttime = tr.stats.starttime - 2)
+        assert tr == view
+        # Test specified endtime within domain
+        view = tr.get_view(endtime = tr.stats.endtime - 1)
+        assert view.count() == 9
+        assert view.stats.starttime == tr.stats.starttime
+        assert view.stats.endtime == tr.stats.endtime - 1
+        # Test endtime at end
+        view = tr.get_view(endtime = tr.stats.endtime)
+        assert tr == view
+        # Test endtime after end
+        view = tr.get_view(endtime = tr.stats.endtime + 1)
+        assert tr == view
+        # Specify both start and endtime
+        view = tr.get_view(starttime = tr.stats.starttime + 2,
+                           endtime = tr.stats.endtime - 2)
+        assert view.count() == 6
+        assert view.stats.starttime == tr.stats.starttime + 2
+        assert view.stats.endtime == tr.stats.endtime - 2
+        assert all(view.data == tr.copy().trim(starttime = view.stats.starttime,
+                                           endtime = view.stats.endtime))
+        # Assert that modifying data in view modifies source data
+        tr_bu = tr.copy()
+        view.data[0] += 1
+        assert view.data[0] == tr_bu.data[2] + 1
+        assert view.data[0] == tr.data[2]
+        view.fold[0] += 1
+        assert view.fold[0] == tr_bu.fold[2] + 1
+        assert view.fold[0] == tr.fold[2]
+
+    def test_get_fold_trace(self):
+        data = np.arange(5, dtype=np.float64)
+        tr = FoldTrace(data=data)
+        assert tr.fold.dtype == np.float64
+        trf = tr._get_fold_trace()
+        # Assert trf data is expected fold
+        np.testing.assert_array_equal(trf.data, np.ones(5, dtype=np.float64))
+        # Assert trf data is tr fold
+        np.testing.assert_array_equal(trf.data, tr.fold)
+        # Update one value in trf.data
+        trf.data[2] = 3
+        trf.fold[2] = 0
+        # Assert that update to view data is applied to source fold
+        assert tr.fold[2] == 3
+        # Assert that update to view fold does not affect source data
+        assert tr.data[2] == 2
+        # Assert that changing view stats does not affect source stats
+        trf.stats.network = 'UO'
+        assert tr.stats.network == ''
+
+    #################################
+    ## DATA MODIFYING METHOD TESTS ##
+    #################################
     def test_detrend(self):
         """
         Test detrend method of trace
@@ -511,85 +603,9 @@ class TestFoldTrace(TestTrace):
         # Assert no fold change
         np.testing.assert_array_equal(tr.fold, np.ones(tr.count(), dtype=tr.dtype))
 
-
-    def test_verify(self):
-        tr = FoldTrace()
-        tr.verify()
-        tr = FoldTrace(data=np.array([1]))
-        tr.verify()
-        tr = FoldTrace(load_townsend_example()[0])
-        tr.verify()
-        
-
-    def test_get_view(self):
-        tr = FoldTrace(data=np.arange(10))
-        # Test None inputs
-        view = tr.get_view()
-        assert tr == view
-        # Test starttime within source time domain
-        view = tr.get_view(starttime = tr.stats.starttime + 2)
-        assert view.count() == 8
-        assert view.stats.starttime == tr.stats.starttime + 2
-        assert view.stats.endtime == tr.stats.endtime
-        # Test starttime at start
-        view = tr.get_view(starttime = tr.stats.starttime)
-        assert tr == view
-        # Test starttime before start
-        view = tr.get_view(starttime = tr.stats.starttime - 2)
-        assert tr == view
-        # Test specified endtime within domain
-        view = tr.get_view(endtime = tr.stats.endtime - 1)
-        assert view.count() == 9
-        assert view.stats.starttime == tr.stats.starttime
-        assert view.stats.endtime == tr.stats.endtime - 1
-        # Test endtime at end
-        view = tr.get_view(endtime = tr.stats.endtime)
-        assert tr == view
-        # Test endtime after end
-        view = tr.get_view(endtime = tr.stats.endtime + 1)
-        assert tr == view
-        # Specify both start and endtime
-        view = tr.get_view(starttime = tr.stats.starttime + 2,
-                           endtime = tr.stats.endtime - 2)
-        assert view.count() == 6
-        assert view.stats.starttime == tr.stats.starttime + 2
-        assert view.stats.endtime == tr.stats.endtime - 2
-        assert all(view.data == tr.copy().trim(starttime = view.stats.starttime,
-                                           endtime = view.stats.endtime))
-        # Assert that modifying data in view modifies source data
-        tr_bu = tr.copy()
-        view.data[0] += 1
-        assert view.data[0] == tr_bu.data[2] + 1
-        assert view.data[0] == tr.data[2]
-        view.fold[0] += 1
-        assert view.fold[0] == tr_bu.fold[2] + 1
-        assert view.fold[0] == tr.fold[2]
-
-
-    def test_get_fold_trace(self):
-        data = np.arange(5, dtype=np.float64)
-        tr = FoldTrace(data=data)
-        assert tr.fold.dtype == np.float64
-        trf = tr._get_fold_trace()
-        # Assert trf data is expected fold
-        np.testing.assert_array_equal(trf.data, np.ones(5, dtype=np.float64))
-        # Assert trf data is tr fold
-        np.testing.assert_array_equal(trf.data, tr.fold)
-        # Update one value in trf.data
-        trf.data[2] = 3
-        trf.fold[2] = 0
-        # Assert that update to view data is applied to source fold
-        assert tr.fold[2] == 3
-        # Assert that update to view fold does not affect source data
-        assert tr.data[2] == 2
-        # Assert that changing view stats does not affect source stats
-        trf.stats.network = 'UO'
-        assert tr.stats.network == ''
-
-
-    #####################
-    ## TRIM TEST SUITE ##
-    #####################
+    ##################################
+    ## TRIMING/PADDING METHOD TESTS ##
+    ##################################
     def test_ltrim(self):
         # Setup
         tr = FoldTrace(data=np.arange(101))
@@ -711,7 +727,6 @@ class TestFoldTrace(TestTrace):
         assert all(tr2.fold[-2:] == 0)
         assert all(tr2.fold[2:-3] == tr.fold)
 
-
     def test_split(self):
         # Setup
         tr1 = FoldTrace(data=np.arange(10))
@@ -760,7 +775,7 @@ class TestFoldTrace(TestTrace):
             assert gtr.data[_e] == gappy_tr.data[_e]
 
     ######################
-    ## TEST TAPER SUITE ##
+    ## TAPER TEST SUITE ##
     ######################
     def test_taper(self):
         data = np.ones(101, dtype=np.float64)*3
@@ -776,7 +791,6 @@ class TestFoldTrace(TestTrace):
             if _e not in [0, tr.count() - 1]:
                 assert np.abs(tr.data[_e]/tr.fold[_e] - 3) <= 1e-12
         
-
     def test_taper_onesided(self):
         # setup
         data = np.ones(11, dtype=np.float32)
@@ -810,7 +824,6 @@ class TestFoldTrace(TestTrace):
         assert tr.data[6:].sum() < 5.
         assert tr.fold[6:].sum() < 5.
         
-
     def test_taper_length(self):
         npts = 11
         type_ = "hann"
@@ -853,11 +866,13 @@ class TestFoldTrace(TestTrace):
         assert np.all(tr.fold[3:8] == 1.)
         assert np.all(tr.fold[8:] < 1.)
         
-
-    #########################
-    ## RESAMPLE TEST SUITE ##
-    #########################
+    ###########################
+    ## RESAMPLING TEST SUITE ##
+    ###########################
     def test_interp_fold(self):
+        """Test suite for the _interp_fold private method of FoldTrace
+        used to augment inherited data resampling methods from Trace
+        """        
         # Setup
         tr = FoldTrace(data=np.arange(6), fold=np.array([1,1,1,2,2,2]), dtype=np.float32)
         tr2 = tr.copy()
@@ -884,15 +899,123 @@ class TestFoldTrace(TestTrace):
         tr3._interp_fold(tr.stats.starttime, 1)
         assert tr3.verify()
 
+
+    def test_enforce_time_domain(self):
+        # Setup
+        ft = FoldTrace(data=np.arange(6), fold=np.array([1,1,1,2,2,2]), dtype=np.float32)
+        ft2 = ft.copy()
+        ft2.data = np.linspace(0,6,11)
+        ft2.fold = np.array([1,1,1,1,1,1.5,2,2,2,2,2])
+        # Test rtrim effect
+        ft3 = ft2.copy()._enforce_time_domain(ft.stats)
+        assert ft3.stats.endtime <= ft.stats.endtime
+        assert ft3.stats.starttime >= ft.stats.starttime
+        # Test ltrim effect
+        ft4 = ft.copy()
+        ft4.stats.starttime -= 2
+        ft4._enforce_time_domain(ft.stats)
+        assert ft4.stats.endtime <= ft.stats.endtime
+        assert ft4.stats.starttime >= ft.stats.starttime
+
+
+
+    def test_resample(self):
+        """Test suite for the resample method of FoldTrace
+        TODO: complete this test suite
+        """        
+        ft = FoldTrace(load_logo_trace())
+        ft.fold[15:] = 2
+        assert ft.stats.sampling_rate == 1.
+        assert ft.stats.npts == 30
+        # downsample by factor of 2
+        ft2 = ft.copy().resample(sampling_rate=0.5)
+        assert ft2.stats.endtime == ft.stats.endtime - 1.0
+        assert ft2.stats.sampling_rate == 0.5
+        assert ft2.stats.starttime == ft.stats.starttime
+        assert ft2.fold.shape == ft2.data.shape
+        # downsample by factor of 10
+        ft3 = ft.copy().resample(sampling_rate=0.1)
+        assert ft3.stats.endtime == ft.stats.endtime - 9.0
+        assert ft3.stats.starttime == ft.stats.starttime
+        assert ft3.stats.sampling_rate == 0.1
+        assert ft3.fold.shape == ft3.data.shape
+
+        # upsample by factor of 2 and don't enforce time domain
+        ft4 = ft.copy().resample(sampling_rate=2, enforce_time_domain=False)
+        # Updated sampling rate
+        assert ft4.stats.sampling_rate == 2.
+        # Unchanged starttime
+        assert ft4.stats.starttime == ft.stats.starttime
+        # Changed endtime
+        assert ft4.stats.endtime != ft.stats.endtime
+
+        # upsample by factor of 2
+        ft5 = ft.copy().resample(sampling_rate=2)
+        assert ft4.stats.starttime == ft.stats.starttime
+        # enforced time domain check
+        assert ft4.stats.endtime >= ft.stats.endtime >= ft5.stats.endtime
+        # changed sampling rate
+        assert ft5.stats.sampling_rate == 2.
+        # shape of fold and data are consistent
+        assert ft5.fold.shape == ft5.data.shape
+
+        # exception raised with gappy data
+        ft.data = np.ma.MaskedArray(data=ft.data,
+                                     mask=[False]*30)
+        ft.mask[10:15] = True
+        with pytest.raises(Exception):
+            ft.resample(3)
+
+
     def test_interpolate(self):
-        tr = FoldTrace(data = np.arange(100), dtype=np.float64)
-        tr.fold[50:] = 2
-        test_target_data = np.linspace(0,99,200)
-        tr2 = tr.copy().interpolate(2)
-        assert tr2.data.shape == tr2.fold.shape
-        # np.testing.assert_array_equal(tr2.data, test_target)
+        """Test suite for interpolate method of FoldTrace
+        TODO: Add other tests from the test_trace.py suite for interpolate?
+        """        
+        ft = FoldTrace(load_logo_trace())
+        ft.fold[15:] = 2
+        assert ft.stats.sampling_rate == 1.
+        assert ft.stats.npts == 30
+        # upsample by an integer factor
+        ft2 = ft.copy().interpolate(sampling_rate=2.)
+        assert ft2.stats.endtime == ft.stats.endtime
+        assert ft2.stats.starttime == ft.stats.starttime
+        assert ft2.stats.sampling_rate == 2.
+        assert ft2.data.shape == ft2.fold.shape
+        # upsample by a float factor
+        ft3 = ft.copy().interpolate(sampling_rate=11.5)
+        assert ft3.stats.starttime == ft.stats.starttime
+        assert ft3.stats.endtime <= ft.stats.endtime
+        assert ft3.stats.sampling_rate == 11.5
+        assert ft3.data.shape == ft3.fold.shape
+
+        # exception raised with gappy data
+        ft.data = np.ma.MaskedArray(data=ft.data,
+                                     mask=[False]*30)
+        ft.mask[10:15] = True
+        with pytest.raises(Exception):
+            ft.interpolate(3)
+
+    def test_decimate(self):
+        """_summary_
+        """        
 
 
+
+    # def test_interpolate(self):
+    #     """Test suite for the interpolate method of FoldTrace
+    #     TODO: complete this test suite
+    #     """
+    #     ft = FoldTrace(load_logo_trace())
+    #     assert ft.stats.sampling_rate == 1.
+    #     assert ft.stats.npts == 30
+
+    #     breakpoint()
+    #     tr = FoldTrace(data = np.arange(100), dtype=np.float64)
+    #     tr.fold[50:] = 2
+    #     test_target_data = np.linspace(0,99,200)
+    #     tr2 = tr.copy().interpolate(2)
+    #     assert tr2.data.shape == tr2.fold.shape
+    #     # np.testing.assert_array_equal(tr2.data, test_target)
 
     ############################
     ## TEST INTERPOLATE SUITE ##

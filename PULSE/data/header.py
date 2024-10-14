@@ -8,7 +8,7 @@
     ObsPy :class:`~obspy.core.util.attribdict.AttribDict` and :class:`~obspy.core.trace.Stats` classes
     that are used for the following classes in :mod:`~PULSE`
      - :class:`~PULSE.data.mltrace.MLTrace` and decendents (:class:`~PULSE.data.mltracebuff.MLTraceBuff`) use :class`~PULSE.data.header.MLStats`
-     - :class:`~PULSE.data.dictstream.DictStream` uses :class`~PULSE.data.header.DictStreamStats`
+     - :class:`~PULSE.data.dictstream.DictStream` uses :class`~PULSE.data.header.DSStats`
      - :class:`~PULSE.data.window.Window` uses :class`~PULSE.data.header.WindowStats`
      - :class:`~PULSE.mod.base.BaseMod` and decendents (i.e., all :mod:`~PULSE.mod` classes) uses :class`~PULSE.data.header.PulseStats`
      
@@ -93,34 +93,86 @@ class MLStats(Stats):
             dt = utcdatetime - self.starttime
             dn = dt*self.sampling_rate
             return round(dn)
-        # if ref not in ['starttime','endtime']:
-        #     raise ValueError(f'ref value {ref} not supported.')
-        # # Return None (i.e. the index of the reference time in slice notation)
-        # if utcdatetime is None:
-        #     if ref == 'starttime':
-        #         index = 0
-        #     elif ref == 'endtime':
-        #         index = -1
-        # elif isinstance(utcdatetime, UTCDateTime):
-        #     dt = utcdatetime - self[ref]
-        #     dn = dt*self.sampling_rate
-        #     index = round(dn)
-        # else:
-        #      raise TypeError('utcdatetime must be type obspy.core.utcdatetime.UTCDateTime or None')
-        # return index
+
 
     def copy(self):
         """
         Return a deep copy of this MLStats object
         """        
         return copy.deepcopy(self)
+       
+    def get_inst(self):
+        rstr= f'{self.network}.{self.station}.{self.location}.'
+        if len(self.channel) > 0:
+            rstr += f'{self.channel[:-1]}'
+        return rstr
     
+    inst = property(get_inst)
+
+    def get_site(self):
+        rstr = f'{self.network}.{self.station}.{self.location}'
+        return rstr
+    
+    site = property(get_site)
+
+    def get_comp(self):
+        if len(self.channel) > 0: 
+            rstr = self.channel[-1]
+        else:
+            rstr = ''
+        return rstr
+
+    comp = property(get_comp)
+
+    def get_mod(self):
+        return f'{self.model}.{self.weight}'
+
+    mod = property(get_mod)
+
+    def get_nslc(self):
+        return f'{self.network}.{self.station}.{self.location}.{self.channel}'
+    
+    nslc = property(get_nslc)
+
+    def get_sncl(self):
+        return f'{self.station}.{self.network}.{self.channel}.{self.location}'
+    
+    sncl = property(get_sncl)
+
+    def get_id(self):
+        return f'{self.nslc}.{self.mod}'
+        
+    id = property(get_id)
+
+
+    def get_id_keys(self):
+        """Get a dictionary of commonly used trace naming strings
+
+        :return:
+         **id_keys** (*AttribDict*) -- dictionary of attribute names and values 
+        """        
+        id_keys = {'nslc': self.nslc,
+                   'sncl': self.sncl,
+                   'id': self.id,
+                    'network': self.network,
+                    'station': self.station,
+                    'location': self['location'],
+                    'channel': self.channel,
+                    'model': self.model,
+                    'weight': self.weight,
+                    'site': self.site,
+                    'inst': self.inst,
+                    'comp': self.comp,
+                    'mod': self.mod
+                    }
+        out = AttribDict(id_keys)
+        return out
 
 ###################################################################################
 # Dictionary Stream Stats Class Definition ########################################
 ###################################################################################
 
-class DictStreamStats(AttribDict):
+class DSStats(AttribDict):
     """A class to contain metadata for a :class:`~PULSE.data.dictstream.DictStream` object of the based on the
     ObsPy :class:`~obspy.core.util.attribdict.AttribDict` class and operates like the ObsPy :class:`~obspy.core.trace.Stats` class.
     
@@ -145,20 +197,20 @@ class DictStreamStats(AttribDict):
               'max_endtime': (type(None), UTCDateTime)}
 
     def __init__(self, header={}):
-        """Initialize a DictStreamStats object
+        """Initialize a DSStats object
 
         A container for additional header information of a PULSE :class:`~PULSE.data.dictstream.DictStream` object
 
 
-        :param header: Non-default key-value pairs to include with this DictStreamStats object, defaults to {}
+        :param header: Non-default key-value pairs to include with this DSStats object, defaults to {}
         :type header: dict, optional
         """        
-        super(DictStreamStats, self).__init__()
+        super(DSStats, self).__init__()
         self.update(header)
     
     def _pretty_str(self, priorized_keys=[], hidden_keys=[], min_label_length=16):
         """
-        Return tidier string representation of this :class:`~PULSE.data.dictstream.DictStreamStats` object
+        Return tidier string representation of this :class:`~PULSE.data.header.DSStats` object
 
         Based on the :meth:`~obspy.core.util.attribdict.AttribDict._pretty_str` method, and adds
         a `hidden_keys` argument
@@ -203,7 +255,7 @@ class DictStreamStats(AttribDict):
 
     def update_time_range(self, trace):
         """
-        Update the minimum and maximum starttime and endtime attributes of this :class:`~PULSE.data.dictstream.DictStreamStats` object using timing information from an obspy Trace-like object.
+        Update the minimum and maximum starttime and endtime attributes of this :class:`~PULSE.data.header.DSStats` object using timing information from an obspy Trace-like object.
 
         :param trace: trace-like object with :attr:`stats` from which to query starttime and endtime information
         :type trace: obspy.core.trace.Trace
@@ -219,12 +271,16 @@ class DictStreamStats(AttribDict):
 
 
 
+        
+
+
+
 ###############################################################################
 # WindowStats Class Definition ##########################################
 ###############################################################################
 
-class WindowStats(DictStreamStats):
-    """Child-class of :class:`~PULSE.data.dictstream.DictStreamStats` that extends
+class WindowStats(DSStats):
+    """Child-class of :class:`~PULSE.data.header.DSStats` that extends
     contained metadata to include a set of reference values and metadata that inform
     pre-processing, carry metadata cross ML prediction operations using SeisBench 
     :class:`~seisbench.models.WaveformModel`-based models, and retain processing information
@@ -235,13 +291,13 @@ class WindowStats(DictStreamStats):
     :type header: dict, optional
 
     also see:
-     - :class:`~PULSE.data.dictstream.DictStreamStats`
+     - :class:`~PULSE.data.header.DSStats`
      - :class:`~obspy.core.util.attribdict.AttribDict`
     """    
     # NTS: Deepcopy is necessary to not overwrite _types and defaults for parent class
     _readonly = ['target_endtime']
     _refresh_keys = ['target_starttime','target_npts','target_sampling_rate']
-    _types = copy.deepcopy(DictStreamStats._types)
+    _types = copy.deepcopy(DSStats._types)
     _types.update({'primary_component': str,
                    'primary_threshold': float,
                    'secondary_threshold': float,
@@ -250,7 +306,7 @@ class WindowStats(DictStreamStats):
                    'target_npts': (int, type(None)),
                    'target_sampling_rate': (float, type(None)),
                    'target_endtime': (UTCDateTime, type(None))})
-    defaults = copy.deepcopy(DictStreamStats.defaults)
+    defaults = copy.deepcopy(DSStats.defaults)
     defaults.update({'primary_component': 'Z',
                      'primary_threshold': 0.95,
                      'secondary_threshold': 0.8,
@@ -268,7 +324,7 @@ class WindowStats(DictStreamStats):
         :type header: dict, optional
 
         also see:
-         - :class:`~PULSE.data.dictstream.DictStreamStats`
+         - :class:`~PULSE.data.header.DSStats`
          - :class:`~obspy.core.util.attribdict.AttribDict`
         """        
         # Initialize super + updates to class attributes
@@ -281,12 +337,12 @@ class WindowStats(DictStreamStats):
         if key in ['primary_threshold','secondary_threshold']:
             # Primary Threshold
             if 0 < value <= 1:
-                super(DictStreamStats,self).__setitem__(key,value)
+                super(DSStats,self).__setitem__(key,value)
             else:
                 raise ValueError(f'{key} must be in (0, 1]. {value} is out of bounds.')
         if key == 'fold_threshold_level':
             if 0 <= value:
-                super(DictStreamStats, self).__setitem__(key,value)
+                super(DSStats, self).__setitem__(key,value)
             else:
                 raise ValueError(f'{key} must be non-negative. {value} is out of bounds')
         if key in self._refresh_keys:
@@ -294,7 +350,7 @@ class WindowStats(DictStreamStats):
                 # Target Sampling Rate
                 if isinstance(value, float):
                     if inf > value > 0:
-                        super(DictStreamStats, self).__setitem__(key, value)
+                        super(DSStats, self).__setitem__(key, value)
                     else:
                         raise ValueError(f'{key} must be a positive, rational float-like value or NoneType')
             # FIXME: Not updating target_endtime...
@@ -302,7 +358,7 @@ class WindowStats(DictStreamStats):
                 timediff = self.target_npts/self.target_sampling_rate
                 self.__dict__['target_endtime'] = self.target_starttime + timediff
             return
-        super(DictStreamStats, self).__setitem__(key, value)
+        super(DSStats, self).__setitem__(key, value)
 
 
     def __str__(self):

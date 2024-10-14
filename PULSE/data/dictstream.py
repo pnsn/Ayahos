@@ -29,8 +29,9 @@ import fnmatch, os, obspy, logging
 import pandas as pd
 from obspy import Trace, Stream
 from obspy.core import compatibility
-from PULSE.data.mltrace import MLTrace, wave2mltrace
-from PULSE.data.header import DictStreamStats
+from PULSE.data.foldtrace import FoldTrace
+from PULSE.data.mltrace import MLTrace
+from PULSE.data.header import DSStats
 
 ###################################################################################
 # Dictionary Stream Class Definition ##############################################
@@ -182,7 +183,8 @@ class DictStream(Stream):
     ========================
     """
     _max_processing_info = 100
-    supported_keys = list(MLTrace().get_id_keys().keys())
+    breakpoint()
+    supported_keys = dict(FoldTrace().id_keys).keys()
     def __init__(self, traces=[], header={}, key_attr='id', **options):
         """Initialize a :class:`~PULSE.data.dictstream.DictStream` object
 
@@ -196,10 +198,10 @@ class DictStream(Stream):
         # initialize as empty stream
         super().__init__()
         # Create logger
-        self.logger = logging.getLogger(__name__)
+        # self.logger = logging.getLogger(__name__)
 
         # Create stats attribute with DictStreamStats
-        self.stats = DictStreamStats(header=header)
+        self.stats = DSStats(header=header)
         # Redefine self.traces as dict
         self.traces = {}
         if key_attr in self.supported_keys:
@@ -277,9 +279,9 @@ class DictStream(Stream):
         """
         if not isinstance(trace, Trace):
             raise TypeError(f'input object trace must be type obspy.core.trace.Trace or child. Not {type(trace)}')
-        elif not isinstance(trace, MLTrace):
-            trace = MLTrace(trace)
-        elif isinstance(trace, MLTrace):
+        elif not isinstance(trace, FoldTrace):
+            trace = FoldTrace(trace)
+        elif isinstance(trace, FoldTrace):
             pass
         else:
             raise TypeError('Shouldn\'t have gotten here...')
@@ -308,7 +310,6 @@ class DictStream(Stream):
         else:
             raise TypeError(f'index type {type(index)} not supported. Only int and str')   
         return self.traces.__delitem__(key)
-
 
     def __getslice__(self, i, j, k=1):
         """
@@ -363,75 +364,105 @@ class DictStream(Stream):
 
         :param other: waveform (meta)data object, or iterable sets thereof, to add to this DictStream
         :type other: obspy.core.trace.Trace and iterable groups thereof
-        :param ascopy: should MLTrace objects from **other** be added as views (False) or deepcopies (True) of the source data? Defaults to True.
-        :type ascopy: bool, optional
-        :param options: key-word argument collector that is passed to :meth:`~PULSE.data.mltrace.MLTrace.__add__` in the event
+        :param options: key-word argument collector that is passed to :meth:`~PULSE.data.foldtrace.FoldTrace.__add__` in the event
             that a trace-like object in **other** has the same key as an existing value in **DictStream.traces**
         :type options: kwargs
 
-        **Notes**\:
+        **Notes**:
 
         * Iterable groupings include ObsPy :class:`~obspy.core.stream.Stream`, child-classes like PULSE's :class:`~PULSE.data.dictstream.DictStream`.
         and Python iterable objects: :class:`~list`, :class:`~tuple`, and :class:`~set`.
 
         * This method uses the **DictStream.key_attr** value to generate keys for items in **other** and resolves matching
-        keys in **DictStream.traces** and thos arising from **other** using :meth:`~PULSE.data.mltrace.MLTrace.__add__`.
+        keys in **DictStream.traces** and thos arising from **other** using :meth:`~PULSE.data.foldtrace.FoldTrace.__add__`.
         
         Also see :meth:`~PULSE.data.dictstream.DictStream.__iter__`.
         """
-        # If other is an MLTrace
-        if isinstance(other, MLTrace):
-            # ...house it in a list
-            mlts = [other]
-        # If other is an ObsPy Trace
+        # Ensure other is in the form of a list of FoldTraces
+        if isinstance(other, FoldTrace):
+            other = [other]
         elif isinstance(other, Trace):
-            # ...convert to MLTrace and house it in a list
-            mlts = [MLTrace(other)]
-        # If other is an iterable
-        elif isinstance(other, (list, tuple, set, Stream)):
-            # If everything in other is an MLTrace
-            if all(isinstance(_e, MLTrace) for _e in other):
-                # Directly map
-                mlts = other
-            # If everything in other is at least an ObsPy trace
-            elif all(isinstance(_e, Trace) for _e in other):
-                mlts = []
-                # Iterate across all traces
-                for _tr in other:
-                    # Directly map (with option to copy) MLTrace elements
-                    if isinstance(_tr, MLTrace):
-                        if ascopy:
-                            mlts.append(_tr.copy())
-                        else:
-                            mlts.append(_tr)
-                    # Convert (with copy option handled) ObsPy Trace elements
-                    elif isinstance(_tr, Trace):
-                        if ascopy:
-                            mlts.append(MLTrace(_tr.copy()))
-                        else:
-                            mlts.append(MLTrace(_tr))
-                    # For completeness
+            other = [FoldTrace(other)]
+        elif isinstance(other, (list, Stream)):
+            if all(isinstance(_e, Trace) for _e in other):
+                tmp = []
+                for _e in other:
+                    if isinstance(_e, FoldTrace):
+                        tmp.append(_e)
                     else:
-                        raise TypeError("shouldn't have gotten here - safety checks should have caught non-Trace-type objects")
-            # Catch case where other includes non Trace-like objects
+                        tmp.append(FoldTrace(_e))
+                other = tmp
             else:
-                raise TypeError('All elements of an iterable `other` must be type obspy.core.trace.Trace')
-        # Catch case where other is not a Trace-like object or an iterable of Trace-like objects
+                raise TypeError('not all elements of other are obspy Trace-like objects')
         else:
-            raise TypeError(f'other of type {type(other)} not supported.')
-        
-        # Iterate across all MLTrace-type objects and index based
-        for key, value in {mlt.id_keys[self.key_attr]: mlt for mlt in mlts}.items():
-            # If key is not currently in this DictStream, create a new entry
-            if key not in self.traces.keys():
-                self.traces.update({key: value})
-            # If key is in this DictStream, use __add__ to attempt to merge traces
+            raise TypeError(f'other of type {type(type)} not supported.')
+        # Add FoldTraces to DictStream
+        for _ft in other:
+            _key = _ft.id_keys[self.key_attr]
+            # Run as in-place add
+            if _key in self.traces.keys():
+                self[_key].__iadd__(_ft, **options)
+            # Run as update
             else:
-                self.traces[key].__add__(value, **options)
-            # Update time range with each extension
-            self.stats.update_time_range(value)
-        # Update common_id once all extensions are done
+                self.traces.update({_key: _ft})
+            # Update timing metadata
+            self.stats.update_time_range(self[_key])
+        # Update common ID metadata
         self.stats.common_id = self.get_common_id()
+
+        # # If other is an MLTrace
+        # if isinstance(other, MLTrace):
+        #     # ...house it in a list
+        #     mlts = [other]
+        # # If other is an ObsPy Trace
+        # elif isinstance(other, Trace):
+        #     # ...convert to MLTrace and house it in a list
+        #     mlts = [MLTrace(other)]
+        # # If other is an iterable
+        # elif isinstance(other, (list, tuple, set, Stream)):
+        #     # If everything in other is an MLTrace
+        #     if all(isinstance(_e, MLTrace) for _e in other):
+        #         # Directly map
+        #         mlts = other
+        #     # If everything in other is at least an ObsPy trace
+        #     elif all(isinstance(_e, Trace) for _e in other):
+        #         mlts = []
+        #         # Iterate across all traces
+        #         for _tr in other:
+        #             # Directly map (with option to copy) MLTrace elements
+        #             if isinstance(_tr, MLTrace):
+        #                 if ascopy:
+        #                     mlts.append(_tr.copy())
+        #                 else:
+        #                     mlts.append(_tr)
+        #             # Convert (with copy option handled) ObsPy Trace elements
+        #             elif isinstance(_tr, Trace):
+        #                 if ascopy:
+        #                     mlts.append(MLTrace(_tr.copy()))
+        #                 else:
+        #                     mlts.append(MLTrace(_tr))
+        #             # For completeness
+        #             else:
+        #                 raise TypeError("shouldn't have gotten here - safety checks should have caught non-Trace-type objects")
+        #     # Catch case where other includes non Trace-like objects
+        #     else:
+        #         raise TypeError('All elements of an iterable `other` must be type obspy.core.trace.Trace')
+        # # Catch case where other is not a Trace-like object or an iterable of Trace-like objects
+        # else:
+        #     raise TypeError(f'other of type {type(other)} not supported.')
+        
+        # # Iterate across all MLTrace-type objects and index based
+        # for key, value in {mlt.id_keys[self.key_attr]: mlt for mlt in mlts}.items():
+        #     # If key is not currently in this DictStream, create a new entry
+        #     if key not in self.traces.keys():
+        #         self.traces.update({key: value})
+        #     # If key is in this DictStream, use __add__ to attempt to merge traces
+        #     else:
+        #         self.traces[key].__add__(value, **options)
+        #     # Update time range with each extension
+        #     self.stats.update_time_range(value)
+        # # Update common_id once all extensions are done
+        # self.stats.common_id = self.get_common_id()
 
 
     def __str__(self):

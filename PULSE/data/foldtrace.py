@@ -567,7 +567,7 @@ class FoldTrace(Trace):
             self.apply_method(method, **options)
 
 
-    def get_view(self, starttime=None, endtime=None):
+    def view(self, starttime=None, endtime=None):
         """Create a new FoldTrace object that houses subset views
         of this FoldTrace's **data** and **fold** attributes and
         a deepcopy of this FoldTrace's **stats** with updated 
@@ -968,7 +968,7 @@ class FoldTrace(Trace):
         self._interp_fold(old_stats.starttime, old_stats.sampling_rate)
         return self
 
-    def normalize(self, type='max'):
+    def normalize(self, scalar='max'):
         """Normalize this FoldTrace's **data** values using
         normalization scalar calculated from non-masked values
         of **data**. 
@@ -985,7 +985,11 @@ class FoldTrace(Trace):
                     accepted aliases include: 'standard'
         :type type: str, optional
         """        
-        if type not in ['max','minmax','peak','std','standard']:
+        if scalar in ['max','minmax','peak','std','standard']:
+            pass
+        elif isinstance(scalar, (int, float)):
+            pass
+        else:
             raise ValueError(f'type {type} not supported.')
         # Safety catch for 0-trace
         if np.all(self.data == 0):
@@ -997,9 +1001,9 @@ class FoldTrace(Trace):
         else:
             pass
         # Calculate scalar
-        if type in ['max','minmax','peak']:
+        if scalar in ['max','minmax','peak']:
             scalar = np.nanmax(np.abs(self.data))
-        if type in ['std','standard']:
+        if scalar in ['std','standard']:
             scalar = np.nanstd(np.abs(self.data))
         # Apply scalar
         Trace.normalize(self, norm=scalar)

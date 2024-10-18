@@ -500,7 +500,7 @@ class FoldTrace(Trace):
         self.fold = added.fold
         return self
 
-    def __repr__(self, id_length=None, precision=2):
+    def __repr__(self, id_length=None):
         """Provide a human readable string describing the contents of this
           :class:`~PULSE.data.foldtrace.FoldTrace` object
 
@@ -513,11 +513,10 @@ class FoldTrace(Trace):
         rstr = super().__str__(id_length=id_length)
         if self.stats.npts > 0:
             rstr += f' | Fold:'
-            for _i in range(int(self.fold.max()) + 1):
-                ff = sum(_i - 1 <= self.fold < _i)/self.count()
-                # ff = sum(self.fold == _i)/self.stats.npts
-                if ff > 0:
-                    rstr += f' [{_i}] {ff:.2f}'
+            intfold = np.ceil(self.fold.copy())
+            unique, counts = np.unique(intfold, return_counts=True)
+            for _u, _c in zip(unique, counts):
+                rstr += f' [{int(_u)}] {_c}'
         return rstr
 
     ## NEW PUBLIC METHODS ##

@@ -1,5 +1,6 @@
 from pathlib import Path
 from obspy import read, Trace
+from obspy.core.trace import Stats
 import numpy as np
 
 def load_townsend_example():
@@ -30,3 +31,23 @@ def make_gappy_trace(tr,fill_value=-999, frac1=0.25, frac2=0.5):
                                  fill_value=fill_value)
     mtr.data.mask[ii:jj] = True
     return mtr
+
+
+def assert_common_trace(tracelike0, tracelike1):
+    # Check types
+    assert isinstance(tracelike0, Trace)
+    assert isinstance(tracelike1, Trace)
+    # Check data
+    np.testing.assert_array_equal(tracelike0.data, tracelike1.data)
+    # Check dtype
+    assert tracelike0.data.dtype == tracelike1.data.dtype
+    # Check stats
+    for _k in Stats.defaults.keys():
+        assert tracelike0.stats[_k] == tracelike1.stats[_k]
+
+
+def assert_common_trace_set(traceset0, traceset1):
+    # Test that both have __iter__
+    assert hasattr(traceset0, '__iter__')
+    assert hasattr(traceset1, '__iter__')
+    

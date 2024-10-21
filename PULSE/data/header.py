@@ -98,6 +98,10 @@ class MLStats(Stats):
         return copy.deepcopy(self)
        
     def get_inst(self):
+        """Return the instrument code ({Network}.{Station}.{Location}.{Band}{Instrument}) of
+        this MLStats Object where the {Band} and {Instrument} characters are from the SEED
+        channel naming conventions.
+        """        
         rstr= f'{self.network}.{self.station}.{self.location}.'
         if len(self.channel) > 0:
             rstr += f'{self.channel[:-1]}'
@@ -106,12 +110,18 @@ class MLStats(Stats):
     inst = property(get_inst)
 
     def get_site(self):
+        """Return the site code (Network.Station.Location) of this
+        MLStats object
+        """        
         rstr = f'{self.network}.{self.station}.{self.location}'
         return rstr
     
     site = property(get_site)
 
     def get_comp(self):
+        """Return the component code (last character in Channel) of this MLStats
+        object
+        """
         if len(self.channel) > 0: 
             rstr = self.channel[-1]
         else:
@@ -121,33 +131,51 @@ class MLStats(Stats):
     comp = property(get_comp)
 
     def get_mod(self):
+        """Return the Model.Weight string for this MLStats object
+        """        
         return f'{self.model}.{self.weight}'
 
     mod = property(get_mod)
 
     def get_nslc(self):
+        """Return the SEED channel name (Network Station Location Channel)
+        of this MLStats object
+        """        
         return f'{self.network}.{self.station}.{self.location}.{self.channel}'
     
     nslc = property(get_nslc)
 
     def get_sncl(self):
+        """Return the Station Network Channel Location code of this
+        MLStats object - for Earthworm formatting
+        """        
         return f'{self.station}.{self.network}.{self.channel}.{self.location}'
     
     sncl = property(get_sncl)
 
     def get_id(self):
-        if self.weight != self.defaults.weight:
-            wt = f'.{self.weight}'
+        """Get a string representation of the (extended) NSLC
+        code of this Stats object with the analytic model architecture
+        (model) and/or parameterization (weight) names appended to the
+        NSLC with dot delimiters.
+
+        :return: _description_
+        :rtype: _type_
+        """        
+        if self.weight != self.defaults['weight']:
+            wt = f'{self.weight}'
         else:
             wt = ''
-        if self.model != self.defaults.model:
-            mo = f'.{self.model}'
+        if self.model != self.defaults['model']:
+            mo = f'{self.model}'
         else:
             mo = ''
-        return f'{self.nslc}{mo}{wt}'
+        if wt == mo == '':
+            return self.nslc
+        else:
+            return f'{self.nslc}.{mo}.{wt}'
         
     id = property(get_id)
-
 
     def get_id_keys(self):
         """Get a dictionary of commonly used trace naming strings
@@ -158,17 +186,17 @@ class MLStats(Stats):
         id_keys = {'nslc': self.nslc,
                    'sncl': self.sncl,
                    'id': self.id,
-                    'network': self.network,
-                    'station': self.station,
-                    'location': self['location'],
-                    'channel': self.channel,
-                    'model': self.model,
-                    'weight': self.weight,
-                    'site': self.site,
-                    'inst': self.inst,
-                    'comp': self.comp,
-                    'mod': self.mod
-                    }
+                   'network': self.network,
+                   'station': self.station,
+                   'location': self['location'],
+                   'channel': self.channel,
+                   'model': self.model,
+                   'weight': self.weight,
+                   'site': self.site,
+                   'inst': self.inst,
+                   'comp': self.comp,
+                   'mod': self.mod
+                  }
         out = AttribDict(id_keys)
         return out
 

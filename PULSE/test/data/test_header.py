@@ -20,11 +20,15 @@ class TestMLStats(TestStats):
         assert header.model == ''
         assert header.weight == ''
         # Test dict input
-        header = MLStats({'station': 'GPW', 'network': 'UW', 'location':'', 'channel': 'EHZ'})
+        header = MLStats({'station': 'GPW', 'network': 'UW',
+                          'location':'', 'channel': 'EHZ',
+                          'model':'EQTransformer','weight':'pnw'})
         assert header.network == 'UW'
         assert header.station == 'GPW'
         assert header.location == ''
         assert header.channel == 'EHZ'
+        assert header.model == 'EQTransformer'
+        assert header.weight == 'pnw'
         # Test Stats input
         header = MLStats(self.egstats)
         for _k, _v in self.egstats.items():
@@ -76,6 +80,30 @@ class TestMLStats(TestStats):
 
     def test_properties(self):
         header = MLStats(self.egstats)
+        # Test all default values (base values) occur
+        for _attr in self.egstats.defaults.keys():
+            assert self.egstats[_attr] == header[_attr]
+            assert self.egstats[_attr] == getattr(header, _attr)
+        # Assert that compund values are present
         for _attr in ['inst','site','comp','mod','nslc','sncl']:
             assert hasattr(header, _attr)
+        # Assert that nslc for empty mod/weight matches ID
+        assert header.id == header.nslc
+        # Assert that nslc does not match if mod or weight are assigned
+        header.model='EQTransformer'
+        assert header.id == f'{header.nslc}.{header.model}.'
+        header.weight='pnw'
+        assert header.id == f'{header.nslc}.{header.model}.{header.weight}'
+        header.model=''
+        assert header.id == f'{header.nslc}..{header.weight}'
+        # Test compound codes
+        header.model='EQTransformer'
+        assert header.comp == header.channel[-1]
+        assert header.inst == header.nslc[:-1]
+        assert header.site == f'{header.network}.{header.station}.{header.location}'
+        assert header.mod == f'{header.model}.{header.weight}'
 
+    def test_get_id_keys(self):
+        header = MLStats(self.egstats)
+        assert isinstance(header.get_id_keys(), AttribDict)
+        

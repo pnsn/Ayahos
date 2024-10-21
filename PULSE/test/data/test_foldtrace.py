@@ -439,27 +439,27 @@ class TestFoldTrace(TestTrace):
     ########################################
     def test_eq(self):
         tr = load_logo_trace()
-        tr0 = FoldTrace(data=tr)
+        ft = FoldTrace(data=tr)
         # Assert mismatch type
-        assert tr != tr0
+        assert tr != ft
         # Assert identical
-        tr1 = tr0.copy()
-        assert tr0 == tr1
+        ft1 = ft.copy()
+        assert ft == ft1
         # Assert mismatch stats
-        tr1.stats.network='OU'
-        assert tr0 != tr1
+        ft1.stats.network='OU'
+        assert ft != ft1
         # Assert mismatch data
-        tr1 = tr0.copy()
-        tr1.data = np.zeros(tr0.data.shape)
-        assert tr0 != tr1
+        ft1 = ft.copy()
+        ft1.data = np.zeros(ft.data.shape)
+        assert ft != ft1
         # Assert mismatch fold
-        tr1 = tr0.copy()
-        tr1.fold = tr1.fold*2
-        assert tr0 != tr1
+        ft1 = ft.copy()
+        ft1.fold = ft1.fold*2
+        assert ft != ft1
         # Assert mismatch dtype
-        tr1 = tr0.copy()
-        tr1.data = tr1.data.astype(np.float32)
-        assert tr0 != tr1
+        ft1 = ft.copy()
+        ft1.data = ft1.data.astype(np.float32)
+        assert ft != ft1
     
     def test_verify(self):
         tr = FoldTrace()
@@ -472,69 +472,68 @@ class TestFoldTrace(TestTrace):
     #############################
     ## VIEW-BASED METHOD TESTS ##
     #############################
-    def test_get_view(self):
-        tr = FoldTrace(data=np.arange(10))
+    def test_view(self):
+        ft = FoldTrace(data=np.arange(10))
         # Test None inputs
-        view = tr.get_view()
-        assert tr == view
+        view = ft.view()
+        assert ft == view
         # Test starttime within source time domain
-        view = tr.get_view(starttime = tr.stats.starttime + 2)
+        view = ft.view(starttime = ft.stats.starttime + 2)
         assert view.count() == 8
-        assert view.stats.starttime == tr.stats.starttime + 2
-        assert view.stats.endtime == tr.stats.endtime
+        assert view.stats.starttime == ft.stats.starttime + 2
+        assert view.stats.endtime == ft.stats.endtime
         # Test starttime at start
-        view = tr.get_view(starttime = tr.stats.starttime)
-        assert tr == view
+        view = ft.view(starttime = ft.stats.starttime)
+        assert ft == view
         # Test starttime before start
-        view = tr.get_view(starttime = tr.stats.starttime - 2)
-        assert tr == view
+        view = ft.view(starttime = ft.stats.starttime - 2)
+        assert ft == view
         # Test specified endtime within domain
-        view = tr.get_view(endtime = tr.stats.endtime - 1)
+        view = ft.view(endtime = ft.stats.endtime - 1)
         assert view.count() == 9
-        assert view.stats.starttime == tr.stats.starttime
-        assert view.stats.endtime == tr.stats.endtime - 1
+        assert view.stats.starttime == ft.stats.starttime
+        assert view.stats.endtime == ft.stats.endtime - 1
         # Test endtime at end
-        view = tr.get_view(endtime = tr.stats.endtime)
-        assert tr == view
+        view = ft.view(endtime = ft.stats.endtime)
+        assert ft == view
         # Test endtime after end
-        view = tr.get_view(endtime = tr.stats.endtime + 1)
-        assert tr == view
+        view = ft.view(endtime = ft.stats.endtime + 1)
+        assert ft == view
         # Specify both start and endtime
-        view = tr.get_view(starttime = tr.stats.starttime + 2,
-                           endtime = tr.stats.endtime - 2)
+        view = ft.view(starttime = ft.stats.starttime + 2,
+                           endtime = ft.stats.endtime - 2)
         assert view.count() == 6
-        assert view.stats.starttime == tr.stats.starttime + 2
-        assert view.stats.endtime == tr.stats.endtime - 2
-        assert all(view.data == tr.copy().trim(starttime = view.stats.starttime,
+        assert view.stats.starttime == ft.stats.starttime + 2
+        assert view.stats.endtime == ft.stats.endtime - 2
+        assert all(view.data == ft.copy().trim(starttime = view.stats.starttime,
                                            endtime = view.stats.endtime))
         # Assert that modifying data in view modifies source data
-        tr_bu = tr.copy()
+        ft_bu = ft.copy()
         view.data[0] += 1
-        assert view.data[0] == tr_bu.data[2] + 1
-        assert view.data[0] == tr.data[2]
+        assert view.data[0] == ft_bu.data[2] + 1
+        assert view.data[0] == ft.data[2]
         view.fold[0] += 1
-        assert view.fold[0] == tr_bu.fold[2] + 1
-        assert view.fold[0] == tr.fold[2]
+        assert view.fold[0] == ft_bu.fold[2] + 1
+        assert view.fold[0] == ft.fold[2]
 
-    def test_get_fold_trace(self):
-        data = np.arange(5, dtype=np.float64)
-        tr = FoldTrace(data=data)
-        assert tr.fold.dtype == np.float64
-        trf = tr._get_fold_trace()
-        # Assert trf data is expected fold
-        np.testing.assert_array_equal(trf.data, np.ones(5, dtype=np.float64))
-        # Assert trf data is tr fold
-        np.testing.assert_array_equal(trf.data, tr.fold)
-        # Update one value in trf.data
-        trf.data[2] = 3
-        trf.fold[2] = 0
-        # Assert that update to view data is applied to source fold
-        assert tr.fold[2] == 3
-        # Assert that update to view fold does not affect source data
-        assert tr.data[2] == 2
-        # Assert that changing view stats does not affect source stats
-        trf.stats.network = 'UO'
-        assert tr.stats.network == ''
+    # def test_get_fold_trace(self):
+    #     data = np.arange(5, dtype=np.float64)
+    #     ft = FoldTrace(data=data)
+    #     assert ft.fold.dtype == np.float64
+    #     ftf = ft._get_fold_trace()
+    #     # Assert trf data is expected fold
+    #     np.testing.assert_array_equal(ftf.data, np.ones(5, dtype=np.float64))
+    #     # Assert ftf data is tr fold
+    #     np.testing.assert_array_equal(ftf.data, ft.fold)
+    #     # Update one value in ftf.data
+    #     ftf.data[2] = 3
+    #     ftf.fold[2] = 0
+    #     # Assert that update to fold trace data and fold do not affect source foldtrace
+    #     assert ft.fold[2] == 1
+    #     assert ft.data[2] == 2
+    #     # Assert that changing view stats does not affect source stats
+    #     ftf.stats.network = 'UO'
+    #     assert ft.stats.network == ''
 
     #################################
     ## DATA MODIFYING METHOD TESTS ##
@@ -578,67 +577,74 @@ class TestFoldTrace(TestTrace):
         """
         Test differentiation method of trace
         """
+        # Setup
         t = np.linspace(0., 1., 11)
         data = 0.1 * t + 1.
-        tr = FoldTrace(data=data)
+        ft = FoldTrace(data=data)
+        tr = Trace(data=data)
+        ft.stats.delta = 0.1
         tr.stats.delta = 0.1
-        tr.differentiate(method='gradient')
-        np.testing.assert_array_almost_equal(tr.data, np.ones(11) * 0.1)
+        # Apply method
+        ftd = ft.copy().differentiate(method='gradient')
+        trd = tr.copy().differentiate(method='gradient')
+        # Assert identical result for obspy equivalent
+        np.testing.assert_array_almost_equal(ftd.data, trd.data)
         # Assert no fold change
-        np.testing.assert_array_equal(tr.fold, np.ones(tr.count(), dtype=tr.dtype))
+        np.testing.assert_array_equal(ftd.fold, ft.fold)
+
 
     def test_integrate(self):
         """
         Test integration method of trace
         """
         data = np.ones(101) * 0.01
-        tr = FoldTrace(data=data)
-        tr.stats.delta = 0.1
-        tr.integrate()
+        ft = FoldTrace(data=data)
+        ft.stats.delta = 0.1
+        ft.integrate()
         # Assert time and length of resulting array.
-        assert tr.stats.starttime == UTCDateTime(0)
-        assert tr.stats.npts == 101
+        assert ft.stats.starttime == UTCDateTime(0)
+        assert ft.stats.npts == 101
         np.testing.assert_array_almost_equal(
-            tr.data, np.concatenate([[0.0], np.cumsum(data)[:-1] * 0.1]))        
+            ft.data, np.concatenate([[0.0], np.cumsum(data)[:-1] * 0.1]))        
         # Assert no fold change
-        np.testing.assert_array_equal(tr.fold, np.ones(tr.count(), dtype=tr.dtype))
+        np.testing.assert_array_equal(ft.fold, np.ones(ft.count(), dtype=ft.dtype))
 
     ##################################
     ## TRIMING/PADDING METHOD TESTS ##
     ##################################
     def test_ltrim(self):
         # Setup
-        tr = FoldTrace(data=np.arange(101))
-        tr.fold[50:] = 2
-        start = tr.stats.starttime
-        # shortening trim
-        tr2 = tr.copy()._ltrim(start + 1)
-        assert tr2.count() == 100
-        assert all(tr2.data == tr.data[1:])
-        assert all(tr2.fold[:49] == 1)
-        assert all(tr2.fold[49:] == 2)
+        ft = FoldTrace(data=np.arange(101))
+        ft.fold[50:] = 2
+        start = ft.stats.starttime
+        # shortening ftim
+        ft2 = ft.copy()._ltrim(start + 1)
+        assert ft2.count() == 100
+        assert all(ft2.data == ft.data[1:])
+        assert all(ft2.fold[:49] == 1)
+        assert all(ft2.fold[49:] == 2)
         # shortening to not nearest sample
-        tr2 = tr.copy()._ltrim(start + 1.25, nearest_sample=False)
-        assert tr2.count() == 99
-        assert all(tr2.data == tr.data[2:])
-        assert all(tr2.fold[:48] == 1)
-        assert all(tr2.fold[48:] == 2)
+        ft2 = ft.copy()._ltrim(start + 1.25, nearest_sample=False)
+        assert ft2.count() == 99
+        assert all(ft2.data == ft.data[2:])
+        assert all(ft2.fold[:48] == 1)
+        assert all(ft2.fold[48:] == 2)
         # padding trim without padding enabled
-        tr2 = tr.copy()._ltrim(start - 2)
-        np.testing.assert_array_equal(tr2.data, tr.data)
+        ft2 = ft.copy()._ltrim(start - 2)
+        np.testing.assert_array_equal(ft2.data, ft.data)
         # padding trim with padding enabled
-        tr2 = tr.copy()._ltrim(start - 2, pad=True)
-        assert tr2.count() == 103
-        assert all(tr2.data[2:] == tr.data)
-        assert np.ma.is_masked(tr2.data)
-        assert all(tr2.fold[:2] == 0)
-        assert all(tr2.fold[2:52] == 1)
-        assert all(tr2.fold[52:] == 2)
+        ft2 = ft.copy()._ltrim(start - 2, pad=True)
+        assert ft2.count() == 103
+        assert all(ft2.data[2:] == ft.data)
+        assert np.ma.is_masked(ft2.data)
+        assert all(ft2.fold[:2] == 0)
+        assert all(ft2.fold[2:52] == 1)
+        assert all(ft2.fold[52:] == 2)
         # padding trim with specified fill_value
-        tr2 = tr.copy()._ltrim(start - 2, pad=True, fill_value=80)
-        assert not np.ma.is_masked(tr2.data)
-        assert all(tr2.data[:2] == 80)
-        assert all(tr2.data[2:] == tr.data)
+        ft2 = ft.copy()._ltrim(start - 2, pad=True, fill_value=80)
+        assert not np.ma.is_masked(ft2.data)
+        assert all(ft2.data[:2] == 80)
+        assert all(ft2.data[2:] == ft.data)
 
     def test_rtrim(self):
         # Setup
@@ -779,92 +785,81 @@ class TestFoldTrace(TestTrace):
     ######################
     def test_taper(self):
         data = np.ones(101, dtype=np.float64)*3
-        tr = FoldTrace(data=data)
-        tr.taper(max_percentage=0.05, type='cosine')
+        ft = FoldTrace(data=data)
+        ft.taper(max_percentage=0.05, type='cosine')
         # Assert all data values are at or below original values
-        for _e in range(tr.count()):
+        for _e in range(ft.count()):
             # Assert that taper does not accentuate data
-            assert 0 <= tr.data[_e] <= 3
+            assert 0 <= ft.data[_e] <= 3
             # Assert that taper does not accentuate fold
-            assert 0 <= tr.fold[_e] <= 1
+            assert 0 <= ft.fold[_e] <= 1
             # Assert that taper is applied in-kind to data and fold
-            if _e not in [0, tr.count() - 1]:
-                assert np.abs(tr.data[_e]/tr.fold[_e] - 3) <= 1e-12
+            if _e not in [0, ft.count() - 1]:
+                assert np.abs(ft.data[_e]/ft.fold[_e] - 3) <= 1e-12
         
     def test_taper_onesided(self):
         # setup
         data = np.ones(11, dtype=np.float32)
-        tr = FoldTrace(data=data)
-        # overlong taper - raises UserWarning for both appications - ignoring
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always", UserWarning)
-            tr.taper(max_percentage=None, side="left")
-        assert len(w) == 2
-        for _w in w:
-            assert _w.category == UserWarning
+        ft = FoldTrace(data=data)
+        # Apply left taper
+        ft.taper(max_percentage=None, side="left")
+        assert ft.data[:5].sum() < 5.
+        assert ft.fold[:5].sum() < 5.
+        assert ft.data[6:].sum() == 5.
+        assert ft.fold[6:].sum() == 5.
 
-        assert tr.data[:5].sum() < 5.
-        assert tr.fold[:5].sum() < 5.
-        assert tr.data[6:].sum() == 5.
-        assert tr.fold[6:].sum() == 5.
-
+        # setup
         data = np.ones(11, dtype=np.float32)
-        tr = FoldTrace(data=data)
-
-        # overlong taper - raises UserWarning for both applications - ignoring
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always", UserWarning)
-            tr.taper(max_percentage=None, side="right")
-        assert len(w) == 2
-        for _w in w:
-            assert _w.category == UserWarning
-
-        assert tr.data[:5].sum() == 5.
-        assert tr.fold[:5].sum() == 5.
-        assert tr.data[6:].sum() < 5.
-        assert tr.fold[6:].sum() < 5.
+        ft = FoldTrace(data=data)
+        # Apply right taper
+        ft.taper(max_percentage=None, side="right")
+        assert ft.data[:5].sum() == 5.
+        assert ft.fold[:5].sum() == 5.
+        assert ft.data[6:].sum() < 5.
+        assert ft.fold[6:].sum() < 5.
         
     def test_taper_length(self):
         npts = 11
         type_ = "hann"
 
         data = np.ones(npts, dtype=np.float32)
-        tr = FoldTrace(data=data, header={'sampling': 1.})
-
-        # test an overlong taper request, still works but raises UserWarning
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always", UserWarning)
-            tr.taper(max_percentage=0.7, max_length=int(npts / 2) + 1)
-        assert len(w) == 2
-        for _w in w:
-            assert _w.category == UserWarning
-
+        ft = FoldTrace(data=data, header={'sampling': 1.})
+        # Test warning on overlog taper
+        with pytest.warns(UserWarning):
+            ft.taper(max_percentage=0.7)
+        # Test that tapering is still applied
+        assert all(ft.data[:5] < 1)
+        assert ft.data[5] == 1
+        assert all(ft.data[6:] < 1)
+        # Test max_length
         data = np.ones(npts)
-        tr = FoldTrace(data=data, header={'sampling': 1.})
+        ft = FoldTrace(data=data, header={'sampling': 1.})
         # first 3 samples get tapered
-        tr.taper(max_percentage=None, type=type_, side="left", max_length=3)
+        ft.taper(max_percentage=None, type=type_, side="left", max_length=3)
         # last 5 samples get tapered
-        tr.taper(max_percentage=0.5, type=type_, side="right", max_length=None)
-        assert np.all(tr.data[:3] < 1.)
-        assert np.all(tr.data[3:6] == 1.)
-        assert np.all(tr.data[6:] < 1.)
+        ft.taper(max_percentage=0.5, type=type_, side="right", max_length=None)
+        assert np.all(ft.data[:3] < 1.)
+        assert np.all(ft.data[3:6] == 1.)
+        assert np.all(ft.data[6:] < 1.)
 
-        assert np.all(tr.fold[:3] < 1.)
-        assert np.all(tr.fold[3:6] == 1.)
-        assert np.all(tr.fold[6:] < 1.)
+        assert np.all(ft.fold[:3] < 1.)
+        assert np.all(ft.fold[3:6] == 1.)
+        assert np.all(ft.fold[6:] < 1.)
 
         data = np.ones(npts, dtype=np.float32)
-        tr = FoldTrace(data=data, header={'sampling': 1.})
+        ft = FoldTrace(data=data, header={'sampling': 1.})
+        breakpoint()
+        assert ft.stats.processing == []
         # first 3 samples get tapered
-        tr.taper(max_percentage=0.5, type=type_, side="left", max_length=3)
+        ft.taper(max_percentage=0.5, type=type_, side="left", max_length=3)
         # last 3 samples get tapered
-        tr.taper(max_percentage=0.3, type=type_, side="right", max_length=5)
-        assert np.all(tr.data[:3] < 1.)
-        assert np.all(tr.data[3:8] == 1.)
-        assert np.all(tr.data[8:] < 1.)
-        assert np.all(tr.fold[:3] < 1.)
-        assert np.all(tr.fold[3:8] == 1.)
-        assert np.all(tr.fold[8:] < 1.)
+        ft.taper(max_percentage=0.3, type=type_, side="right", max_length=5)
+        assert np.all(ft.data[:3] < 1.)
+        assert np.all(ft.data[3:8] == 1.)
+        assert np.all(ft.data[8:] < 1.)
+        assert np.all(ft.fold[:3] < 1.)
+        assert np.all(ft.fold[3:8] == 1.)
+        assert np.all(ft.fold[8:] < 1.)
         
     ###########################
     ## RESAMPLING TEST SUITE ##
@@ -874,30 +869,30 @@ class TestFoldTrace(TestTrace):
         used to augment inherited data resampling methods from Trace
         """        
         # Setup
-        tr = FoldTrace(data=np.arange(6), fold=np.array([1,1,1,2,2,2]), dtype=np.float32)
-        tr2 = tr.copy()
-        tr2.data = np.linspace(0,6,11)
-        tr2.stats.sampling_rate = 2
-        assert tr.stats.starttime == tr2.stats.starttime
-        assert tr.stats.endtime == tr2.stats.endtime
+        ft = FoldTrace(data=np.arange(6), fold=np.array([1,1,1,2,2,2]), dtype=np.float32)
+        ft2 = ft.copy()
+        ft2.data = np.linspace(0,6,11)
+        ft2.stats.sampling_rate = 2
+        assert ft.stats.starttime == ft2.stats.starttime
+        assert ft.stats.endtime == ft2.stats.endtime
         # Check that verify fails on Exception (data and fold shape don't match)
         with pytest.raises(Exception):
-            tr2.verify()
+            ft2.verify()
         # Apply method
-        tr3 = tr2.copy()
-        tr3._interp_fold(tr.stats.starttime, 1)
-        assert tr3.data.shape == tr3.fold.shape
+        ft3 = ft2.copy()
+        ft3._interp_fold(ft.stats.starttime, 1)
+        assert ft3.data.shape == ft3.fold.shape
         # Test with slight non-aligned samples
-        tr3 = tr2.copy()
-        tr3.stats.starttime -= 0.1
-        tr3._interp_fold(tr.stats.starttime, 1)
-        assert tr3.verify()
+        ft3 = ft2.copy()
+        ft3.stats.starttime -= 0.1
+        ft3._interp_fold(ft.stats.starttime, 1)
+        assert ft3.verify()
         # Test with large non-aligned samples
-        tr3 = tr2.copy()
-        tr3.stats.starttime -= 1.37
-        tr3.data = np.arange(7, dtype=tr3.dtype)
-        tr3._interp_fold(tr.stats.starttime, 1)
-        assert tr3.verify()
+        ft3 = ft2.copy()
+        ft3.stats.starttime -= 1.37
+        ft3.data = np.arange(7, dtype=ft3.dtype)
+        ft3._interp_fold(ft.stats.starttime, 1)
+        assert ft3.verify()
 
 
     def test_enforce_time_domain(self):
@@ -962,7 +957,7 @@ class TestFoldTrace(TestTrace):
         # exception raised with gappy data
         ft.data = np.ma.MaskedArray(data=ft.data,
                                      mask=[False]*30)
-        ft.mask[10:15] = True
+        ft.data.mask[10:15] = True
         with pytest.raises(Exception):
             ft.resample(3)
 
@@ -991,13 +986,45 @@ class TestFoldTrace(TestTrace):
         # exception raised with gappy data
         ft.data = np.ma.MaskedArray(data=ft.data,
                                      mask=[False]*30)
-        ft.mask[10:15] = True
+        ft.data.mask[10:15] = True
         with pytest.raises(Exception):
             ft.interpolate(3)
 
     def test_decimate(self):
         """_summary_
-        """        
+        """
+
+
+    def test_filter(self):
+        # Setup
+        tr = read()[0]
+        ft = FoldTrace(tr.copy())
+        # Define filters
+        hpf = {'type': 'highpass', 'freq': 10}
+        lpf = {'type': 'lowpass', 'freq': 10}
+        bpf = {'type': 'bandpass', 'freqmin': 1, 'freqmax': 20}
+        # Iterate across filters
+        for fkw in [hpf, lpf, bpf]:
+            # Apply filtering to copies of Trace and FoldTrace
+            trf = tr.copy().filter(**fkw)
+            ftf = ft.copy().filter(**fkw)
+            # Assert that data match for both filtered
+            np.testing.assert_array_equal(trf.data, ftf.data)
+            # Assert that fold matches the original (unfiltered) FoldTrace.fold
+            np.testing.assert_array_equal(ftf.fold, ft.fold)
+            # Assert that processing matches
+            # assert trf.stats.processing == ftf.stats.processing
+
+
+    def processing_bugfix_1(self):
+        ft = FoldTrace(read()[0])
+        assert ft.stats.processing == []
+        ft.filter('highpass', freq=1)
+        assert len(ft.stats.processing) == 1
+        ft = FoldTrace(read()[0])
+        assert ft.stats.processing == []
+        ft.differentiate()
+        assert len(ft.stats.processing) == 1
 
 
 

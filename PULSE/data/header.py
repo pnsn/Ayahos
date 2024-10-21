@@ -18,6 +18,7 @@ from math import inf
 from obspy import UTCDateTime
 from obspy.core.trace import Stats
 from obspy.core.util.attribdict import AttribDict
+import pandas as pd
 
 ###################################################################################
 # Machine Learning Stats Class Definition #########################################
@@ -210,15 +211,15 @@ class PulseStats(AttribDict):
     from a given call of :meth:`~PULSE.mod.base.BaseMod.pulse`. 
     
     :var modname: name of the associated module
-    :var starttime: POSIX start time of the last call of **pulse**
-    :var endtime: UTC end time of the last call of **pulse**
+    :var starttime: POSIX start time of the last call of a :meth:`~PULSE.mod.base.BaseMod.pulse`-type method
+    :var endtime: POSIX end time of the last call of a meth:`~PULSE.mod.base.BaseMod.pulse`-type method
     :var niter: number of iterations completed
     :var in0: input size at the start of the call
     :var in1: input size at the end of the call
     :var out0: output size at the start of the call
     :var out1: output size at the end of the call
     :var runtime: number of seconds it took for the call to run
-    :var pulse rate: iterations per second
+    :var pulserate: iterations per second
     :var stop: Reason iterations stopped
 
     Explanation of **stop** values
@@ -226,7 +227,7 @@ class PulseStats(AttribDict):
        - 'early0' -- flagged for early stopping before executing the unit-process in an iteration
        - 'early1' -- flagged for early stopping after executing the unit-process in an iteration
      """    
-    readonly = ['pulse rate','runtime']
+    readonly = ['pulserate','runtime']
     _refresh_keys = {'starttime','endtime','niter'}
     defaults = {'modname': '',
                 'starttime': 0,
@@ -238,7 +239,7 @@ class PulseStats(AttribDict):
                 'out0': 0,
                 'out1': 0,
                 'runtime':0,
-                'pulse rate': 0}
+                'pulserate': 0}
     _types = {'modname': str,
               'starttime':float,
               'endtime':float,
@@ -249,31 +250,59 @@ class PulseStats(AttribDict):
               'out0':int,
               'out1':int,
               'runtime':float,
-              'pulse rate':float}
+              'pulserate':float}
     
 
     def __init__(self, header={}):
         """Create an empty :class:`~PULSE.mod.base.PulseStats` object"""
-        super(PulseStats, self).__init__(header)
+        # Inherit from AttribDict
+        super().__init__()
+        # Use updated __setattr__ to populate inputs from header
+        # This enforces type and readonly protections as errors
+        if isinstance(header, dict):
+            for _k, _v in header.items():
+                self.__setattr__(_k, _v)
+        else:
+            raise TypeError('header must be type dict')
 
     def __setitem__(self, key, value):
+        # Upgrade from warning to error for readonly assignment
+        if key in self.readonly:
+            raise AttributeError(f'Attribute "{key}" in PulseStats is read only!')
+        # Upgrade from warning to error for mismatched type
+        elif not isinstance(value, self._types[key]):
+            try:
+                value = self._types[key](value)
+            except ValueError:
+                raise ValueError(f'Value of type "{type(value)}" could not be converted to approved type for attribute "{key}": {self._types[key]}')
+        else:
+            pass
+        # Refresh keys
         if key in self._refresh_keys:
-            if key == 'starttime':
-                value = float(value)
-            elif key == 'endtime':
-                value = float(value)
-            elif key == 'niter':
-                value = float(value)
-            # Set current key
-            super(PulseStats, self).__setitem__(key, value)
-            # Set derived value: runtime
+            if key in ['starttime', 'endtime']:
+                if value == float(value):
+                    value = float(value)
+                else:
+                    raise ValueError(f'Input value for attribute "{key}" must be float-like')
+            elif key in ['niter']:
+                if value == int(value):
+                    value = int(value)
+                else:
+                    raise ValueError(f'Input value for attribute "{key}" must be int-like')
+            # Update value
+            super(PulseStats, self).__setitem__(key,value)
+            # Calculate new refresh values
             self.__dict__['runtime'] = self.endtime - self.starttime
-            # Set derived value: pulse rate
             if self.runtime > 0:
-                self.__dict__['pulse rate'] = self.niter / self.runtime
+                self.__dict__['pulserate'] = float(self.niter) / self.runtime
+            # elif self.runtime == 0:
             else:
-                self.__dict__['pulse rate'] = 0.
+                self.__dict__['pulserate'] = 0.
+            # # TODO: Assess this behavior in PULSE.mod.base.BaseMod.pulse
+            # else:
+            #     raise ValueError('Update to Attribute "{key}" resulted in a negative runtime')
             return
+        # All other keys
         if isinstance(value, dict):
             super(PulseStats, self).__setitem__(key, AttribDict(value))
         else:
@@ -286,13 +315,25 @@ class PulseStats(AttribDict):
         return super(PulseStats, self).__getitem__(key, default)
 
     def __str__(self):
-        prioritized_keys = ['modname','pulse rate','stop','niter',
+        prioritized_keys = ['modname','pulserate','stop','niter',
                             'in0','in1','out0','out1',
                             'starttime','endtime','runtime']
         return self._pretty_str(priorized_keys=prioritized_keys)
 
     def _repr_pretty_(self, p, cycle):
         p.text(str(self))
+
+    def asdict(self):
+        """Convenience method - return a view of this PulseStats object
+        as a dictionary
+
+        :return: _description_
+        :rtype: _type_
+        """        
+        return dict(self)
+    
+    def asseries(self):
+        return pd.Series(self.asdict())
 
 # ###################################################################################
 # # Dictionary Stream Stats Class Definition ########################################

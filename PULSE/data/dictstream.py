@@ -152,11 +152,14 @@ class DictStream(Stream):
     ========================
     """
     _max_processing_info = 100
-    supported_keys = dict(FoldTrace().id_keys).keys()
-
-    def __init__(self, traces=[], header={}, key_attr='id', **options):
+    # supported_keys = dict(FoldTrace().id_keys).keys()
+    # Limit this to 'id' for now
+    supported_keys = ['id']
+    def __init__(self, traces=[], key_attr='id', **options):
         """Initialize a :class:`~PULSE.data.dictstream.DictStream` object
 
+        Parameters
+        ----------
         :param traces: ObsPy Trace-like object, or iterable collections thereof, defaults to [].
         :type traces: obspy.core.trace.Trace-like or list-like collections thereof, optional. See Notes.
         :param header: Non-default parameters to pass to the initialization of this DictStream's :class:`~PULSE.data.dictstream.DictStreamStats` attribute, defaults to {}
@@ -169,16 +172,26 @@ class DictStream(Stream):
         self.traces = {}
         if key_attr in self.supported_keys:
             self.key_attr = key_attr
+        else:
+            raise ValueError(f'key_attr value "{key_attr}" not supported. Supported: {self.supported_keys}')
         self.extend(traces, **options)
 
     #####################################################################
     # DUNDER METHOD UPDATES #############################################
     #####################################################################
-            
+
+    def __eq__(self, other):
+        if not isinstance(other, DictStream):
+            return False
+        if self.traces != other.traces:
+            return False
+        return True
+
     def __iter__(self):
         """
         Return a robust iterator for DictStream.traces.values()
-        :returns: (*list*) -- list of values in DictStream.traces.values
+        :returns: 
+         - **output** (*list*) -- list of values in DictStream.traces.values
         """
         return list(self.traces.values()).__iter__()
     
@@ -193,10 +206,12 @@ class DictStream(Stream):
         calls that retrieve multiple traces return a DictStream object
 
         Explainer
+        ---------
         The DictStream class defaults to using trace.id values for keys (which are str-type),
-        so this approach remove the ambiguity in the expected type for self.traces' keys.
+        so this approach removes the ambiguity in the expected type for self.traces' keys.
 
-        
+        Parameters
+        ----------
         :param index: indexing value with behaviors based on index type
         :type index: int, slice, str, list
         
@@ -238,6 +253,8 @@ class DictStream(Stream):
         consistent with :meth:`~PULSE.data.dictstream.DictStream.__getitem__`
         behaviors.
 
+        Parameters
+        ----------
         :param index: index to assign trace object to, either a string-type
             key value or int-type index value
         :type index: int or str
@@ -364,25 +381,23 @@ class DictStream(Stream):
         Also see :meth:`~PULSE.data.dictstream.DictStream.__iter__`.
         """
         # Ensure other is in the form of a list of FoldTraces
+        traces = []
         if isinstance(other, FoldTrace):
-            other = [other]
+            traces.append(other)
         elif isinstance(other, Trace):
-            other = [FoldTrace(other)]
+            traces.append(FoldTrace(other))
         elif isinstance(other, (list, Stream)):
-            if all(isinstance(_e, Trace) for _e in other):
-                tmp = []
-                for _e in other:
-                    if isinstance(_e, FoldTrace):
-                        tmp.append(_e)
-                    else:
-                        tmp.append(FoldTrace(_e))
-                other = tmp
-            else:
-                raise TypeError('not all elements of other are obspy Trace-like objects')
+            for _tr in other:
+                if isinstance(_tr, FoldTrace):
+                    traces.append(_tr)
+                elif isinstance(_tr, Trace):
+                    traces.append(FoldTrace(_tr))
+                else:
+                    raise TypeError('not all elements of other are obspy Trace-like objects')
         else:
             raise TypeError(f'other of type {type(type)} not supported.')
         # Add FoldTraces to DictStream
-        for _ft in other:
+        for _ft in traces:
             _key = _ft.id_keys[self.key_attr]
             # Run as in-place add
             if _key in self.traces.keys():
@@ -390,10 +405,6 @@ class DictStream(Stream):
             # Run as update
             else:
                 self.traces.update({_key: _ft})
-        #     # Update timing metadata
-        #     self.stats.update_time_range(self[_key])
-        # # Update common ID metadata
-        # self.stats.common_id = self.get_common_id()
 
     def __str__(self, short=False):
         """string representation of the full module/class path of
@@ -427,7 +438,6 @@ class DictStream(Stream):
         
 
         """        
-        # rstr = f'--Stats--\n{self.stats.__str__()}\n-------'
         rstr = ''
         if len(self.traces) > 0:
             id_length = max(len(_tr.id) for _tr in self.traces.values())
@@ -453,9 +463,10 @@ class DictStream(Stream):
     #####################################################################
     # SEARCH METHODS ####################################################
     #####################################################################
-    def search(self, strings, ascopy=False, inverse=False):
-        """Use wildcard compliant strings to select subset views or copies
-        of the contents of this DictStream
+    def search(self, seeds, how='union', inverse=False):
+        """Use python set operations to find subsets of this DictStream's contents
+        starting from one or more seeding strings. Sets are joined using the specified
+        :class:`~set` in a right-propagating order. 
 
         :param strings: search string(s) to use to match keys in this DictStream's
             **traces** attribute
@@ -468,37 +479,74 @@ class DictStream(Stream):
         :return:
             - **out** (*PULSE.data.dictstream.DictStream*) -- subset view or
                 copy of the contents of this DictStream
-        """        
-        if isinstance(strings, str):
-            strings = [strings]
-        elif isinstance(strings, list):
-            if all(isinstance(_e, str) for _e in strings):
-                pass
+        """ 
+        if isinstance(seeds, str):
+            seeds = {seeds}
+        elif isinstance(seeds, (set, list, tuple)):
+            if all(isinstance(_e, str) for _e in seeds):
+                seeds = set(seeds)
             else:
-                raise TypeError('All elements of list-type strings must be type str')
+                raise TypeError('All elements of set-like seeds must be type str')
         else:
-            raise TypeError('strings must be type str or list')
-        # Create a set holder for unique key matches
-        matches = set()
-        # Get the set of all keys for self.traces
-        tkeys = set(self.traces.keys())
-        # Iterate across strings
-        for _e in strings:
-            imatches = fnmatch.filter(tkeys, _e)
-            matches.update(imatches)
-        # Allow inverse search
+            raise TypeError('seeds must be type str or sets of str objects')
+        filtset = set()
+        for seed in seeds:
+            # Get incremental set
+            iset = set(fnmatch.filter(seed, self.keys()))
+            # Grow set rightwards
+            getattr(filtset,how)(iset)
         if inverse:
-            matches = tkeys.difference_update(matches)
-        # Iterate across matches
-        traces = []
-        for _m in matches:
-            traces.append(self.traces[_m])
-        # Allow deepcopy
-        if ascopy:
-            traces = [_tr.copy() for _tr in traces]
-        # out = self.__class__(traces=traces, header=self.stats.copy(), key_attr=self.key_attr)
-        out = self.__class__(traces=traces, key_attr=self.key_attr)
-        return out
+            outset = set(self.keys()).difference(filtset)
+        else:
+            outset = filtset
+        return self[outset]
+
+
+    #     # Create a set holder for unique key matches
+    #     matches = set()
+    #     # Get the set of all keys for self.traces
+    #     tkeys = self.keys()
+    #     # Iterate across strings
+    #     for _e in strings:
+    #         imatches = fnmatch.filter(tkeys, _e)
+    #         matches.update(imatches)
+    #     # Allow inverse search
+    #     if inverse:
+    #         matches = tkeys.difference_update(matches)
+    #     # Iterate across matches
+    #     traces = []
+    #     for _m in matches:
+    #         traces.append(self.traces[_m])
+    #     # Allow deepcopy
+    #     if ascopy:
+    #         traces = [_tr.copy() for _tr in traces]
+    #     # out = self.__class__(traces=traces, header=self.stats.copy(), key_attr=self.key_attr)
+    #     out = self.__class__(traces=traces, key_attr=self.key_attr)
+    #     return out
+
+    # def select(self, inverse=False, **kwargs):
+    #     fullset = self.keys()
+    #     filtset = set()
+    #     if 'inv' in kwargs.keys():
+    #         _k = 'inv'
+    #         _v = kwargs['inv']
+    #         if isinstance(_v, Inventory):
+    #             contents = _v.get_contents
+    #             if len(contents['channels']) > 0:
+    #                 filtset.update(contents['channels'])
+    #             elif len(contents['stations']) > 0:
+    #                 filtset.update({f'{sta}.*' for sta in contents['stations']})
+    #             elif len(contents['networks']) > 0:
+    #                 filtset.update(f'{net}.*' for net in contents['networks'])
+    #         elif _v is None:
+    #             pass
+    #         else:
+    #             raise TypeError('kwarg "inv" must be NoneType or obspy.core.inventory.Inventory')
+    #     for 
+        
+
+    #                     filtset.update(kwargs['inv'].get_contents['channels'])
+
     
     def split(self, key_attr='instrument', **options):
         """Split this :class:`~.DictStream` into multiple :class:`~.DictStream` objects
@@ -635,6 +683,10 @@ class DictStream(Stream):
     
     
 
+    # def get_key_set(self):
+    #     return list(self.traces.keys())
+    
+    # keys = property(get_key_set)
 
 
                 

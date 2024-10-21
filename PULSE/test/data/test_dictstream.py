@@ -16,6 +16,7 @@ class TestDictStream(TestStream):
     # Just make sure to .copy()!
     sm_st = read()
     lg_st = load_townsend_example()
+    # xl_st = load_puget_sound_example()
 
     def test_init(self):
         # Setup
@@ -48,7 +49,6 @@ class TestDictStream(TestStream):
         ids = [_tr.id for _tr in ds]
         # Test that all IDs are used as keys
         for _e in ds.traces.keys():
-            breakpoint()
             assert _e in ids
         # Test that all traces are converted to fold traces
         assert all([isinstance(_e, FoldTrace) for _e in ds])
@@ -65,7 +65,25 @@ class TestDictStream(TestStream):
                 assert isinstance(ft, FoldTrace)
                 # Test key matches
                 assert ft.id_keys[key] in ds.traces.keys()
-        
+
+    def test_eq(self):
+        """Test suite for the __eq__ method of DictStream
+        """        
+        # Fetch example st
+        st = self.sm_st.copy()
+        # Create forward load order DictStream
+        ds1 = DictStream(st)
+        # Create reverse load order DictStream
+        ds2 = DictStream(st[::-1])
+        # Assert that the ordered contents of each dictstream do not match
+        assert not all(ds1[_e] == ds2[_e] for _e in range(3))
+        # Assert that all the keys match 
+        assert ds1.traces.keys() == ds2.traces.keys()
+        # assert that the traces match
+        assert ds1.traces == ds2.traces
+        # Assert that the DictStreams match
+        assert ds1 == ds2
+
     def test_iter(self):
         """Test suite for the __iter__ method of DictStream
         """        
@@ -88,21 +106,21 @@ class TestDictStream(TestStream):
         assert isinstance(ds[:2], DictStream)
 
         # Key value
-        assert isinstance(ds['BW.RJOB..EHZ..'], FoldTrace)
-        assert ds['BW.RJOB..EHZ..'] == ds[0]
+        assert isinstance(ds['BW.RJOB..EHZ'], FoldTrace)
+        assert ds['BW.RJOB..EHZ'] == ds[0]
         # List of keys
-        ds2 = ds[['BW.RJOB..EHZ..','BW.RJOB..EHN..']]
+        ds2 = ds[['BW.RJOB..EHZ','BW.RJOB..EHN']]
         assert ds[:2] == ds2
         # others raise
         with pytest.raises(KeyError):
             ds['a']
         with pytest.raises(KeyError):
-            ds[['BW.RJOB..EHZ..', 1]]
-        with pytest.raises(TypeError):
+            ds[['BW.RJOB..EHZ', 1]]
+        with pytest.raises(KeyError):
             ds[[3.]]
         
     def test_setitem(self):
-        """Test suite for the __setitem_ method of DictStream
+        """Test suite for the __setitem__ method of DictStream
         """     
         # Setup   
         st = self.lg_st.copy()
@@ -142,3 +160,12 @@ class TestDictStream(TestStream):
         assert isinstance(ds.__str__(), str)
         assert ds.__str__() == 'PULSE.data.dictstream.DictStream'
         assert ds.__str__(short=True) == 'DictStream'
+
+
+    # def test_search(self):
+    #     # Setup
+    #     ds = DictStream(self.lg_st.copy())
+    #     ds2 = ds.search(['UW.P*..EN?*', 'UW.N*..EH?*'])
+
+    def test_split(self):
+        ds = DictStream(self.lg_st.copy())

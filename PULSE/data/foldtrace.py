@@ -108,8 +108,8 @@ class FoldTrace(Trace):
             header = trace.stats
         else:
             raise TypeError('data must be a NumPy ndarray or ObsPy Trace-like object')
-        # Init to inherit from Trace
-        hasproc = False
+
+        # Compatability checks on header
         # If none input, make sure processing is not populated
         if header is None:
             # Ensure that processing is explicitly defined
@@ -123,17 +123,18 @@ class FoldTrace(Trace):
         else:
             raise TypeError('header must be type dict, ObsPy Stats, or NoneType')
         
-        # if hasproc:
-        #     breakpoint()
-
+        # Compatability checks on fold
         if fold is None:
             fold = np.ones(data.shape, dtype=self.dtype)
         elif isinstance(fold, np.ndarray):
             fold = fold.astype(self.dtype)
         else:
             raise TypeError('fold must be type NumPy ndarray or NoneType')
+        
+
         # Initialize as empty Trace
         super().__init__(header={})
+        
         # Upgrade stats class & set values
         self.stats = MLStats(header)
         # Set data as a view of input (needed for efficiency, but requires some additional care)
@@ -642,19 +643,7 @@ class FoldTrace(Trace):
     ## UPDATED, INHERITED METHODS ##
     ################################
 
-    # # PRIVATE SUPPORTING METHODS #
-    # TODO: Obsolite
-    # def _get_fold_trace(self):
-    #     """Create a new FoldTrace object with data that houses
-    #     a view of this FoldTrace's fold values and copied metadata
-
-    #     :return:
-    #      - **ftr** (*PULSE.data.foldtrace.FoldTrace*) - FoldTrace object containing 
-    #         a view of the **fold** of the source FoldTrace object as its **data** 
-    #         attribute and a deep copy of the source FoldTrace's **stats** attribute
-    #     """        
-    #     ftr = FoldTrace(data=self.fold, header=self.stats.copy())
-    #     return ftr
+    # PRIVATE SUPPORTING METHODS #
 
     def _interp_fold(self, old_starttime, old_sampling_rate):
         """Use linear interpolation and 0 padding to resample the **fold** of a FoldTrace
@@ -694,7 +683,7 @@ class FoldTrace(Trace):
 
         return self
     
-    def _enforce_time_domain(self, old_stats, **options):
+    def _enforce_time_domain(self, old_stats, nearest_sample=False, **options):
         """Enforce the time domain [starttime, endtime]
         for this FoldTrace from a different :class:`~obspy.core.trace.Stats`-like
         object with matching **id** values.
@@ -716,9 +705,9 @@ class FoldTrace(Trace):
         ten = self.stats.endtime
         teo = old_stats.endtime
         if tsn < tso:
-            self._ltrim(tso, **options)
+            self._ltrim(tso, nearest_sample=nearest_sample, **options)
         if ten > teo:
-            self._rtrim(teo, **options)
+            self._rtrim(teo, nearest_sample=nearest_sample, **options)
         return self
     
     def _ltrim(self, starttime, pad=False, nearest_sample=True, fill_value=None):
@@ -845,14 +834,12 @@ class FoldTrace(Trace):
             um_runs = np.argwhere(np.diff(self.data.mask, prepend=True, append=True))
             um_runs = um_runs.reshape(len(um_runs)//2, 2)
             um_runs = [tuple(r) for r in um_runs]
-            # breakpoint()
             views = []
             for irun in um_runs:
                 ts = self.stats.starttime + irun[0]*self.stats.delta
                 te = self.stats.starttime + (irun[1] - 1)*self.stats.delta
                 view = self.view(starttime=ts, endtime=te)
                 views.append(view)
-                # breakpoint()
         st = Stream(views)
         if ascopy:
             st = copy.deepcopy(st)
@@ -975,26 +962,35 @@ class FoldTrace(Trace):
         :param strict_length: Should the FoldTrace be left unchanged if resampling changes this FoldTrace's endtime? Defaults to False
         :type strict_length: bool, optional
 
-        """        
+        """
+        # Handle non
+        if isinstance(factor, (int, float)):
+            if factor == int(factor):
+                factor = int(factor)
+            else:
+                raise TypeError('decimation factor must be int-like')
+        else:
+            raise TypeError('decimation factor must be int-like')
+        if factor < 1:
+            raise ValueError('decimation factor must be a positive integer')
+        
         if np.ma.is_masked(self.data):
             raise Exception('masked data - try using FoldTrace.split to get contiguous FoldTraces')
         old_stats = self.stats.copy()
         Trace.decimate(self, factor, no_filter=no_filter, strict_length=strict_length)
-        # if enforce_time_domain:
-        #     self._enforce_time_domain(old_stats)
         self._interp_fold(old_stats.starttime, old_stats.sampling_rate)
         return self
 
-    def normalize(self, scalar='max'):
+    def normalize(self, norm=None):
         """Normalize this FoldTrace's **data** values using
-        normalization scalar calculated from non-masked values
+        normalization norm calculated from non-masked values
         of **data**. 
         
         Wraps :meth:`~obspy.core.trace.Trace.normalize`
 
         **fold** values are not modified by this method.
 
-        :param type: name of normalization scalar type, defaults to 'max'
+        :param type: name of normalization norm type, defaults to 'max'
             Supported Values:
                 'max' - maximum amplitude
                     accepted aliases include: 'minmax' and 'peak'
@@ -1002,318 +998,16 @@ class FoldTrace(Trace):
                     accepted aliases include: 'standard'
         :type type: str, optional
         """        
-        if scalar in ['max','minmax','peak','std','standard']:
-            pass
-        elif isinstance(scalar, (int, float)):
+        if norm in [None, 'max','minmax','peak']:
+            norm = self.max()
+        elif norm in ['std','standard']:
+            norm = self.std()
+        elif isinstance(norm, (int, float)):
             pass
         else:
             raise ValueError(f'type {type} not supported.')
-        # Safety catch for 0-trace
-        if np.all(self.data == 0):
-            return self
-        # Safety catch for all-masked trace
-        elif np.ma.is_masked(self.data):
-            if np.all(self.data.mask):
-                return self
-        else:
-            pass
-        # Calculate scalar
-        if scalar in ['max','minmax','peak']:
-            scalar = np.nanmax(np.abs(self.data))
-        if scalar in ['std','standard']:
-            scalar = np.nanstd(np.abs(self.data))
-        # Apply scalar
-        Trace.normalize(self, norm=scalar)
+        # Use built-in method
+        Trace.normalize(self, norm=norm)
         return self
-            
-
-    ## Unaltered Methods ## - are these the bleed points?
-    # def filter(self, *args, **kwargs):
-    #     return super().filter(*args, **kwargs)
-    
-    # def integrate(self, *args, **kwargs):
-    #     return super().integrate(*args, **kwargs)
-    
-    # def differentiate(self, *args, **kwargs):
-    #     return super().differentiate(*args, **kwargs)
-    
-
-    ##################################
-    # DYNAMIC CALL SUPPORTER METHODS #
-    ##################################
-
-    # def apply_method(self, method, apply_to_fold=False, **options):
-    #     method = getattr(super(), method)
-    #     if apply_to_fold:
-    #         fold_ftr = self._get_fold_view_trace()
-    #         getattr(fold_ftr, method)(**options)
-    #     getattr(self, method)(**options)
-    #     if apply_to_fold:
-    #         self.fold = fold_ftr.data
-    #     # Add a quick note on if fold processing was applied
-    #     self.stats.processing[-1] += f' PULSE: apply_method(apply_to_fold={apply_to_fold})'
         
-
     
-
-
-
-    
-    # def resample(self, sampling_rate, window='hann', no_filter=True, strict_length=False):
-    #     # Resample fold first
-    #     ftr = self._get_fold_view_trace()
-    #     Trace.resample(
-    #             ftr,
-    #             sampling_rate,
-    #             window=window,
-    #             no_filter=no_filter,
-    #             strict_length=strict_length)
-    #     breakpoint()
-    #     # Resample data next
-    #     Trace.resample(
-    #         sampling_rate,
-    #         window=window,
-    #         no_filter=no_filter,
-    #         strict_length=strict_length)
-    #     # Re-assign fold-trace to fold
-    #     self.fold = ftr.data
-    #     # Round fold to suppresss Gibbs phenomena
-    #     self.fold = self.fold.round()
-    #     self.stats.processing[-1] += f' PULSE: fold = resample + round'
-
-
-    # def apply_inplace_method_to_masked(self, method, *args, process_fold=True, **kwargs):
-    #     """Conduct a dynamic call of a method from :class:`~obspy.core.trace.Trace`
-    #     with internal handling of gappy (i.e., masked) **data** not supported by
-    #     most ObsPy Trace class methods. 
-
-    #     Provides the option to also process the **fold** vector with the same method.
-        
-    #     Updates to FoldTrace.stats.processing are only propagated from the application of the
-    #     method to **data**. 
-
-    #     NOTE: This method assumes that the method applies changes to this object IN-PLACE
-    #     and does not capture or return method outputs.
-
-    #     :param method: name of the method to use
-    #     :type method: str
-    #     :param *args: collector for addtional positional arguments of **method**
-    #     :param process_fold: should the **fold** attribute also be processed? Defaults to True.
-    #     :type process_fold: bool, optional
-    #     :param **kwargs: collector for additional key-word arguments for **method**
-    #     """        
-    #     # If the data vector is masked
-    #     if isinstance(self.data, np.ma.MaskedArray):
-    #         # Presserve it's fill_value
-    #         fill_value = self.data.fill_value
-    #         # Split into multiple, self-contiguous foldtraces
-    #         st = self.split()
-    #         # Iterate corss foldtraces to apply method individually
-    #         for _e, _ftr in enumerate(st):
-    #             _ftr._apply_inplace_method(method, *args, process_fold=process_fold, **kwargs)
-    #             # If first iteration, redefine this foldtrace as the first foldtrace
-    #             if _e == 0:
-    #                 self = _ftr
-    #             # all subsequent iterations, use __add__ to extend the first foldtrace
-    #             else:
-    #                 self.__add__(_ftr, method=0, fill_value=fill_value)
-    #     # Otherwise use the method as normal
-    #     else:
-    #         self._apply_inplace_method(method, *args, process_fold=process_fold, **kwargs)
-
-    
-    
-
-    # ###################################
-    # # POLYMORPHIC "DATA ONLY" METHODS #
-    # ###################################
-
-    # def filter(self, type, **options):
-    #     """Applys the :meth:`~obspy.core.trace.Trace.filter` method to the 
-    #     **data** and **stats** attributes of this FoldTrace, allowing for
-    #     masked data via :meth:`~PULSE.data.foldtrace.FoldTrace.apply_inplace_method_to_masked`
-
-    #     :param type: type of filter to apply
-    #     :type type: str
-    #     :param **options: key-word argument collector for the ObsPy method.
-    #         see :meth:`~obspy.core.trace.Trace.filter`
-    #     """
-    #     self.apply_inplace_method_to_masked('filter', type, **options)
-        
-    # def detrend(self, **options):
-    #     """Applys the :meth:`~obspy.core.trace.Trace.detrend` method to the 
-    #     **data** and **stats** attributes of this FoldTrace, allowing for
-    #     masked data via :meth:`~PULSE.data.foldtrace.FoldTrace.apply_inplace_method_to_masked`
-
-    #     :param **options: key-word argument collector for the ObsPy method.
-    #         see :meth:`~obspy.core.trace.Trace.detrend`
-    #     """
-    #     self.apply_inplace_method_to_masked('detrend', process_fold=False, **options)
-    
-    # def differentiate(self, **options):
-    #     """Applys the :meth:`~obspy.core.trace.Trace.differentiate` method to the 
-    #     **data** and **stats** attributes of this FoldTrace, allowing for
-    #     masked data via :meth:`~PULSE.data.foldtrace.FoldTrace.apply_inplace_method_to_masked`
-
-    #     :param **options: key-word argument collector for the ObsPy method.
-    #         see :meth:`~obspy.core.trace.Trace.differentiate`
-    #     """
-    #     self.apply_inplace_method_to_masked('differentiate', process_fold=False, **options)
-    
-    # def integrate(self, **options):
-    #     """Applys the :meth:`~obspy.core.trace.Trace.integrate` method to the 
-    #     **data** and **stats** attributes of this FoldTrace, allowing for
-    #     masked data via :meth:`~PULSE.data.foldtrace.FoldTrace.apply_inplace_method_to_masked`
-
-    #     :param **options: key-word argument collector for the ObsPy method.
-    #         see :meth:`~obspy.core.trace.Trace.integrate`
-    #     """
-    #     self.apply_inplace_method_to_masked('integrate', process_fold=False, **options)
-
-    # def remove_response(self, **options):
-    #     self.apply_inplace_method_to_masked('remove_response', process_fold=False, **options)
-
-    # def remove_sensitivity(self, **options):
-    #     """Applys the :meth:`~obspy.core.trace.Trace.remove_sensitivity` method to the 
-    #     **data** and **stats** attributes of this FoldTrace, allowing for
-    #     masked data via :meth:`~PULSE.data.foldtrace.FoldTrace.apply_inplace_method_to_masked`
-
-    #     :param **options: key-word argument collector for the ObsPy method.
-    #         see :meth:`~obspy.core.trace.Trace.remove_sensitivity`
-    #     """
-    #     self.apply_inplace_method_to_masked('remove_sensitivity', process_fold=False, **options)
-
-    # def taper(self, max_percentage, **options):
-    #     """Applys the :meth:`~obspy.core.trace.Trace.taper` method to the 
-    #     **data** and **stats** attributes of this FoldTrace, allowing for
-    #     masked data via :meth:`~PULSE.data.foldtrace.FoldTrace.apply_inplace_method_to_masked`
-
-    #     :param **options: key-word argument collector for the ObsPy method.
-    #         see :meth:`~obspy.core.trace.Trace.taper`
-    #     """
-    #     self.apply_inplace_method_to_masked('taper', max_percentage, process_fold=False, **options)
-
-    # def trigger(self, type, **options):
-    #     """Applys the :meth:`~obspy.core.trace.Trace.trigger` method to the 
-    #     **data** and **stats** attributes of this FoldTrace, allowing for
-    #     masked data via :meth:`~PULSE.data.foldtrace.FoldTrace.apply_inplace_method_to_masked`
-        
-    #     :param type: trigger type to use
-    #     :type type: str
-    #     :param **options: key-word argument collector for the ObsPy method.
-    #         see :meth:`~obspy.core.trace.Trace.trigger`
-    #     """
-    #     self.apply_inplace_method_to_masked('trigger', type, process_fold=False, **options)
-
-    # #######################################
-    # # POLYMORPHIC "DATA AND FOLD" METHODS #
-    # #######################################
-
-    # def decimate(self, factor, **options):
-    #     """Applys the :meth:`~obspy.core.trace.Trace.decimate` method to the 
-    #     **data**, **fold**, and **stats** attributes of this FoldTrace, allowing for
-    #     masked data via :meth:`~PULSE.data.foldtrace.FoldTrace.apply_inplace_method_to_masked`
-    #     :param factor: factor by which sampling rate is lowered by decimation
-    #     :type factor: int
-    #     :param **options: key-word argument collector for the ObsPy method.
-    #         see :meth:`~obspy.core.trace.Trace.decimate`
-    #     """
-    #     self.apply_inplace_method_to_masked('decimate', factor, process_fold=True, **options)
-
-    # def interpolate(self, sampling_rate, **options):
-    #     """Applys the :meth:`~obspy.core.trace.Trace.interpolate` method to the 
-    #     **data**, **fold**, and **stats** attributes of this FoldTrace, allowing for
-    #     masked data via :meth:`~PULSE.data.foldtrace.FoldTrace.apply_inplace_method_to_masked`
-
-    #     :param sampling_rate: new sampling rate in Hz 
-    #     :type sampling_rate: float
-    #     :param **options: key-word argument collector for the ObsPy method.
-    #         see :meth:`~obspy.core.trace.Trace.interpolate`
-    #     """
-    #     self.apply_inplace_method_to_masked('interpolate', sampling_rate, process_fold=True, **options)
-
-    # def resample(self, sampling_rate, **options):
-    #     """Applys the :meth:`~obspy.core.trace.Trace.resample` method to the 
-    #     **data**, **fold**, and **stats** attributes of this FoldTrace, allowing for
-    #     masked data via :meth:`~PULSE.data.foldtrace.FoldTrace.apply_inplace_method_to_masked`
-        
-    #     :param sampling_rate: new sampling rate in Hz 
-    #     :type sampling_rate: float
-    #     :param **options: key-word argument collector for the ObsPy method.
-    #         see :meth:`~obspy.core.trace.Trace.resample`
-    #     """
-    #     self.apply_inplace_method_to_masked('resample', sampling_rate, process_fold=True, **options)
-
-    # def split(self):
-    #     """Split a masked FoldTrace into a :class:`~obspy.core.stream.Stream` object
-    #     containing non-masked, self-contiguous FoldTrace objects
-
-    #     :raises NotImplementedError: _description_
-    #     :return:
-    #      - **output** (*obspy.core.stream.Stream*) -- stream of FoldTrace segments
-    #         copied from this FoldTrace
-    #     """        
-    #     output = Stream()
-    #     # Data is not a masked array
-    #     if not isinstance(self.data, np.ma.MaskedArray):
-    #         output += self.copy()
-    #     # Data is a masked array
-    #     else:
-    #         # No data are masked - convert back to unmasked array
-    #         if not np.ma.is_masked(self.data):
-    #             self.data = self.data.data
-    #             output += self.copy()
-    #         else:
-    #             # Generate slices
-    #             slices = flat_not_masked_contiguous(self.data)
-    #             output = Stream()
-    #             for slice in slices:
-    #                 if slice.step:
-    #                     raise NotImplementedError("step not supported")
-    #                 stats = self.stats.copy()
-    #                 ftr = FoldTrace(header=stats)
-    #                 ftr.stats.starttime += (stats.delta*slice.start)
-    #                 ftr.data = self.data.data[slice.start:slice.stop]
-    #                 ftr.fold = self.fold[slice.start:slice.stop]
-    #                 output += ftr
-    #     return output
-
-    # def _ltrim(self, starttime, **options):
-    #     self._apply_inplace_method('_ltrim', starttime, process_fold=True, **options)
-
-    # def _rtrim(self, endtime, **options):
-    #     self._apply_inplace_method('_rtrim', endtime, process_fold=True, **options)
-
-
-    # #########################
-    # # ADDED PRIVATE METHODS #
-    # #########################
-
-    # def _apply_inplace_method(self, method, *args, process_fold=True, **kwargs):
-    #     """Conduct a dynamic call of a method from :class:`~obspy.core.trace.Trace` with
-    #     the option to also process the **fold** vector with the same method. Updates
-    #     to FoldTrace.stats.processing are only propagated from the application of the
-    #     method to **data**
-
-    #     NOTE: This method assumes that the method applies changes to this object IN-PLACE
-    #     and does not capture or return method outputs.
-
-    #     :param method: name of the method to use
-    #     :type method: str
-    #     :param *args: collector for addtional positional arguments of **method**
-    #     :param process_fold: should the **fold** attribute also be processed? Defaults to True.
-    #     :type process_fold: bool, optional
-    #     :param **kwargs: collector for additional key-word arguments for **method**
-    #     """        
-    #     # If processing fold too, create fold_view_trace
-    #     if process_fold:
-    #         ftr = self._get_fold_view_trace()
-    #     # Process for data & metadata
-    #     getattr(self, method)(*args, **kwargs)
-    #     if process_fold:
-    #         getattr(ftr, method)(*args, **kwargs)
-    
-
-
-                         
-

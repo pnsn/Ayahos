@@ -8,12 +8,14 @@
     It builds on the ObsPy :mod:`~obspy.core.test.test_trace` module.
 """
 
-import pytest, warnings
+import pytest
 from obspy import UTCDateTime, Stream
 from obspy.core.tests.test_trace import TestTrace
 from PULSE.test.data.util import *
 from PULSE.data.foldtrace import FoldTrace
 from PULSE.data.header import MLStats
+
+
 
 class TestFoldTrace(TestTrace):
     #########################
@@ -516,25 +518,6 @@ class TestFoldTrace(TestTrace):
         assert view.fold[0] == ft_bu.fold[2] + 1
         assert view.fold[0] == ft.fold[2]
 
-    # def test_get_fold_trace(self):
-    #     data = np.arange(5, dtype=np.float64)
-    #     ft = FoldTrace(data=data)
-    #     assert ft.fold.dtype == np.float64
-    #     ftf = ft._get_fold_trace()
-    #     # Assert trf data is expected fold
-    #     np.testing.assert_array_equal(ftf.data, np.ones(5, dtype=np.float64))
-    #     # Assert ftf data is tr fold
-    #     np.testing.assert_array_equal(ftf.data, ft.fold)
-    #     # Update one value in ftf.data
-    #     ftf.data[2] = 3
-    #     ftf.fold[2] = 0
-    #     # Assert that update to fold trace data and fold do not affect source foldtrace
-    #     assert ft.fold[2] == 1
-    #     assert ft.data[2] == 2
-    #     # Assert that changing view stats does not affect source stats
-    #     ftf.stats.network = 'UO'
-    #     assert ft.stats.network == ''
-
     #################################
     ## DATA MODIFYING METHOD TESTS ##
     #################################
@@ -848,7 +831,6 @@ class TestFoldTrace(TestTrace):
 
         data = np.ones(npts, dtype=np.float32)
         ft = FoldTrace(data=data, header={'sampling': 1.})
-        breakpoint()
         assert ft.stats.processing == []
         # first 3 samples get tapered
         ft.taper(max_percentage=0.5, type=type_, side="left", max_length=3)
@@ -894,7 +876,6 @@ class TestFoldTrace(TestTrace):
         ft3._interp_fold(ft.stats.starttime, 1)
         assert ft3.verify()
 
-
     def test_enforce_time_domain(self):
         # Setup
         ft = FoldTrace(data=np.arange(6), fold=np.array([1,1,1,2,2,2]), dtype=np.float32)
@@ -912,12 +893,10 @@ class TestFoldTrace(TestTrace):
         assert ft4.stats.endtime <= ft.stats.endtime
         assert ft4.stats.starttime >= ft.stats.starttime
 
-
-
     def test_resample(self):
         """Test suite for the resample method of FoldTrace
-        TODO: complete this test suite
-        """        
+        """
+        # Setup
         ft = FoldTrace(load_logo_trace())
         ft.fold[15:] = 2
         assert ft.stats.sampling_rate == 1.
@@ -929,30 +908,40 @@ class TestFoldTrace(TestTrace):
         assert ft2.stats.starttime == ft.stats.starttime
         assert ft2.fold.shape == ft2.data.shape
         # downsample by factor of 10
-        ft3 = ft.copy().resample(sampling_rate=0.1)
-        assert ft3.stats.endtime == ft.stats.endtime - 9.0
-        assert ft3.stats.starttime == ft.stats.starttime
-        assert ft3.stats.sampling_rate == 0.1
-        assert ft3.fold.shape == ft3.data.shape
+        ft2 = ft.copy().resample(sampling_rate=0.1)
+        assert ft2.stats.endtime == ft.stats.endtime - 9.0
+        assert ft2.stats.starttime == ft.stats.starttime
+        assert ft2.stats.sampling_rate == 0.1
+        assert ft2.fold.shape == ft2.data.shape
 
         # upsample by factor of 2 and don't enforce time domain
-        ft4 = ft.copy().resample(sampling_rate=2, enforce_time_domain=False)
+        ft2 = ft.copy().resample(sampling_rate=2, enforce_time_domain=False)
         # Updated sampling rate
-        assert ft4.stats.sampling_rate == 2.
+        assert ft2.stats.sampling_rate == 2.
         # Unchanged starttime
-        assert ft4.stats.starttime == ft.stats.starttime
+        assert ft2.stats.starttime == ft.stats.starttime
         # Changed endtime
-        assert ft4.stats.endtime != ft.stats.endtime
+        assert ft2.stats.endtime != ft.stats.endtime
 
-        # upsample by factor of 2
-        ft5 = ft.copy().resample(sampling_rate=2)
+        # upsample by factor of 2, enforing time domain
+        ft3 = ft.copy().resample(sampling_rate=2)
+        assert ft3.stats.starttime == ft.stats.starttime
+        # enforced time domain check
+        assert ft.stats.endtime >= ft3.stats.endtime
+        # changed sampling rate
+        assert ft3.stats.sampling_rate == 2.
+        # shape of fold and data are consistent
+        assert ft3.fold.shape == ft3.data.shape
+
+        # upsample by a non-integer factor
+        ft4 = ft.copy().resample(sampling_rate=1.4, enforce_time_domain=True)
         assert ft4.stats.starttime == ft.stats.starttime
         # enforced time domain check
-        assert ft4.stats.endtime >= ft.stats.endtime >= ft5.stats.endtime
-        # changed sampling rate
-        assert ft5.stats.sampling_rate == 2.
-        # shape of fold and data are consistent
-        assert ft5.fold.shape == ft5.data.shape
+        assert ft.stats.endtime >= ft4.stats.endtime
+        # Changed sampling rate
+        assert ft4.stats.sampling_rate == 1.4
+        # Shape of data and fold consistent
+        assert ft4.fold.shape == ft4.data.shape
 
         # exception raised with gappy data
         ft.data = np.ma.MaskedArray(data=ft.data,
@@ -961,27 +950,41 @@ class TestFoldTrace(TestTrace):
         with pytest.raises(Exception):
             ft.resample(3)
 
-
     def test_interpolate(self):
         """Test suite for interpolate method of FoldTrace
-        TODO: Add other tests from the test_trace.py suite for interpolate?
-        """        
+        """
+        tr = load_logo_trace()
         ft = FoldTrace(load_logo_trace())
         ft.fold[15:] = 2
         assert ft.stats.sampling_rate == 1.
         assert ft.stats.npts == 30
+
         # upsample by an integer factor
+        tr2 = tr.copy().interpolate(sampling_rate=2.)
         ft2 = ft.copy().interpolate(sampling_rate=2.)
         assert ft2.stats.endtime == ft.stats.endtime
         assert ft2.stats.starttime == ft.stats.starttime
         assert ft2.stats.sampling_rate == 2.
         assert ft2.data.shape == ft2.fold.shape
+        np.testing.assert_array_equal(ft2.data, tr2.data)
+
         # upsample by a float factor
+        tr3 = tr.copy().interpolate(sampling_rate=11.5)
         ft3 = ft.copy().interpolate(sampling_rate=11.5)
         assert ft3.stats.starttime == ft.stats.starttime
         assert ft3.stats.endtime <= ft.stats.endtime
         assert ft3.stats.sampling_rate == 11.5
         assert ft3.data.shape == ft3.fold.shape
+        np.testing.assert_array_equal(ft3.data, tr3.data)
+
+        # downsampleby an integer factor
+        tr4 = tr.copy().interpolate(sampling_rate=0.5)
+        ft4 = ft.copy().interpolate(sampling_rate=0.5)
+        assert ft4.stats.starttime == ft.stats.starttime
+        assert ft4.stats.endtime <= ft.stats.endtime
+        assert ft4.stats.sampling_rate == 0.5
+        assert ft4.data.shape == ft4.fold.shape
+        np.testing.assert_array_equal(ft4.data, tr4.data)
 
         # exception raised with gappy data
         ft.data = np.ma.MaskedArray(data=ft.data,
@@ -991,11 +994,37 @@ class TestFoldTrace(TestTrace):
             ft.interpolate(3)
 
     def test_decimate(self):
-        """_summary_
+        """Test suite for FoldTrace.decimate
         """
+        # Run extended tests
+        tr = load_logo_trace()
+        ft = FoldTrace(load_logo_trace())
+        ft.fold[15:] = 2
+
+        # decimate by an integer factor
+        tr2 = tr.copy().decimate(2)
+        ft2 = ft.copy().decimate(2)
+        assert ft2.stats.starttime == tr2.stats.starttime == tr.stats.starttime
+        assert ft2.stats.endtime == tr2.stats.endtime <= tr.stats.endtime
+        assert ft2.stats.sampling_rate == 0.5
+        assert tr2.stats.sampling_rate == 0.5
+        np.testing.assert_array_equal(ft2.data, tr2.data)
+        assert ft2.fold.shape == ft2.data.shape
+
+        # positive int-like is acceptable
+        ft3 = ft.copy().decimate(2.)
+        assert ft3 == ft2
+        # non-int-like decimation factor raises rror
+        with pytest.raises(TypeError):
+            ft.copy().decimate(1.1)
+        # non-positive int-like factor raises error
+        with pytest.raises(ValueError):
+            ft.copy().decimate(-1)
 
 
     def test_filter(self):
+        """Test suite for FoldTrace.filter
+        """
         # Setup
         tr = read()[0]
         ft = FoldTrace(tr.copy())
@@ -1013,354 +1042,30 @@ class TestFoldTrace(TestTrace):
             # Assert that fold matches the original (unfiltered) FoldTrace.fold
             np.testing.assert_array_equal(ftf.fold, ft.fold)
             # Assert that processing matches
-            # assert trf.stats.processing == ftf.stats.processing
+            assert trf.stats.processing == ftf.stats.processing
 
-
-    def processing_bugfix_1(self):
-        ft = FoldTrace(read()[0])
-        assert ft.stats.processing == []
-        ft.filter('highpass', freq=1)
-        assert len(ft.stats.processing) == 1
-        ft = FoldTrace(read()[0])
-        assert ft.stats.processing == []
-        ft.differentiate()
-        assert len(ft.stats.processing) == 1
-
-
-
-    # def test_interpolate(self):
-    #     """Test suite for the interpolate method of FoldTrace
-    #     TODO: complete this test suite
-    #     """
-    #     ft = FoldTrace(load_logo_trace())
-    #     assert ft.stats.sampling_rate == 1.
-    #     assert ft.stats.npts == 30
-
-    #     breakpoint()
-    #     tr = FoldTrace(data = np.arange(100), dtype=np.float64)
-    #     tr.fold[50:] = 2
-    #     test_target_data = np.linspace(0,99,200)
-    #     tr2 = tr.copy().interpolate(2)
-    #     assert tr2.data.shape == tr2.fold.shape
-    #     # np.testing.assert_array_equal(tr2.data, test_target)
-
-    ############################
-    ## TEST INTERPOLATE SUITE ##
-    ############################
-    # def test_interpolate_fold(self):
-    #     # Populate FoldTrace
-    #     tr = FoldTrace(load_townsend_example()[0])
-    #     tr.fold[10:] = 2
-
-    #     tr2 = tr.copy()
-    #     # Test upsampling effects on 
-    #     tr2= tr.copy().interpolate(2.3)
-    #     assert all(tr2.fold == 1)
-    #     # Test upsampling degrading fold density
-    #     tr2 = tr.copy().interpolate(2.3)
-    #     assert all(tr2.fold == 1/2.3)
-    #     # Test downsampling not degrading fold density
-    #     tr2 = tr.copy().interpolate(0.5)
-    #     assert all(tr2.fold == 1)
-    #     # Test upsampling resulting in intermediate values
-    #     tr.fold[51:] = 2
-    #     tr2 = tr.copy().interpolate(10)
-    #     assert all(tr2.fold[:500] == 1)
-    #     assert all(tr2.fold[501:510] < 2) and all(tr2.fold[501:510] > 1)
-    #     assert all(tr2.fold[510:] == 2)
-    #     # Raises NotImplemented for masked data
-    #     tr = FoldTrace(data=np.ma.MaskedArray(data=np.arange(101),
-    #                                           mask=[False]*101))
-    #     tr.data.mask[20:30] = True
-    #     with pytest.raises(NotImplementedError):
-    #         tr2 = tr.copy().interpolate(10)
-
-    # def test_interpolate(self):
-    #     """
-    #     Tests the interpolate function.
-
-    #     This also tests the interpolation in obspy.signal. No need to repeat
-    #     the same test twice I guess.
-    #     """
-    #     # Load the prepared data. The data has been created using SAC.
-    #     file_ = "interpolation_test_random_waveform_delta_0.01_npts_50.sac"
-    #     # Load as FoldTrace
-    #     org_tr = FoldTrace(read("/path/to/%s" % file_, round_sampling_interval=False)[0])
-    #     # Set half of fold to 2
-    #     org_tr.fold[25:] = 2
-    #     file_ = "interpolation_test_interpolated_delta_0.003.sac"
-    #     interp_delta_0_003 = FoldTrace(read(
-    #         "/path/to/%s" % file_, round_sampling_interval=False)[0])
-    #     file_ = "interpolation_test_interpolated_delta_0.077.sac"
-    #     interp_delta_0_077 = FoldTrace(read(
-    #         "/path/to/%s" % file_, round_sampling_interval=False)[0])
-    #     # Perform the same interpolation as in Python with ObsPy.
-    #     int_tr = org_tr.copy().interpolate(sampling_rate=1.0 / 0.003,
-    #                                        method="weighted_average_slopes")
-    #     # Assert that the sampling rate has been set correctly.
-    #     assert int_tr.stats.delta == 0.003
-    #     # Assert that the new end time is smaller than the old one. SAC at
-    #     # times performs some extrapolation which we do not want to do here.
-    #     assert int_tr.stats.endtime <= org_tr.stats.endtime
-    #     # SAC extrapolates a bit which we don't want here. The deviations
-    #     # to SAC are likely due to the fact that we use double precision
-    #     # math while SAC uses single precision math.
-    #     assert np.allclose(
-    #         int_tr.data,
-    #         interp_delta_0_003.data[:int_tr.stats.npts],
-    #         rtol=1e-3)
-    #     # Assert that fold is interpolated when upsampled
-    #     assert all(int_tr.fold[:81] == 1)
-    #     assert all(int_tr.fold[81:84] < 2)
-    #     assert all(int_tr.fold[81:84] > 1)
-    #     assert all(int_tr.fold[84:] == 2)
-
-    #     int_tr = org_tr.copy().interpolate(sampling_rate=1.0 / 0.077,
-    #                                        method="weighted_average_slopes")
-    #     # Assert that the sampling rate has been set correctly.
-    #     assert int_tr.stats.delta == 0.077
-    #     # Assert that the new end time is smaller than the old one. SAC
-    #     # calculates one sample less in this case.
-    #     assert int_tr.stats.endtime <= org_tr.stats.endtime
-    #     assert np.allclose(
-    #         int_tr.data[:interp_delta_0_077.stats.npts],
-    #         interp_delta_0_077.data,
-    #         rtol=1E-5)
-    #     # Assert that fold is trimmed when downsampled
-    #     assert all(int_tr.fold[:4] == 1)
-    #     assert all(int_tr.fold[4:] == 2)
-
-        
-    #     # Also test the other interpolation methods mainly by assuring the
-    #     # correct SciPy function is called and everything stays internally
-    #     # consistent. SciPy's functions are tested enough to be sure that
-    #     # they work.
-    #     for inter_type in ["linear", "nearest", "zero"]:
-    #         int_tr = org_tr.copy().interpolate(sampling_rate=10, method=inter_type)
-    #         assert int_tr.stats.delta == 0.1
-    #         assert int_tr.stats.endtime <= org_tr.stats.endtime
-    #         np.testing.assert_array_equal(int_tr.fold, np.array([1,1,1,2,2]))
-
-    #     for inter_type in ['slinear','quadratic','cubic',1,2,3]:
-    #         int_tr = org_tr.copy().interpolate(sampling_rate=10, method=inter_type)
-    #         assert int_tr.stats.delta == 0.1
-    #         assert int_tr.stats.endtime <= org_tr.stats.endtime
-    #         np.testing.assert_array_equal(int_tr.fold, np.array([1,1,1,2,2]))
-            
-
-    # # # def test_interpolation_time_shift(self):
-    # # #     """
-    # # #     Tests the time shift of the interpolation.
-    # # #     TODO: Update this test suite
-    # # #     """
-    # # #     tr = FoldTrace(read()[0])
-    # # #     tr.stats.sampling_rate = 1.0
-    # # #     tr.data = tr.data[:500]
-    # # #     tr.interpolate(method="lanczos", sampling_rate=10.0, a=20)
-    # # #     tr.stats.sampling_rate = 1.0
-    # # #     tr.data = tr.data[:500]
-    # # #     tr.fold = tr.fold[:500]
-
-    # # #     org_tr = tr.copy()
-
-    # # #     # Now this does not do much for now but actually just shifts the
-    # # #     # samples.
-    # # #     tr.interpolate(method="lanczos", sampling_rate=1.0, a=1,
-    # # #                    time_shift=0.2)
-    # # #     assert tr.stats.starttime == org_tr.stats.starttime + 0.2
-    # # #     assert tr.stats.endtime == org_tr.stats.endtime + 0.2
-    # # #     np.testing.assert_allclose(tr.data, org_tr.data, atol=1E-9)
-    # # #     np.testing.assert_allclose(tr.fold, org_tr.fold, atol=1E-9)
-
-    # # #     tr.interpolate(method="lanczos", sampling_rate=1.0, a=1,
-    # # #                    time_shift=0.4)
-    # # #     assert tr.stats.starttime == org_tr.stats.starttime + 0.6
-    # # #     assert tr.stats.endtime == org_tr.stats.endtime + 0.6
-    # # #     np.testing.assert_allclose(tr.data, org_tr.data, atol=1E-9)
-
-    # # #     tr.interpolate(method="lanczos", sampling_rate=1.0, a=1,
-    # # #                    time_shift=-0.6)
-    # # #     assert tr.stats.starttime == org_tr.stats.starttime
-    # # #     assert tr.stats.endtime == org_tr.stats.endtime
-    # # #     np.testing.assert_allclose(tr.data, org_tr.data, atol=1E-9)
-
-    # # #     # This becomes more interesting when also fixing the sample
-    # # #     # positions. Then one can shift by subsample accuracy while leaving
-    # # #     # the sample positions intact. Note that there naturally are some
-    # # #     # boundary effects and as the interpolation method does not deal
-    # # #     # with any kind of extrapolation you will lose the first or last
-    # # #     # samples.
-    # # #     # This is a fairly extreme example but of course there are errors
-    # # #     # when doing an interpolation - a shift using an FFT is more accurate.
-    # # #     tr.interpolate(method="lanczos", sampling_rate=1.0, a=50,
-    # # #                    starttime=tr.stats.starttime + tr.stats.delta,
-    # # #                    time_shift=0.2)
-    # # #     # The sample point did not change but we lost the first sample,
-    # # #     # as we shifted towards the future.
-    # # #     assert tr.stats.starttime == org_tr.stats.starttime + 1.0
-    # # #     assert tr.stats.endtime == org_tr.stats.endtime
-    # # #     # The data naturally also changed.
-    # # #     with pytest.raises(AssertionError):
-    # # #         np.testing.assert_allclose(tr.data, org_tr.data[1:], atol=1E-9)
-    # # #     # Shift back. This time we will lose the last sample.
-    # # #     tr.interpolate(method="lanczos", sampling_rate=1.0, a=50,
-    # # #                    starttime=tr.stats.starttime,
-    # # #                    time_shift=-0.2)
-    # # #     assert tr.stats.starttime == org_tr.stats.starttime + 1.0
-    # # #     assert tr.stats.endtime == org_tr.stats.endtime - 1.0
-    # # #     # But the data (aside from edge effects - we are going forward and
-    # # #     # backwards again so they go twice as far!) should now again be the
-    # # #     # same as we started out with.
-    # # #     np.testing.assert_allclose(
-    # # #         tr.data[100:-100], org_tr.data[101:-101], atol=1e-9, rtol=1e-4)
-
-    # # # def test_interpolation_arguments(self):
-    # # #     """
-    # # #     Test case for the interpolation arguments.
-    # # #     """
-    # # #     tr = FoldTrace(read()[0])
-    # # #     tr.stats.sampling_rate = 1.0
-    # # #     tr.data = tr.data[:50]
-    # # #     tr.fold = tr.fold[:50]
-    # # #     tr.fold[25:] = 2
-
-    # # #     # TODO: Add fold tests
-
-    # # #     for inter_type in ["linear", "nearest", "zero", "slinear",
-    # # #                        "quadratic", "cubic", 1, 2, 3,
-    # # #                        "weighted_average_slopes"]:
-    # # #         # If only the sampling rate is specified, the end time will be very
-    # # #         # close to the original end time but never bigger.
-    # # #         interp_tr = tr.copy().interpolate(sampling_rate=0.3,
-    # # #                                           method=inter_type)
-    # # #         assert tr.stats.starttime == interp_tr.stats.starttime
-    # # #         assert tr.stats.endtime >= interp_tr.stats.endtime >= \
-    # # #                tr.stats.endtime - (1.0 / 0.3)
-
-    # # #         # If the starttime is modified the new starttime will be used but
-    # # #         # the end time will again be modified as little as possible.
-    # # #         interp_tr = tr.copy().interpolate(sampling_rate=0.3,
-    # # #                                           method=inter_type,
-    # # #                                           starttime=tr.stats.starttime +
-    # # #                                           5.0)
-    # # #         assert tr.stats.starttime + 5.0 == interp_tr.stats.starttime
-    # # #         assert tr.stats.endtime >= interp_tr.stats.endtime >= \
-    # # #                tr.stats.endtime - (1.0 / 0.3)
-
-    # # #         # If npts is given it will be used to modify the end time.
-    # # #         interp_tr = tr.copy().interpolate(sampling_rate=0.3,
-    # # #                                           method=inter_type, npts=10)
-    # # #         assert tr.stats.starttime == interp_tr.stats.starttime
-    # # #         assert interp_tr.stats.npts == 10
-
-    # # #         # If npts and starttime are given, both will be modified.
-    # # #         interp_tr = tr.copy().interpolate(sampling_rate=0.3,
-    # # #                                           method=inter_type,
-    # # #                                           starttime=tr.stats.starttime +
-    # # #                                           5.0, npts=10)
-    # # #         assert tr.stats.starttime + 5.0 == interp_tr.stats.starttime
-    # # #         assert interp_tr.stats.npts == 10
-
-    # # #         # An earlier starttime will raise an exception. No extrapolation
-    # # #         # is supported
-    # # #         with pytest.raises(ValueError):
-    # # #             tr.copy().interpolate(sampling_rate=1.0,
-    # # #                                   starttime=tr.stats.starttime - 10.0)
-    # # #         # As will too many samples that would overstep the end time bound.
-    # # #         with pytest.raises(ValueError):
-    # # #             tr.copy().interpolate(sampling_rate=1.0,
-    # # #                                   npts=tr.stats.npts * 1E6)
-
-    # # #         # A negative or zero desired sampling rate should raise.
-    # # #         with pytest.raises(ValueError):
-    # # #             tr.copy().interpolate(sampling_rate=0.0)
-    # # #         with pytest.raises(ValueError):
-    # # #             tr.copy().interpolate(sampling_rate=-1.0)
-
-    # # # def test_resample_new(self):
-    # # #     """
-    # # #     Tests if Trace.resample works as expected and test that issue #857 is
-    # # #     resolved.
-    # # #     """
-    # # #     starttime = UTC("1970-01-01T00:00:00.000000Z")
-    # # #     tr0 = Trace(np.sin(np.linspace(0, 2 * np.pi, 10)),
-    # # #                 {'sampling_rate': 1.0,
-    # # #                  'starttime': starttime})
-    # # #     # downsample
-    # # #     tr = tr0.copy()
-    # # #     tr.resample(0.5, window='hann', no_filter=True)
-    # # #     assert len(tr.data) == 5
-    # # #     expected = np.array([0.19478735, 0.83618307, 0.32200221,
-    # # #                          -0.7794053, -0.57356732])
-    # # #     assert np.all(np.abs(tr.data - expected) < 1e-7)
-    # # #     assert tr.stats.sampling_rate == 0.5
-    # # #     assert tr.stats.delta == 2.0
-    # # #     assert tr.stats.npts == 5
-    # # #     assert tr.stats.starttime == starttime
-    # # #     assert tr.stats.endtime == \
-    # # #            starttime + tr.stats.delta * (tr.stats.npts - 1)
-
-    # # #     # upsample
-    # # #     tr = tr0.copy()
-    # # #     tr.resample(2.0, window='hann', no_filter=True)
-    # # #     assert len(tr.data) == 20
-    # # #     assert tr.stats.sampling_rate == 2.0
-    # # #     assert tr.stats.delta == 0.5
-    # # #     assert tr.stats.npts == 20
-    # # #     assert tr.stats.starttime == starttime
-    # # #     assert tr.stats.endtime == \
-    # # #            starttime + tr.stats.delta * (tr.stats.npts - 1)
-
-    # # #     # downsample with non integer ratio
-    # # #     tr = tr0.copy()
-    # # #     tr.resample(0.75, window='hann', no_filter=True)
-    # # #     assert len(tr.data) == int(10 * .75)
-    # # #     expected = np.array([0.15425413, 0.66991128, 0.74610418, 0.11960477,
-    # # #                          -0.60644662, -0.77403839, -0.30938935])
-    # # #     assert np.all(np.abs(tr.data - expected) < 1e-7)
-    # # #     assert tr.stats.sampling_rate == 0.75
-    # # #     assert tr.stats.delta == 1 / 0.75
-    # # #     assert tr.stats.npts == int(10 * .75)
-    # # #     assert tr.stats.starttime == starttime
-    # # #     assert tr.stats.endtime == \
-    # # #            starttime + tr.stats.delta * (tr.stats.npts - 1)
-
-    # # #     # downsample without window
-    # # #     tr = tr0.copy()
-    # # #     tr.resample(0.5, window=None, no_filter=True)
-    # # #     assert len(tr.data) == 5
-    # # #     assert tr.stats.sampling_rate == 0.5
-    # # #     assert tr.stats.delta == 2.0
-    # # #     assert tr.stats.npts == 5
-    # # #     assert tr.stats.starttime == starttime
-    # # #     assert tr.stats.endtime == \
-    # # #            starttime + tr.stats.delta * (tr.stats.npts - 1)
-
-    # # #     # downsample with window and automatic filtering
-    # # #     tr = tr0.copy()
-    # # #     tr.resample(0.5, window='hann', no_filter=False)
-    # # #     assert len(tr.data) == 5
-    # # #     assert tr.stats.sampling_rate == 0.5
-    # # #     assert tr.stats.delta == 2.0
-    # # #     assert tr.stats.npts == 5
-    # # #     assert tr.stats.starttime == starttime
-    # # #     assert tr.stats.endtime == \
-    # # #            starttime + tr.stats.delta * (tr.stats.npts - 1)
-
-    # # #     # downsample with custom window
-    # # #     tr = tr0.copy()
-    # # #     window = np.ones((tr.stats.npts))
-    # # #     tr.resample(0.5, window=window, no_filter=True)
-
-    # # #     # downsample with bad window
-    # # #     tr = tr0.copy()
-    # # #     window = np.array([0, 1, 2, 3])
-    # # #     with pytest.raises(ValueError):
-    # # #         tr.resample(sampling_rate=0.5, window=window, no_filter=True)
-
-    # # # def test_resample(self):
-    # # #     data = np.arange(101, dtype=np.float32)
-    # # #     tr = FoldTrace(data=data)
-    # # #     tr2 = tr.copy()
-    # # #     tr2.resample(2.3)
-    # # #     breakpoint()
+    def test_normalize(self):
+        """Test suite for normalize method of FoldTrace
+        """
+        super().test_normalize()
+        tr = read()[0]
+        ft = FoldTrace(tr.copy())
+        # Test string norm inputs
+        for _nrm in ['max','minmax','peak','std','standard']:
+            if _nrm in ['max','minmax','peak']:
+                tr2 = tr.copy().normalize(norm=None)
+            else:
+                tr2 = tr.copy().normalize(norm=tr.std())
+            ft2 = ft.copy().normalize(norm=_nrm)
+            # Assert same result as ObsPy
+            np.testing.assert_array_equal(ft2.data, tr2.data)
+            # Assert no change to fold
+            np.testing.assert_array_equal(ft2.fold, ft.fold)
+        # Test int and float norm inputs
+        for _nrm in [2, 2.34]:
+            tr2 = tr.copy().normalize(norm=_nrm)
+            ft2 = ft.copy().normalize(norm=_nrm)
+            # Assert same result as ObsPy
+            np.testing.assert_array_equal(ft2.data, tr2.data)
+            # Assert fold not changed
+            np.testing.assert_array_equal(ft2.fold, ft.fold)

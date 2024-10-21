@@ -57,8 +57,8 @@ class MLStats(Stats):
         :param header: initial non-default values with which to populate this MLStats object
         :type header: dict
         """
-        if not isinstance(header, (dict, AttribDict)):
-            raise TypeError('header must be type dict or AttribDict')
+        if not isinstance(header, (dict, Stats)):
+            raise TypeError('header must be type dict or Stats')
         # if isinstance(header, dict):
         super(MLStats, self).__init__(header)
 

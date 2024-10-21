@@ -7,7 +7,7 @@
 :purpose: This module contains the class definition for :class:`~.FoldTrace`, which extends
     the functionalities of the ObsPy :class:`~obspy.core.trace.Trace` class.
 """
-import copy
+import copy, warnings
 import numpy as np
 from obspy.core.trace import Trace, Stats
 from obspy.core.stream import Stream
@@ -109,14 +109,22 @@ class FoldTrace(Trace):
         else:
             raise TypeError('data must be a NumPy ndarray or ObsPy Trace-like object')
         # Init to inherit from Trace
+        hasproc = False
+        # If none input, make sure processing is not populated
         if header is None:
-            header = {}
-        elif isinstance(header, dict):
-            pass
-        elif isinstance(header, Stats):
-            header = dict(header)
+            # Ensure that processing is explicitly defined
+            header = {'processing': []}
+        # If dict or Stats, pass to MLStats
+        elif isinstance(header, (dict, Stats)):
+            # If processing is not supplied, explicitly define
+            if 'processing' not in header.keys():
+                header.update({'processing': []})
+        # Otherwise raise TypeError
         else:
             raise TypeError('header must be type dict, ObsPy Stats, or NoneType')
+        
+        # if hasproc:
+        #     breakpoint()
 
         if fold is None:
             fold = np.ones(data.shape, dtype=self.dtype)
@@ -124,18 +132,26 @@ class FoldTrace(Trace):
             fold = fold.astype(self.dtype)
         else:
             raise TypeError('fold must be type NumPy ndarray or NoneType')
-
         # Initialize as empty Trace
-        super().__init__()
+        super().__init__(header={})
         # Upgrade stats class & set values
         self.stats = MLStats(header)
-        # Set data
+        # Set data as a view of input (needed for efficiency, but requires some additional care)
         self.data = data
         # Check fold against self.data and self.dtype
         self._fold_sanity_checks(fold)
         # Set fold
         self.fold = self._enforce_fold_masking_rules(fold)
             
+    def _internal_add_processing_info(self, info):
+        proc = self.stats.processing
+        if len(proc) == self._max_processing_info-1:
+            msg = ('List of procesing information in FoldTrace.stats.processing '
+                   'reached maximum length of {} entries.')
+            warnings.warn(msg.format(self._max_processing_info))
+        if len(proc) < self._max_processing_info:
+            proc.append(info)
+    
     def __setattr__(self, key, value):
         """__setattr__ method of FoldTrace object
 
@@ -626,18 +642,19 @@ class FoldTrace(Trace):
     ## UPDATED, INHERITED METHODS ##
     ################################
 
-    # PRIVATE SUPPORTING METHODS #
-    def _get_fold_trace(self):
-        """Create a new FoldTrace object with data that houses
-        a view of this FoldTrace's fold values and copied metadata
+    # # PRIVATE SUPPORTING METHODS #
+    # TODO: Obsolite
+    # def _get_fold_trace(self):
+    #     """Create a new FoldTrace object with data that houses
+    #     a view of this FoldTrace's fold values and copied metadata
 
-        :return:
-         - **ftr** (*PULSE.data.foldtrace.FoldTrace*) - FoldTrace object containing 
-            a view of the **fold** of the source FoldTrace object as its **data** 
-            attribute and a deep copy of the source FoldTrace's **stats** attribute
-        """        
-        ftr = FoldTrace(data=self.fold, header=self.stats.copy())
-        return ftr
+    #     :return:
+    #      - **ftr** (*PULSE.data.foldtrace.FoldTrace*) - FoldTrace object containing 
+    #         a view of the **fold** of the source FoldTrace object as its **data** 
+    #         attribute and a deep copy of the source FoldTrace's **stats** attribute
+    #     """        
+    #     ftr = FoldTrace(data=self.fold, header=self.stats.copy())
+    #     return ftr
 
     def _interp_fold(self, old_starttime, old_sampling_rate):
         """Use linear interpolation and 0 padding to resample the **fold** of a FoldTrace
@@ -833,7 +850,7 @@ class FoldTrace(Trace):
             for irun in um_runs:
                 ts = self.stats.starttime + irun[0]*self.stats.delta
                 te = self.stats.starttime + (irun[1] - 1)*self.stats.delta
-                view = self.get_view(starttime=ts, endtime=te)
+                view = self.view(starttime=ts, endtime=te)
                 views.append(view)
                 # breakpoint()
         st = Stream(views)
@@ -862,8 +879,9 @@ class FoldTrace(Trace):
         :type taper_fold: bool, optional
         """   
         if taper_fold:
-            fold_tr = self._get_fold_trace()
-            Trace.taper(fold_tr, max_percentage, type=type, max_length=max_length, side=side, **kwargs)
+            ftf = FoldTrace(data=self.fold, header=self.stats)
+            Trace.taper(ftf, max_percentage, type=type, max_length=max_length, side=side, **kwargs)
+            self.fold = ftf.data
         Trace.taper(self, max_percentage, type=type, max_length=max_length, side=side, **kwargs)
         return self
 
@@ -1009,15 +1027,15 @@ class FoldTrace(Trace):
         return self
             
 
-    ## Unaltered Methods ##
-    def filter(self, *args, **kwargs):
-        return super().filter(*args, **kwargs)
+    ## Unaltered Methods ## - are these the bleed points?
+    # def filter(self, *args, **kwargs):
+    #     return super().filter(*args, **kwargs)
     
-    def integrate(self, *args, **kwargs):
-        return super().integrate(*args, **kwargs)
+    # def integrate(self, *args, **kwargs):
+    #     return super().integrate(*args, **kwargs)
     
-    def differentiate(self, *args, **kwargs):
-        return super().differentiate(*args, **kwargs)
+    # def differentiate(self, *args, **kwargs):
+    #     return super().differentiate(*args, **kwargs)
     
 
     ##################################

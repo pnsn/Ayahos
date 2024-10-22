@@ -29,6 +29,7 @@ contents of the DictStream. It is modeled after the ObsPy :class:`~obspy.core.tr
 import fnmatch
 from obspy import Trace, Stream
 from PULSE.data.foldtrace import FoldTrace
+from PULSE.data.header import MLStats
 
 ###################################################################################
 # Dictionary Stream Class Definition ##############################################
@@ -237,10 +238,10 @@ class DictStream(Stream):
                 out = self.traces[index]
             else:
                 raise KeyError(f'index {index} is not a key in this DictStream\'s traces attribute')
-        # Handle lists of keys (dictionary slice)
-        elif isinstance(index, list):
-            if all(isinstance(_e, str) and _e in self.traces.keys() for _e in index):
-                traces = [self.traces[_k] for _k in index]
+        # Handle lists & sets of keys (dictionary slice)
+        elif isinstance(index, (list, set)):
+            if all(isinstance(_e, str) and _e in self.traces.keys() for _e in set(index)):
+                traces = [self.traces[_k] for _k in set(index)]
                 out = self.__class__(traces=traces)
             else:
                 raise KeyError('not all keys in index are str-type and keys in this DictStream\'s traces attribute')
@@ -463,7 +464,7 @@ class DictStream(Stream):
     #####################################################################
     # SEARCH METHODS ####################################################
     #####################################################################
-    def fnsearch(self, idstring='*', inverse=False):
+    def fnsearch(self, idstring='*'):
         """Basic search routine using :meth:`~fnmatch.filter` on
         sets of trace keys (IDs) from this DictStream's traces and
         the subset matching an input idstring.
@@ -481,103 +482,172 @@ class DictStream(Stream):
         :param idstring: wildcard-compliant ID string to use for subsetting
             this DictStream, defaults to '*'
         :type idstring: str, optional
-        :param inverse: should the inverse set be returned? Defaults to False
-        :type inverse: bool, optional
         :return:
-            - **output** (*PULSE.data.dictstream.DictStream*) - subset DictStream
-            containing views of FoldTrace objects contained by the source 
-        :rtype: _type_
+            - **keyset** (*set*) - subset FoldTrace key_attr values (DictStream.traces.keys())
+                matching the provided idstring
         """        
         fullset = set(self.traces.keys())
-        matchset = set(fnmatch.filter(idstring, fullset))
-        if inverse:
-            matchset = fullset.difference(matchset)
-        return self.__class__(self[list(matchset)])
+        keyset = set(fnmatch.filter(fullset, idstring))
+        return keyset
+    
+    def attrsearch(self, **kwargs):
+        """Search for the id's of FoldTraces in this DictStream that match
+        the specified stats.attributes search values
 
+        Supported kwargs:
+         - sampling_rate
+         - npts
+         - calib
+         - delta
 
-    def search(self, seeds, how='union', inverse=False):
-        """Use python set operations to find subsets of this DictStream's contents
-        starting from one or more seeding strings. Sets are joined using the specified
-        :class:`~set` in a right-propagating order. 
-
-        :param strings: search string(s) to use to match keys in this DictStream's
-            **traces** attribute
-        :type strings: str or list
-        :param ascopy: should the subset be deepcopies of the contents of this
-            DictStream? Sefaults to False
-        :type ascopy: bool, optional
-        :param inverse: should this return the inverse set? Defaults to False
-        :type inverse: bool, optional
-        :return:
-            - **out** (*PULSE.data.dictstream.DictStream*) -- subset view or
-                copy of the contents of this DictStream
-        """ 
-        if isinstance(seeds, str):
-            seeds = {seeds}
-        elif isinstance(seeds, (set, list, tuple)):
-            if all(isinstance(_e, str) for _e in seeds):
-                seeds = set(seeds)
+        :raises TypeError: _description_
+        :raises AttributeError: _description_
+        """        
+        # Input compatability checks
+        for _k, _v in kwargs.items():
+            if _k in ['sampling_rate','npts','calib','delta']: #MLStats.defaults.keys():
+                if isinstance(_v, type(MLStats.defaults[_k])):
+                    pass
+                else:
+                    msg = f'Input {type(_v)} for attribute "{_k}" is not '
+                    msg += f'supported by PULSE.data.header.MLStats. Supported: {type(MLStats.defaults[_k])}'
+                    raise TypeError()
             else:
-                raise TypeError('All elements of set-like seeds must be type str')
-        else:
-            raise TypeError('seeds must be type str or sets of str objects')
-        filtset = set()
-        for seed in seeds:
-            # Get incremental set
-            iset = set(fnmatch.filter(seed, self.keys()))
-            # Grow set rightwards
-            getattr(filtset,how)(iset)
-        if inverse:
-            outset = set(self.keys()).difference(filtset)
-        else:
-            outset = filtset
-        return self[outset]
+                raise AttributeError(f'Input attribute "{_k}" is not supported for PULSE.data.header.MLStats')
+        # Run search
+        keyset = set()
+        for _id, _ft in self.traces.items():
+            # If all values match
+            if all([_v == _ft.stats[_k] for _k, _v in kwargs.items()]):
+                # Update with id
+                keyset.update([_id])
+            else:
+                continue
+        return keyset
+    
+    def inverse_set(self, subset):
+        """Return the inverse set of FoldTrace IDs from this DictStream
+        for a given subset of FoldTrace IDs.
 
-
-    #     # Create a set holder for unique key matches
-    #     matches = set()
-    #     # Get the set of all keys for self.traces
-    #     tkeys = self.keys()
-    #     # Iterate across strings
-    #     for _e in strings:
-    #         imatches = fnmatch.filter(tkeys, _e)
-    #         matches.update(imatches)
-    #     # Allow inverse search
-    #     if inverse:
-    #         matches = tkeys.difference_update(matches)
-    #     # Iterate across matches
-    #     traces = []
-    #     for _m in matches:
-    #         traces.append(self.traces[_m])
-    #     # Allow deepcopy
-    #     if ascopy:
-    #         traces = [_tr.copy() for _tr in traces]
-    #     # out = self.__class__(traces=traces, header=self.stats.copy(), key_attr=self.key_attr)
-    #     out = self.__class__(traces=traces, key_attr=self.key_attr)
-    #     return out
-
-    # def select(self, inverse=False, **kwargs):
-    #     fullset = self.keys()
-    #     filtset = set()
-    #     if 'inv' in kwargs.keys():
-    #         _k = 'inv'
-    #         _v = kwargs['inv']
-    #         if isinstance(_v, Inventory):
-    #             contents = _v.get_contents
-    #             if len(contents['channels']) > 0:
-    #                 filtset.update(contents['channels'])
-    #             elif len(contents['stations']) > 0:
-    #                 filtset.update({f'{sta}.*' for sta in contents['stations']})
-    #             elif len(contents['networks']) > 0:
-    #                 filtset.update(f'{net}.*' for net in contents['networks'])
-    #         elif _v is None:
-    #             pass
-    #         else:
-    #             raise TypeError('kwarg "inv" must be NoneType or obspy.core.inventory.Inventory')
-    #     for 
+        :param subset: subset to difference from the set of IDs in this DictStream
+        :type subset: set
+        :return:
+         - **keyset** (*set*) -- inverse set of FoldTrace ID keys
+        """        
+        if not isinstance(subset, set):
+            raise TypeError('subset must be type set')
+        keyset = set(self.traces.keys()).difference(subset)
+        return keyset
         
+    
+    def select(self, id=None, component=None,
+               network=None, station=None,
+               location=None, channel=None,
+               sampling_rate=None, npts=None,
+               inventory=None, inverse=False):
+        """Updated wrapper around :meth:`~obspy.core.stream.Stream.select`
 
-    #                     filtset.update(kwargs['inv'].get_contents['channels'])
+        :param id: _description_, defaults to None
+        :type id: _type_, optional
+        :param network: _description_, defaults to None
+        :type network: _type_, optional
+        :param station: _description_, defaults to None
+        :type station: _type_, optional
+        :param location: _description_, defaults to None
+        :type location: _type_, optional
+        :param channel: _description_, defaults to None
+        :type channel: _type_, optional
+        :param sampling_rate: _description_, defaults to None
+        :type sampling_rate: _type_, optional
+        :param npts: _description_, defaults to None
+        :type npts: _type_, optional
+        :param component: _description_, defaults to None
+        :type component: _type_, optional
+
+        :param inventory: _description_, defaults to None
+        :type inventory: _type_, optional
+        :param inverse: _description_, defaults to False
+        :type inverse: bool, optional
+        """
+        if network is None:
+            network = '*'
+        if station is None:
+            station = '*'
+        if location is None:
+            location = '*'
+        if channel is None:
+            channel = '*'
+        if component is None:
+            pass
+        else:
+            if channel == '*':
+                channel = f'*{component}'
+
+        if inventory is None:
+            if id is None:
+                idstring = f'{network}.{station}.{location}.{channel}'
+            else:
+                idstring = id
+            keyset = self.fnsearch(idstring)
+        else:
+            invset = set(inventory.get_contents()['channels'])
+            if len(invset) == 0 and len(inventory) > 0:
+                raise NotImplementedError('inventories must be constructed to the "channel" level or finer to work with this query.')
+            else:
+                keyset = invset.intersection(self.traces.keys())
+
+        attrsearchkw = {}
+        if isinstance(sampling_rate, (int,float)):
+            attrsearchkw.update({'sampling_rate': float(sampling_rate)})
+        if isinstance(npts, (float,int)):
+            attrsearchkw.update({'npts': int(npts)})
+        if len(attrsearchkw) > 0:
+            keyset = self[keyset].attrsearch(**attrsearchkw)
+            
+        if inverse:
+            keyset = set(self.traces.keys()).difference(keyset)
+        return self.__class__(self[keyset], key_attr=self.key_attr)        
+
+
+
+    # def search(self, seeds, how='union', inverse=False):
+    #     """Use python set operations to find subsets of this DictStream's contents
+    #     starting from one or more seeding strings. Sets are joined using the specified
+    #     :class:`~set` in a right-propagating order. 
+
+    #     :param strings: search string(s) to use to match keys in this DictStream's
+    #         **traces** attribute
+    #     :type strings: str or list
+    #     :param ascopy: should the subset be deepcopies of the contents of this
+    #         DictStream? Sefaults to False
+    #     :type ascopy: bool, optional
+    #     :param inverse: should this return the inverse set? Defaults to False
+    #     :type inverse: bool, optional
+    #     :return:
+    #         - **out** (*PULSE.data.dictstream.DictStream*) -- subset view or
+    #             copy of the contents of this DictStream
+    #     """ 
+    #     if isinstance(seeds, str):
+    #         seeds = {seeds}
+    #     elif isinstance(seeds, (set, list, tuple)):
+    #         if all(isinstance(_e, str) for _e in seeds):
+    #             seeds = set(seeds)
+    #         else:
+    #             raise TypeError('All elements of set-like seeds must be type str')
+    #     else:
+    #         raise TypeError('seeds must be type str or sets of str objects')
+    #     filtset = set()
+    #     for seed in seeds:
+    #         # Get incremental set
+    #         iset = set(fnmatch.filter(seed, self.keys()))
+    #         # Grow set rightwards
+    #         getattr(filtset,how)(iset)
+    #     if inverse:
+    #         outset = set(self.keys()).difference(filtset)
+    #     else:
+    #         outset = filtset
+            
+    #     return self[outset]
 
     
     def split(self, key_attr='instrument', **options):

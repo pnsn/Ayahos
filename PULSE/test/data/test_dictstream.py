@@ -1,10 +1,8 @@
 import pytest
 import numpy as np
 
-from obspy.core.stream import Stream, read
-from obspy.core.utcdatetime import UTCDateTime
-from obspy.core.trace import Trace
-from obspy.core.tests.test_stream import TestStream
+from obspy import Trace, Stream, Inventory, UTCDateTime, read
+# from obspy.core.tests.test_stream import TestStream
 
 from PULSE.data.dictstream import DictStream
 from PULSE.data.foldtrace import FoldTrace
@@ -12,7 +10,7 @@ from PULSE.test.data.util import (load_townsend_example,
                                   load_seattle_example,
                                   assert_common_trace)
 
-class TestDictStream(TestStream):
+class TestDictStream():
 
     # Class Variables - load in example data once!
     # Just be sure to use :meth:`~.(Dict)Stream.copy`
@@ -178,6 +176,146 @@ class TestDictStream(TestStream):
         assert ds.__str__(short=True) == 'DictStream'
         # Cleanup
         del ds
+
+    #######################
+    ## SELECT TEST SUITE ##
+    #######################
+    def test_fnsearch(self):
+        # Setup
+        ds = DictStream(self.lg_st)
+        # Simple search for all UW stations
+        uwkey = ds.fnsearch(idstring='UW.*')
+        assert isinstance(uwkey, set)
+        assert all([_k[:2] == 'UW' for _k in uwkey])
+        # Check ? wildcard behaviors - just get station UW.GNW broadband channels
+        gnwkey = ds.fnsearch(idstring='UW.GNW..HH?')
+        assert len(gnwkey) == 3
+        assert all([_k[:-1] == 'UW.GNW..HH' for _k in gnwkey])
+        # Check [] wildcard behaviors - get GNW and GMW SMA channels
+        grwkey = ds.fnsearch(idstring='UW.G[NM]W..[EH]NZ')
+        assert len(grwkey) == 2
+        assert grwkey == set(['UW.GNW..ENZ','UW.GMW..HNZ'])
+        # Check compound wildcard search
+        wildkey = ds.fnsearch(idstring='*.???.*.[EH]H?')
+        # Sanity check assert that there are data for this example
+        assert len(wildkey) > 0
+        for _k in wildkey:
+            n,s,l,c = _k.split('.')
+            assert len(s) == 3
+            assert c[:-1] in ['EH','HH']
+
+    def test_inverse_set(self):
+        ## Setup
+        ds = DictStream(self.lg_st)
+        # Create key set
+        uwkey = ds.fnsearch(idstring='UW.*')
+        # Create inverse set
+        ikey = ds.inverse_set(uwkey)
+        ## Type Test
+        assert isinstance(ikey, set)
+        assert len(ikey) > 0
+        assert len(uwkey) > 0
+        assert len(ikey) + len(uwkey) == len(ds)
+        ## Test Inverse Set
+        # Assert no overlaps
+        assert not any([_k in uwkey for _k in ikey])
+        assert not any([_k in ikey for _k in uwkey])
+        # Assert union is the full set of keys
+        assert ikey.union(uwkey) == ds.traces.keys()
+        # Assert intersection is an empty set
+        assert ikey.intersection(uwkey) == set()
+
+    def test_attrsearch(self):
+        ## Setup
+        ds = DictStream(self.lg_st)
+        attrs = ['sampling_rate','npts','calib','delta']
+        # Run tests on all individual attributes
+        for ii, _ia in enumerate(attrs):
+            valset = set([ft.stats[_ia] for ft in ds])
+            for _val in valset:
+                ikey = ds.attrsearch(**{_ia:_val})
+                assert len(ikey) > 0
+                # Assert that combinations match
+                assert all([ds[_k].stats[_ia] == _val for _k in ikey])
+                # Assert that inverse sets always mismatch
+                assert not any([ds[_k].stats[_ia] == _val for _k in ds.inverse_set(ikey)])
+                # Run tests on pairwise combinations
+                for jj, _ja in enumerate(attrs):
+                    if jj > ii:
+                        for _jval in set([ft.stats[_ja] for ft in ds]):
+                            kwargs = {_ia: _val, _ja: _jval}
+                            ikey = ds.attrsearch(**kwargs)
+                            # If no keys match, assert that no entries have both attribute values
+                            if len(ikey) == 0:
+                                assert not any([ds[_k].stats[_ia] == _val and ds[_k].stats[_ja] == _jval for _k in ds.traces.keys()])
+                            # If at least one key matches, assert it has the
+                            else:
+                                assert all([ds[_k].stats[_ia] == _val and ds[_k].stats[_ja] == _jval for _k in ikey])
+        # for other attrs raises
+        type_scramble = {int: 'a', float: 'a', UTCDateTime: 2, str: 1}
+        for _attr in ds[0].stats.keys():
+            if _attr not in attrs:
+                with pytest.raises(AttributeError):
+                    ikey = ds.attrsearch(**{_attr: ds[0].stats[_attr]})
+            else:
+                other_val = type_scramble[type(ds[0].stats[_attr])]
+                with pytest.raises(TypeError):
+                    ikey = ds.attrsearch(**{_attr:other_val})
+
+    def test_select(self):
+        ## Setup
+        ds = DictStream(self.lg_st)
+        inv = self.lg_inv
+        
+        ## Test inventory Select
+        inv_AM = inv.select(network='AM')
+        dsAM = ds.select(inventory=inv_AM)
+        assert all([ft.stats.network == 'AM' for ft in dsAM])
+
+        ## Test id select
+        dsid = ds.select(id = '*.G?W..?[HN][ZN]')
+        # Test id select with implicit first position argument
+        dsid2 = ds.select('*.G?W..?[HN][ZN]')
+        # assert that both contain traces
+        assert len(dsid) > 0
+        assert len(dsid2) > 0
+        # assert that the result is identical
+        assert dsid == dsid2
+
+        ## Test component select
+        dsZ = ds.select(component='Z')
+        assert all([ft.stats.component == 'Z' for ft in dsZ])
+        assert dsZ == ds.select('*Z')
+
+        ## Test network select
+        dsUW = ds.select(network='UW')
+        assert all([ft.stats.network == 'UW' for ft in dsUW])
+        # assert same as id search
+        assert dsUW == ds.select('UW*')
+        
+        ## Test station select + * wildcard
+        dsG = ds.select(station='G*')
+        assert all([ft.stats.station[0] == "G" for ft in dsG])
+        assert dsG == ds.select('*.G*.*.*')
+        
+        ## Test location select + ? wildcard
+        dsloc = ds.select(location='0?')
+        assert not any([ft.stats.location == '' for ft in dsloc])
+        assert all([ft.stats.location in ['00','01','02','03'] for ft in dsloc])
+        assert dsloc == ds.select('*.*.0?.*')
+        
+        ## Test channel select + list wild
+        dscha = ds.select(channel='E[HN]Z')
+        assert all([ft.stats.channel in ['EHZ','ENZ'] for ft in dscha])
+        
+        ## Test sampling_rate
+        ds200 = ds.select(sampling_rate=200)
+        breakpoint()
+        assert all([ft.stats.sampling_rate == 200 for ft in ds200])
+
+
+
+
 
 #     def test_fnsearch(self):
 #         ds = DictStream()

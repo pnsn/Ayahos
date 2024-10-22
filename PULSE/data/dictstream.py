@@ -463,6 +463,38 @@ class DictStream(Stream):
     #####################################################################
     # SEARCH METHODS ####################################################
     #####################################################################
+    def fnsearch(self, idstring='*', inverse=False):
+        """Basic search routine using :meth:`~fnmatch.filter` on
+        sets of trace keys (IDs) from this DictStream's traces and
+        the subset matching an input idstring.
+
+        idstring accepts UNIX wildcard statements
+
+        .. Note::
+            The :class:`~PULSE.data.foldtrace.FoldTrace` objects contained in
+            the **output** :class:`~.DictStream` object are views of the original
+            data. Thus, changes made to the contents of **output** change the
+            contents of the originating DictStream. Use the :meth:`~.DictStream.copy`
+            method on the output or source to make new in-memory copies of their
+            contents.
+
+        :param idstring: wildcard-compliant ID string to use for subsetting
+            this DictStream, defaults to '*'
+        :type idstring: str, optional
+        :param inverse: should the inverse set be returned? Defaults to False
+        :type inverse: bool, optional
+        :return:
+            - **output** (*PULSE.data.dictstream.DictStream*) - subset DictStream
+            containing views of FoldTrace objects contained by the source 
+        :rtype: _type_
+        """        
+        fullset = set(self.traces.keys())
+        matchset = set(fnmatch.filter(idstring, fullset))
+        if inverse:
+            matchset = fullset.difference(matchset)
+        return self.__class__(self[list(matchset)])
+
+
     def search(self, seeds, how='union', inverse=False):
         """Use python set operations to find subsets of this DictStream's contents
         starting from one or more seeding strings. Sets are joined using the specified

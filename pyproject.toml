@@ -22,6 +22,7 @@ dependencies = [
     "obspy",
     "pandas",
     "ipython",
+    "pytest"
 ]
 
 [tool.setuptools.packages.find]

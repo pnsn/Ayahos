@@ -8,15 +8,21 @@ from obspy.core.tests.test_stream import TestStream
 
 from PULSE.data.dictstream import DictStream
 from PULSE.data.foldtrace import FoldTrace
-from PULSE.test.data.util import load_townsend_example, assert_common_trace
+from PULSE.test.data.util import (load_townsend_example,
+                                  load_seattle_example,
+                                  assert_common_trace)
 
 class TestDictStream(TestStream):
 
-    # Do setup imports of waveform data once!
-    # Just make sure to .copy()!
+    # Class Variables - load in example data once!
+    # Just be sure to use :meth:`~.(Dict)Stream.copy`
+    # in the setup of each test
+    # Stream from ObsPy default example (3 traces, 1 station)
     sm_st = read()
-    lg_st = load_townsend_example()
-    # xl_st = load_puget_sound_example()
+    # Stream from M4.3 near Port Townsend, WA in Oct 2023 (33 traces, 8 stations, 13 instruments)
+    med_st, med_inv, townsend_cat = load_townsend_example()
+    # Stream from M2.1 in North Seattle, WA in Sept 2023 (395 traces, 109 stations, 133 instruments)
+    lg_st, lg_inv, seattle_cat = load_seattle_example()
 
     def test_init(self):
         # Setup
@@ -83,14 +89,17 @@ class TestDictStream(TestStream):
         assert ds1.traces == ds2.traces
         # Assert that the DictStreams match
         assert ds1 == ds2
+        # Cleanup memory
+        del st, ds1, ds2
 
     def test_iter(self):
         """Test suite for the __iter__ method of DictStream
         """        
-        ds = DictStream(load_townsend_example())
+        ds = DictStream(self.med_st.copy())
         assert hasattr(ds, '__iter__')
         for _ft in ds:
             assert isinstance(_ft, FoldTrace)
+        del ds
 
     def test_getitem(self):
         """Test suite for the __getitem__ method of DictStream
@@ -104,7 +113,6 @@ class TestDictStream(TestStream):
         assert_common_trace(ds[-1], read()[-1])
         # Slicing
         assert isinstance(ds[:2], DictStream)
-
         # Key value
         assert isinstance(ds['BW.RJOB..EHZ'], FoldTrace)
         assert ds['BW.RJOB..EHZ'] == ds[0]
@@ -118,35 +126,40 @@ class TestDictStream(TestStream):
             ds[['BW.RJOB..EHZ', 1]]
         with pytest.raises(KeyError):
             ds[[3.]]
+        # Cleanup
+        del ds, ds2
         
     def test_setitem(self):
         """Test suite for the __setitem__ method of DictStream
         """     
-        # Setup   
-        st = self.lg_st.copy()
+        # Setup 
         ds = DictStream(self.sm_st.copy())
         ds2 = ds.copy()
         # Make sure we're asserting st[0] is an ObsPy trace to start with
-        assert isinstance(st[0], Trace)
-        ds2[2] = st[0].copy()
+        assert isinstance(self.sm_st[0], Trace)
+        ds2[2] = self.sm_st[0].copy()
         # Assert that setting the item converts into FoldTrace
         assert isinstance(ds2[2], FoldTrace)
         # Assert that the data are not changed (TODO: probably move to test extend?)
-        np.testing.assert_array_equal(ds2[2], st[0])
+        np.testing.assert_array_equal(ds2[2], self.sm_st[0])
         # Assert that
-        assert_common_trace(st[0], ds2[2])
+        assert_common_trace(self.sm_st[0], ds2[2])
 
         # Test Error catches
         with pytest.raises(IndexError):
-            ds[4] = st[0]
+            ds[4] = self.sm_st[0]
         with pytest.raises(TypeError):
             ds[4] = 'abc'
         with pytest.raises(TypeError):
-            ds[int] = st[0]
+            ds[int] = self.sm_st[0]
+        # Cleanup
+        del ds, ds2
 
     def test_repr(self):
+        # Setup
         ds = DictStream(self.sm_st.copy())
-        ds2 = DictStream(self.lg_st.copy())
+        ds2 = DictStream(self.med_st.copy())
+        # Tests
         assert isinstance(ds.__repr__(), str)
         len0 = len(ds.__repr__())
         len1 = len(ds.__repr__(extended=True))
@@ -154,18 +167,26 @@ class TestDictStream(TestStream):
         len0 = len(ds2.__repr__())
         len1 = len(ds2.__repr__(extended=True))
         assert len0 < len1
+        # Cleanup
+        del ds, ds2
 
     def test_str(self):
-        ds = DictStream(read())
+        # Setup
+        ds = DictStream(self.sm_st.copy())
         assert isinstance(ds.__str__(), str)
         assert ds.__str__() == 'PULSE.data.dictstream.DictStream'
         assert ds.__str__(short=True) == 'DictStream'
+        # Cleanup
+        del ds
 
+#     def test_fnsearch(self):
+#         ds = DictStream()
 
-    # def test_search(self):
-    #     # Setup
-    #     ds = DictStream(self.lg_st.copy())
-    #     ds2 = ds.search(['UW.P*..EN?*', 'UW.N*..EH?*'])
+#     # def test_search(self):
+#     #     # Setup
+#     #     ds = DictStream(self.townsend_st.ctownsendy())
+#  townsend #     ds2 = ds.search(['UW.P*..EN?*', 'UW.N*..EH?*'])
 
-    def test_split(self):
-        ds = DictStream(self.lg_st.copy())
+#     def test_split(self):
+#         ds = DictStream(self.townsend_st.ctownsendy())
+# townsend

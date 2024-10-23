@@ -18,7 +18,7 @@ import pandas as pd
 from collections import deque
 from PULSE.mod.base import BaseMod
 
-class SequenceMod(BaseMod):
+class SeqMod(BaseMod):
     """
     A :mod:`~PULSE.mod` class for hosting a sequence of :mod:`~PULSE.mod` class objects and
     facilitating chained execution of their :meth:`~PULSE.mod.base.BaseMod.pulse` method calls
@@ -45,8 +45,8 @@ class SequenceMod(BaseMod):
     :type max_pulse_size: int, optional
     :param maxlen: maximum length of the **output** of this SequenceMod if it has an empty **sequence**, defaults to None
     :type maxlen: None or int, optional
-    :param name_suffix: string or integer to append to the end of this SequenceMod's __name__ attribute as "name_suffix", defaults to None
-    :type name_suffix: None, int, str, optional.
+    :param name: string or integer to append to the end of this SequenceMod's __name__ attribute as "name", defaults to None
+    :type name: None, int, str, optional.
 
     :var sequence: An order-sensitive dictionary of :mod:`~PULSE.mod` class objects to run in sequence
     :var output: If this SequenceMod is non-empty, this is an alias to the **output** of the last :mod:`~PULSE.mod` object
@@ -62,11 +62,10 @@ class SequenceMod(BaseMod):
 
     def __init__(
             self,
-            sequence={},
+            sequence={'Base': BaseMod()},
             meta_max_age=60,
             max_pulse_size=1,
-            maxlen=None,
-            name_suffix=None):
+            name=None):
         """Create a :class:`~PULSE.mod.sequence.SequenceMod` object
 
         :param sequence: collection of modules that are executed in their provided order, defaults to {}
@@ -77,49 +76,49 @@ class SequenceMod(BaseMod):
         :type max_pulse_size: int, optional
         :param maxlen: maximum length of the **output** of this SequenceMod if it has an empty **sequence**, defaults to None
         :type maxlen: None or int, optional
-        :param name_suffix: string or integer to append to the end of this SequenceMod's __name__ attribute as "name_suffix", defaults to None
-        :type name_suffix: None, int, str, optional.
+        :param name: string or integer to append to the end of this SequenceMod's __name__ attribute as "name", defaults to None
+        :type name: None, int, str, optional.
         """
+        demerits = 0
         # Inherit from BaseMod
         super().__init__(
             max_pulse_size=max_pulse_size,
-            maxlen=maxlen,
-            name_suffix=name_suffix)
+            maxlen=None,
+            name=name)
         
         # Initialize Sequence & Run Checks
-        # input sequence is a dict of BaseMod
+        # input sequence is a dict or list of BaseMod
         if isinstance(sequence, dict):
-            if all(isinstance(_e, BaseMod) for _e in sequence.values()):
-                self.sequence = sequence
-                self.names = list(self.sequence.keys())
-            else:
-                self.Logger.critical('sequence must consist entirely of BaseMod-like objects')
-        # Input sequence is a BaseMod
-        elif isinstance(sequence, BaseMod):
-            self.sequence = {sequence.__name__(): sequence}
-            self.names = [sequence.__name__()]
-        # input sequence is a list of BaseMod
+            keys = sequence.keys()
+            values = sequence.values()
         elif isinstance(sequence, list):
-            self.names = []
-            self.sequence = {}
-            for _e in sequence:
-                demerits = 0
-                if isinstance(_e, BaseMod):
-                    if _e.__name__() not in self.names:
-                        self.sequence.update({_e.__name__(): _e})
-                        self.names.append(_e.__name__())
-                    else:
-                        self.Logger.critical(f'sequence element name {_e.__name__()} is non-unique. Cannot form sequence.')
-                        demerits += 1
-                else:
-                    self.Logger.critical(f'sequence element is not BaseMod-like.')
-                    demerits += 1
-            if demerits > 0:
-                sys.exit(os.EX_DATAERR)
+            values = sequence
+        elif isinstance(sequence, BaseMod):
+            values = [sequence]
         else:
-            self.Logger.critical(f'sequence type {type(sequence)} not supported.')
-            sys.exit(os.EX_DATAERR)
+            self.Logger.critical('TypeError: sequence must be type PULSE.mod.base.BaseMod or dict or list thereof')
+            demerits += 1
 
+        if len(values) > 0:
+            if all(isinstance(_e, BaseMod) for _e in values):
+                pass
+            else:
+                self.Logger.critical('TypeError: sequence must consist entirely of BaseMod-like values')
+                demerits += 1
+        else:
+            self.Logger.critical('ValueError: sequence must be non-empty')
+            demerits += 1
+        if isinstance(sequence, list):
+            keys = {mod.stats.name for mod in sequence}
+            if len(keys) != len(values):
+                self.Logger.critical('Provided modules do not all have unique names')
+                demerits += 1
+            else:
+                self.sequence = dict(zip(keys, values))
+        elif isinstance(sequence, dict):
+            self.sequence = sequence
+        
+        
         # Compatability check for meta_max_age
         if isinstance(meta_max_age, (int, float)):
             if meta_max_age > 0:
@@ -131,6 +130,19 @@ class SequenceMod(BaseMod):
             self.Logger.critical('meta_max_age must be a positive int-like value.')
             sys.exit(os.EX_DATAERR)
 
+        
+
+        # Create dataframe holder for pulse metadata
+        self.metadata = pd.DataFrame()
+
+        # Trigger sys.exit if any critical errors were raised.
+        if demerits > 0:
+            self.Logger.critical(f'The above {demerits} errors triggered exit.')
+            sys.exit(os.EX_DATAERR)
+
+        
+        
+
         # Alias the output of the last module in sequence to self.output (inherited from BaseMod)
         if len(self.sequence) > 0:
             self._nonempty = True
@@ -138,8 +150,12 @@ class SequenceMod(BaseMod):
         else:
             self._nonempty = False
             self.Logger.info(f'Empty {self.__name__()}.sequence - defaulting output to BaseMod.output (collections.deque)')
-        # Create dataframe holder for pulse metadata
-        self.metadata = pd.DataFrame()
+
+
+    def __setattr__(self, key, value):
+        if key == 'sequence':
+            #  TODO: Have setting sequence automatically re-alias output and update stats
+
 
     #################################
     # POLYMORPHIC METHODS FOR PULSE #

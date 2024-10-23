@@ -1,211 +1,192 @@
 """
+:module: PULSE.test.mod.test_basemod
+:auth: Nathan T. Stevens
+:email: ntsteven (at) uw.edu
+:org: Pacific Northwest Seismic Network
+:license: AGPL-3.0
 
+:AI Attribution: Unit test suite developed with assistance from ChatGPT with
+and input of the PULSE.mod.base.BaseMod source code. Subsequent testing and
+verification conducted by the author.
 
-AI Attribution: Unit test suite developed with assistance from ChatGPT with
-and input of the PULSE.mod.base.BaseMod source code. Independently verified
-by N. Stevens.
+The archived conversation can be found here:
+https://chatgpt.com/share/67194525-575c-8002-a6cc-80b1873de09f
 """
 
-import pytest
+import unittest
 from collections import deque
+from obspy import UTCDateTime
 
-from PULSE.data.header import PulseStats
-from PULSE.mod.base import BaseMod
+from PULSE.data.header import ModStats
+from PULSE.mod.base import BaseMod  # Replace with the actual module import
 
-# A fixture to create an instance of BaseMod
-@pytest.fixture
-def base_mod():
-    return BaseMod(max_pulse_size=5, maxlen=10)
 
-def test_initialization_defaults():
-    """Test if the BaseMod object is initialized with default values."""
-    base_mod = BaseMod()
-    assert base_mod.max_pulse_size == 1
-    assert base_mod.maxlen is None
-    assert isinstance(base_mod.output, deque)
-    assert isinstance(base_mod.stats, PulseStats)
-    assert base_mod.stats.modname == 'BaseMod'
-    assert base_mod._continue_pulsing is True
+class TestBaseMod(unittest.TestCase):
 
-def test_initialization_with_params():
-    """Test BaseMod initialization with custom parameters."""
-    base_mod = BaseMod(max_pulse_size=10, maxlen=100, name_suffix='test')
-    assert base_mod.max_pulse_size == 10
-    assert base_mod.maxlen == 100
-    assert '_test' in base_mod.__name__()
+    #############################################
+    ## setUp and tearDown methods for TestCase ##
+    #############################################
 
-def test_invalid_max_pulse_size():
-    """Test if ValueError is raised for invalid max_pulse_size."""
-    with pytest.raises(ValueError):
-        BaseMod(max_pulse_size=0)
-
-def test_invalid_max_pulse_type():
-    """Test if TypeError is raised for non-numeric max_pulse_size."""
-    with pytest.raises(TypeError):
-        BaseMod(max_pulse_size='invalid')
-
-def test_invalid_name_suffix_type():
-    """Test if TypeError is raised for invalid name_suffix type."""
-    with pytest.raises(TypeError):
-        BaseMod(name_suffix={'invalid': 'type'})
-
-def test_repr_and_str(base_mod):
-    """Test __repr__ and __str__ methods."""
-    assert 'BaseMod' in repr(base_mod)
-    assert 'BaseMod' in str(base_mod)
-
-def test_pulse_empty_input(base_mod):
-    """Test the pulse method with an empty input deque."""
-    input_data = deque()
-    output = base_mod.pulse(input_data)
-    breakpoint()
-    assert len(output) == 0
-    assert base_mod.stats.niter == 0
-
-def test_pulse_with_input(base_mod):
-    """Test the pulse method with some input data."""
-    input_data = deque([1, 2, 3, 4, 5])
-    output = base_mod.pulse(input_data)
-    assert len(output) == 5
-    assert base_mod.stats.niter == 5
-
-def test_deepcopy(base_mod):
-    """Test if the deepcopy method works properly."""
-    copied_mod = base_mod.copy()
-    assert copied_mod is not base_mod
-    assert isinstance(copied_mod, BaseMod)
-
-def test_measure_input(base_mod):
-    """Test the measure_input method with valid and invalid inputs."""
-    input_data = deque([1, 2, 3])
-    assert base_mod.measure_input(input_data) == 3
-
-    with pytest.raises(SystemExit):
-        base_mod.measure_input('invalid')
-
-def test_measure_output(base_mod):
-    """Test the measure_output method."""
-    assert base_mod.measure_output() == 0
-    base_mod.output.append(1)
-    assert base_mod.measure_output() == 1
-
-def test_get_unit_input(base_mod):
-    """Test the get_unit_input method."""
-    input_data = deque([1, 2, 3])
-    unit_input = base_mod.get_unit_input(input_data)
-    assert unit_input == 1
-    assert len(input_data) == 2
-
-    # Test early stopping with empty input
-    empty_data = deque()
-    unit_input = base_mod.get_unit_input(empty_data)
-    assert unit_input is None
-    assert base_mod._continue_pulsing is False
-
-def test_run_unit_process(base_mod):
-    """Test the run_unit_process method."""
-    unit_input = 42
-    unit_output = base_mod.run_unit_process(unit_input)
-    assert unit_output == unit_input
-
-def test_store_unit_output(base_mod):
-    """Test the store_unit_output method."""
-    unit_output = 99
-    base_mod.store_unit_output(unit_output)
-    assert base_mod.output[-1] == 99
-
-def test_import_class(base_mod):
-    """Test the import_class method."""
-    cls = base_mod.import_class('collections.deque')
-    assert cls is deque
-
-    with pytest.raises(TypeError):
-        base_mod.import_class(123)
+    def setUp(self):
+        """Set up test environment."""
+        self.base_mod = BaseMod(max_pulse_size=2, maxlen=5, name='TestModule')
+        self.test_input = deque(range(9))
+        self.test_units = [1, 'a', int, None]
+        self.test_outputs = range(20)
     
-    with pytest.raises(ValueError):
-        base_mod.import_class('invalid_class_name')
+    def tearDown(self) -> None:
+        del self.base_mod
 
-    with pytest.raises(SystemExit):
-        base_mod.import_class('non.existent.Class')
+    #########################
+    ## __init__ test suite ##
+    #########################
+    def test_initialization(self):
+        """Test proper initialization of BaseMod."""
+        self.assertEqual(self.base_mod.stats.mps, 2)
+        self.assertEqual(self.base_mod.stats.maxlen, 5)
+        self.assertEqual(self.base_mod.stats.name, 'BaseMod_TestModule')
+        self.assertEqual(len(self.base_mod.output), 0)
+        self.assertIsInstance(self.base_mod.stats, ModStats)
 
+    def test_invalid_max_pulse_size(self):
+        """Test if invalid max_pulse_size raises errors."""
+        with self.assertRaises(ValueError):
+            BaseMod(max_pulse_size=0)
 
+        with self.assertRaises(TypeError):
+            BaseMod(max_pulse_size='invalid')
 
-# class TestBaseMod():
+    def test_invalid_name_type(self):
+        """Test if invalid name types raise errors."""
+        with self.assertRaises(TypeError):
+            BaseMod(name=123)
 
-#     Logger = logging.getLogger('TestBaseMod')
+    ###############################
+    ## utility method test suite ##
+    ###############################
+            
+    def test_setname(self):
+        self.base_mod.setname('Test')
+        self.assertEqual(self.base_mod.name, self.base_mod.stats.name)
+        self.assertEqual(self.base_mod.name, 'BaseMod_Test')
+        self.base_mod.setname(None)
+        self.assertEqual(self.base_mod.name, 'BaseMod')
 
-#     def test_init_bare(self):
-#         mod = BaseMod()
-#         assert isinstance(mod, object)
-#         assert mod.max_pulse_size == 1
-#         assert isinstance(mod.output, collections.deque)
-#         assert isinstance(mod.Logger, logging.Logger)
-#         assert isinstance(mod.maxlen, (type(None), int))
-#         assert isinstance(mod.stats, PulseStats)
-#         assert mod.stats.modname == 'BaseMod'
-#         assert mod._continue_pulsing
-#         assert mod.maxlen is None
+    def test_repr(self):
+        repr_str = self.base_mod.__repr__()
+        self.assertIn('BaseMod_TestModule', repr_str)
+        self.assertIn('mps: 2', repr_str)
+
+    def test_copy(self):
+        basemod2 = self.base_mod.copy()
+        self.assertIsInstance(basemod2, BaseMod)
+        self.assertEqual(basemod2.stats.name, 'BaseMod_TestModule')
     
-#     def test_init_max_pulse_size(self):
-#         mod = BaseMod()
-#         assert mod.max_pulse_size == 1
-#         mod = BaseMod(max_pulse_size=2)
-#         assert mod.max_pulse_size == 2
-#         mod = BaseMod(max_pulse_size=1.9)
-#         assert mod.max_pulse_size == 1
-#         with pytest.raises(ValueError):
-#             BaseMod(max_pulse_size=0)
-#         with pytest.raises(ValueError):
-#             BaseMod(max_pulse_size=-1)
-#         with pytest.raises(TypeError):
-#             BaseMod(max_pulse_size='a')
+    def test_import_class(self):
+        """Test the import_class method."""
+        cls = self.base_mod.import_class('obspy.core.utcdatetime.UTCDateTime')
+        self.assertEqual(cls, UTCDateTime)
 
-#     def test_init_maxlen(self):
-#         mod = BaseMod()
-#         assert mod.maxlen is None
-#         mod = BaseMod(maxlen=2)
-#         assert mod.maxlen == 2
-#         assert mod.output.maxlen == 2
-#         for _i in range(3):
-#             mod.output.append(_i)
-#             if _i < 1:
-#                 assert len(mod.output) == _i + 1
-#             else:
-#                 assert len(mod.output) == 2
-#         with pytest.raises(ValueError):
-#             BaseMod(maxlen=-1)
+        with self.assertRaises(ValueError):
+            self.base_mod.import_class('invalid_class_name')
 
-    
-#     def test_init_name_suffix(self):
-#         mod = BaseMod()
-#         assert mod._suffix == ''
-#         assert mod.__name__() == 'BaseMod'
-#         mod = BaseMod(name_suffix='1')
-#         assert mod._suffix == '_1'
-#         assert mod.__name__() == 'BaseMod_1'
-#         mod = BaseMod(name_suffix=2)
-#         assert mod._suffix == '_2'
-#         assert mod.__name__() == 'BaseMod_2'
-#         with pytest.raises(TypeError):
-#             BaseMod(name_suffix = 1.2)
-    
-#     def test_measure_input(self):
-#         mod = BaseMod()
-#         input = collections.deque(range(2))
-#         assert mod.measure_input(input) == 2
+    ####################################
+    ## pulse & subroutines test suite ##
+    ####################################    
 
+    def test_pulse_startup(self):
+        """Test the pulse_startup method."""
+        test_input = self.test_input
+        self.base_mod.pulse_startup(test_input)
+        self.assertEqual(self.base_mod.stats.in0, len(test_input))
+        self.assertEqual(self.base_mod.stats.out0, 0)
+        self.assertTrue(self.base_mod._continue_pulsing)
 
-#     def test_get_unit_input(self):
-#         mod = BaseMod()
-#         input = collections.deque(range(2))
-#         assert len(input) == 2
-#         assert mod.get_unit_input(input) == 0
-#         assert len(input) == 1
+        # Test with incorrect input type
+        with self.assertRaises(SystemExit):
+            self.base_mod.pulse_startup([])  # Should be deque
 
+    def test_pulse_shutdown(self):
+        """Test the pulse_shutdown method."""
+        test_input = self.test_input
+        self.base_mod.pulse_shutdown(test_input, niter=1, exit_type='max')
+        self.assertEqual(self.base_mod.stats.niter, 2)
 
-
-#     # def test_pulse(self):
-#     #     mod = BaseMod()
-#     #     inputs = collections.deque(range(50))
-
+        # Test shutdown exit types
+        self.base_mod.pulse_shutdown(test_input, niter=0, exit_type='nodata')
+        self.assertEqual(self.base_mod.stats.niter, 0)
+        self.base_mod.pulse_shutdown(test_input, niter=1, exit_type='early-get')
+        self.assertEqual(self.base_mod.stats.niter, 1)
+        self.base_mod.pulse_shutdown(test_input, niter=1, exit_type='early-run')
+        self.assertEqual(self.base_mod.stats.niter, 1)
+        self.base_mod.pulse_shutdown(test_input, niter=1, exit_type='early-put')
+        self.assertEqual(self.base_mod.stats.niter, 2)
         
+        # Test with incorrect exit_type
+        with self.assertRaises(SystemExit):
+            self.base_mod.pulse_shutdown(test_input, niter=2, exit_type='invalid')
+
+    def test_get_unit_input(self):
+        """Test the get_unit_input method."""
+        test_input = self.test_input.copy()
+        unit_input = self.base_mod.get_unit_input(test_input)
+        self.assertEqual(unit_input, self.test_input[-1])
+
+        # Test early stopping when deque is empty
+        empty_input = deque()
+        unit_input = self.base_mod.get_unit_input(empty_input)
+        self.assertIsNone(unit_input)
+        self.assertFalse(self.base_mod._continue_pulsing)
+    
+    def test_run_unit_process(self):
+        """Test the run_unit_process method of BaseMod
+        """        
+        for unit_input in self.test_units:
+            unit_output = self.base_mod.run_unit_process(unit_input)
+            self.assertEqual(unit_input, unit_output)
+        
+    def test_put_unit_output(self):
+        """Test the put_unit_output method of BaseMod
+        """        
+        for _e, unit_output in enumerate(self.test_units):
+            self.base_mod.put_unit_output(unit_output)
+            self.assertEqual(self.base_mod.output[0], unit_output)
+            self.assertEqual(len(self.base_mod.output), _e+1)
+
+    def test_put_unit_output_maxlen(self):
+        """Test the put_unit_output method behavior surrounding
+        maxlen setting for BaseMod
+        """        
+        for _e, unit_output in enumerate(self.test_outputs):
+            self.base_mod.put_unit_output(unit_output)
+            self.assertEqual(self.base_mod.output[0], self.test_outputs[_e])
+            if _e+1 <= self.base_mod.stats.maxlen:
+                self.assertEqual(len(self.base_mod.output), _e + 1)
+            else:
+                self.assertEqual(len(self.base_mod.output), self.base_mod.stats.maxlen)
+
+    def test_pulse(self):
+        """Test the pulse method
+        """        
+        inputs = self.test_input
+        for _n in range(5):
+            out = self.base_mod.pulse(inputs)
+            # First call
+            if _n == 0:
+                self.assertEqual(len(self.base_mod.output), 2)
+                self.assertEqual(self.base_mod.output, deque([7,8]))
+            # Second call
+            elif _n == 1:
+                self.assertEqual(len(self.base_mod.output), 4)
+                self.assertEqual(self.base_mod.output, deque([5,6,7,8]))
+            # Third and onward (hit maxlen)
+            else:
+                self.assertEqual(len(self.base_mod.output), 5)
+            # For all but the last, end on 'max'
+            if _n < 4:
+                self.assertEqual(self.base_mod.stats.stop, 'max')
+            else:
+                self.assertEqual(self.base_mod.stats.stop, 'early-get')
+
+
+

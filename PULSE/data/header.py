@@ -10,7 +10,7 @@
      - :class:`~PULSE.data.mltrace.MLTrace` and decendents (:class:`~PULSE.data.mltracebuff.MLTraceBuff`) use :class`~PULSE.data.header.MLStats`
      - :class:`~PULSE.data.dictstream.DictStream` uses :class`~PULSE.data.header.DSStats`
      - :class:`~PULSE.data.window.Window` uses :class`~PULSE.data.header.WindowStats`
-     - :class:`~PULSE.mod.base.BaseMod` and decendents (i.e., all :mod:`~PULSE.mod` classes) uses :class`~PULSE.data.header.PulseStats`
+     - :class:`~PULSE.mod.base.BaseMod` and decendents (i.e., all :mod:`~PULSE.mod` classes) uses :class`~PULSE.data.header.ModStats`
      
 """
 import copy
@@ -197,16 +197,23 @@ class MLStats(Stats):
 
 
 ###############################
-# PulseStats Class Definition #
+# ModStats Class Definition #
 ###############################
 
-class PulseStats(AttribDict):
-    """A :class:`~obspy.core.util.attribdict.AttribDict` child-class for holding metadata
-    from a given call of :meth:`~PULSE.mod.base.BaseMod.pulse`. 
-    
-    :var modname: name of the associated module
-    :var starttime: POSIX start time of the last call of a :meth:`~PULSE.mod.base.BaseMod.pulse`-type method
-    :var endtime: POSIX end time of the last call of a meth:`~PULSE.mod.base.BaseMod.pulse`-type method
+class ModStats(AttribDict):
+    """A :class:`~obspy.core.util.attribdict.AttribDict` for
+    holding metadata for :class:`~PULSE.mod.base.BaseMod` class objects.
+
+    Module Attributes
+    -----------------
+    :var name: name of the module
+    :var mps: maximum pulse size set 
+    :var maxlen: maximum mod.output size
+
+    `pulse` Metadata Attributes
+    -------------------------
+    :var starttime: start time of the last call of a :meth:`~PULSE.mod.base.BaseMod.pulse`-type method
+    :var endtime: end time of the last call of a meth:`~PULSE.mod.base.BaseMod.pulse`-type method
     :var niter: number of iterations completed
     :var in0: input size at the start of the call
     :var in1: input size at the end of the call
@@ -214,18 +221,22 @@ class PulseStats(AttribDict):
     :var out1: output size at the end of the call
     :var runtime: number of seconds it took for the call to run
     :var pulserate: iterations per second
-    :var stop: Reason iterations stopped
+    :var stop: Reason iteration stoppage
 
-    Explanation of **stop** values
-       - 'max' -- :meth:`~PULSE.mod.BaseMod.pulse` reached the **max_pulse_size** iteration limit
-       - 'early0' -- flagged for early stopping before executing the unit-process in an iteration
-       - 'early1' -- flagged for early stopping after executing the unit-process in an iteration
+    **stop** values
+    ---------------
+       - 'nodata' -- pulse received a non-NoneType input with 0 length
+       - 'early-get' -- pulse iterations stopped early at the `get_unit_input` method
+       - 'early-run' -- pulse iterations stopped early at the `run_unit_process` method
+       - 'early-put' -- pulse iterations stopped early at the `put_unit_output` method
+       - 'max' -- pulse concluded at maximum iterations
      """    
     readonly = ['pulserate','runtime']
     _refresh_keys = {'starttime','endtime','niter'}
-    defaults = {'modname': '',
-                'starttime': 0,
-                'endtime': 0,
+    defaults = {'name': '',
+                'mps': 1,
+                'starttime': None,
+                'endtime': None,
                 'stop': '',
                 'niter': 0,
                 'in0': 0,
@@ -234,9 +245,11 @@ class PulseStats(AttribDict):
                 'out1': 0,
                 'runtime':0,
                 'pulserate': 0}
-    _types = {'modname': str,
-              'starttime':float,
-              'endtime':float,
+    _types = {'name': str,
+              'mps': int,
+              'maxlen': (int, type(None)),
+              'starttime':(UTCDateTime, type(None)),
+              'endtime':(UTCDateTime, type(None)),
               'stop': str,
               'niter':int,
               'in0':int,
@@ -248,7 +261,7 @@ class PulseStats(AttribDict):
     
 
     def __init__(self, header={}):
-        """Create an empty :class:`~PULSE.mod.base.PulseStats` object"""
+        """Create an empty :class:`~PULSE.mod.base.ModStats` object"""
         # Inherit from AttribDict
         super().__init__()
         # Use updated __setattr__ to populate inputs from header
@@ -262,7 +275,7 @@ class PulseStats(AttribDict):
     def __setitem__(self, key, value):
         # Upgrade from warning to error for readonly assignment
         if key in self.readonly:
-            raise AttributeError(f'Attribute "{key}" in PulseStats is read only!')
+            raise AttributeError(f'Attribute "{key}" in ModStats is read only!')
         # Upgrade from warning to error for mismatched type
         elif not isinstance(value, self._types[key]):
             try:
@@ -273,44 +286,35 @@ class PulseStats(AttribDict):
             pass
         # Refresh keys
         if key in self._refresh_keys:
-            if key in ['starttime', 'endtime']:
-                if value == float(value):
-                    value = float(value)
-                else:
-                    raise ValueError(f'Input value for attribute "{key}" must be float-like')
-            elif key in ['niter']:
-                if value == int(value):
-                    value = int(value)
-                else:
-                    raise ValueError(f'Input value for attribute "{key}" must be int-like')
             # Update value
-            super(PulseStats, self).__setitem__(key,value)
+            super(ModStats, self).__setitem__(key,value)
             # Calculate new refresh values
-            self.__dict__['runtime'] = self.endtime - self.starttime
-            if self.runtime > 0:
-                self.__dict__['pulserate'] = float(self.niter) / self.runtime
-            # elif self.runtime == 0:
-            else:
-                self.__dict__['pulserate'] = 0.
+            if key == ['endtime']:
+                self.__dict__['runtime'] = self.endtime - self.starttime
+                if self.runtime > 0:
+                    self.__dict__['pulserate'] = float(self.niter) / self.runtime
+                # elif self.runtime == 0:
+                else:
+                    self.__dict__['pulserate'] = 0.
             # # TODO: Assess this behavior in PULSE.mod.base.BaseMod.pulse
             # else:
             #     raise ValueError('Update to Attribute "{key}" resulted in a negative runtime')
             return
         # All other keys
         if isinstance(value, dict):
-            super(PulseStats, self).__setitem__(key, AttribDict(value))
+            super(ModStats, self).__setitem__(key, AttribDict(value))
         else:
-            super(PulseStats, self).__setitem__(key, value)
+            super(ModStats, self).__setitem__(key, value)
 
 
     __setattr__ = __setitem__
 
     def __getitem__(self, key, default=None):
-        return super(PulseStats, self).__getitem__(key, default)
+        return super(ModStats, self).__getitem__(key, default)
 
     def __str__(self):
-        prioritized_keys = ['modname','pulserate','stop','niter',
-                            'in0','in1','out0','out1',
+        prioritized_keys = ['name','pulserate','stop','niter',
+                            'mps','in0','in1','maxlen','out0','out1',
                             'starttime','endtime','runtime']
         return self._pretty_str(priorized_keys=prioritized_keys)
 
@@ -318,7 +322,7 @@ class PulseStats(AttribDict):
         p.text(str(self))
 
     def asdict(self):
-        """Convenience method - return a view of this PulseStats object
+        """Convenience method - return a view of this ModStats object
         as a dictionary
 
         :return: _description_

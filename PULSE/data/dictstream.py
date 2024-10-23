@@ -569,6 +569,18 @@ class DictStream(Stream):
         :param inverse: _description_, defaults to False
         :type inverse: bool, optional
         """
+        # Less restricted version of
+        if isinstance(inventory, Inventory):
+            contents = inventory.get_contents()
+            if len(contents['channel']) > 0:
+                invset = set(contents()['channels'])
+            elif len(contents['stations']) > 0:
+                invset = set([f'{_c}.*' for _c in contents['stations']])
+            elif len(contents['networks']) > 0:
+                invset = set([f'{_c}.*' for _c in contents['networks']])
+            keyset = invset.intersection(self.traces.keys())
+
+
         if network is None:
             network = '*'
         if station is None:
@@ -608,7 +620,7 @@ class DictStream(Stream):
             keyset = set(self.traces.keys()).difference(keyset)
         return self.__class__(self[keyset], key_attr=self.key_attr)        
 
-    def split(self, attr='inst', **options):
+    def split(self, id_element='inst', **options):
         """Split this :class:`~.DictStream` into multiple :class:`~.DictStream` objects
         contained in a :class:`dict` with attrs corresponding to unique values of the
         **attr** from the contents of the original DictStream.
@@ -622,8 +634,12 @@ class DictStream(Stream):
         :param options: attr-word argument collector passed to the :meth:`~.DictStream.extend` method
         :return:
          - **out** (*PULSE.data.dictstream.DictStream) -- 
-        """        
-        if attr not in MLStats.defaults.keys():
+        """   
+        if id_element in MLStats.defaults.keys():
+            for _ft in self:
+                _k = _ft.stats[id_element]
+
+        if id_element not in MLStats.defaults.keys():
             breakpoint()
             raise ValueError('attr not in MLStats.defaults.keys()')
         out = {}

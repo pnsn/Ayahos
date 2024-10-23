@@ -608,71 +608,30 @@ class DictStream(Stream):
             keyset = set(self.traces.keys()).difference(keyset)
         return self.__class__(self[keyset], key_attr=self.key_attr)        
 
-
-
-    # def search(self, seeds, how='union', inverse=False):
-    #     """Use python set operations to find subsets of this DictStream's contents
-    #     starting from one or more seeding strings. Sets are joined using the specified
-    #     :class:`~set` in a right-propagating order. 
-
-    #     :param strings: search string(s) to use to match keys in this DictStream's
-    #         **traces** attribute
-    #     :type strings: str or list
-    #     :param ascopy: should the subset be deepcopies of the contents of this
-    #         DictStream? Sefaults to False
-    #     :type ascopy: bool, optional
-    #     :param inverse: should this return the inverse set? Defaults to False
-    #     :type inverse: bool, optional
-    #     :return:
-    #         - **out** (*PULSE.data.dictstream.DictStream*) -- subset view or
-    #             copy of the contents of this DictStream
-    #     """ 
-    #     if isinstance(seeds, str):
-    #         seeds = {seeds}
-    #     elif isinstance(seeds, (set, list, tuple)):
-    #         if all(isinstance(_e, str) for _e in seeds):
-    #             seeds = set(seeds)
-    #         else:
-    #             raise TypeError('All elements of set-like seeds must be type str')
-    #     else:
-    #         raise TypeError('seeds must be type str or sets of str objects')
-    #     filtset = set()
-    #     for seed in seeds:
-    #         # Get incremental set
-    #         iset = set(fnmatch.filter(seed, self.keys()))
-    #         # Grow set rightwards
-    #         getattr(filtset,how)(iset)
-    #     if inverse:
-    #         outset = set(self.keys()).difference(filtset)
-    #     else:
-    #         outset = filtset
-            
-    #     return self[outset]
-
-    
-    def split(self, key_attr='instrument', **options):
+    def split(self, attr='inst', **options):
         """Split this :class:`~.DictStream` into multiple :class:`~.DictStream` objects
-        contained in a :class:`dict` with keys corresponding to unique values of the
-        **key_attr** from the contents of the original DictStream.
+        contained in a :class:`dict` with attrs corresponding to unique values of the
+        **attr** from the contents of the original DictStream.
 
         The output contains views of the original data, so any modifications made
         to the :class:`~PULSE.data.foldtrace.FoldTrace` objects in the views are
         changes to the source data.
 
-        :param key_attr: key attribute to use to effect the split, defaults to 'instrument'
-        :type key_attr: str, optional
-        :param options: key-word argument collector passed to the :meth:`~.DictStream.extend` method
+        :param attr: attribute to use to effect the split, defaults to 'inst'
+        :type attr: str, optional
+        :param options: attr-word argument collector passed to the :meth:`~.DictStream.extend` method
         :return:
          - **out** (*PULSE.data.dictstream.DictStream) -- 
         """        
-        if key_attr not in self.supported_keys:
-            raise ValueError('key not in supported_keys')
+        if attr not in MLStats.defaults.keys():
+            breakpoint()
+            raise ValueError('attr not in MLStats.defaults.keys()')
         out = {}
         for _ft in self:
-            _k = _ft.id_keys[key_attr]
-            # If _k is a new key, create a new DictStream-like value container
+            _k = _ft.id_keys[attr]
+            # If _k is a new attr, create a new DictStream-like value container
             if _k not in out.keys():
-                out.update({_k: self.__class__(traces=_ft, key_attr=key_attr)})
+                out.update({_k: self.__class__(traces=_ft, key_attr=self.key_attr)})
             # Otherwise, extend the existing DictStream-like value container
             else:
                 out[_k].extend(_ft, **options)

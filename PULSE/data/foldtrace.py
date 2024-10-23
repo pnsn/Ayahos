@@ -209,7 +209,7 @@ class FoldTrace(Trace):
             W - weight (ML model pretrained weight name)
 
         .. rubric:: compound keys  
-            id - N.S.L.C.M.W
+            id - N.S.L.C(.M.W)
             nslc - N.S.L.C (id for ObsPy Trace)
             sncl - S.N.C.L (ID order for Earthworm)
             site - N.S

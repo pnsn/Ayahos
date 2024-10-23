@@ -312,7 +312,19 @@ class TestDictStream():
         ds200 = ds.select(sampling_rate=200)
         assert all([ft.stats.sampling_rate == 200 for ft in ds200])
         
-        
+    def test_split(self):
+        # Setup
+        # TODO: need example that has predictions
+        ds = DictStream(self.lg_st)
+        ## Network split
+        for attr in set(ds[0].id_keys.keys()):
+            uniques = {ft.stats.network for ft in ds}
+            split_dict = ds.split(attr='network')
+            assert uniques == set(split_dict.keys())
+            for _val in uniques:
+                assert all([ft.id_keys[attr] == _val for ft in split_dict[_val]])
+
+
 
 
 

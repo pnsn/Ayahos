@@ -52,17 +52,19 @@ class BaseMod(object):
 
         # Compatability check for `max_pulse_size`
         if isinstance(max_pulse_size, (int, float)):
-            if 1 <= max_pulse_size:
+            if max_pulse_size >= 1:
                 self.max_pulse_size = int(max_pulse_size)
             else:
                 raise ValueError('max_pulse_size must be g.e. 1 ')
         else:
-            raise TypeError('max_pulse_size must be positive int-like')
+            raise TypeError('max_pulse_size must be int-like')
         
         if name_suffix is None:
             self._suffix = ''
         elif isinstance(name_suffix, (str,int)):
             self._suffix = f'_{name_suffix}'
+        else:
+            raise TypeError('name_suffix must be type None, int, or str')
 
         # Set up logging at the module object level
         self.Logger = logging.getLogger(f'{self.__name__(full=False)}')
@@ -86,7 +88,10 @@ class BaseMod(object):
         if full:
             return self.__class__.__str__(self)
         else:
-            return self.__class__.__name__ + self._suffix
+            if hasattr(self, '_suffix'):
+                return self.__class__.__name__ + self._suffix
+            else:
+                return self.__class__.__name__
     
     def __repr__(self, full=False):
         """
@@ -99,7 +104,7 @@ class BaseMod(object):
             rstr += " - Last Pulse Stats - \n"
             rstr += self.stats.__str__()
         else:
-            rstr += f'Last Pulse Rate: {self.stats["pulse rate"]:.2f} Hz (No. Iterations: {self.stats.niter})'
+            rstr += f'Last Pulse Rate: {self.stats["pulserate"]:.2f} Hz (No. Iterations: {self.stats.niter})'
         
         return rstr
 
@@ -150,21 +155,26 @@ class BaseMod(object):
         self.stats.out0 = self.measure_output()
         # Convert flag to proceed with pulse
         self._continue_pulsing = True
+        # Set initial value of niter to 0
+        self.stats.niter = 0
         for _n in range(self.max_pulse_size):
             # get single object for unit_process
             unit_input = self.get_unit_input(input)
-            # Run unit process if unit_input is not False
-            if self._continue_pulsing:
-                # Execute unit process
-                unit_output = self.run_unit_process(unit_input)
-            # Otherwise break for-loop & flag as early stopping
-            else:
+            # If _continue_pulsing flag is flipped to False by get_unit_input
+            if not self._continue_pulsing:
+                # Log stop type
                 self.stats.stop = 'early0'
+                # Log current iteration index
+                self.stats.niter = _n
+                # Break for-loop
                 break
-
-            # Capture output
-            self.store_unit_output(unit_output)
-            # Check if pulse should conclude early
+            # If _continue_pulsing flag remains True, proceed with unit process
+            else:
+                unit_output = self.run_unit_process(unit_input)
+                # Capture output
+                self.store_unit_output(unit_output)
+            
+            # If _conclude_pulsing flag is flipped to False by store_unit_output
             if self._continue_pulsing:
                 pass
             else:
@@ -175,7 +185,7 @@ class BaseMod(object):
         if _n + 1 == self.max_pulse_size:
             self.stats.stop = 'max'
         # Capture pulse stats at conclusion of call
-        self.stats.in1 = self.check_input(input)
+        self.stats.in1 = self.measure_input(input)
         self.stats.out1 = self.measure_output()
         try:
             self.stats.niter = _n + 1

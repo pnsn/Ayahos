@@ -173,6 +173,12 @@ class BaseMod(object):
     ###################
     ## PULSE METHODS ##
     ###################
+    def check_input(self, input: deque) -> None:
+        # Conduct type-check on input
+        if not isinstance(input, deque):
+            self.Logger.critical(f'TypeError: input ({type(input)}) is not type collections.deque. Exiting')
+            sys.exit(os.EX_DATAERR)
+
     def pulse_startup(self, input: deque) -> None:
         """Run startup checks and metadata capture
          at the outset of a call of :meth:`~.BaseMod.pulse`
@@ -182,15 +188,11 @@ class BaseMod(object):
         :param input: collection of input objects
         :type input: deque
         """        
-        # Conduct type-check on input
-        if not isinstance(input, deque):
-            self.Logger.critical(f'TypeError: input ({type(input)}) is not type collections.deque. Exiting')
-            sys.exit(os.EX_DATAERR)
-        else:
-            self.stats.starttime = UTCDateTime.now()
-            self.stats.in0 = len(input)
-            self.stats.out0 = len(self.output)
-            self._continue_pulsing = True
+
+        self.stats.starttime = UTCDateTime.now()
+        self.stats.in0 = len(input)
+        self.stats.out0 = len(self.output)
+        self._continue_pulsing = True
     
     def pulse_shutdown(self, input: deque, niter: int, exit_type: str) -> None:
         """Run shutdown checks and metadata capture
@@ -294,7 +296,9 @@ class BaseMod(object):
         :type input: _type_
         :return: _description_
         :rtype: _type_
-        """        
+        """
+        # Run initial check on input type/properties
+        self.check_input(input)
         # Run startup checks & capture start stats
         self.pulse_startup(input)
 

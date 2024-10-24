@@ -37,6 +37,10 @@ class TestBaseMod(unittest.TestCase):
     
     def tearDown(self) -> None:
         del self.test_mod
+        del self.test_input
+        del self.test_units
+        del self.test_outputs
+        del self.cname
 
     #########################
     ## __init__ test suite ##

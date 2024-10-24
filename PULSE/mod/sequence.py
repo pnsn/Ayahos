@@ -62,7 +62,7 @@ class SeqMod(BaseMod):
 
     def __init__(
             self,
-            sequence={'Base': BaseMod()},
+            sequence={'BaseMod_0': BaseMod(name='0')},
             meta_max_age=60,
             max_pulse_size=1,
             name=None):
@@ -79,13 +79,11 @@ class SeqMod(BaseMod):
         :param name: string or integer to append to the end of this SequenceMod's __name__ attribute as "name", defaults to None
         :type name: None, int, str, optional.
         """
-        demerits = 0
         # Inherit from BaseMod
-        super().__init__(
-            max_pulse_size=max_pulse_size,
-            maxlen=None,
-            name=name)
+        super().__init__(max_pulse_size=max_pulse_size, maxlen=None, name=name)
         
+        demerits = 0
+
         # Initialize Sequence & Run Checks
         # input sequence is a dict or list of BaseMod
         if isinstance(sequence, dict):
@@ -130,312 +128,345 @@ class SeqMod(BaseMod):
             self.Logger.critical('meta_max_age must be a positive int-like value.')
             sys.exit(os.EX_DATAERR)
 
-        
-
         # Create dataframe holder for pulse metadata
         self.metadata = pd.DataFrame()
-
+        
         # Trigger sys.exit if any critical errors were raised.
         if demerits > 0:
             self.Logger.critical(f'The above {demerits} errors triggered exit.')
             sys.exit(os.EX_DATAERR)
 
-        
-        
-
-        # Alias the output of the last module in sequence to self.output (inherited from BaseMod)
-        if len(self.sequence) > 0:
-            self._nonempty = True
-            self.output = self.sequence[self.names[-1]]
+    def __getattr__(self, key):
+        if key == 'output':
+            return self.get_last_sequence().output
         else:
-            self._nonempty = False
-            self.Logger.info(f'Empty {self.__name__()}.sequence - defaulting output to BaseMod.output (collections.deque)')
+            return super().__getattr__(key)
 
 
-    def __setattr__(self, key, value):
-        if key == 'sequence':
-            #  TODO: Have setting sequence automatically re-alias output and update stats
-
-
-    #################################
-    # POLYMORPHIC METHODS FOR PULSE #
-    #################################
+    ## SEQUENCE METHODS ##
+    def get_first_sequence(self):
+        firstkey = list(self.sequence.keys())[0]
+        return self.sequence[firstkey]
     
-    def pulse(self, input):
-        """WRAPPER METHOD
+    def get_last_sequence(self):
+        lastkey = list(self.sequence.keys())[-1]
+        return self.sequence[lastkey]
 
-        This wraps :meth:`~PULSE.mod.base.BaseMod.pulse` to provide class-specific
-        documentation for :class:`~PULSE.mod.sequence.SequenceMod`
+    ## PULSE METHODS ##
 
-        If **SequenceMod.sequence** is non-empty:
-        This version of pulse executes a single call of pulse for each element of 
-        the sequence, feeding the first element the input provided here, and each
-        subsequent element receives the output of the prior element's pulse call
-        as an input. The output returned by this method is a view of the **output**
-        attribute of the last element in **sequence**.
+    # def check_input(self, input):
+    #     self.get_first_sequence
 
-        If **SequenceMod.sequence** is empty:
-        The SequenceMod **pulse** method adopts the behavior of :meth:`~PULSE.mod.base.BaseMod.pulse`
-
-        :param input: input to :meth:`~pulse` for the first :mod:`~PULSE.mod` module object in **sequence**,
-            or a collection of objects to pass through an empty **sequence** following :class:`~PULSE.mod.base.BaseMod.pulse` behavior
-        :type input: object
-        :return: output, either a view of the **output** of the last :class:`~PULSE.mod` module object in **sequence**,
-            or the **output** attribute of this SequenceMod if **sequence** is empty
-        :rtype: object, or deque
-        """        
-        output = super().pulse(input)
-        return output
+    # def pulse_startup(self, input):
 
 
-    def check_input(self, input):
-        """POLYMORPHIC METHOD
-
-        Last updated with :class:`~PULSE.mod.sequence.SequenceMod`
-
-        Aliases the :meth:`~check_input` method of the first module
-        in this SequenceMod's **sequence** attribute.
-
-        :param input: see description for aliased method
-        :type input: see description for aliased method
-        :return input_size: size of **input**
-        :rtype input_size: int
-        """        
-        # Use the check_input method from the first module in the sequence
-        if self._nonempty:
-            input_size = self.sequence[self.names[0]].check_input(input)
-        else:
-            input_size = super().check_input(input)
-        return input_size
-    
-    def measure_output(self):
-        """POLYMORPHIC METHOD
-
-        Last updated with :class:`~PULSE.mod.sequence.SequenceMod`
-
-        Aliases the :meth:`~check_input` method of the first module
-        in this SequenceMod's **sequence** attribute.
-
-        :param input: see description for aliased method
-        :type input: see description for aliased method
-        :return: 
-         - **input_size** (*int*) -- size of the input
-        """
-        if len(self.sequence) > 0:
-            output_size = self.sequence[self.names[-1]].measure_output()
-        else:
-            output_size = super().measure_output()
-        return output_size
-    
-    def get_unit_input(self, input):
-        """POLYMORPHIC METHOD
-
-        Last updated with :class:`~PULSE.mod.sequence.SequenceMod`
-
-        If this SequenceMod is non-empty, pass **input** to **unit_input**
-
-        If this SequenceMod is empty, use behaviors of :meth:`~PULSE.mod.base.BaseMod.get_unit_input`
-
-        :param input: pulse input object
-        :type input: object
-        :return:
-         - **unit_input** (*object*) - unit process input object
-        """        
-        if self._nonempty:
-            unit_input = input
-        else:
-            # Use BaseMod behavior
-            unit_input = super().get_unit_input(input)
-        return unit_input
-
-    def run_unit_process(self, unit_input):
-        """POLYMORPHIC METHOD
-
-        Last updated with :class:`~PULSE.mod.sequence.SequenceMod`
-
-        Execute a chained sequence of :meth:`~pulse` calls in the order
-        set in **sequence**. If **sequence** is empty, this method uses
-        the behaviors from :class:`~PULSE.mod.base.BaseMod`
-
-        :param unit_input: input object for the first element in **sequence**,
-            or a double-ended queue of objects if **sequence** is empty
-        :type unit_input: object, or collections.deque
-        :return:
-         - **unit_output** (*list*) - copies of :class:`~PULSE.mod.base.PulseStats` metadata objects generated
-         during this call of :meth:`~PULSE.mod.sequence.SequenceMod.pulse`.
-        """        
-        unit_output = []
-        if self._nonempty:
-            for position, module in enumerate(self.sequence.values()):
-                if position == 0:
-                    y = module.pulse(unit_input)
-                else:
-                    y = module.pulse(y)
-                unit_output.append(module.stats.copy())
-        else:
-            unit_output = super().run_unit_process(unit_input)
-        return unit_output
-    
-    def store_unit_output(self, unit_output):
-        """POLYMORPHIC METHOD
-
-        Last updated with :class:`~PULSE.mod.sequence.SequenceMod`
-
-        Appends collected copies of newly-generated **stats** metadata from
-        each module in **sequence** (if non-empty) to the **metadata** DataFrame
-        and trims off outdated data (relative ages older than max_meta_age)
-
-        :param unit_output: collection of :class:`~PULSE.mod.base.PulseStats` objects
-        :type unit_output: list
-        """        
-        # Ingest new metadata into self.metadata
-        if self._nonempty:
-            for stats in unit_output:
-                self.metadata = pd.concat([self.metadata,
-                                        pd.DataFrame(stats)], 
-                                        axis=0, ignore_index=True)
-            max_endtime = self.metadata.endtime.max()
-            # Trim off outdated data
-            self.metadata = self.metadata[(self.metadata.endtime >= max_endtime - self._memory)].sort_values('endtime')
-
-        else:
-            super().store_unit_output(unit_output)
-
-    ##############################
-    # SEQUENCE MODIFYING METHODS #
-    ##############################
-
-    def update(self, new_dict):
-        """
-        Apply update to sequence using the 
-        dict.update(new_dict) builtin_function_or_method
-        and then update relevant attributes of this SequenceMod
-
-        This will update existing keyed entries and append new
-        at the end of self.sequence (same behavior as dict.update)
-
-        :param new_dict: dictionary of {name:*Mod} pairs to  
-        :type new_dict: dict
-        :updates: 
-            - **self.sequence** - updates sequence as specified
-            - **self.names** - updates the list of keys in sequence
-            - **self.output** - re-aliases to the output attribute of the last module in sequence
-
-        """
-        # Safety catches identical to those in __init__
-        if not isinstance(new_dict, dict):
-            raise TypeError('new_dict must be type dict')
-        elif not all(isinstance(_m, BaseMod) for _m in new_dict.values()):
-            raise TypeError('new_dict can only have values of type PULSE.mod._base.BaseMod')
-        else:
-            pass
-        # Run updates on sequence
-        self.sequence.update(new_dict)
-        # Update names attribute
-        self.names = list(self.sequence.keys())
-        if len(self.sequence) > 0:
-            self._nonempty = True
-            self.output = self.sequence[self.names[-1]].output
-        else:
-            self._nonempty = False
-            self.output = deque(maxlen=self.maxlen)
         
-    def remove(self, key):
-        """
-        Convenience wrapper of the dict.pop() method
-        to remove an element from self.sequence and
-        associated attributes
+    # def get_ending_output(self):
+    #     lastkey = list(self.sequence.keys())[-1]
+    #     return self.sequence[lastkey].output
+    
+    # output = property(get_ending_output)
 
-        :: INPUT ::
-        :param key: valid key in self.sequence.keys()
-        :type key: unit_inputect
+        # # Alias the output of the last module in sequence to self.output (inherited from BaseMod)
+        # if len(self.sequence) > 0:
+        #     self._nonempty = True
+        #     self.output = self.sequence[self.names[-1]]
+        # else:
+        #     self._nonempty = False
+        #     self.Logger.info(f'Empty {self.__name__()}.sequence - defaulting output to BaseMod.output (collections.deque)')
 
-        :: RETURN ::
-        :return popped_item: popped (key, value) pair
-        :rtype popped_item: tuple
-        """
-        if key not in self.sequence.keys():
-            raise KeyError(f'key {key} is not in self.sequence.keys()')
-        # Remove key/val combination from dict
-        val = self.sequence.pop(key)
-        # Update names attribute
-        self.names = list(self.sequence.keys())
-        if len(self.sequence) > 0:
-            self._nonempty = True
-            self.output = self.sequence[self.names[-1]].output
-        else:
-            self._nonempty = False
-            self.output = deque(maxlen=self.maxlen)
+
+    # def __setattr__(self, key, value):
+    #     if key == 'sequence':
+    #         #  TODO: Have setting sequence automatically re-alias output and update stats
+    #         if isinstance(value, dict):
+    #             if all(isinstance(_e, BaseMod) for _e in value.values()):
+    #                 vkeys = list(value.keys())
+    #                 self.output = self.sequence[vkeys[-1]]
+    #     else:
+    #         pass
+    #     return super(SeqMod, self).__setattr__(key, value)
+
+
+    # #################################
+    # # POLYMORPHIC METHODS FOR PULSE #
+    # #################################
+    
+    # def pulse(self, input):
+    #     """WRAPPER METHOD
+
+    #     This wraps :meth:`~PULSE.mod.base.BaseMod.pulse` to provide class-specific
+    #     documentation for :class:`~PULSE.mod.sequence.SequenceMod`
+
+    #     If **SequenceMod.sequence** is non-empty:
+    #     This version of pulse executes a single call of pulse for each element of 
+    #     the sequence, feeding the first element the input provided here, and each
+    #     subsequent element receives the output of the prior element's pulse call
+    #     as an input. The output returned by this method is a view of the **output**
+    #     attribute of the last element in **sequence**.
+
+    #     If **SequenceMod.sequence** is empty:
+    #     The SequenceMod **pulse** method adopts the behavior of :meth:`~PULSE.mod.base.BaseMod.pulse`
+
+    #     :param input: input to :meth:`~pulse` for the first :mod:`~PULSE.mod` module object in **sequence**,
+    #         or a collection of objects to pass through an empty **sequence** following :class:`~PULSE.mod.base.BaseMod.pulse` behavior
+    #     :type input: object
+    #     :return: output, either a view of the **output** of the last :class:`~PULSE.mod` module object in **sequence**,
+    #         or the **output** attribute of this SequenceMod if **sequence** is empty
+    #     :rtype: object, or deque
+    #     """        
+    #     output = super().pulse(input)
+    #     return output
+
+
+    # def check_input(self, input):
+    #     """POLYMORPHIC METHOD
+
+    #     Last updated with :class:`~PULSE.mod.sequence.SequenceMod`
+
+    #     Aliases the :meth:`~check_input` method of the first module
+    #     in this SequenceMod's **sequence** attribute.
+
+    #     :param input: see description for aliased method
+    #     :type input: see description for aliased method
+    #     :return input_size: size of **input**
+    #     :rtype input_size: int
+    #     """        
+    #     # Use the check_input method from the first module in the sequence
+    #     if self._nonempty:
+    #         input_size = self.sequence[self.names[0]].check_input(input)
+    #     else:
+    #         input_size = super().check_input(input)
+    #     return input_size
+    
+    # def measure_output(self):
+    #     """POLYMORPHIC METHOD
+
+    #     Last updated with :class:`~PULSE.mod.sequence.SequenceMod`
+
+    #     Aliases the :meth:`~check_input` method of the first module
+    #     in this SequenceMod's **sequence** attribute.
+
+    #     :param input: see description for aliased method
+    #     :type input: see description for aliased method
+    #     :return: 
+    #      - **input_size** (*int*) -- size of the input
+    #     """
+    #     if len(self.sequence) > 0:
+    #         output_size = self.sequence[self.names[-1]].measure_output()
+    #     else:
+    #         output_size = super().measure_output()
+    #     return output_size
+    
+    # def get_unit_input(self, input):
+    #     """POLYMORPHIC METHOD
+
+    #     Last updated with :class:`~PULSE.mod.sequence.SequenceMod`
+
+    #     If this SequenceMod is non-empty, pass **input** to **unit_input**
+
+    #     If this SequenceMod is empty, use behaviors of :meth:`~PULSE.mod.base.BaseMod.get_unit_input`
+
+    #     :param input: pulse input object
+    #     :type input: object
+    #     :return:
+    #      - **unit_input** (*object*) - unit process input object
+    #     """        
+    #     if self._nonempty:
+    #         unit_input = input
+    #     else:
+    #         # Use BaseMod behavior
+    #         unit_input = super().get_unit_input(input)
+    #     return unit_input
+
+    # def run_unit_process(self, unit_input):
+    #     """POLYMORPHIC METHOD
+
+    #     Last updated with :class:`~PULSE.mod.sequence.SequenceMod`
+
+    #     Execute a chained sequence of :meth:`~pulse` calls in the order
+    #     set in **sequence**. If **sequence** is empty, this method uses
+    #     the behaviors from :class:`~PULSE.mod.base.BaseMod`
+
+    #     :param unit_input: input object for the first element in **sequence**,
+    #         or a double-ended queue of objects if **sequence** is empty
+    #     :type unit_input: object, or collections.deque
+    #     :return:
+    #      - **unit_output** (*list*) - copies of :class:`~PULSE.mod.base.PulseStats` metadata objects generated
+    #      during this call of :meth:`~PULSE.mod.sequence.SequenceMod.pulse`.
+    #     """        
+    #     unit_output = []
+    #     if self._nonempty:
+    #         for position, module in enumerate(self.sequence.values()):
+    #             if position == 0:
+    #                 y = module.pulse(unit_input)
+    #             else:
+    #                 y = module.pulse(y)
+    #             unit_output.append(module.stats.copy())
+    #     else:
+    #         unit_output = super().run_unit_process(unit_input)
+    #     return unit_output
+    
+    # def store_unit_output(self, unit_output):
+    #     """POLYMORPHIC METHOD
+
+    #     Last updated with :class:`~PULSE.mod.sequence.SequenceMod`
+
+    #     Appends collected copies of newly-generated **stats** metadata from
+    #     each module in **sequence** (if non-empty) to the **metadata** DataFrame
+    #     and trims off outdated data (relative ages older than max_meta_age)
+
+    #     :param unit_output: collection of :class:`~PULSE.mod.base.PulseStats` objects
+    #     :type unit_output: list
+    #     """        
+    #     # Ingest new metadata into self.metadata
+    #     if self._nonempty:
+    #         for stats in unit_output:
+    #             self.metadata = pd.concat([self.metadata,
+    #                                     pd.DataFrame(stats)], 
+    #                                     axis=0, ignore_index=True)
+    #         max_endtime = self.metadata.endtime.max()
+    #         # Trim off outdated data
+    #         self.metadata = self.metadata[(self.metadata.endtime >= max_endtime - self._memory)].sort_values('endtime')
+
+    #     else:
+    #         super().store_unit_output(unit_output)
+
+    # ##############################
+    # # SEQUENCE MODIFYING METHODS #
+    # ##############################
+
+    # def update(self, new_dict):
+    #     """
+    #     Apply update to sequence using the 
+    #     dict.update(new_dict) builtin_function_or_method
+    #     and then update relevant attributes of this SequenceMod
+
+    #     This will update existing keyed entries and append new
+    #     at the end of self.sequence (same behavior as dict.update)
+
+    #     :param new_dict: dictionary of {name:*Mod} pairs to  
+    #     :type new_dict: dict
+    #     :updates: 
+    #         - **self.sequence** - updates sequence as specified
+    #         - **self.names** - updates the list of keys in sequence
+    #         - **self.output** - re-aliases to the output attribute of the last module in sequence
+
+    #     """
+    #     # Safety catches identical to those in __init__
+    #     if not isinstance(new_dict, dict):
+    #         raise TypeError('new_dict must be type dict')
+    #     elif not all(isinstance(_m, BaseMod) for _m in new_dict.values()):
+    #         raise TypeError('new_dict can only have values of type PULSE.mod._base.BaseMod')
+    #     else:
+    #         pass
+    #     # Run updates on sequence
+    #     self.sequence.update(new_dict)
+    #     # Update names attribute
+    #     self.names = list(self.sequence.keys())
+    #     if len(self.sequence) > 0:
+    #         self._nonempty = True
+    #         self.output = self.sequence[self.names[-1]].output
+    #     else:
+    #         self._nonempty = False
+    #         self.output = deque(maxlen=self.maxlen)
         
-        return (key, val)
+    # def remove(self, key):
+    #     """
+    #     Convenience wrapper of the dict.pop() method
+    #     to remove an element from self.sequence and
+    #     associated attributes
 
-    def reorder(self, reorder_list):
-        """
-        Reorder the current contents of sequence using either
-        an ordered list of sequence
+    #     :: INPUT ::
+    #     :param key: valid key in self.sequence.keys()
+    #     :type key: unit_inputect
 
-        :: INPUT ::
-        :param reorder_list: unique list of keys from self.module
-        :type reorder_list: list of Wyrm-likes
-        """
-        # Ensure reorder_list is a list
-        if not isinstance(reorder_list, list):
-            raise TypeError('reorder_list must be type list')
-
-        # Ensure reorder_list is a unique set
-        tmp_in = []
-        for _e in reorder_list:
-            if _e not in tmp_in:
-                tmp_in.append(_e)
-        if tmp_in != reorder_list:
-            raise ValueError('reorder_list has repeat entries - all entries must be unique')
-
-        # Conduct reordering if checks are passed
-        # Handle input (re)ordered sequence key list
-        if all(_e in self.sequence.keys() for _e in reorder_list):
-            tmp = {_e: self.sequence[_e] for _e in reorder_list}
-        # Handle input (re)ordered index list
-        elif all(_e in np.arange(0, len(reorder_list)) for _e in reorder_list):
-            tmp_keys = list(self.sequence.keys())
-            tmp = {_k: self.sequence[_k] for _k in tmp_keys}
-
-        # Run updates
-        self.sequence = tmp
-        self.names = list(tmp.keys())
-        self.output = self.sequence[self.names[-1]].output
-
-    ########################
-    # DUNDER/MAGIC METHODS #
-    ########################
+    #     :: RETURN ::
+    #     :return popped_item: popped (key, value) pair
+    #     :rtype popped_item: tuple
+    #     """
+    #     if key not in self.sequence.keys():
+    #         raise KeyError(f'key {key} is not in self.sequence.keys()')
+    #     # Remove key/val combination from dict
+    #     val = self.sequence.pop(key)
+    #     # Update names attribute
+    #     self.names = list(self.sequence.keys())
+    #     if len(self.sequence) > 0:
+    #         self._nonempty = True
+    #         self.output = self.sequence[self.names[-1]].output
+    #     else:
+    #         self._nonempty = False
+    #         self.output = deque(maxlen=self.maxlen)
         
-    def __repr__(self, extended=False):
-        """Provide a user-friendly summary of the contents of this SequenceMod
-        :: INPUT ::
-        :param extended: show full __repr__ output of component Wyrms? , defaults to False
-        :type extended: bool, optional
+    #     return (key, val)
 
-        :: OUTPUT ::
-        :return rstr: string representation of this Wyrm's contents
-        :rtype rstr: str
-        """
-        rstr = f'{super().__repr__()}\n'
-        rstr = f"(wait: {self.wait_sec} sec)\n"
-        for _i, (_k, _v) in enumerate(self.sequence.items()):
-            # Provide index number
-            rstr += f'({_i:<2}) '
-            # Provide labeling of order
-            if _i == 0:
-                rstr += "(head) "
-            elif _i == len(self.sequence) - 1:
-                rstr += "(tail) "
-            else:
-                rstr += "  ||   "
-            rstr += f"{_k} | "
-            if extended:
-                rstr += f'{_v}\n'
-            else:
-                rstr += f'{_v.__name__()}\n'
-        return rstr
+    # def reorder(self, reorder_list):
+    #     """
+    #     Reorder the current contents of sequence using either
+    #     an ordered list of sequence
+
+    #     :: INPUT ::
+    #     :param reorder_list: unique list of keys from self.module
+    #     :type reorder_list: list of Wyrm-likes
+    #     """
+    #     # Ensure reorder_list is a list
+    #     if not isinstance(reorder_list, list):
+    #         raise TypeError('reorder_list must be type list')
+
+    #     # Ensure reorder_list is a unique set
+    #     tmp_in = []
+    #     for _e in reorder_list:
+    #         if _e not in tmp_in:
+    #             tmp_in.append(_e)
+    #     if tmp_in != reorder_list:
+    #         raise ValueError('reorder_list has repeat entries - all entries must be unique')
+
+    #     # Conduct reordering if checks are passed
+    #     # Handle input (re)ordered sequence key list
+    #     if all(_e in self.sequence.keys() for _e in reorder_list):
+    #         tmp = {_e: self.sequence[_e] for _e in reorder_list}
+    #     # Handle input (re)ordered index list
+    #     elif all(_e in np.arange(0, len(reorder_list)) for _e in reorder_list):
+    #         tmp_keys = list(self.sequence.keys())
+    #         tmp = {_k: self.sequence[_k] for _k in tmp_keys}
+
+    #     # Run updates
+    #     self.sequence = tmp
+    #     self.names = list(tmp.keys())
+    #     self.output = self.sequence[self.names[-1]].output
+
+    # ########################
+    # # DUNDER/MAGIC METHODS #
+    # ########################
+        
+    # def __repr__(self, extended=False):
+    #     """Provide a user-friendly summary of the contents of this SequenceMod
+    #     :: INPUT ::
+    #     :param extended: show full __repr__ output of component Wyrms? , defaults to False
+    #     :type extended: bool, optional
+
+    #     :: OUTPUT ::
+    #     :return rstr: string representation of this Wyrm's contents
+    #     :rtype rstr: str
+    #     """
+    #     rstr = f'{super().__repr__()}\n'
+    #     rstr = f"(wait: {self.wait_sec} sec)\n"
+    #     for _i, (_k, _v) in enumerate(self.sequence.items()):
+    #         # Provide index number
+    #         rstr += f'({_i:<2}) '
+    #         # Provide labeling of order
+    #         if _i == 0:
+    #             rstr += "(head) "
+    #         elif _i == len(self.sequence) - 1:
+    #             rstr += "(tail) "
+    #         else:
+    #             rstr += "  ||   "
+    #         rstr += f"{_k} | "
+    #         if extended:
+    #             rstr += f'{_v}\n'
+    #         else:
+    #             rstr += f'{_v.__name__()}\n'
+    #     return rstr
     
     # #############################
     # # PULSE POLYMORPHIC METHODS #

@@ -12,11 +12,137 @@
 
     output = modN.pulse(...pulse(mod1.pulse(mod0.pulse(input))))
 """
-import sys, os
+import sys, os, typing
 import numpy as np
 import pandas as pd
 from collections import deque
 from PULSE.mod.base import BaseMod
+
+class Sequence(dict):
+    """A dict-like object for containing chains of
+    :class:`~PULSE.mod.base.BaseMod`-type objects
+    that provides support methods for validating
+    and visualizing these chains.
+
+    :param modules: collection of PULSE modules
+    :type modules: 
+    """    
+    def __init__(self, modules=[]):
+        # Initialize as dictionary
+        super().__init__()
+        # Add new entries using update
+        self.update(modules, validate=True)
+    
+    def get_first(self):
+        return self[self.names[0]]
+    
+    first = property(get_first)
+
+    def get_last(self):
+        return self[self.names[-1]]
+    
+    last = property(get_last)
+
+    def get_names(self):
+        return list(self.keys())
+    
+    names = property(get_names)
+
+    def update(self, modules: typing.Union[dict, list, BaseMod], validate=True) -> None:
+        """Update the contents of this :class:`~.Sequence` using
+        a dictionary of, list of, or single :class:`~PULSE.mod.base.BaseMod`-type
+        object. 
+
+        Operation conducted in-place.
+
+        :param modules: collection of BaseMod-like modules
+        :type modules: dict, list, or individual BaseMod
+        :param validate: should validation be run after the update?
+            Defaults to True.
+            see :meth:`~.Sequence.validate`
+        :type validate: bool, optional
+        :raises SyntaxError: Raised if list-type module elements do not
+            have unique names.
+        :raises TypeError: Raised if **modules** does not conform
+            to supported types.
+        """        
+        if isinstance(modules, dict):
+            if all(isinstance(mod, BaseMod) for mod in modules.values()):
+                super().update(modules)
+        elif isinstance(modules, list):
+            names = {mod.stats.name for mod in modules}
+            if len(names) == len(modules):
+                modules = dict(zip(names, modules))
+                super().update(modules)
+            else:
+                raise SyntaxError(f'{len(modules) - len(names)} non-unique names in provided modules')
+        elif isinstance(modules, BaseMod):
+            super().update({modules.stats.name: modules})
+        else:
+            raise TypeError('modules of type {type(modules)} not supported')
+        if validate:
+            self.validate()
+
+    def validate(self):
+        """Determine if this is a valid sequence:
+        1) all values are :class:`~PULSE.mod.base.BaseMod` objects
+        2) all sequential outputs & input_types are compatable
+        :raises TypeError: not all values are type BaseMod
+        :raises SyntaxError: not all output-input couplets are compliant
+        """
+        for _e, (_k, _v) in enumerate(self.items()):
+            if not isinstance(_v, BaseMod):
+                raise TypeError(f'validate: Module {_k} is not type PULSE.data.base.BaseMod')
+            elif _e < len(self):
+                otype = type(_v.output)
+                itypes = self[self.names[_e+1]]._input_types
+                if otype not in itypes:
+                    msg = f'validate: Module {_k} output type is not compatable with '
+                    msg += f'subsequent module {_k} input type(s).'
+                    raise SyntaxError(msg)
+    
+    def reorder(self, neworder, validate=True):
+        """Reorder the items in this :class:`~.Sequence` with or
+        without validation checks on the new order of modules
+
+        This operation is conducted in-place. 
+        
+        You can use the :meth:`~.Sequence.copy` to create an independent
+        duplicate.
+
+        :param neworder: re-ordered set of names in this Sequence
+        :type neworder: list-like of str
+        :param validate: should validation be run after re-ordering?
+            Defaults to True.
+        """        
+        if set(neworder) != self.names:
+            raise ValueError('reorder: neworder is not an identical set of names for this Sequence')
+        else:
+            self = Sequence({_k: self[_k] for _k in neworder})
+        if validate:
+            self.validate()
+    
+    def get_current_stats(self):
+        """Create a :class:`~pandas.DataFrame` object that
+        summarizes the current :class:`~PULSE.util.header.PulseStats`
+        contents for all modules in this sequence, in order.
+
+        :return: current status dataframe
+        :rtype: pandas.DataFrame
+        """        
+        df = pd.DataFrame()
+        for _v in self.values():
+            new_df = pd.DataFrame([dict(_v.stats)]).set_index('name')
+            df = pd.concat([df, new_df], ignore_index=False)
+        df.index.name = 'name'
+        return df
+    
+    current_stats = property(get_current_stats)
+
+    def __repr__(self):
+        rstr = f'Sequence of {len(self)} PULSE Mods:\n{self.current_stats}'
+        return rstr
+
 
 class SeqMod(BaseMod):
     """
@@ -62,7 +188,7 @@ class SeqMod(BaseMod):
 
     def __init__(
             self,
-            sequence={'BaseMod_0': BaseMod(name='0')},
+            modules=[BaseMod(), BaseMod()],
             meta_max_age=60,
             max_pulse_size=1,
             name=None):
@@ -84,39 +210,12 @@ class SeqMod(BaseMod):
         
         demerits = 0
 
-        # Initialize Sequence & Run Checks
-        # input sequence is a dict or list of BaseMod
-        if isinstance(sequence, dict):
-            keys = sequence.keys()
-            values = sequence.values()
-        elif isinstance(sequence, list):
-            values = sequence
-        elif isinstance(sequence, BaseMod):
-            values = [sequence]
-        else:
-            self.Logger.critical('TypeError: sequence must be type PULSE.mod.base.BaseMod or dict or list thereof')
-            demerits += 1
+        try:
+            self.sequence = Sequence(modules)
+        except (TypeError, SyntaxError)  as msg:
+            self.Logger.critical(f'Sequence: {msg}. Exiting')
+            sys.exit(os.EX_USAGE)
 
-        if len(values) > 0:
-            if all(isinstance(_e, BaseMod) for _e in values):
-                pass
-            else:
-                self.Logger.critical('TypeError: sequence must consist entirely of BaseMod-like values')
-                demerits += 1
-        else:
-            self.Logger.critical('ValueError: sequence must be non-empty')
-            demerits += 1
-        if isinstance(sequence, list):
-            keys = {mod.stats.name for mod in sequence}
-            if len(keys) != len(values):
-                self.Logger.critical('Provided modules do not all have unique names')
-                demerits += 1
-            else:
-                self.sequence = dict(zip(keys, values))
-        elif isinstance(sequence, dict):
-            self.sequence = sequence
-        
-        
         # Compatability check for meta_max_age
         if isinstance(meta_max_age, (int, float)):
             if meta_max_age > 0:
@@ -138,24 +237,95 @@ class SeqMod(BaseMod):
 
     def __getattr__(self, key):
         if key == 'output':
-            return self.get_last_sequence().output
+            return self.get_last_element().output
         else:
             return super().__getattr__(key)
 
 
     ## SEQUENCE METHODS ##
-    def get_first_sequence(self):
+    def get_first_element(self):
         firstkey = list(self.sequence.keys())[0]
         return self.sequence[firstkey]
     
-    def get_last_sequence(self):
+    def get_last_element(self):
         lastkey = list(self.sequence.keys())[-1]
         return self.sequence[lastkey]
 
+    def validate_sequence(self):
+        for _e in range(len(self.sequence) - 1):
+            modi = self.sequence[_e]
+            modj = self.sequence[_e + 1]
+            if any(isinstance(modj.output, _t) for _t in modi._input_types):
+                continue
+            else:
+                msg = f'Output of {modi.stats.name} ({type(modi.stats.name)}) is not a valid input type '
+                msg += f'for subsequent module {modj.stats.name} input ({modj._input_types}). Exiting'
+                self.Logger.critical(msg)
+                sys.exit(os.EX_USEAGE)
+
+
+
     ## PULSE METHODS ##
+    def check_input(self, input):
+        """Use the :meth:`~.check_input` method of the first
+        :class:`~PULSE.mod.base.BaseMod`-type object in this SeqMod's
+        **sequence** to make sure the provided input to :meth:`~.SeqMod.pulse`
+        conforms to that first module's _input_types.
+
+        Additionally, run the :meth:`~.SeqMod.validate_sequence` method
+        to ensure that chained outputs of each module match expected 
+        _input_types of the next module in the sequence.
+
+        :param input: _description_
+        :type input: _type_
+        """        
+        self.get_first_element().check_input(input)
+        self.validate_sequence()
+    
+    def measure_input(self, input) -> int:
+        """Use the :meth:`~.measure_input` method of the first
+        module in this SeqMod's **sequence** to measure the input
+        provided to :meth:`~.SeqMod.pulse`
+
+        :param input: input object
+        :type input: object
+        :return:
+            - **measure** (*int*) - representative measure of the input
+        """        
+        return self.get_first_element().measure_input(input)
+    
+    def meausre_output(self) -> int:
+        """Return the measure of the output attribute of
+        the last module in this SeqMod's **sequence**
+
+        :return: _description_
+        :rtype: int
+        """        
+        return self.get_last_element().measure_output()
+    
+    def get_unit_input(self, intput: object) -> object:
+        unit_input = input
+        return unit_input
+    
+    def run_unit_process(self, unit_input) -> list:
+        unit_output = {}
+        for _e, mod in enumerate(self.sequence):
+            if _e == 0:
+                y = mod.pulse(unit_input)
+                for _k, _v in mod.stats.items():
+                    unit_output.update({_k: [_v]})
+            else:
+                y = mod.pulse(y)
+                for _k, _v in mod.stats.items():
+                    unit_output[_k].append(_v)
+        return unit_output
+
+#     def put_unit_output(self, unit_output: list) -> None:
+        
+
 
     # def check_input(self, input):
-    #     self.get_first_sequence
+    #     self.get_first_element
 
     # def pulse_startup(self, input):
 

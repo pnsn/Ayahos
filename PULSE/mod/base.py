@@ -71,6 +71,8 @@ class BaseMod(object):
 
         # Set up logging at the module object level
         self.Logger = logging.getLogger(f'{self.name}')
+        # Flag input type
+        self._input_types = [deque]
         # Initialize output
         self.output = deque(maxlen=maxlen)
         self.stats.maxlen = maxlen
@@ -175,30 +177,49 @@ class BaseMod(object):
     ###################
     def check_input(self, input: deque) -> None:
         # Conduct type-check on input
-        if not isinstance(input, deque):
+        if not any(isinstance(input, _t) for _t in self._input_types):
             self.Logger.critical(f'TypeError: input ({type(input)}) is not type collections.deque. Exiting')
             sys.exit(os.EX_DATAERR)
 
-    def pulse_startup(self, input: deque) -> None:
-        """Run startup checks and metadata capture
-         at the outset of a call of :meth:`~.BaseMod.pulse`
-        
+    def measure_input(self, input: deque) -> int:
+        """Measure the size of an input to the pulse method
+        for this :class:`~.BaseMod`-type object
+
         POLYMORPHIC: last update with :class:`~.BaseMod`
 
+        :param input: input collection of unit inputs
+        :type input: collections.deque
+        :return:
+            - **measure** (*int*) -- length of **input**
+        """        
+        return len(input)
+    
+    def measure_output(self) -> int:
+        """Measure the size of the output attribute of
+        this :class:`~.BaseMod`-type object
+
+        POLYMORPHIC: last update with :class:`~.BaseMod`
+
+        :return:
+            - **measure** (*int*) -- length of **output**
+        """  
+        return len(self.output)
+
+    def pulse_startup(self, input: deque) -> None:
+        """Run startup checks and metadata capture
+         at the outset of a call of :meth:`~.pulse`
+        
         :param input: collection of input objects
         :type input: deque
         """        
-
         self.stats.starttime = UTCDateTime.now()
-        self.stats.in0 = len(input)
-        self.stats.out0 = len(self.output)
+        self.stats.in0 = self.measure_input(input)
+        self.stats.out0 = self.measure_output()
         self._continue_pulsing = True
     
     def pulse_shutdown(self, input: deque, niter: int, exit_type: str) -> None:
         """Run shutdown checks and metadata capture
         at the conclusion of a call of :meth:`~.BaseMod.pulse`
-
-        POLYMORPHIC: last update with :class:`~.BaseMod`
 
         :param input: collection of input objects
         :type input: deque
@@ -214,8 +235,8 @@ class BaseMod(object):
                 - 'max' -- pulse concluded at maximum iterations
         """        
         self.stats.endtime = UTCDateTime.now()
-        self.stats.in1 = len(input)
-        self.stats.out1 = len(self.output)
+        self.stats.in1 = self.measure_input(input)
+        self.stats.out1 = self.measure_output()
         if exit_type == 'nodata':
             self.stats.niter = 0
         elif exit_type == 'max':

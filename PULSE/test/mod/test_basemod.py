@@ -99,17 +99,29 @@ class TestBaseMod(unittest.TestCase):
     ## pulse & subroutines test suite ##
     ####################################    
 
+    def test_check_input(self):
+        # Test with incorrect input type
+        with self.assertRaises(SystemExit):
+            self.test_mod.check_input([])  # Should be deque
+
+    def test_measure_input(self):
+        self.assertEqual(self.test_mod.measure_input(self.test_input),
+                         len(self.test_input))
+    
+    def test_measure_output(self):
+        self.assertEqual(self.test_mod.measure_output(), 0)
+        self.test_mod.pulse(self.test_input)
+        self.assertEqual(self.test_mod.measure_output(), 2)
+
     def test_pulse_startup(self):
         """Test the pulse_startup method."""
         test_input = self.test_input
-        self.test_mod.pulse_startup(test_input)
-        self.assertEqual(self.test_mod.stats.in0, len(test_input))
+        self.test_mod.pulse_startup(self.test_input)
+        self.assertEqual(self.test_mod.stats.in0, len(self.test_input))
         self.assertEqual(self.test_mod.stats.out0, 0)
         self.assertTrue(self.test_mod._continue_pulsing)
 
-        # Test with incorrect input type
-        with self.assertRaises(SystemExit):
-            self.test_mod.pulse_startup([])  # Should be deque
+
 
     def test_pulse_shutdown(self):
         """Test the pulse_shutdown method."""

@@ -213,8 +213,8 @@ class BaseMod(object):
         :type input: deque
         """        
         self.stats.starttime = UTCDateTime.now()
-        self.stats.in0 = self.measure_input(input)
-        self.stats.out0 = self.measure_output()
+        self.stats.in_init = self.measure_input(input)
+        self.stats.out_init = self.measure_output()
         self._continue_pulsing = True
     
     def pulse_shutdown(self, input: deque, niter: int, exit_type: str) -> None:
@@ -234,8 +234,8 @@ class BaseMod(object):
                 - 'early-put' -- pulse iterations stopped early at the `put_unit_output` method
                 - 'max' -- pulse concluded at maximum iterations
         """        
-        self.stats.in1 = self.measure_input(input)
-        self.stats.out1 = self.measure_output()
+        self.stats.in_final = self.measure_input(input)
+        self.stats.out_final = self.measure_output()
         if exit_type == 'nodata':
             self.stats.niter = 0
         elif exit_type == 'max':
@@ -326,7 +326,7 @@ class BaseMod(object):
 
         ## DETERMINE NUMBER OF ITERATIONS & ALLOWANCE FOR EARLY STOPPING
         # Zero length input - stop before iterations
-        if self.stats.in0 == 0:
+        if self.stats.in_init == 0:
             self.pulse_shutdown(input,
                                 niter=None,
                                 exit_type='nodata')
@@ -384,7 +384,7 @@ class BaseMod(object):
 
     #     This method is inherited by all :mod:`~PULSE.mod` classes and has the following structure:
         
-    #     A) Update **stats** 'starttime', 'in0', and 'out0' values
+    #     A) Update **stats** 'starttime', 'in_init', and 'out_init' values
 
     #     B) Iteration Loop (up to **max_pulse_size** iterations)
 
@@ -392,16 +392,16 @@ class BaseMod(object):
     #         2) :meth:`~PULSE.mod.base.BaseMod.run_unit_process` - run the unit process for this class.
     #         3) :meth:`~PULSE.mod.base.BaseMod.store_unit_output` - merge the output from the previous step into the *output* attribute of this object
         
-    #     C) Update **stats** 'stop', 'niter', 'endtime', 'in1', and 'out1' values
+    #     C) Update **stats** 'stop', 'niter', 'endtime', 'in_final', and 'out_final' values
 
     #     """ 
     #     # Capture pulse stats at beginning of call and measure/check input
     #     self.stats.starttime = UTCDateTime.now()
-    #     self.stats.in0 = self.measure_input(input)
-    #     self.stats.out0 = self.measure_output()
+    #     self.stats.in_init = self.measure_input(input)
+    #     self.stats.out_init = self.measure_output()
         
 
-    #     if self.stats.in0 == 0:
+    #     if self.stats.in_init == 0:
     #         self.stats.niter = 0
     #         self.stats.stop = 'empty_input'
         
@@ -444,8 +444,8 @@ class BaseMod(object):
     #         self.stats.niter = self.max_pulse_size
         
     #     # Capture pulse stats at conclusion of call
-    #     self.stats.in1 = self.measure_input(input)
-    #     self.stats.out1 = self.measure_output()
+    #     self.stats.in_final = self.measure_input(input)
+    #     self.stats.out_final = self.measure_output()
     #     self.stats.endtime = UTCDateTime.now()
 
     #     return self.output

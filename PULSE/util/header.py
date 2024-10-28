@@ -215,10 +215,10 @@ class ModStats(AttribDict):
     :var starttime: start time of the last call of a :meth:`~PULSE.mod.base.BaseMod.pulse`-type method
     :var endtime: end time of the last call of a meth:`~PULSE.mod.base.BaseMod.pulse`-type method
     :var niter: number of iterations completed
-    :var in0: input size at the start of the call
-    :var in1: input size at the end of the call
-    :var out0: output size at the start of the call
-    :var out1: output size at the end of the call
+    :var in_init: input size at the start of the call
+    :var in_final: input size at the end of the call
+    :var out_init: output size at the start of the call
+    :var out_final: output size at the end of the call
     :var runtime: number of seconds it took for the call to run
     :var pulserate: iterations per second
     :var stop: Reason iteration stoppage
@@ -239,10 +239,10 @@ class ModStats(AttribDict):
                 'endtime': None,
                 'stop': '',
                 'niter': 0,
-                'in0': 0,
-                'in1': 0,
-                'out0': 0,
-                'out1': 0,
+                'in_init': 0,
+                'in_final': 0,
+                'out_init': 0,
+                'out_final': 0,
                 'runtime':0,
                 'pulserate': 0}
     _types = {'name': str,
@@ -252,10 +252,10 @@ class ModStats(AttribDict):
               'endtime':(UTCDateTime, type(None)),
               'stop': str,
               'niter':int,
-              'in0':int,
-              'in1':int,
-              'out0':int,
-              'out1':int,
+              'in_init':int,
+              'in_final':int,
+              'out_init':int,
+              'out_final':int,
               'runtime':float,
               'pulserate':float}
     
@@ -308,7 +308,7 @@ class ModStats(AttribDict):
 
     def __str__(self):
         prioritized_keys = ['name','pulserate','stop','niter',
-                            'mps','in0','in1','maxlen','out0','out1',
+                            'mps','in_init','in_final','maxlen','out_init','out_final',
                             'starttime','endtime','runtime']
         return self._pretty_str(priorized_keys=prioritized_keys)
 

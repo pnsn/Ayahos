@@ -11,7 +11,7 @@ import copy, warnings
 import numpy as np
 from obspy.core.trace import Trace, Stats
 from obspy.core.stream import Stream
-from PULSE.data.header import MLStats
+from PULSE.util.header import MLStats
 
 # FIXME: Track down processing metadata bleed
 

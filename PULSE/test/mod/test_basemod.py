@@ -17,7 +17,7 @@ import unittest
 from collections import deque
 from obspy import UTCDateTime
 
-from PULSE.data.header import ModStats
+from PULSE.util.header import ModStats
 from PULSE.mod.base import BaseMod  # Replace with the actual module import
 
 
@@ -33,38 +33,35 @@ class TestBaseMod(unittest.TestCase):
         self.test_input = deque(range(9))
         self.test_units = [1, 'a', int, None]
         self.test_outputs = range(20)
-        self.cname = self.test_mod.__class__.__name__
     
     def tearDown(self) -> None:
         del self.test_mod
         del self.test_input
         del self.test_units
         del self.test_outputs
-        del self.cname
 
     #########################
     ## __init__ test suite ##
     #########################
-    def test_initialization(self):
+    def test_init(self):
         """Test proper initialization of BaseMod."""
         self.assertEqual(self.test_mod.stats.mps, 2)
         self.assertEqual(self.test_mod.stats.maxlen, 5)
-        self.assertEqual(self.test_mod.stats.name, f'{self.cname}_Test')
+        self.assertEqual(self.test_mod.stats.name, f'{self.test_mod.__class__.__name__}_Test')
         self.assertEqual(len(self.test_mod.output), 0)
         self.assertIsInstance(self.test_mod.stats, ModStats)
 
     def test_invalid_max_pulse_size(self):
         """Test if invalid max_pulse_size raises errors."""
         with self.assertRaises(ValueError):
-            BaseMod(max_pulse_size=0)
-
+            self.test_mod.__class__(max_pulse_size=0)
         with self.assertRaises(TypeError):
-            BaseMod(max_pulse_size='invalid')
+            self.test_mod.__class__(max_pulse_size='invalid')
 
     def test_invalid_name_type(self):
         """Test if invalid name types raise errors."""
         with self.assertRaises(TypeError):
-            BaseMod(name=123)
+            self.test_mod.__class__(name=123)
 
     ###############################
     ## utility method test suite ##
@@ -73,19 +70,19 @@ class TestBaseMod(unittest.TestCase):
     def test_setname(self):
         self.test_mod.setname('Test')
         self.assertEqual(self.test_mod.name, self.test_mod.stats.name)
-        self.assertEqual(self.test_mod.name, f'{self.cname}_Test')
+        self.assertEqual(self.test_mod.name, f'{self.test_mod.__class__.__name__}_Test')
         self.test_mod.setname(None)
-        self.assertEqual(self.test_mod.name, self.cname)
+        self.assertEqual(self.test_mod.name, self.test_mod.__class__.__name__)
 
     def test_repr(self):
         repr_str = self.test_mod.__repr__()
-        self.assertIn(f'{self.cname}_Test', repr_str)
-        self.assertIn('mps: 2', repr_str)
+        self.assertIn(f'{self.test_mod.__class__.__name__}_Test', repr_str)
+        self.assertIn(f'mps: {self.test_mod.stats.mps}', repr_str)
 
     def test_copy(self):
         basemod2 = self.test_mod.copy()
         self.assertIsInstance(basemod2, BaseMod)
-        self.assertEqual(basemod2.stats.name, f'{self.cname}_Test')
+        self.assertEqual(basemod2.stats.name, f'{self.test_mod.__class__.__name__}_Test')
     
     def test_import_class(self):
         """Test the import_class method."""
@@ -115,32 +112,28 @@ class TestBaseMod(unittest.TestCase):
 
     def test_pulse_startup(self):
         """Test the pulse_startup method."""
-        test_input = self.test_input
         self.test_mod.pulse_startup(self.test_input)
         self.assertEqual(self.test_mod.stats.in0, len(self.test_input))
         self.assertEqual(self.test_mod.stats.out0, 0)
         self.assertTrue(self.test_mod._continue_pulsing)
 
-
-
     def test_pulse_shutdown(self):
         """Test the pulse_shutdown method."""
         test_input = self.test_input
-        self.test_mod.pulse_shutdown(test_input, niter=1, exit_type='max')
-        self.assertEqual(self.test_mod.stats.niter, 2)
-
+        self.test_mod.pulse_shutdown(test_input, niter=self.test_mod.stats.mps - 1, exit_type='max')
+        self.assertEqual(self.test_mod.stats.niter, self.test_mod.stats.mps)
 
     def test_pulse_shutdown_exit_types(self):
         """Test the pulse_shutdown exit_type variable
         """        
         self.test_mod.pulse_shutdown(self.test_input, niter=0, exit_type='nodata')
-        self.assertEqual(self.test_mod.stats.niter, 0)
+        self.assertEqual(self.test_mod.stats.niter, self.test_mod.stats.mps - 2)
         self.test_mod.pulse_shutdown(self.test_input, niter=1, exit_type='early-get')
-        self.assertEqual(self.test_mod.stats.niter, 1)
+        self.assertEqual(self.test_mod.stats.niter, self.test_mod.stats.mps - 1)
         self.test_mod.pulse_shutdown(self.test_input, niter=1, exit_type='early-run')
-        self.assertEqual(self.test_mod.stats.niter, 1)
+        self.assertEqual(self.test_mod.stats.niter, self.test_mod.stats.mps - 1)
         self.test_mod.pulse_shutdown(self.test_input, niter=1, exit_type='early-put')
-        self.assertEqual(self.test_mod.stats.niter, 2)
+        self.assertEqual(self.test_mod.stats.niter, self.test_mod.stats.mps)
         # Test with incorrect exit_type
         with self.assertRaises(SystemExit):
             self.test_mod.pulse_shutdown(self.test_input, niter=2, exit_type='invalid')

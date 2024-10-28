@@ -5,7 +5,7 @@ from obspy.core.util import AttribDict
 from obspy.core.tests.test_stats import TestStats
 from obspy.core.tests.test_util_attribdict import TestAttribDict
 from pandas import Series
-from PULSE.data.header import MLStats, PulseStats
+from PULSE.util.header import MLStats
 
 class TestMLStats(TestStats):
 

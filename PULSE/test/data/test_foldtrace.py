@@ -13,7 +13,7 @@ from obspy import UTCDateTime, Stream
 from obspy.core.tests.test_trace import TestTrace
 from PULSE.test.data.util import *
 from PULSE.data.foldtrace import FoldTrace
-from PULSE.data.header import MLStats
+from PULSE.util.header import MLStats
 
 
 

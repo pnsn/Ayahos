@@ -21,7 +21,7 @@ from copy import deepcopy
 from collections import deque
 import logging, sys, os
 from obspy.core.utcdatetime import UTCDateTime
-from PULSE.data.header import ModStats
+from PULSE.util.header import ModStats
 
 # Logger at module level
 Logger = logging.getLogger(__name__)
@@ -234,7 +234,6 @@ class BaseMod(object):
                 - 'early-put' -- pulse iterations stopped early at the `put_unit_output` method
                 - 'max' -- pulse concluded at maximum iterations
         """        
-        self.stats.endtime = UTCDateTime.now()
         self.stats.in1 = self.measure_input(input)
         self.stats.out1 = self.measure_output()
         if exit_type == 'nodata':
@@ -250,6 +249,8 @@ class BaseMod(object):
             self.Logger.critical(f'exit_type "{exit_type}" not supported. Exiting')
             sys.exit(os.EX_DATAERR)
         self.stats.stop = exit_type
+        self.stats.endtime = UTCDateTime.now()
+
 
     def get_unit_input(self, input: deque) -> object:
         """Extract a unit process input object from input

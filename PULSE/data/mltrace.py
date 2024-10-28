@@ -20,7 +20,7 @@ from decorator import decorator
 from obspy import Stream, read, UTCDateTime
 from obspy.core.trace import Trace, Stats
 from obspy.core.util.misc import flat_not_masked_contiguous
-from PULSE.data.header import MLStats
+from PULSE.util.header import MLStats
 from PULSE.util.seisbench import pretrained_dict
 from PULSE.util.stats import estimate_quantiles, estimate_moments
 from PULSE.util.pyew import is_wave_msg

@@ -20,7 +20,7 @@ import seisbench.models as sbm
 from obspy import Trace, Stream
 from PULSE.data.dictstream import DictStream
 from PULSE.data.mltrace import MLTrace
-from PULSE.data.header import WindowStats
+from PULSE.util.header import WindowStats
     
 ###############################################################################
 # Window Class Definition ###########################################

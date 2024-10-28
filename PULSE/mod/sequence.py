@@ -16,7 +16,14 @@ import sys, os, typing, copy
 import numpy as np
 import pandas as pd
 from collections import deque
+from obspy import UTCDateTime
 from PULSE.mod.base import BaseMod
+
+##################################
+##################################
+### SEQUENCE OBJECT DEFINITION ###
+##################################
+##################################
 
 class Sequence(dict):
     """A dict-like object for containing chains of
@@ -109,7 +116,7 @@ class Sequence(dict):
         """        
         df = pd.DataFrame()
         for _v in self.values():
-            new_df = pd.DataFrame([dict(_v.stats)]).set_index('name')
+            new_df = pd.DataFrame([dict(_v.stats)])
             df = pd.concat([df, new_df], ignore_index=False)
         if len(df) > 0:
             df.index.name = 'name'
@@ -147,6 +154,22 @@ class Sequence(dict):
     
     names = property(get_names)
 
+    def get_input_types(self):
+        if len(self) > 0:
+            return self.first._input_types
+        else:
+            return None
+    
+    _input_types = property(get_input_types)
+
+    def get_output(self):
+        if len(self) > 0:
+            return self.last.output
+        else:
+            return None
+    
+    output = property(get_output)
+    
     def __repr__(self):
         rstr = f'Sequence of {len(self)} PULSE Mods:\n{self.current_stats}'
         return rstr
@@ -154,7 +177,12 @@ class Sequence(dict):
     def __str__(self):
         return 'PULSE.mod.sequence.Sequence'
 
-
+##################################
+##################################
+### SEQUENCE MODULE DEFINITION ###
+##################################
+##################################
+    
 class SeqMod(BaseMod):
     """
     A :mod:`~PULSE.mod` class for hosting a sequence of :mod:`~PULSE.mod` class objects and
@@ -174,8 +202,8 @@ class SeqMod(BaseMod):
     the most recent *endtime* value minus a given line's *endtime* value. Lines with ages older
     thank meta_max_age are deleted.
 
-    :param sequence: collection of modules that are executed in their provided order, defaults to {}
-    :type sequence: :class:`~PULSE.mod.base.BaseMod`, or list / dict thereof, optional
+    :param modules: collection of modules that are executed in their provided order, defaults to {}
+    :type modules: :class:`~PULSE.mod.base.BaseMod`, or list / dict thereof, optional
     :param meta_max_age: maximum relative age of metadata in seconds, defaults to 60.
     :type meta_max_age: float-like, optional
     :param max_pulse_size: maximum number of iterations to run the sequence of pulses, defaults to 1.
@@ -199,8 +227,8 @@ class SeqMod(BaseMod):
 
     def __init__(
             self,
-            modules=[BaseMod(), BaseMod()],
-            meta_max_age=60,
+            modules=[BaseMod()],
+            maxlen=60.,
             max_pulse_size=1,
             name=None):
         """Create a :class:`~PULSE.mod.sequence.SequenceMod` object
@@ -218,118 +246,165 @@ class SeqMod(BaseMod):
         """
         # Inherit from BaseMod
         super().__init__(max_pulse_size=max_pulse_size, maxlen=None, name=name)
-        
-        demerits = 0
-
+        # Initialize Sequence
+        # if isinstance(modules, Sequence):
+        #     self.sequence = modules
+        # else:
         try:
             self.sequence = Sequence(modules)
-        except (TypeError, SyntaxError)  as msg:
+        except (TypeError, SyntaxError, KeyError) as msg:
             self.Logger.critical(f'Sequence: {msg}. Exiting')
             sys.exit(os.EX_USAGE)
 
-        # Compatability check for meta_max_age
-        if isinstance(meta_max_age, (int, float)):
-            if meta_max_age > 0:
-                self._max_age = meta_max_age
+        # Overwrite output
+        self.output = self.sequence.output
+
+        # Overwrite _input_types
+        self._input_types = self.sequence._input_types
+
+        # Additional compatability check for maxlen
+        if maxlen is None:
+            self.Logger.warning('NoneType maxlen for SeqMod will result in all metadata being stored on RAM! Exiting')
+            sys.exit(os.EX_USAGE)
+        elif isinstance(maxlen, (int, float)):
+            if maxlen > 0:
+                self.stats.maxlen = float(maxlen)
             else:
-                self.Logger.critical('meta_max_age must be a positive int-like value.')
+                self.Logger.critical('maxlen must be a positive value. Exiting.')
                 sys.exit(os.EX_DATAERR)
         else:
-            self.Logger.critical('meta_max_age must be a positive int-like value.')
+            self.Logger.critical('maxlen must be a positive float-like value. Exiting.')
             sys.exit(os.EX_DATAERR)
 
         # Create dataframe holder for pulse metadata
         self.metadata = pd.DataFrame()
-        
-        # Trigger sys.exit if any critical errors were raised.
-        if demerits > 0:
-            self.Logger.critical(f'The above {demerits} errors triggered exit.')
-            sys.exit(os.EX_DATAERR)
 
-    def __getattr__(self, key):
-        if key == 'output':
-            return self.get_last_element().output
-        else:
-            return super().__getattr__(key)
+    # def __getattr__(self, key):
+    #     if key == 'output':
+    #         return self.sequence.output
+    #     elif key == '_input_types':
+    #         return self.sequence._input_types
+    #     else:
+    #         super().__getattr__(self, key)
 
+    def __repr__(self, full=False):
+        rstr = self.stats.__str__()
+        if full:
+            rstr += f'\n{self.metadata.__str__()}'
+        return rstr
 
-    ## SEQUENCE METHODS ##
-    def get_first_element(self):
-        firstkey = list(self.sequence.keys())[0]
-        return self.sequence[firstkey]
-    
-    def get_last_element(self):
-        lastkey = list(self.sequence.keys())[-1]
-        return self.sequence[lastkey]
-
-    def validate_sequence(self):
-        for _e in range(len(self.sequence) - 1):
-            modi = self.sequence[_e]
-            modj = self.sequence[_e + 1]
-            if any(isinstance(modj.output, _t) for _t in modi._input_types):
-                continue
-            else:
-                msg = f'Output of {modi.stats.name} ({type(modi.stats.name)}) is not a valid input type '
-                msg += f'for subsequent module {modj.stats.name} input ({modj._input_types}). Exiting'
-                self.Logger.critical(msg)
-                sys.exit(os.EX_USEAGE)
-
-
-
+    ###################
     ## PULSE METHODS ##
+    ###################
+            
+    def pulse(self, input):
+        """Execute a chain of :meth:`~PULSE.mod.base.BaseMod.pulse` 
+        methods for the :class:`~PULSE.mod.base.BaseMod` objects contained
+        in this :class:`~.SeqMod`'s **sequence** attribute and return
+        a view of the output of the last module in the sequence
+
+        POLYMORPHIC: last update with :class:`~.Seqmod`
+
+        :param input: input object for the first module in this sequence
+        :type input: object
+        :raises AttributeError: If pulse is executed on an empty SeqMod
+        :return:
+         - **output** (*object*) -- output of the last module in this sequence
+            after execution of **max_pulse_size** chained pulses.
+        """        
+        if len(self.sequence) == 0:
+            raise AttributeError('Cannot run "pulse" with an empty SeqMod.')
+        else:
+            super().pulse(input)
+        return self.output
+        
     def check_input(self, input):
         """Use the :meth:`~.check_input` method of the first
         :class:`~PULSE.mod.base.BaseMod`-type object in this SeqMod's
         **sequence** to make sure the provided input to :meth:`~.SeqMod.pulse`
         conforms to that first module's _input_types.
 
-        Additionally, run the :meth:`~.SeqMod.validate_sequence` method
-        to ensure that chained outputs of each module match expected 
-        _input_types of the next module in the sequence.
+        POLYMORPHIC: last update with :class:`~.SeqMod`
 
-        :param input: _description_
-        :type input: _type_
-        """        
-        self.get_first_element().check_input(input)
-        self.validate_sequence()
+        :param input: input object to :meth:`~.SeqMod.pulse`
+        :type input: depends on first element in 
+        """
+        self.sequence.first.check_input(input)
     
     def measure_input(self, input) -> int:
         """Use the :meth:`~.measure_input` method of the first
         module in this SeqMod's **sequence** to measure the input
         provided to :meth:`~.SeqMod.pulse`
 
+        POLYMORPHIC: last update with :class:`~.SeqMod`
+
         :param input: input object
         :type input: object
         :return:
             - **measure** (*int*) - representative measure of the input
         """        
-        return self.get_first_element().measure_input(input)
+        return self.sequence.first.measure_input(input)
     
-    def meausre_output(self) -> int:
+    def measure_output(self) -> int:
         """Return the measure of the output attribute of
         the last module in this SeqMod's **sequence**
 
-        :return: _description_
-        :rtype: int
+        POLYMORPHIC: last update with :class:`~.SeqMod`
+
+        :return: 
+         - **measure** (*int*) - representative measure of the output
         """        
-        return self.get_last_element().measure_output()
+        return self.sequence.last.measure_output()
     
-    def get_unit_input(self, intput: object) -> object:
+    def get_unit_input(self, input: object) -> object:
+        """Pass the input object provided to :meth:`~.SeqMod.pulse` to
+        the :meth:`~PULSE.mod.base.BaseMod.pulse` method of the first
+
+        POLYMORPHIC: last update with :class:`~.SeqMod`
+        
+        :param intput: _description_
+        :type intput: object
+        :return: _description_
+        :rtype: object
+        """        
         unit_input = input
         return unit_input
     
     def run_unit_process(self, unit_input) -> list:
-        unit_output = {}
-        for _e, mod in enumerate(self.sequence):
+        for _e, mod in enumerate(self.sequence.values()):
             if _e == 0:
                 y = mod.pulse(unit_input)
-                for _k, _v in mod.stats.items():
-                    unit_output.update({_k: [_v]})
             else:
                 y = mod.pulse(y)
-                for _k, _v in mod.stats.items():
-                    unit_output[_k].append(_v)
+        unit_output = self.sequence.current_stats
         return unit_output
+
+    def put_unit_output(self, unit_output):
+        """Store the **current_stats** summary from a single
+        sequence of pulses in the **metadata** attribute
+        of this :class:`~.SeqMod` and flush out metadata
+        that are older than **maxlen** seconds relative to
+        the most curent endtime in **metadata**.
+
+        :param unit_output: _description_
+        :type unit_output: _type_
+        """        
+        # Concatenate 
+        self.metadata = pd.concat([self.metadata, unit_output],
+                                  ignore_index=True)
+        # Get the maximum endtime for all pulses
+        ld = self.metadata.endtime.max()
+        # If the maximum endtime is a UTCDateTime object
+        if isinstance(ld, UTCDateTime):
+            # Keep items that are not-nan starttime & have starttimes within maxlen sec
+            # of the most recent endtime
+            self.metadata = self.metadata[(self.metadata.starttime.notna()) &\
+                                          (self.metadata.starttime >= ld - self.stats.maxlen)]
+        else:
+            return
+        
+    
+
 
 #     def put_unit_output(self, unit_output: list) -> None:
         

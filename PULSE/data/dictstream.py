@@ -29,7 +29,7 @@ contents of the DictStream. It is modeled after the ObsPy :class:`~obspy.core.tr
 import fnmatch
 from obspy import Trace, Stream
 from PULSE.data.foldtrace import FoldTrace
-from PULSE.data.header import MLStats
+from PULSE.util.header import MLStats
 
 ###################################################################################
 # Dictionary Stream Class Definition ##############################################

@@ -62,15 +62,10 @@ class TestSequence(TestCase):
             seq1 = self.test_seq.copy()
             seq1.update(inpt)
         # Test errors
-        with pytest.raises(TypeError):
-            seq1.update(int)
-        with pytest.raises(TypeError):
-            seq1.update([1])
-        with pytest.raises(KeyError):
-            seq1.update({'BaseMod_1': BaseMod(name='0')})
-        with pytest.raises(TypeError):
-            seq1.update({'BaseMod_0': 'abc'})
-
+        for module in [int , [1], {'BaseMod_1': BaseMod(name='0')}, {'BaseMod_0': 'abc'}]:
+            with pytest.raises(TypeError):
+                seq1.update(module)
+                
     def test_validate(self):
         """Test the **validate** method of :class:`~.Sequence`
         """        

@@ -304,6 +304,20 @@ class FoldTrace(Trace):
             return False
         return True
 
+    def validate_other(self, other):
+        #TODO: Make a unit test for me!
+        # Run sanity checks
+        if not isinstance(other, FoldTrace):
+            raise ValueError('other is not type FoldTrace')
+        if self.dtype != other.dtype:
+            raise ValueError('other has mismatched datatype')
+        if self.get_id() != other.get_id():
+            raise ValueError('other has mismatched ID')
+        if self.stats.sampling_rate != other.stats.sampling_rate:
+            raise ValueError('other has mismatched sampling_rate')
+        if self.stats.calib != other.stats.calib:
+            raise ValueError('other has mismatched calibration factor')
+
     def __add__(self, other, method=0, fill_value=None, idtype=np.float64):
         """Add another Trace-like object to this FoldTrace
         Overwrites the functionalities of :meth:`~obspy.core.trace.Trace.__add__`
@@ -356,19 +370,10 @@ class FoldTrace(Trace):
             pass
         else:
             raise ValueError(f'idtype {idtype} not supported. Only numpy.float32 and numpy.float64') 
-        # Run sanity checks
-        if not isinstance(other, FoldTrace):
-            raise TypeError
-        if self.fold.dtype != other.fold.dtype:
-            raise TypeError
-        if self.data.dtype != other.data.dtype:
-            raise TypeError
-        if self.get_id() != other.get_id():
-            raise TypeError
-        if self.stats.sampling_rate != other.stats.sampling_rate:
-            raise TypeError
-        if self.stats.calib != other.stats.calib:
-            raise TypeError
+        try:
+            self.validate_other(other)
+        except ValueError as msg:
+            raise ValueError(msg)
         
         # Create output holder
         output = self.__class__()

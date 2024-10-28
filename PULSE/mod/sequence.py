@@ -12,7 +12,7 @@
 
     output = modN.pulse(...pulse(mod1.pulse(mod0.pulse(input))))
 """
-import sys, os, typing
+import sys, os, typing, copy
 import numpy as np
 import pandas as pd
 from collections import deque
@@ -24,64 +24,54 @@ class Sequence(dict):
     that provides support methods for validating
     and visualizing these chains.
 
-    :param modules: collection of PULSE modules
-    :type modules: 
+    Parameters
+    ----------
+    :param modules: PULSE Module or iterable group thereof, defaults to [].
+        Supported iterables: list, set, tuple, dict
+    :type modules: PULSE.mod.base.BaseMod or iterable, optional
+
+    Attributes
+    ----------
+    :var keys: Names of BaseMod objects in this sequence
+    :var values: BaseMod objects
+    :var first: First BaseMod-type object in this sequence
+    :var last: Last BaseMod-type object in this sequence
+    :var names: list-formatted set of module names in this sequence
+    :var current_stats: pandas.DataFrame-formatted summary of the
+            **stats** attributes of the modules in this sequence
     """    
-    def __init__(self, modules=[]):
+    def __init__(self, modules=[]) -> None:
+        """Initialize a :class:`~.Sequence` object
+
+        :param modules: PULSE Module or iterable group thereof, defaults to [].
+            Supported iterables: list, set, tuple, dict
+        :type modules: PULSE.mod.base.BaseMod or iterable, optional
+        """        
         # Initialize as dictionary
         super().__init__()
-        # Add new entries using update
-        self.update(modules, validate=True)
+        self.update(modules)
+        self.validate()
     
-    def get_first(self):
-        return self[self.names[0]]
-    
-    first = property(get_first)
-
-    def get_last(self):
-        return self[self.names[-1]]
-    
-    last = property(get_last)
-
-    def get_names(self):
-        return list(self.keys())
-    
-    names = property(get_names)
-
-    def update(self, modules: typing.Union[dict, list, BaseMod], validate=True) -> None:
-        """Update the contents of this :class:`~.Sequence` using
-        a dictionary of, list of, or single :class:`~PULSE.mod.base.BaseMod`-type
-        object. 
-
-        Operation conducted in-place.
-
-        :param modules: collection of BaseMod-like modules
-        :type modules: dict, list, or individual BaseMod
-        :param validate: should validation be run after the update?
-            Defaults to True.
-            see :meth:`~.Sequence.validate`
-        :type validate: bool, optional
-        :raises SyntaxError: Raised if list-type module elements do not
-            have unique names.
-        :raises TypeError: Raised if **modules** does not conform
-            to supported types.
-        """        
-        if isinstance(modules, dict):
-            if all(isinstance(mod, BaseMod) for mod in modules.values()):
-                super().update(modules)
-        elif isinstance(modules, list):
-            names = {mod.stats.name for mod in modules}
-            if len(names) == len(modules):
-                modules = dict(zip(names, modules))
-                super().update(modules)
-            else:
-                raise SyntaxError(f'{len(modules) - len(names)} non-unique names in provided modules')
-        elif isinstance(modules, BaseMod):
-            super().update({modules.stats.name: modules})
+    def update(self, modules):
+        if isinstance(modules, BaseMod):
+            super().update({modules.name: modules})
+        elif isinstance(modules, (list, set, tuple)):
+            for _e, mod in enumerate(modules):
+                if not isinstance(mod, BaseMod):
+                    raise TypeError(f'Element {_e} in "modules" is not type PULSE.mod.base.BaseMod')
+                else:
+                    self.update({mod.name: mod})
+        elif isinstance(modules, dict):
+            for _k, _v in modules.items():
+                if isinstance(_v, BaseMod):
+                    if _k == _v.name:
+                        super().update({_k:_v})
+                    else:
+                        raise KeyError(f'Key "{_k}" does not match module name "{_v.name}"')
+                else:
+                    raise TypeError(f'Item keyed to {_k} is not type PULSE.mod.base.BaseMod')
         else:
-            raise TypeError('modules of type {type(modules)} not supported')
-        if validate:
-            self.validate()
+            raise TypeError('Input "modules" must be type PULSE.mod.base.BaseMod or an iterable collection thereof')
 
     def validate(self):
         """Determine if this is a valid sequence:
@@ -90,38 +80,25 @@ class Sequence(dict):
         :raises TypeError: not all values are type BaseMod
         :raises SyntaxError: not all output-input couplets are compliant
         """
-        for _e, (_k, _v) in enumerate(self.items()):
-            if not isinstance(_v, BaseMod):
-                raise TypeError(f'validate: Module {_k} is not type PULSE.data.base.BaseMod')
-            elif _e < len(self):
-                otype = type(_v.output)
-                itypes = self[self.names[_e+1]]._input_types
-                if otype not in itypes:
-                    msg = f'validate: Module {_k} output type is not compatable with '
-                    msg += f'subsequent module {_k} input type(s).'
+        for _e, (name, mod) in enumerate(self.items()):
+            if not isinstance(mod, BaseMod):
+                raise TypeError(f'validate: Module {name} is type {type(mod)}. Must be type PULSE.mod.base.BaseMod')
+            if _e < len(self) - 1:
+                otype = type(mod.output)
+                itype = self[self.names[_e+1]]._input_types
+                if otype not in itype:
+                    msg = f'validate: Module {name} output type is not compatable with '
+                    msg += f'subsequent module {self.names[_e+1]} input type(s).'
                     raise SyntaxError(msg)
-    
-    def reorder(self, neworder, validate=True):
-        """Reorder the items in this :class:`~.Sequence` with or
-        without validation checks on the new order of modules
+                
+    def copy(self):
+        """Create a deep copy of this :class:`~.Sequence`
 
-        This operation is conducted in-place. 
-        
-        You can use the :meth:`~.Sequence.copy` to create an independent
-        duplicate.
-
-        :param neworder: re-ordered set of names in this Sequence
-        :type neworder: list-like of str
-        :param validate: should validation be run after re-ordering?
-            Defaults to True.
+        :return: 
+            - **copy** (*PULSE.mod.sequence.Sequence*) - deep copy'd object
         """        
-        if set(neworder) != self.names:
-            raise ValueError('reorder: neworder is not an identical set of names for this Sequence')
-        else:
-            self = Sequence({_k: self[_k] for _k in neworder})
-        if validate:
-            self.validate()
-    
+        return copy.deepcopy(self)
+        
     def get_current_stats(self):
         """Create a :class:`~pandas.DataFrame` object that
         summarizes the current :class:`~PULSE.util.header.PulseStats`
@@ -134,14 +111,48 @@ class Sequence(dict):
         for _v in self.values():
             new_df = pd.DataFrame([dict(_v.stats)]).set_index('name')
             df = pd.concat([df, new_df], ignore_index=False)
-        df.index.name = 'name'
+        if len(df) > 0:
+            df.index.name = 'name'
         return df
     
     current_stats = property(get_current_stats)
 
+    def get_first(self):
+        """Return a view of the first module in this :class:`~.Sequence` object
+
+        :return:
+         - **first** (*PULSE.mod.base.BaseMod*) - first module in sequence
+        """ 
+        return self[self.names[0]]
+    
+    first = property(get_first)
+
+    def get_last(self):
+        """Return a view of the last module in this :class:`~.Sequence` object
+
+        :return:
+         - **last** (*PULSE.mod.base.BaseMod*) - last module in sequence
+        """        
+        return self[self.names[-1]]
+    
+    last = property(get_last)
+
+    def get_names(self):
+        """return a list-formatted set of module names
+
+        :return:
+         - **names** (*list*) - list of module names
+        """        
+        return list(self.keys())
+    
+    names = property(get_names)
+
     def __repr__(self):
         rstr = f'Sequence of {len(self)} PULSE Mods:\n{self.current_stats}'
         return rstr
+    
+    def __str__(self):
+        return 'PULSE.mod.sequence.Sequence'
 
 
 class SeqMod(BaseMod):

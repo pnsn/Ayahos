@@ -286,26 +286,13 @@ class ModStats(AttribDict):
             pass
         # Refresh keys
         if key in self._refresh_keys:
-            # Update value
+            # Update readonly values
             super(ModStats, self).__setitem__(key,value)
             if isinstance(self.endtime, UTCDateTime):
                 if isinstance(self.starttime, UTCDateTime):
                     self.__dict__['runtime'] = self.endtime - self.starttime
             if self.runtime > 0:
                 self.__dict__['pulserate'] = float(self.niter) / self.runtime
-
-            # # Calculate new refresh values
-            # if key == ['endtime']:
-            #     self.__dict__['runtime'] = self.endtime - self.starttime
-            #     breakpoint()
-            #     if self.runtime > 0:
-            #         self.__dict__['pulserate'] = float(self.niter) / self.runtime
-            #     # elif self.runtime == 0:
-            #     else:
-            #         self.__dict__['pulserate'] = 0.
-            # # TODO: Assess this behavior in PULSE.mod.base.BaseMod.pulse
-            # else:
-            #     raise ValueError('Update to Attribute "{key}" resulted in a negative runtime')
             return
         # All other keys
         if isinstance(value, dict):

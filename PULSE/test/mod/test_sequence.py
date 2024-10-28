@@ -34,16 +34,24 @@ class TestSequence(TestCase):
         self.assertEqual(list(seq1.keys()), ['BaseMod_j','BaseMod_a','BaseMod_1'])
     
     def test_get_first(self):
+        """Test the **get_first** method of :class:`~.Sequence`
+        """  
         self.assertEqual(self.test_seq.first, self.test_input[0])
 
     def test_get_last(self):
+        """Test the **get_last** method of :class:`~.Sequence`
+        """  
         self.assertEqual(self.test_seq.last, self.test_input[-1])
 
     def test_copy(self):
+        """Test the **update** method of :class:`~.Sequence`
+        """  
         seq1 = self.test_seq.copy()
         self.assertIsInstance(seq1, Sequence)
 
     def test_update(self):
+        """Test the **update** method of :class:`~.Sequence`
+        """        
         seq1 = self.test_seq.copy()
         self.assertEqual(seq1.first.stats.mps, 1)
         # Test BaseMod input
@@ -64,6 +72,8 @@ class TestSequence(TestCase):
             seq1.update({'BaseMod_0': 'abc'})
 
     def test_validate(self):
+        """Test the **validate** method of :class:`~.Sequence`
+        """        
         self.test_seq.validate()
         # Precheck
         self.assertEqual(self.test_seq.last._input_types, [deque])
@@ -71,6 +81,10 @@ class TestSequence(TestCase):
         self.test_seq.last._input_types = [int]
         self.assertEqual(self.test_seq.last._input_types, [int])
         with pytest.raises(SyntaxError):
+            self.test_seq.validate()
+        self.test_seq['BaseMod_0'] = 1
+        self.assertEqual(self.test_seq['BaseMod_0'], 1)
+        with pytest.raises(TypeError):
             self.test_seq.validate()
 
     def test_get_current_stats(self):

@@ -279,13 +279,6 @@ class SeqMod(BaseMod):
         # Create dataframe holder for pulse metadata
         self.metadata = pd.DataFrame()
 
-    # def __getattr__(self, key):
-    #     if key == 'output':
-    #         return self.sequence.output
-    #     elif key == '_input_types':
-    #         return self.sequence._input_types
-    #     else:
-    #         super().__getattr__(self, key)
 
     def __repr__(self, full=False):
         rstr = self.stats.__str__()
@@ -313,7 +306,8 @@ class SeqMod(BaseMod):
             after execution of **max_pulse_size** chained pulses.
         """        
         if len(self.sequence) == 0:
-            raise AttributeError('Cannot run "pulse" with an empty SeqMod.')
+            self.Logger.critical('Cannot run "pulse" with an empty SeqMod. Exiting')
+            sys.exit(os.EX_USAGE)
         else:
             super().pulse(input)
         return self.output

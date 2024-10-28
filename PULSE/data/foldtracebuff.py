@@ -3,12 +3,118 @@ import numpy as np
 from obspy.core.trace import Trace
 from PULSE.data.foldtrace import FoldTrace
 
+class FTBuff(FoldTrace):
+    
+    def __init__(
+            self,
+            maxlen=60.,
+            method=3,
+            fill_value=None,
+            dtype=None):
+        super().__init__(dtype=dtype)
+        if isinstance(maxlen, (int, float)):
+            if 1200 >= maxlen > 0:
+                self.maxlen = maxlen
+            else:
+                raise ValueError('maxlen falls outside bounds of accepted max buffer length: (0, 1200] sec')
+        else:
+            raise TypeError(f'maxlen of type {type(maxlen)} not supported.')
+        if method not in [0, 2, 3]:
+            raise ValueError('method {method} not supported. See FoldTrace.__add__ for more information.')
+        else:
+            self.method = method
+        self._empty = True
+
+        self.fill_value = fill_value
+    
+    def _internal_add_processing_info(self, info):
+        # Disable processing tracking for buffers
+        return None
+
+
+    def append(self, other):
+        if isinstance(other, FoldTrace):
+            pass
+        else:
+            raise TypeError(f'input "other" must be type PULSE.data.foldtrace.FoldTrace')
+        if self._empty:
+            self._first_append(other)
+        else:
+            self._subsequent_append(other)
+    
+
+    def _first_append(self, other):
+        # Get end-time
+        tf = other.stats.endtime
+        # Trim/pad to buffer length
+        t0 = tf - self.maxlen
+        other.trim(starttime=t0, endtime=tf, pad=True, nearest_sample = False, fill_value=self.fill_value)
+        # Overwrite stats, data, and fold from other
+        self.stats = other.stats
+        self.data = other.data
+        self.fold = other.fold
+        # Clear out processing
+        self.stats.processing = []
+        # Flip _empty flag
+        self._empty = False
+
+    def _subsequent_append(self, other):
+        # Safety catch
+        if self._empty:
+            raise ValueError('Attempting to use _subsequent_append on an empty buffer.')
+        # Run validation & pass along error messages
+        try:
+            self.validate_other(other)
+        except ValueError as msg:
+            raise ValueError(msg)
+
+        ## CASE 0) FAR FUTURE APPENDS
+        if other.stats.starttime > self.stats.endtime:
+            
+
+
+        ## CASE 0) PAST APPENDS
+        # If other ends before buffer ends
+        if to1 <= ts1:
+            # If other ends after buffer starts
+            if ts0 < to1:
+                # Trim starttime to fit current buffer
+                other = other.trim(starttime = ts0, endtime = ts1,
+                                pad=False, nearest_sample=False)
+                self.__iadd__(other, method=self.method, fill_value=self.fill_value)
+                return
+            # If other ends before buffer starts
+            else:
+                # Reject append
+                raise UserWarning('Rejected appending other - data predates current buffer scope')
+        
+        ## CASE 1) INTERNAL APPENDS
+        # If other ends 
+
+        ## CASE 2) FUTURE APPENDS
+        # If other ends after buffer
+        else:
+            # Get new buffer starttime
+            new_ts0 = ts1 - self.maxlen
+            # If the new starttime is outside current buffer
+            if new_ts0 > ts1:
+                # Re-initialize buffer with _first_append
+                self._empty = True
+                self._first_append(other)
+            # Otherwise 
+            else:
+
+            
+
+
+
+
 class FoldTraceBuff(FoldTrace):
 
     def __init__(
             self,
             bufflen=1.,
-            method=0,
+            method=3,
             restricted_appends=True,
             ref_edge='endtime',
             dtype=np.float32,

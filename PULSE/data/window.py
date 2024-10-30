@@ -43,7 +43,7 @@ class Window(DictStream):
         how entries in `traces` with matching component codes are merged.
         also see :meth:`~PULSE.data.dictstream.DictStream.__add__`
     """
-    def __init__(self, traces, header={}, **options):
+    def __init__(self, traces=[], header={}, **options):
         """
         Initialize a PULSE.data.window.Window object
 
@@ -65,15 +65,15 @@ class Window(DictStream):
         self.key_attr = 'comp'
         self.stats = WindowStats(header=header)
         
-        self._has_primary = False
         # Add traces - safety checks for repeat components handled in extend()
-        self.extend(traces, **options)
-
-        self.validate()
+        if len(traces) > 0:
+            self.extend(traces, **options)
+            breakpoint()
+            self.validate()
 
     def validate(self):
         # Make sure primary component is present
-        if self.stats.primary not in self.traces.keys():
+        if self.stats.get_primary_component() not in self.traces.keys():
             raise ValueError('Primary component (pcomp) not present')
         # Make sure all traces are type FoldTrace
         if not all(isinstance(ft, FoldTrace) for ft in self):
@@ -144,72 +144,73 @@ class Window(DictStream):
         else:
             return fvalid >= self.stats.sthresh
 
-    def sync_sampling(
-            self,
-            interp_method='weighted_average_slopes',
-            subsample_tolerance=0.01):
-        """Assess all :class:`~PULSE.data.foldtrace.FoldTrace` objects
-        in this :class:`~.Window` and make one or more of the following
-        adjustments to meet the target values in the **stats** of this
-        Window.
+    # def sync_sampling(
+    #         self,
+    #         interp_method='weighted_average_slopes',
+    #         subsample_tolerance=0.01,
+    #         fill_value=None):
+    #     """Assess all :class:`~PULSE.data.foldtrace.FoldTrace` objects
+    #     in this :class:`~.Window` and make one or more of the following
+    #     adjustments to meet the target values in the **stats** of this
+    #     Window.
 
-        1) starttime alignment with the target sampling vector
-        2) 
+    #     1) starttime alignment with the target sampling vector
+    #     2) 
 
-        :param fill_value: _description_, defaults to 0
-        :type fill_value: int, optional
-        :param interp_method: _description_, defaults to 'weighted_average_slopes'
-        :type interp_method: str, optional
-        """        
-        for comp, ft in self.items():
-            # Run checks to get targets for improvement
-            targets = self.check_targets(comp)
-            # If foldtrace meets all target values, continue to next
-            if targets == set([]):
-                continue
-            # If the starttime needs adjustment
-            elif 'starttime' in targets:
-                # If the starttime falls into the sampling vector
-                if self.check_starttime_alignment(comp):
-                    pass
-                # Otherwise, interpolation is needed
-                else:
-                    needs_interp = True
-            # If the sampling_rate
+    #     :param fill_value: _description_, defaults to 0
+    #     :type fill_value: int, optional
+    #     :param interp_method: _description_, defaults to 'weighted_average_slopes'
+    #     :type interp_method: str, optional
+    #     """        
+    #     for comp, ft in self.items():
+    #         # Run checks to get targets for improvement
+    #         targets = self.check_targets(comp)
+    #         # If foldtrace meets all target values, continue to next
+    #         if targets == set([]):
+    #             continue
+    #         # If the starttime needs adjustment
+    #         elif 'starttime' in targets:
+    #             # If the starttime falls into the sampling vector
+    #             if self.check_starttime_alignment(comp):
+    #                 pass
+    #             # Otherwise, interpolation is needed
+    #             else:
+    #                 needs_interp = True
+    #         # If the sampling_rate
 
-            # If the trace just needs to be trimmed/extednded
-            elif targets == {'npts'}:
-                ft.trim(endtime=self.stats.endtime,
-                        pad=True,
-                        fill_value=fill_value)
-            # If the starttime is right, but sampling is incorrect
-            elif targets == {'npts','sampling_rate'}:
+    #         # If the trace just needs to be trimmed/extednded
+    #         elif targets == {'npts'}:
+    #             ft.trim(endtime=self.stats.endtime,
+    #                     pad=True,
+    #                     fill_value=fill_value)
+    #         # If the starttime is right, but sampling is incorrect
+    #         elif targets == {'npts','sampling_rate'}:
 
-            # If the starttime is incorrect
-            elif 'starttime' in targets:
-                # if interpolation is NOT necessary
-                if self.check_starttime_alignment(comp):
-                    if 
+    #         # If the starttime is incorrect
+    #         elif 'starttime' in targets:
+    #             # if interpolation is NOT necessary
+    #             if self.check_starttime_alignment(comp):
+    #                 if 
                     
-                    ft.interpolate(self.stats.target_sampling_rate,
-                                   method=interp_method,
-                                   starttime=self.stats.target_starttime)
+    #                 ft.interpolate(self.stats.target_sampling_rate,
+    #                                method=interp_method,
+    #                                starttime=self.stats.target_starttime)
                     
 
         
-                for target in targets:
-                    if 
-            elif targets == set([])
+    #             for target in targets:
+    #                 if 
+    #         elif targets == set([])
             
 
-            for target in targets:
-                # Processing for target
-                if not isinstance(ft.data, np.ma.MaskedArray):
-                    if target == 'starttime':
-                        if 
+    #         for target in targets:
+    #             # Processing for target
+    #             if not isinstance(ft.data, np.ma.MaskedArray):
+    #                 if target == 'starttime':
+    #                     if 
 
-            if isinstance(ft.data, np.ma.MaskedArray):
-                st = ft.split()
+    #         if isinstance(ft.data, np.ma.MaskedArray):
+    #             st = ft.split()
                 
 
 
@@ -252,663 +253,663 @@ class Window(DictStream):
     # METADATA CHECKING METHODS ###################################################
     ###############################################################################
 
-    def check_fvalid(self, key, tolerance=1e-3):
-        """Check if the fraction of valid data in a given trace meets threshold
-        criteria
+    # def check_fvalid(self, key, tolerance=1e-3):
+    #     """Check if the fraction of valid data in a given trace meets threshold
+    #     criteria
 
-        :param key: key of the intended trace in **Window.traces**
-        :type key: str
-        :param tolerance: Small-value tolerance bound to account for machine precision rounding
-            or data modifications (e.g., resampling) that might slightly reduce a previously
-            passing fvalid trace below the specified threshold in **Window.stats**.
-            Must be a value in :math:`\in[0, 1)`, defaults to 1e-3.
-        :type tolerance: float, optional
-        :return:
-         - **passing** (*bool*) -- does this trace pass it's assigned threshold criterion?
-        """        
-        # Compatability check for tolerance
-        if not isinstance(tolerance, float):
-            raise TypeError('tolerance must be type float')
-        if 0 <= tolerance < 1:
-            pass
-        else:
-            raise ValueError('tolerance must be a value in [0, 1)')
-        # Compatability check for key
-        if key not in self.traces.keys():
-            raise KeyError(f'{key} is not present.')
-        else:
-            fv = self[key].get_fvalid_subset(starttime=self.stats.target_starttime,
-                                             endtime=self.stats.target_endtime,
-                                             threshold=self.stats.fold_threshold_level)
+    #     :param key: key of the intended trace in **Window.traces**
+    #     :type key: str
+    #     :param tolerance: Small-value tolerance bound to account for machine precision rounding
+    #         or data modifications (e.g., resampling) that might slightly reduce a previously
+    #         passing fvalid trace below the specified threshold in **Window.stats**.
+    #         Must be a value in :math:`\in[0, 1)`, defaults to 1e-3.
+    #     :type tolerance: float, optional
+    #     :return:
+    #      - **passing** (*bool*) -- does this trace pass it's assigned threshold criterion?
+    #     """        
+    #     # Compatability check for tolerance
+    #     if not isinstance(tolerance, float):
+    #         raise TypeError('tolerance must be type float')
+    #     if 0 <= tolerance < 1:
+    #         pass
+    #     else:
+    #         raise ValueError('tolerance must be a value in [0, 1)')
+    #     # Compatability check for key
+    #     if key not in self.traces.keys():
+    #         raise KeyError(f'{key} is not present.')
+    #     else:
+    #         fv = self[key].get_fvalid_subset(starttime=self.stats.target_starttime,
+    #                                          endtime=self.stats.target_endtime,
+    #                                          threshold=self.stats.fold_threshold_level)
         
-        if key == self.stats.primary_component:
-            if fv >= self.stats.primary_threshold - tolerance:
-                passing = True
-            else:
-                passing = False  
-        else:
-            if fv >= self.stats.secondary_threshold - tolerance:
-                passing = True
-            else:
-                passing = False
-        return passing
+    #     if key == self.stats.primary_component:
+    #         if fv >= self.stats.primary_threshold - tolerance:
+    #             passing = True
+    #         else:
+    #             passing = False  
+    #     else:
+    #         if fv >= self.stats.secondary_threshold - tolerance:
+    #             passing = True
+    #         else:
+    #             passing = False
+    #     return passing
     
-    def run_fvalid_checks(self, tolerance=1e-3):
-        """Run :meth:`~PULSE.data.window.Window.check_fvalid` on all traces
-        present in this Window and return a dictionary keyed with component
-        codes and valued with True/False indicating if traces pass or fail
-        the fvalid threshold check. The primary_component keyed trace has 
-        the primary_threshold applied, while all other traces have the secondary_threshold
-        applied.
+    # def run_fvalid_checks(self, tolerance=1e-3):
+    #     """Run :meth:`~PULSE.data.window.Window.check_fvalid` on all traces
+    #     present in this Window and return a dictionary keyed with component
+    #     codes and valued with True/False indicating if traces pass or fail
+    #     the fvalid threshold check. The primary_component keyed trace has 
+    #     the primary_threshold applied, while all other traces have the secondary_threshold
+    #     applied.
 
-        also see :meth:`~PULSE.data.window.Window.check_fvalid`
+    #     also see :meth:`~PULSE.data.window.Window.check_fvalid`
 
-        :param tolerance: tolerance level for :meth:`~PULSE.data.window.Window.check_fvalid`, defaults to 1e-3.
-        :type tolerance: float, optional
-        :return:
-         - **results** (*dict*) -- check_fvalid results for each MLTrace in this Window
-        """ 
-        return {_k: self.check_fvalid(_k, tolerance=tolerance) for _k in self.traces.keys()}
+    #     :param tolerance: tolerance level for :meth:`~PULSE.data.window.Window.check_fvalid`, defaults to 1e-3.
+    #     :type tolerance: float, optional
+    #     :return:
+    #      - **results** (*dict*) -- check_fvalid results for each MLTrace in this Window
+    #     """ 
+    #     return {_k: self.check_fvalid(_k, tolerance=tolerance) for _k in self.traces.keys()}
 
     
-    def check_target_attribute(self, key, attr='starttime'):
-        """Determine if a given mltrace in this Window object meets the target value
-        of a given attribute in **Window.stats**.
+    # def check_target_attribute(self, key, attr='starttime'):
+    #     """Determine if a given mltrace in this Window object meets the target value
+    #     of a given attribute in **Window.stats**.
 
-        :param key: key from **Window.traces** to test
-        :type key: str
-        :param attr: name of the mltrace header attribute to check, defaults to 'starttime'.
-            Supported values: starttime, endtime, sampling_rate, npts
-        :type attr: str, optional
-        :return:
-         - **result** (*bool*) -- does the value match?
+    #     :param key: key from **Window.traces** to test
+    #     :type key: str
+    #     :param attr: name of the mltrace header attribute to check, defaults to 'starttime'.
+    #         Supported values: starttime, endtime, sampling_rate, npts
+    #     :type attr: str, optional
+    #     :return:
+    #      - **result** (*bool*) -- does the value match?
         
-        """
-        if key not in self.keys():
-            raise KeyError(f'key {key} not present')
-        else:
-            _mltr = self[key]
-        if attr.lower() in ['starttime','endtime','sampling_rate','npts']:
-            attr = attr.lower()
-            tattr = 'target_%s'%(attr)
-        else:
-            raise ValueError(f'attr value {attr} not supported.')
-        result = _mltr.stats[attr] == self.stats[tattr]
-        return result
+    #     """
+    #     if key not in self.keys():
+    #         raise KeyError(f'key {key} not present')
+    #     else:
+    #         _mltr = self[key]
+    #     if attr.lower() in ['starttime','endtime','sampling_rate','npts']:
+    #         attr = attr.lower()
+    #         tattr = 'target_%s'%(attr)
+    #     else:
+    #         raise ValueError(f'attr value {attr} not supported.')
+    #     result = _mltr.stats[attr] == self.stats[tattr]
+    #     return result
 
-    def check_windowing_status(self, mode='summary'):
-        """Check if all traces present in this :class:`~PULSE.data.window.Window` object
-        have starttime, sampling_rate, npts, endtime values that match target attribute values
-        in its **Window.stats** attribute.
+    # def check_windowing_status(self, mode='summary'):
+    #     """Check if all traces present in this :class:`~PULSE.data.window.Window` object
+    #     have starttime, sampling_rate, npts, endtime values that match target attribute values
+    #     in its **Window.stats** attribute.
 
-        :param mode: determines how the **output** is formatted, defaults to 'summary'.
-            'summary' - a single bool value if all tests pass or not for all channels
-            'channel' - a dictionary keyed by mltrace channel codes and valued with a single bool value
-                    whether the channel passes all tests.
-            'full' - a dictionary keyed by attribute names and valued with dictionaries as
-        :type mode: str, optional
-        :return:
-         - **output** (*dict* or *bool*) - output as determined by specified **mode** selection.
-        """        
-        results = {}
-        for key in self.keys():
-            results.update({key: {}})
-            for attr in ['starttime','sampling_rate','npts','endtime']:
-                result = self.check_target_attribute(key, attr=attr)
-                results[key].update({attr: result})
+    #     :param mode: determines how the **output** is formatted, defaults to 'summary'.
+    #         'summary' - a single bool value if all tests pass or not for all channels
+    #         'channel' - a dictionary keyed by mltrace channel codes and valued with a single bool value
+    #                 whether the channel passes all tests.
+    #         'full' - a dictionary keyed by attribute names and valued with dictionaries as
+    #     :type mode: str, optional
+    #     :return:
+    #      - **output** (*dict* or *bool*) - output as determined by specified **mode** selection.
+    #     """        
+    #     results = {}
+    #     for key in self.keys():
+    #         results.update({key: {}})
+    #         for attr in ['starttime','sampling_rate','npts','endtime']:
+    #             result = self.check_target_attribute(key, attr=attr)
+    #             results[key].update({attr: result})
         
-        if mode.lower() == 'summary':
-            output = all(all(_v2 for _v2 in _v1.values()) for _v1 in results.values())
-        elif mode.lower() == 'channel':
-            output = {key: all(result[key].values()) for key in results.keys()}
-        elif mode.lower() == 'full':
-            output = results
-        else:
-            raise ValueError(f'mode {mode} not supported.')
+    #     if mode.lower() == 'summary':
+    #         output = all(all(_v2 for _v2 in _v1.values()) for _v1 in results.values())
+    #     elif mode.lower() == 'channel':
+    #         output = {key: all(result[key].values()) for key in results.keys()}
+    #     elif mode.lower() == 'full':
+    #         output = results
+    #     else:
+    #         raise ValueError(f'mode {mode} not supported.')
 
-        return output
+    #     return output
 
-    def check_tensor_readiness(self, target_ntraces=3, mode='summary'):
-        report = {'ntraces': len(self) == target_ntraces,
-                  'attr': self.check_windowing_status(mode=mode)}
-        if mode.lower() == 'summary':
-            output = all(report.values())
+    # def check_tensor_readiness(self, target_ntraces=3, mode='summary'):
+    #     report = {'ntraces': len(self) == target_ntraces,
+    #               'attr': self.check_windowing_status(mode=mode)}
+    #     if mode.lower() == 'summary':
+    #         output = all(report.values())
         
-    ##################################
-    # SECONDARY COMPONENT METHODS ####
-    ##################################
+    # ##################################
+    # # SECONDARY COMPONENT METHODS ####
+    # ##################################
 
-    def set_secondary_components(self, secondary_components='NE'):
-        # Compatability check for secondary_components
-        if not isinstance(secondary_components, str):
-            raise TypeError('secondary_components must be type str.')
-        elif len(secondary_components) != 2:
-            raise ValueError('Must provide 2 secondary_components. E.g., "12", "NE".')
-        elif secondary_components[0] == secondary_components[1]:
-            raise ValueError('Elements of secondary_components must be unique characters')
-        else:
-            component_list = secondary_components + self.stats.primary_component
-        # Set component_list
-        self.stats.secondary_components = secondary_components
-        # De-index any non-listed traces
-        popped_traces = []
-        for _k in self.traces.keys():
-            if _k not in component_list:
-                popped_traces.append(self.traces.pop(_k))
+    # def set_secondary_components(self, secondary_components='NE'):
+    #     # Compatability check for secondary_components
+    #     if not isinstance(secondary_components, str):
+    #         raise TypeError('secondary_components must be type str.')
+    #     elif len(secondary_components) != 2:
+    #         raise ValueError('Must provide 2 secondary_components. E.g., "12", "NE".')
+    #     elif secondary_components[0] == secondary_components[1]:
+    #         raise ValueError('Elements of secondary_components must be unique characters')
+    #     else:
+    #         component_list = secondary_components + self.stats.primary_component
+    #     # Set component_list
+    #     self.stats.secondary_components = secondary_components
+    #     # De-index any non-listed traces
+    #     popped_traces = []
+    #     for _k in self.traces.keys():
+    #         if _k not in component_list:
+    #             popped_traces.append(self.traces.pop(_k))
         
-        return popped_traces
+    #     return popped_traces
 
-    ##########################
-    # PREPROCESSING METHODS ##
-    ##########################
+    # ##########################
+    # # PREPROCESSING METHODS ##
+    # ##########################
 
-    def align_to_targets(self, fill_value=0, window='hann', **kwargs):
-        """Wrapper for the :meth:`~PULSE.data.mltrace.MLTrace.treat_gaps` and
-        :meth:`~PULSE.data.mltrace.MLTrace.align_sampling` methods, which are
-        which is applied to all traces in this Window using target attribute values 
-        (starttime, npts, sampling_rate) as inputs. 
+    # def align_to_targets(self, fill_value=0, window='hann', **kwargs):
+    #     """Wrapper for the :meth:`~PULSE.data.mltrace.MLTrace.treat_gaps` and
+    #     :meth:`~PULSE.data.mltrace.MLTrace.align_sampling` methods, which are
+    #     which is applied to all traces in this Window using target attribute values 
+    #     (starttime, npts, sampling_rate) as inputs. 
 
 
-        :param fill_value: fill_value used by subroutine calls of :meth:`~PULSE.data.mltrace.MLTrace.trim`,
-            defaults to 0
-        :type fill_value: int, float, or None, optional
-        :param window: name of the windowing method to use in subroutine calls of :meth:`~PULSE.data.mltrace.MLTrace.resample`,
-            defaults to 'hann'
-        :type window: str, optional
-        :param kwargs: key-word argument collector passed to subroutine calls of :meth:`~PULSE.data.mltrace.MLTrace.interpolate`
-        """
-        # Run safety check that no reference values are none
-        if any(self.stats[_e] is None for _e in ['target_starttime','target_npts','target_sampling_rate']):
-            raise TypeError('Cannot use this method if any target value is NoneType')
-        # Run checks up front to skip a lot of logic tree steps if things are copacetic 
-        check_results = self.check_windowing_status(mode='full')
-        # Iterate across all traces in this Window
-        for comp, _mlt in self.items():
-            # Get their specific results
-            result = check_results[comp]
+    #     :param fill_value: fill_value used by subroutine calls of :meth:`~PULSE.data.mltrace.MLTrace.trim`,
+    #         defaults to 0
+    #     :type fill_value: int, float, or None, optional
+    #     :param window: name of the windowing method to use in subroutine calls of :meth:`~PULSE.data.mltrace.MLTrace.resample`,
+    #         defaults to 'hann'
+    #     :type window: str, optional
+    #     :param kwargs: key-word argument collector passed to subroutine calls of :meth:`~PULSE.data.mltrace.MLTrace.interpolate`
+    #     """
+    #     # Run safety check that no reference values are none
+    #     if any(self.stats[_e] is None for _e in ['target_starttime','target_npts','target_sampling_rate']):
+    #         raise TypeError('Cannot use this method if any target value is NoneType')
+    #     # Run checks up front to skip a lot of logic tree steps if things are copacetic 
+    #     check_results = self.check_windowing_status(mode='full')
+    #     # Iterate across all traces in this Window
+    #     for comp, _mlt in self.items():
+    #         # Get their specific results
+    #         result = check_results[comp]
             
-            # Check 1: All checks passed by this component - continue to next component
-            if all(result.values()):
-                continue
-            else:
-                _mlt.align_sampling(
-                    starttime=self.stats.target_starttime,
-                    sampling_rate=self.stats.target_sampling_rate,
-                    npts=self.stats.target_npts,
-                    fill_value=fill_value,
-                    window=window,
-                    **kwargs)
+    #         # Check 1: All checks passed by this component - continue to next component
+    #         if all(result.values()):
+    #             continue
+    #         else:
+    #             _mlt.align_sampling(
+    #                 starttime=self.stats.target_starttime,
+    #                 sampling_rate=self.stats.target_sampling_rate,
+    #                 npts=self.stats.target_npts,
+    #                 fill_value=fill_value,
+    #                 window=window,
+    #                 **kwargs)
 
-    def 
+    # def 
 
-    ########################
-    # FILL RULE METHODS ####
-    ########################
+    # ########################
+    # # FILL RULE METHODS ####
+    # ########################
 
-    def apply_fill_rule(self, secondary_components='NE', rule='clone_primary_fill', tolerance=1e-3):
-        """Apply a component-fill rule to this Window that uses the primary component trace
-        and specified secondary components. If secondary components do not exist or have an insufficient
-        valid amount of data (i.e., fvalid < secondary_threshold - tolerance) they will be generated
-        following the specified component-fill rule. If there are traces in this Window that do not
-        match the primary or secondary components specified, they will be removed from this Window and
-        returned as an output of this method.
+    # def apply_fill_rule(self, secondary_components='NE', rule='clone_primary_fill', tolerance=1e-3):
+    #     """Apply a component-fill rule to this Window that uses the primary component trace
+    #     and specified secondary components. If secondary components do not exist or have an insufficient
+    #     valid amount of data (i.e., fvalid < secondary_threshold - tolerance) they will be generated
+    #     following the specified component-fill rule. If there are traces in this Window that do not
+    #     match the primary or secondary components specified, they will be removed from this Window and
+    #     returned as an output of this method.
 
-        Documentation for specific rules:
-         - :meth:`~PULSE.data.window.Window.zeros_fill` - fill missing/below-threshold secondary traces with 0-data/fold traces
-         - :meth:`~PULSE.data.window.Window.clone_primary_fill` - fill missing/below-threshold secondary traces with primary-data/0-fold traces
-         - :meth:`~PULSE.data.window.Window.clone_secondary_fill` - try to fill missing/below-threshold secondary trace with present & passing secondary trace,
-            failing that reverts to `clone_primary_fill` behavior
+    #     Documentation for specific rules:
+    #      - :meth:`~PULSE.data.window.Window.zeros_fill` - fill missing/below-threshold secondary traces with 0-data/fold traces
+    #      - :meth:`~PULSE.data.window.Window.clone_primary_fill` - fill missing/below-threshold secondary traces with primary-data/0-fold traces
+    #      - :meth:`~PULSE.data.window.Window.clone_secondary_fill` - try to fill missing/below-threshold secondary trace with present & passing secondary trace,
+    #         failing that reverts to `clone_primary_fill` behavior
 
-        :param secondary_components: 2-element string that , defaults to 'NE'
-        :type secondary_components: str, optional
-        :param rule: name of the fill method to apply, defaults to 'clone_primary_fill'. See options above.
-        :type rule: str, optional
-        :param tolerance: allowable tolerance for small fvalid misfits when compared to threshold values in **Window.stats**, defaults to 1e-3.
-            Must be a value in [0, 1)
-        :type tolerance: float, optional
-        :return: 
-         - **popped_traces** (*list* of *PULSE.data.mltrace.MLTrace*) -- list of traces removed from the window that do not match the
-                primary or secondary component codes provided. See :meth:`~PULSE.data.window.Window.set_secondary_components
-        """        
-        # Compatability check for rule
-        if rule not in ['zeros_fill','clone_primary_fill','clone_secondary_fill']:
-            raise ValueError(f'rule {rule} not supported.')
-        else:
-            pass
+    #     :param secondary_components: 2-element string that , defaults to 'NE'
+    #     :type secondary_components: str, optional
+    #     :param rule: name of the fill method to apply, defaults to 'clone_primary_fill'. See options above.
+    #     :type rule: str, optional
+    #     :param tolerance: allowable tolerance for small fvalid misfits when compared to threshold values in **Window.stats**, defaults to 1e-3.
+    #         Must be a value in [0, 1)
+    #     :type tolerance: float, optional
+    #     :return: 
+    #      - **popped_traces** (*list* of *PULSE.data.mltrace.MLTrace*) -- list of traces removed from the window that do not match the
+    #             primary or secondary component codes provided. See :meth:`~PULSE.data.window.Window.set_secondary_components
+    #     """        
+    #     # Compatability check for rule
+    #     if rule not in ['zeros_fill','clone_primary_fill','clone_secondary_fill']:
+    #         raise ValueError(f'rule {rule} not supported.')
+    #     else:
+    #         pass
 
-        # Set secondary_components and form component list
-        popped_traces = self.set_secondary_components(secondary_components=secondary_components)
-        component_list = self.stats.primary_component + self.stats.secondary_components
+    #     # Set secondary_components and form component list
+    #     popped_traces = self.set_secondary_components(secondary_components=secondary_components)
+    #     component_list = self.stats.primary_component + self.stats.secondary_components
         
-        # Run valid fraction checks
-        fv_checks = self.run_fvalid_checks(tolerance=tolerance)
-        for comp in component_list:
-            if comp not in fv_checks.keys():
-                fv_checks.update({comp: False})
+    #     # Run valid fraction checks
+    #     fv_checks = self.run_fvalid_checks(tolerance=tolerance)
+    #     for comp in component_list:
+    #         if comp not in fv_checks.keys():
+    #             fv_checks.update({comp: False})
         
-        # If all checks pass, do nothing
-        if all(_v for _v in fv_checks.values()):
-            pass
-        elif rule == 'zeros_fill':
-            self.zeros_fill(fv_checks)
-        elif rule == 'clone_primary_fill':
-            self.clone_primary_fill(fv_checks)
-        elif rule == 'clone_secondary_fill':
-            self.clone_secondary_fill(fv_checks)
-        else:
-            raise ValueError(f'rule has somehow been changed to a non-compliant value {rule}...')
+    #     # If all checks pass, do nothing
+    #     if all(_v for _v in fv_checks.values()):
+    #         pass
+    #     elif rule == 'zeros_fill':
+    #         self.zeros_fill(fv_checks)
+    #     elif rule == 'clone_primary_fill':
+    #         self.clone_primary_fill(fv_checks)
+    #     elif rule == 'clone_secondary_fill':
+    #         self.clone_secondary_fill(fv_checks)
+    #     else:
+    #         raise ValueError(f'rule has somehow been changed to a non-compliant value {rule}...')
         
-        return popped_traces
+    #     return popped_traces
 
 
-    def zeros_fill(self, fv_checks):
-        """Apply the fill rule from :cite:`Retailleau2022` for missing horizontal components.
+    # def zeros_fill(self, fv_checks):
+    #     """Apply the fill rule from :cite:`Retailleau2022` for missing horizontal components.
         
-        For any secondary component mltraces that did not pass the fv_check, or are absent:
+    #     For any secondary component mltraces that did not pass the fv_check, or are absent:
 
-        Replace them with a copy of the primary_component mltrace that has 0-vectors for both its data and fold attributes (a 0-trace).
-        The component code of the failing/absent secondary component is applied to the 0-trace.
+    #     Replace them with a copy of the primary_component mltrace that has 0-vectors for both its data and fold attributes (a 0-trace).
+    #     The component code of the failing/absent secondary component is applied to the 0-trace.
 
-        Uses the following methods from :class:`~PULSE.data.mltrace.MLTrace`:
-         - :meth:`~PULSE.data.mltrace.MLTrace.to_zero` with **method='both'**
-         - :meth:`~PULSE.data.mltrace.MLTrace.set_comp`
+    #     Uses the following methods from :class:`~PULSE.data.mltrace.MLTrace`:
+    #      - :meth:`~PULSE.data.mltrace.MLTrace.to_zero` with **method='both'**
+    #      - :meth:`~PULSE.data.mltrace.MLTrace.set_comp`
 
-        :param fv_checks: dictionary with primary and secondary component character keys and True/False values
-            Generated by :meth:`~PULSE.data.window.Window.check_fvalid`
-        :type fv_checks: dict
-        """
+    #     :param fv_checks: dictionary with primary and secondary component character keys and True/False values
+    #         Generated by :meth:`~PULSE.data.window.Window.check_fvalid`
+    #     :type fv_checks: dict
+    #     """
         
-        if self.stats.primary_component not in self.traces.keys():
-            raise KeyError(f'primary_component {self.stats.primary_component} is not a key in this Window.')        
-        # If the primary trace has enough data
-        elif fv_checks[self.stats.primary_component]:
-            # Create a 0-trace with metadata copied from the primary trace
-            tr0 = self.primary.copy().to_zero(method='both')
-        # If the primary has insufficient data, kick error
-        else:
-            raise ValueError('primary component has insufficient data')
+    #     if self.stats.primary_component not in self.traces.keys():
+    #         raise KeyError(f'primary_component {self.stats.primary_component} is not a key in this Window.')        
+    #     # If the primary trace has enough data
+    #     elif fv_checks[self.stats.primary_component]:
+    #         # Create a 0-trace with metadata copied from the primary trace
+    #         tr0 = self.primary.copy().to_zero(method='both')
+    #     # If the primary has insufficient data, kick error
+    #     else:
+    #         raise ValueError('primary component has insufficient data')
 
-        # Iterate across component codes and threshold statuses
-        for _k, _v in fv_checks.items():
-            # If this is a secondary trace
-            if _k != self.stats.primary_component:
-                # If the trace did not pass the fvalid threshold
-                if not _v:
-                    # Replace with 0-trace copy with updated component code
-                    self.traces.update({_k:tr0.copy().set_comp(_k)})
-                # If the secondary trace passed fvalid threshold, retain it
-                else:
-                    continue
-            # If this is the primary trace, continue to next iteration
-            else:
-                continue
+    #     # Iterate across component codes and threshold statuses
+    #     for _k, _v in fv_checks.items():
+    #         # If this is a secondary trace
+    #         if _k != self.stats.primary_component:
+    #             # If the trace did not pass the fvalid threshold
+    #             if not _v:
+    #                 # Replace with 0-trace copy with updated component code
+    #                 self.traces.update({_k:tr0.copy().set_comp(_k)})
+    #             # If the secondary trace passed fvalid threshold, retain it
+    #             else:
+    #                 continue
+    #         # If this is the primary trace, continue to next iteration
+    #         else:
+    #             continue
 
                 
-    def clone_primary_fill(self, fv_checks):
-        """Apply the fill rule from :cite:`Ni2023` for missing horizontal components.
+    # def clone_primary_fill(self, fv_checks):
+    #     """Apply the fill rule from :cite:`Ni2023` for missing horizontal components.
         
-        For any secondary component mltraces that did not pass the fv_check, or are absent:
-        Replace them with a clone of the primary_component mltrace that retains its data vector, but has
-        a 0-vector for its fold attribute to convey that no unique information is provided by the clone. 
-        The component code of the failing/absent secondary component is applied to the clone. 
+    #     For any secondary component mltraces that did not pass the fv_check, or are absent:
+    #     Replace them with a clone of the primary_component mltrace that retains its data vector, but has
+    #     a 0-vector for its fold attribute to convey that no unique information is provided by the clone. 
+    #     The component code of the failing/absent secondary component is applied to the clone. 
 
-        Uses the following methods from :class:`~PULSE.data.mltrace.MLTrace`:
-         - :meth:`~PULSE.data.mltrace.MLTrace.to_zero` with **method='fold'**
-         - :meth:`~PULSE.data.mltrace.MLTrace.set_comp`
+    #     Uses the following methods from :class:`~PULSE.data.mltrace.MLTrace`:
+    #      - :meth:`~PULSE.data.mltrace.MLTrace.to_zero` with **method='fold'**
+    #      - :meth:`~PULSE.data.mltrace.MLTrace.set_comp`
 
-        :param fv_checks: dictionary with primary and secondary component character keys and True/False values
-            Generated by :meth:`~PULSE.data.window.Window.run_fvalid_checks` for the primary_component and secondary_components codes
-        :type fv_checks: dict
-        """
-        if self.stats.primary_component not in self.traces.keys():
-            raise KeyError(f'primary_component {self.stats.primary_component} is not a key in this Window.')  
-        elif fv_checks[self.stats.primary_component]:
-            tr0 = self.primary.copy().to_zero(method='fold')
-        else:
-            raise ValueError('primary component trace has insufficient data')
-        # Iterate over all test results
-        for _k, _v in fv_checks.items():
-            # If this is not the primary component
-            if _k != self.stats.primary_component:
-                # If the secondary_component failed
-                if not _v:
-                    # Replace it with a 0-trace clone with the appropriate component code
-                    self.traces.update({_k:tr0.copy().set_comp(_k)})
-                # If secondary_component passed, continue to next component
-                else:
-                    continue
-            # If this is the primary component, continue to the next component
-            else:
-                continue
+    #     :param fv_checks: dictionary with primary and secondary component character keys and True/False values
+    #         Generated by :meth:`~PULSE.data.window.Window.run_fvalid_checks` for the primary_component and secondary_components codes
+    #     :type fv_checks: dict
+    #     """
+    #     if self.stats.primary_component not in self.traces.keys():
+    #         raise KeyError(f'primary_component {self.stats.primary_component} is not a key in this Window.')  
+    #     elif fv_checks[self.stats.primary_component]:
+    #         tr0 = self.primary.copy().to_zero(method='fold')
+    #     else:
+    #         raise ValueError('primary component trace has insufficient data')
+    #     # Iterate over all test results
+    #     for _k, _v in fv_checks.items():
+    #         # If this is not the primary component
+    #         if _k != self.stats.primary_component:
+    #             # If the secondary_component failed
+    #             if not _v:
+    #                 # Replace it with a 0-trace clone with the appropriate component code
+    #                 self.traces.update({_k:tr0.copy().set_comp(_k)})
+    #             # If secondary_component passed, continue to next component
+    #             else:
+    #                 continue
+    #         # If this is the primary component, continue to the next component
+    #         else:
+    #             continue
     
-    def clone_secondary_fill(self, fv_checks):
-        """Apply the fill rule from :cite:`Lara2023` if only one secondary component is present and passing, 
-        otherwise apply the fill rule from :cite:`Ni2023` -- :meth:`~PULSE.data.window.Window.clone_primary_fill`.
+    # def clone_secondary_fill(self, fv_checks):
+    #     """Apply the fill rule from :cite:`Lara2023` if only one secondary component is present and passing, 
+    #     otherwise apply the fill rule from :cite:`Ni2023` -- :meth:`~PULSE.data.window.Window.clone_primary_fill`.
         
-        If only one secondary compoent mltrace is present and passes the fv_check, clone that secondary component
-        mltrace to fill in for the other missing/failing secondary trace. The clone has it's fold attribute
-        set to a 0-vector to convey that no unique information is provided by the clone.
+    #     If only one secondary compoent mltrace is present and passes the fv_check, clone that secondary component
+    #     mltrace to fill in for the other missing/failing secondary trace. The clone has it's fold attribute
+    #     set to a 0-vector to convey that no unique information is provided by the clone.
 
-        Uses the following methods from :class:`~PULSE.data.mltrace.MLTrace`:
-         - :meth:`~PULSE.data.mltrace.MLTrace.to_zero` with **method='fold'**
-         - :meth:`~PULSE.data.mltrace.MLTrace.set_comp`
+    #     Uses the following methods from :class:`~PULSE.data.mltrace.MLTrace`:
+    #      - :meth:`~PULSE.data.mltrace.MLTrace.to_zero` with **method='fold'**
+    #      - :meth:`~PULSE.data.mltrace.MLTrace.set_comp`
 
-        If both secondary component mltraces are absent or fail the fv_check, :meth:`~PULSE.data.window.Window.clone_primary_fill`
-        is used instead.
+    #     If both secondary component mltraces are absent or fail the fv_check, :meth:`~PULSE.data.window.Window.clone_primary_fill`
+    #     is used instead.
 
-        :param fv_checks: dictionary with primary and secondary component character keys and True/False values
-            Generated by :meth:`~PULSE.data.window.Window.run_fvalid_checks`
-        :type fv_checks: dict
-        """
-        # Safety check on primary_components
-        if self.stats.primary_component not in self.traces.keys():
-            raise KeyError(f'primary_component {self.stats.primary_component} is not a key in this Window.')  
-        elif fv_checks[self.stats.primary_component]:
-            pc = self.stats.primary_component
-        else:
-            raise ValueError('primary component trace has insufficient data')
-        # Safety check on secondary_components reflects a 3-component 
-        scc = self.stats.get_unique_secondary_components()
-        if len(scc) != 2:
-            raise NotImplementedError('Current version of this rule only works with 3-component data')
-        else:
-            pass
-        # Case 1: all components pass, do nothing
-        if all(fv_checks.values()):
-            return
-        # Case 2: both secondary components fail, use clone_primary_fill
-        elif not any(fv_checks[_s] for _s in scc) and fv_checks[pc]:
-            self.clone_primary_fill(fv_checks)
-        # Case 3: one secondary component passes
-        elif fv_checks[scc[0]] != fv_checks[scc[1]]:
-            # If the first listed component is present and valid
-            if fv_checks[scc[0]]:
-                self.traces[scc[1]] = self.traces[scc[0]].copy().to_zero(method='fold').set_comp(scc[1])
-            # If the second listed component is present and valid
-            elif fv_checks[scc[1]]:
-                self.traces[scc[0]] = self.traces[scc[1]].copy().to_zero(method='fold').set_comp(scc[0])
-        # Safety catch
-        else:
-            raise ValueError('Logic error - should not get here')
+    #     :param fv_checks: dictionary with primary and secondary component character keys and True/False values
+    #         Generated by :meth:`~PULSE.data.window.Window.run_fvalid_checks`
+    #     :type fv_checks: dict
+    #     """
+    #     # Safety check on primary_components
+    #     if self.stats.primary_component not in self.traces.keys():
+    #         raise KeyError(f'primary_component {self.stats.primary_component} is not a key in this Window.')  
+    #     elif fv_checks[self.stats.primary_component]:
+    #         pc = self.stats.primary_component
+    #     else:
+    #         raise ValueError('primary component trace has insufficient data')
+    #     # Safety check on secondary_components reflects a 3-component 
+    #     scc = self.stats.get_unique_secondary_components()
+    #     if len(scc) != 2:
+    #         raise NotImplementedError('Current version of this rule only works with 3-component data')
+    #     else:
+    #         pass
+    #     # Case 1: all components pass, do nothing
+    #     if all(fv_checks.values()):
+    #         return
+    #     # Case 2: both secondary components fail, use clone_primary_fill
+    #     elif not any(fv_checks[_s] for _s in scc) and fv_checks[pc]:
+    #         self.clone_primary_fill(fv_checks)
+    #     # Case 3: one secondary component passes
+    #     elif fv_checks[scc[0]] != fv_checks[scc[1]]:
+    #         # If the first listed component is present and valid
+    #         if fv_checks[scc[0]]:
+    #             self.traces[scc[1]] = self.traces[scc[0]].copy().to_zero(method='fold').set_comp(scc[1])
+    #         # If the second listed component is present and valid
+    #         elif fv_checks[scc[1]]:
+    #             self.traces[scc[0]] = self.traces[scc[1]].copy().to_zero(method='fold').set_comp(scc[0])
+    #     # Safety catch
+    #     else:
+    #         raise ValueError('Logic error - should not get here')
 
 
 
     
-    ###############################################################################
-    # Synchronization Methods #####################################################
-    ###############################################################################
+    # ###############################################################################
+    # # Synchronization Methods #####################################################
+    # ###############################################################################
             
-    def check_windowing_status(self,
-                               target_starttime=None,
-                               target_sampling_rate=None,
-                               target_npts=None,
-                               mode='summary'):
-        """
-        Check if the data timing and sampling in this Window are synchronized
-        with the target_* [starttime, sampling_rate, npts] attributes in its Stats object
-        or those specified as arguments in this check_sync() call. Options are provided for
-        different slices of the boolean representation of trace-attribute-reference sync'-ing
+    # def check_windowing_status(self,
+    #                            target_starttime=None,
+    #                            target_sampling_rate=None,
+    #                            target_npts=None,
+    #                            mode='summary'):
+    #     """
+    #     Check if the data timing and sampling in this Window are synchronized
+    #     with the target_* [starttime, sampling_rate, npts] attributes in its Stats object
+    #     or those specified as arguments in this check_sync() call. Options are provided for
+    #     different slices of the boolean representation of trace-attribute-reference sync'-ing
 
-        This method also checks if data are masked, using the truth of np.ma.is_masked(tr.data)
-        as the output
+    #     This method also checks if data are masked, using the truth of np.ma.is_masked(tr.data)
+    #     as the output
 
-        :: INPUTS ::
-        :param target_starttime: if None - use self.stats.target_starttime
-                                    if UTCDateTime - use this value for sync check on starttime
-        :type target_starttime: None or obspy.core.utcdatetime.UTCDateTime
-        :param target_sampling_rate: None - use self.stats.target_sampling_rate
-                                    float - use this value for sync check on sampling_rate
-        :type target_sampling_rate: None or float
-        :param target_npts: None - use self.stats.target_npts
-                                    int - use this value for sync check on npts
-        :type target_npts: None or int
-        :param mode: output mode
-                        'summary' - return the output of bool_array.all()
-                        'trace' - return a dictionary of all() outputs of elements 
-                                subset by trace
-                        'attribute' - return a dictionary of all() outputs of elements
-                                subset by attribute
-                        'full' - return a pandas DataFrame with each element, labeled
-                                with trace component codes (columns) and 
-                                attribute names (index)
-        :type mode: str
-        :param sample_tol: fraction of a sample used for timing mismatch tolerance, default is 0.1
-        :type sample_tol: float
-        :return status: [bool] - for mode='summary'
-                        [dict] - for mode='trace' or 'attribute'
-                        [DataFrame] - for mode='full'
-        :rtype status: bool, dict, or pandas.core.dataframe.DataFrame
-        """
-        ref = {}
-        if target_starttime is not None:
-            ref.update({'starttime': target_starttime})
-        elif self.stats.target_starttime is not None:
-            ref.update({'starttime': self.stats.target_starttime})
-        else:
-            raise ValueError('Neither stats.target_starttime or kwarg target_starttime are assigned')
+    #     :: INPUTS ::
+    #     :param target_starttime: if None - use self.stats.target_starttime
+    #                                 if UTCDateTime - use this value for sync check on starttime
+    #     :type target_starttime: None or obspy.core.utcdatetime.UTCDateTime
+    #     :param target_sampling_rate: None - use self.stats.target_sampling_rate
+    #                                 float - use this value for sync check on sampling_rate
+    #     :type target_sampling_rate: None or float
+    #     :param target_npts: None - use self.stats.target_npts
+    #                                 int - use this value for sync check on npts
+    #     :type target_npts: None or int
+    #     :param mode: output mode
+    #                     'summary' - return the output of bool_array.all()
+    #                     'trace' - return a dictionary of all() outputs of elements 
+    #                             subset by trace
+    #                     'attribute' - return a dictionary of all() outputs of elements
+    #                             subset by attribute
+    #                     'full' - return a pandas DataFrame with each element, labeled
+    #                             with trace component codes (columns) and 
+    #                             attribute names (index)
+    #     :type mode: str
+    #     :param sample_tol: fraction of a sample used for timing mismatch tolerance, default is 0.1
+    #     :type sample_tol: float
+    #     :return status: [bool] - for mode='summary'
+    #                     [dict] - for mode='trace' or 'attribute'
+    #                     [DataFrame] - for mode='full'
+    #     :rtype status: bool, dict, or pandas.core.dataframe.DataFrame
+    #     """
+    #     ref = {}
+    #     if target_starttime is not None:
+    #         ref.update({'starttime': target_starttime})
+    #     elif self.stats.target_starttime is not None:
+    #         ref.update({'starttime': self.stats.target_starttime})
+    #     else:
+    #         raise ValueError('Neither stats.target_starttime or kwarg target_starttime are assigned')
         
-        if target_sampling_rate is not None:
-            ref.update({'sampling_rate': target_sampling_rate})
-        elif self.stats.target_sampling_rate is not None:
-            ref.update({'sampling_rate': self.stats.target_sampling_rate})
-        else:
-            raise ValueError('Neither stats.target_sampling_rate or kwarg target_sampling_rate are assigned')
+    #     if target_sampling_rate is not None:
+    #         ref.update({'sampling_rate': target_sampling_rate})
+    #     elif self.stats.target_sampling_rate is not None:
+    #         ref.update({'sampling_rate': self.stats.target_sampling_rate})
+    #     else:
+    #         raise ValueError('Neither stats.target_sampling_rate or kwarg target_sampling_rate are assigned')
              
-        if target_npts is not None:
-            ref.update({'npts': target_npts})
-        elif self.stats.target_npts is not None:
-            ref.update({'npts': self.stats.target_npts})
-        else:
-            raise ValueError('Neither stats.target_npts or kwarg target_npts are assigned')
+    #     if target_npts is not None:
+    #         ref.update({'npts': target_npts})
+    #     elif self.stats.target_npts is not None:
+    #         ref.update({'npts': self.stats.target_npts})
+    #     else:
+    #         raise ValueError('Neither stats.target_npts or kwarg target_npts are assigned')
         
-        holder = []
-        for _tr in self.traces.values():
-            line = []
-            for _k, _v in ref.items():
-                # if _k == 'starttime':
-                #     line.append(abs(getattr(_tr.stats,_k) - _v) <= sample_tol*ref['sampling_rate'])
-                # else:
-                line.append(getattr(_tr.stats,_k) == _v)
-            line.append(not np.ma.is_masked(_tr.data))
-            holder.append(line)
+    #     holder = []
+    #     for _tr in self.traces.values():
+    #         line = []
+    #         for _k, _v in ref.items():
+    #             # if _k == 'starttime':
+    #             #     line.append(abs(getattr(_tr.stats,_k) - _v) <= sample_tol*ref['sampling_rate'])
+    #             # else:
+    #             line.append(getattr(_tr.stats,_k) == _v)
+    #         line.append(not np.ma.is_masked(_tr.data))
+    #         holder.append(line)
         
-        bool_array = np.array(holder)
-        if mode == 'summary':
-            status=bool_array.all()
-        elif mode == 'attribute':
-            status = dict(zip(list(ref.keys()) + ['mask_free'], bool_array.all(axis=0)))
-        elif mode == 'trace':
-            status = dict(zip(self.traces.keys(), bool_array.all(axis=1)))
-        elif mode == 'full':
-            status = pd.DataFrame(bool_array,
-                                  columns=list(ref.keys()) + ['mask_free'],
-                                  index=self.traces.keys()).T
-        return status
+    #     bool_array = np.array(holder)
+    #     if mode == 'summary':
+    #         status=bool_array.all()
+    #     elif mode == 'attribute':
+    #         status = dict(zip(list(ref.keys()) + ['mask_free'], bool_array.all(axis=0)))
+    #     elif mode == 'trace':
+    #         status = dict(zip(self.traces.keys(), bool_array.all(axis=1)))
+    #     elif mode == 'full':
+    #         status = pd.DataFrame(bool_array,
+    #                               columns=list(ref.keys()) + ['mask_free'],
+    #                               index=self.traces.keys()).T
+    #     return status
 
-    def treat_gaps(self,
-                   filterkw={'type': 'bandpass', 'freqmin': 1, 'freqmax': 45},
-                   detrendkw={'type': 'linear'},
-                   resample_method='resample',
-                   resamplekw={},
-                   taperkw={'max_percentage': None, 'max_length': 0.06},
-                   mergekw={},
-                   trimkw={'pad': True, 'fill_value':0}):
-        """Execute a PULSE.data.mltrace.MLTrace.treat_gaps() method on each trace
-        in this Window using common kwargs (see below) and reference sampling data
-        in the Window.stats
+    # def treat_gaps(self,
+    #                filterkw={'type': 'bandpass', 'freqmin': 1, 'freqmax': 45},
+    #                detrendkw={'type': 'linear'},
+    #                resample_method='resample',
+    #                resamplekw={},
+    #                taperkw={'max_percentage': None, 'max_length': 0.06},
+    #                mergekw={},
+    #                trimkw={'pad': True, 'fill_value':0}):
+    #     """Execute a PULSE.data.mltrace.MLTrace.treat_gaps() method on each trace
+    #     in this Window using common kwargs (see below) and reference sampling data
+    #     in the Window.stats
 
-        filter -> detrend* -> resample* -> taper* -> merge* -> trim
+    #     filter -> detrend* -> resample* -> taper* -> merge* -> trim
 
-        For expanded explanation of key word arguments, see PULSE.data.mltrace.MLTrace.treat_gaps
+    #     For expanded explanation of key word arguments, see PULSE.data.mltrace.MLTrace.treat_gaps
 
-        :param filterkw: kwargs to pass to MLTrace.filter(), defaults to {'type': 'bandpass', 'freqmin': 1, 'freqmax': 45}
-        :type filterkw: dict, optional
-        :param detrendkw: kwargs to pass to MLTrace.detrend(), defaults to {'type': 'linear'}
-        :type detrendkw: dict, optional
-        :param resample_method: resampling method to use, defaults to 'resample'
-                supported values - 'resample','interpolate','decimate'
-        :type resample_method: str, optional
-        :param resamplekw: kwargs to pass to specified resample_method, defaults to {}
-        :type resamplekw: dict, optional
-                            obspy.core.trace.Trace.interpolate
-                            obspy.core.trace.Trace.decimate
-        :param taperkw: kwargs to pass to MLTrace.taper(), defaults to {}
-        :type taperkw: dict, optional
-        :param mergekw: kwargs to pass to MLTrace.merge, defaults to {}
-        :type mergekw: dict, optional
-        :param trimkw: kwargs to pass to MLTrace.trim, defaults to {'pad': True, 'fill_value':0}
-        :type trimkw: dict, optional
-        """        
-        # Get reference values from header
-        ref = {}
-        for _k in ['target_starttime','target_npts','target_sampling_rate']:
-            ref.update({'_'.join(_k.split("_")[1:]): self.stats[_k]})
-        resamplekw.update({'sampling_rate':ref['sampling_rate']})
-        trimkw.update({'starttime': ref['starttime'],
-                        'endtime': ref['starttime'] + (ref['npts'] - 1)/ref['sampling_rate']})
-        for tr in self:
-            tr.treat_gaps(
-                filterkw = filterkw,
-                detrendkw = detrendkw,
-                resample_method=resample_method,
-                resamplekw=resamplekw,
-                taperkw=taperkw,
-                mergekw=mergekw,
-                trimkw=trimkw)
-            if tr.stats.sampling_rate != ref['sampling_rate']:
-                breakpoint()
+    #     :param filterkw: kwargs to pass to MLTrace.filter(), defaults to {'type': 'bandpass', 'freqmin': 1, 'freqmax': 45}
+    #     :type filterkw: dict, optional
+    #     :param detrendkw: kwargs to pass to MLTrace.detrend(), defaults to {'type': 'linear'}
+    #     :type detrendkw: dict, optional
+    #     :param resample_method: resampling method to use, defaults to 'resample'
+    #             supported values - 'resample','interpolate','decimate'
+    #     :type resample_method: str, optional
+    #     :param resamplekw: kwargs to pass to specified resample_method, defaults to {}
+    #     :type resamplekw: dict, optional
+    #                         obspy.core.trace.Trace.interpolate
+    #                         obspy.core.trace.Trace.decimate
+    #     :param taperkw: kwargs to pass to MLTrace.taper(), defaults to {}
+    #     :type taperkw: dict, optional
+    #     :param mergekw: kwargs to pass to MLTrace.merge, defaults to {}
+    #     :type mergekw: dict, optional
+    #     :param trimkw: kwargs to pass to MLTrace.trim, defaults to {'pad': True, 'fill_value':0}
+    #     :type trimkw: dict, optional
+    #     """        
+    #     # Get reference values from header
+    #     ref = {}
+    #     for _k in ['target_starttime','target_npts','target_sampling_rate']:
+    #         ref.update({'_'.join(_k.split("_")[1:]): self.stats[_k]})
+    #     resamplekw.update({'sampling_rate':ref['sampling_rate']})
+    #     trimkw.update({'starttime': ref['starttime'],
+    #                     'endtime': ref['starttime'] + (ref['npts'] - 1)/ref['sampling_rate']})
+    #     for tr in self:
+    #         tr.treat_gaps(
+    #             filterkw = filterkw,
+    #             detrendkw = detrendkw,
+    #             resample_method=resample_method,
+    #             resamplekw=resamplekw,
+    #             taperkw=taperkw,
+    #             mergekw=mergekw,
+    #             trimkw=trimkw)
+    #         if tr.stats.sampling_rate != ref['sampling_rate']:
+    #             breakpoint()
 
     
-    def sync_to_reference(self, fill_value=0., sample_tol=0.05, **kwargs):
-        """Use a combination of trim and interpolate functions to synchronize
-        the sampling of traces contained in this WindowWyrm
+    # def sync_to_reference(self, fill_value=0., sample_tol=0.05, **kwargs):
+    #     """Use a combination of trim and interpolate functions to synchronize
+    #     the sampling of traces contained in this WindowWyrm
 
-        Wraps the PULSE.data.mltrace.MLTrace.sync_to_window() method
+    #     Wraps the PULSE.data.mltrace.MLTrace.sync_to_window() method
 
-        :param fill_value: fill value for, defaults to 0.
-        :type fill_value: _type_, optional
-        :raises ValueError: _description_
-        :raises ValueError: _description_
-        :raises ValueError: _description_
-        :return: _description_
-        :rtype: _type_
-        """ 
-        if not isinstance(sample_tol, float):
-            raise TypeError('sample_tol must be float')
-        elif not 0 <= sample_tol < 0.1:
-            raise ValueError('sample_tol must be a small float value \in [0, 0.1)')
-        starttime = self.stats.target_starttime
-        if starttime is None:
-            raise ValueError('target_starttime must be specified in this Window\'s `stats`')
-        npts = self.stats.target_npts
-        if npts is None:
-            raise ValueError('target_npts must be specified in this Window\'s `stats`')
-        sampling_rate = self.stats.target_sampling_rate
-        if sampling_rate is None:
-            raise ValueError('target_sampling_rate must be specified in this Window\'s `stats`')
+    #     :param fill_value: fill value for, defaults to 0.
+    #     :type fill_value: _type_, optional
+    #     :raises ValueError: _description_
+    #     :raises ValueError: _description_
+    #     :raises ValueError: _description_
+    #     :return: _description_
+    #     :rtype: _type_
+    #     """ 
+    #     if not isinstance(sample_tol, float):
+    #         raise TypeError('sample_tol must be float')
+    #     elif not 0 <= sample_tol < 0.1:
+    #         raise ValueError('sample_tol must be a small float value \in [0, 0.1)')
+    #     starttime = self.stats.target_starttime
+    #     if starttime is None:
+    #         raise ValueError('target_starttime must be specified in this Window\'s `stats`')
+    #     npts = self.stats.target_npts
+    #     if npts is None:
+    #         raise ValueError('target_npts must be specified in this Window\'s `stats`')
+    #     sampling_rate = self.stats.target_sampling_rate
+    #     if sampling_rate is None:
+    #         raise ValueError('target_sampling_rate must be specified in this Window\'s `stats`')
 
-        endtime = starttime + (npts-1)/sampling_rate
+    #     endtime = starttime + (npts-1)/sampling_rate
 
-        # If any checks against windowing references fail, proceed with interpolation/padding
-        if not self.check_windowing_status(mode='summary'):
-            # df_full = self.check_windowing_status(mode='full')
-            for _tr in self:
-                _tr.sync_to_window(starttime=starttime, endtime=endtime, fill_value=fill_value, **kwargs)
+    #     # If any checks against windowing references fail, proceed with interpolation/padding
+    #     if not self.check_windowing_status(mode='summary'):
+    #         # df_full = self.check_windowing_status(mode='full')
+    #         for _tr in self:
+    #             _tr.sync_to_window(starttime=starttime, endtime=endtime, fill_value=fill_value, **kwargs)
 
-        # Extra sanity check if timing is ever so slightly off
-        if not self.check_windowing_status(mode='summary'):
-            asy = self.check_windowing_status(mode='attribute')
-            # If it is just a starttime rounding error
-            if not asy['starttime'] and asy['sampling_rate'] and asy['npts'] and asy['mask_free']:
-                # Iterate across traces
-                for tr in self:
-                    # If misfit is \in (0, tol_sec], just reassign trace starttime as reference
-                    if 0 < abs(tr.stats.starttime - starttime) <= sample_tol/sampling_rate:
-                        tr.stats.starttime = starttime
-            else:
-                breakpoint()
+    #     # Extra sanity check if timing is ever so slightly off
+    #     if not self.check_windowing_status(mode='summary'):
+    #         asy = self.check_windowing_status(mode='attribute')
+    #         # If it is just a starttime rounding error
+    #         if not asy['starttime'] and asy['sampling_rate'] and asy['npts'] and asy['mask_free']:
+    #             # Iterate across traces
+    #             for tr in self:
+    #                 # If misfit is \in (0, tol_sec], just reassign trace starttime as reference
+    #                 if 0 < abs(tr.stats.starttime - starttime) <= sample_tol/sampling_rate:
+    #                     tr.stats.starttime = starttime
+    #         else:
+    #             breakpoint()
 
-        return self
+    #     return self
 
 
-    ###############################################################################
-    # Window to Tensor Methods ###########################################
-    ###############################################################################
+    # ###############################################################################
+    # # Window to Tensor Methods ###########################################
+    # ###############################################################################
             
-    def ready_to_burn(self, model):
-        """
-        Assess if the data contents of this Window are ready
-        to convert into a torch.Tensor given a particular seisbench model
+    # def ready_to_burn(self, model):
+    #     """
+    #     Assess if the data contents of this Window are ready
+    #     to convert into a torch.Tensor given a particular seisbench model
 
-        NOTE: This inspects that the dimensionality, timing, sampling, completeness,
-             and component aliasing of the contents of this Window are
-             compliant with reference values in the metadata and in the input `model`'s
-             metadata
+    #     NOTE: This inspects that the dimensionality, timing, sampling, completeness,
+    #          and component aliasing of the contents of this Window are
+    #          compliant with reference values in the metadata and in the input `model`'s
+    #          metadata
               
-             It does not check if the data have been processed: filtering, tapering, 
-                normalization, etc. 
+    #          It does not check if the data have been processed: filtering, tapering, 
+    #             normalization, etc. 
 
-        :: INPUT ::
-        :param model: [seisbench.models.WaveformModel] initialized model
-                        object that prediction will be run on 
-                        NOTE: This is really a child-class of sbm.WaveformModel
-        :: OUTPUT ::
-        :return status: [bool] - is this Window ready for conversion
-                                using Window.to_torch(model)?
-        """
-        # model compatability check
-        if not isinstance(model, sbm.WaveformModel):
-            raise TypeError
-        elif model.name == 'WaveformModel':
-            raise ValueError('WaveformModel baseclass objects do not provide a viable prediciton method - use a child class thereof')
-        if any(_tr is None for _tr in self):
-            breakpoint()
-        # Check that data are not masked
-        if any(isinstance(_tr.data, np.ma.MaskedArray) for _tr in self):
-            status = False
-        # Check starttime sync
-        elif not all(_tr.stats.starttime == self.stats.target_starttime for _tr in self):
-            status = False
-        # Check npts is consistent
-        elif not all(_tr.stats.npts == model.in_samples for _tr in self):
-            status = False
-        # Check that all components needed in model are represented in the aliases
-        elif not all(_k in model.component_order for _k in self.traces.keys()):
-            status = False
-        # Check that sampling rate is sync'd
-        elif not all(_tr.stats.sampling_rate == self.stats.target_sampling_rate for _tr in self):
-            status = False
-        # Passing (or really failing) all of the above
-        else:
-            status = True
-        return status
+    #     :: INPUT ::
+    #     :param model: [seisbench.models.WaveformModel] initialized model
+    #                     object that prediction will be run on 
+    #                     NOTE: This is really a child-class of sbm.WaveformModel
+    #     :: OUTPUT ::
+    #     :return status: [bool] - is this Window ready for conversion
+    #                             using Window.to_torch(model)?
+    #     """
+    #     # model compatability check
+    #     if not isinstance(model, sbm.WaveformModel):
+    #         raise TypeError
+    #     elif model.name == 'WaveformModel':
+    #         raise ValueError('WaveformModel baseclass objects do not provide a viable prediciton method - use a child class thereof')
+    #     if any(_tr is None for _tr in self):
+    #         breakpoint()
+    #     # Check that data are not masked
+    #     if any(isinstance(_tr.data, np.ma.MaskedArray) for _tr in self):
+    #         status = False
+    #     # Check starttime sync
+    #     elif not all(_tr.stats.starttime == self.stats.target_starttime for _tr in self):
+    #         status = False
+    #     # Check npts is consistent
+    #     elif not all(_tr.stats.npts == model.in_samples for _tr in self):
+    #         status = False
+    #     # Check that all components needed in model are represented in the aliases
+    #     elif not all(_k in model.component_order for _k in self.traces.keys()):
+    #         status = False
+    #     # Check that sampling rate is sync'd
+    #     elif not all(_tr.stats.sampling_rate == self.stats.target_sampling_rate for _tr in self):
+    #         status = False
+    #     # Passing (or really failing) all of the above
+    #     else:
+    #         status = True
+    #     return status
     
-    def to_npy_tensor(self, model):
-        """
-        Convert the data contents of this Window into a numpy array that
-        conforms to the component ordering required by a seisbench WaveformModel
-        object
-        :: INPUT ::
-        :param model: []
-        """
-        if not self.ready_to_burn(model):
-            raise ValueError('This Window is not ready for conversion to a torch.Tensor')
+    # def to_npy_tensor(self, model):
+    #     """
+    #     Convert the data contents of this Window into a numpy array that
+    #     conforms to the component ordering required by a seisbench WaveformModel
+    #     object
+    #     :: INPUT ::
+    #     :param model: []
+    #     """
+    #     if not self.ready_to_burn(model):
+    #         raise ValueError('This Window is not ready for conversion to a torch.Tensor')
         
-        npy_array = np.c_[[self[_c].data for _c in model.component_order]]
-        return npy_array
-        # tensor = torch.Tensor(npy_array)
-        # return tensor
+    #     npy_array = np.c_[[self[_c].data for _c in model.component_order]]
+    #     return npy_array
+    #     # tensor = torch.Tensor(npy_array)
+    #     # return tensor
 
-    def collapse_fold(self):
-        """
-        Collapse fold vectors into a single vector by addition, if all traces have equal npts
-        """
-        npts = self[0].stats.npts
-        if all(_tr.stats.npts == npts for _tr in self):
-            addfold = np.sum(np.c_[[_tr.fold for _tr in self]], axis=0)
-            return addfold
-        else:
-            raise ValueError('not all traces in this Window have matching npts')
+    # def collapse_fold(self):
+    #     """
+    #     Collapse fold vectors into a single vector by addition, if all traces have equal npts
+    #     """
+    #     npts = self[0].stats.npts
+    #     if all(_tr.stats.npts == npts for _tr in self):
+    #         addfold = np.sum(np.c_[[_tr.fold for _tr in self]], axis=0)
+    #         return addfold
+    #     else:
+    #         raise ValueError('not all traces in this Window have matching npts')
         
 
 

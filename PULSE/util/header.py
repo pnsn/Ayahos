@@ -328,12 +328,17 @@ class ModStats(AttribDict):
         return pd.Series(self.asdict())
 
 
+
+
+
+
+
 class WindowStats(AttribDict):
     _readonly = ['target_endtime']
     _refresh_keys = ['target_starttime','target_sampling_rate','target_npts']
     defaults = {
-        'primary': 'Z',
-        'secondary': 'NE',
+        'primary_id': None,
+        'secondary_components': None,
         'pthresh': 0.95,
         'sthresh': 0.8,
         'target_starttime': UTCDateTime(0),
@@ -344,8 +349,8 @@ class WindowStats(AttribDict):
     }
 
     _types = {
-        'primary': str,
-        'secondary': str,
+        'primary_id': (type(None), str),
+        'secondary_components': (type(None), str),
         'pthresh': float,
         'sthresh': float,
         'target_starttime': UTCDateTime,
@@ -361,32 +366,60 @@ class WindowStats(AttribDict):
             raise TypeError('header must be type dict')
         self.update(header)
 
-    def __setattr__(self, key, value):
+    def __setitem__(self, key, value):
         if key not in self.defaults.keys():
-            raise KeyError(f'key "{key}" not supported.')
+            raise KeyError(f'key "{key}" not permitted.')
         if key in self._readonly:
             raise KeyError(f'{key} is readonly')
+
+        if not isinstance(value, self._types[key]):
+            raise ValueError(f'{key} of type "{type(value)}" not supported.')
+
+        if key in ['pthresh','sthresh']:
+            if not 0 <= value <= 1:
+                raise ValueError(f'{key} must be a value in [0, 1]')
 
         if key in self._refresh_keys:
             if key in ['target_sampling_rate', 'target_npts']:
                 if value <= 0:
                     raise ValueError(f'{key} must be a positive value')
-                elif key == 'target_sampling_rate':
-                    value = float(value)
-                elif key == 'target_npts':
-                    value = int(value)
-                if isinstance(value, self._types[key]):
-                    super().__setattr__(key, value)
-                else:
-                    raise ValueError(f'value for key "{key}" of type "{type(value)}" is not supported.')
-                self.__dict__['target_endtime'] = self.target_starttime + \
+            if not isinstance(value, self._types[key]):
+                raise ValueError(f'{key} of type "{type(value)}" not supported.')
+            super(WindowStats, self).__setitem__(key, value)
+            self.__dict__['target_endtime'] = self.target_starttime + \
                                                     (self.target_npts - 1)/\
                                                      self.target_sampling_rate
-        
-        if isinstance(value, self._types[key]):
-            super().__setattr__(key, value)
+            return
+        # All other keys
+        if isinstance(value, dict):
+            super(WindowStats, self).__setitem__(key, AttribDict(value))
         else:
-            raise ValueError(f'value for key "{key}" of type "{type(value)}" is not supported.')
+            super(WindowStats, self).__setitem__(key, value)
+
+    __setattr__ = __setitem__
+
+    def __getitem__(self, key, default=None):
+        return super(WindowStats, self).__getitem__(key, default)
+    
+    def get_primary_component(self):
+        if self.primary_id is None:
+            return None
+        else:
+            parts = self.primary_id.split('.')
+        return parts[3][-1]
+    
+    def get_secondary_ids(self):
+        if self.secondary_components is None:
+            return None
+        elif self.primary_id is None:
+            return None
+        else:
+            parts = self.primary_id.split('.')
+            ids = []
+            for sc in self.secondary_components:
+                parts[3] = parts[3][:-1] + sc
+                ids.append('.'.join(parts))
+            return ids
     
     # def get_endtime(self):
     #     return self.target_starttime + self.target_npts/self.target_sampling_rate

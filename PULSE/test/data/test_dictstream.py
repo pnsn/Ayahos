@@ -1,12 +1,13 @@
 import pytest
 import numpy as np
+from pathlib import Path
 
 from obspy import Trace, Stream, Inventory, UTCDateTime, read
 # from obspy.core.tests.test_stream import TestStream
 
 from PULSE.data.dictstream import DictStream
 from PULSE.data.foldtrace import FoldTrace
-from PULSE.test.data.util import (load_townsend_example,
+from PULSE.test.example_data import (load_townsend_example,
                                   load_seattle_example,
                                   assert_common_trace)
 
@@ -18,9 +19,9 @@ class TestDictStream():
     # Stream from ObsPy default example (3 traces, 1 station)
     sm_st = read()
     # Stream from M4.3 near Port Townsend, WA in Oct 2023 (33 traces, 8 stations, 13 instruments)
-    med_st, med_inv, townsend_cat = load_townsend_example()
+    med_st, med_inv, townsend_cat = load_townsend_example(Path().cwd())
     # Stream from M2.1 in North Seattle, WA in Sept 2023 (395 traces, 109 stations, 133 instruments)
-    lg_st, lg_inv, seattle_cat = load_seattle_example()
+    lg_st, lg_inv, seattle_cat = load_seattle_example(Path().cwd())
 
     def test_init(self):
         # Setup

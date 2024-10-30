@@ -22,23 +22,6 @@ from PULSE.util.header import WindowStats
 from PULSE.util.log import rich_error_message
 from PULSE.mod.base import BaseMod
 
-# class WindowIndexer(AttribDict):
-#     defaults = {'primary_id': None,
-#                 'target_starttime': None,
-#                 'ready': False}
-#     _types = {'primary_id': (type(None), str),
-#               'target_starttime': (type(None), UTCDateTime),
-#               'ready': bool}
-    
-#     def __init__(self, primary_trace: FoldTrace) -> None:
-#         super().__init__()
-#         self.primary_id = primary_trace.id
-
-
-
-
-
-
 class WindMod(BaseMod):
     def __init__(
             self,
@@ -55,12 +38,12 @@ class WindMod(BaseMod):
             eager=False,
             max_pulse_size=1,
             maxlen=None):
-        
+        # Inherit from BaseMod
         super().__init__(max_pulse_size=max_pulse_size,
                          maxlen=maxlen,
                          name=name)
 
-
+        # Compatability Check for primary_components
         if isinstance(primary_components, set):
             if all(isinstance(_e, str) for _e in primary_components):
                 if all(len(_e) == 1 for _e in primary_components):
@@ -71,7 +54,7 @@ class WindMod(BaseMod):
                 self.Logger.critical('TypeError: all elements in primary_components must be type str')
         else:
             self.Logger.critical('TypeError: primary_components must be type list')
-
+        # Compatability Check for secondary_components
         if isinstance(secondary_components, set):
             if all(isinstance(_e, str) for _e in secondary_components):
                 if all(len(_e) == 2 for _e in secondary_components):
@@ -83,6 +66,7 @@ class WindMod(BaseMod):
         else:
             self.Logger.critical('TypeError: secondary_components must be type list')
         
+        # Compatability check for window_stats
         approved_presets = set(['target_sampling_rate','target_npts','pthresh','sthresh'])
         # Use WindowStats __setattr__ to thoroughly QC window_stats
         try:
@@ -94,20 +78,26 @@ class WindMod(BaseMod):
         try:
             self.window_stats = WindowStats(header = window_stats)
         except (KeyError, ValueError, TypeError) as e:
-            self.Logger.critical(self.rich_error(e))
+            self.Logger.critical(rich_error_message(e))
         
+        # Compatability check for eager
         if isinstance(eager, bool):
             self._eager = eager
         else:
             self.Logger.critical('TypeError: eager must be type bool')
         
+        # Compatability check for overlap
         if not isinstance(overlap, (int, float)):
             self.Logger.critical('TypeError: overlap must be type int')
         elif not 0 <= int(overlap) <= self.window_stats.target_npts:
             self.Logger.critical(f'ValueError: overlap must be in [0, {self.window_stats.target_npts}]')
         else:
             self.overlap = int(overlap)
-            self.overlap_dt = self.overlap/self.window_stats.target_sampling_rate
+        # Calculate derived values
+        self.overlap_dt = self.overlap/self.window_stats.target_sampling_rate
+        self.advance = (self.window_stats.target_npts - self.overlap - 1)
+        self.advance_dt = self.advance/self.window_stats.target_sampling_rate
+    
         # Generate index object
         self.index = {}
 
@@ -165,16 +155,19 @@ class WindMod(BaseMod):
                 for ft in ds:
                     if ft.comp in self.primary_components:
                         new_entry['stats'].update(
-                            {'primary': ft.comp,
+                            {'primary_id': ft.id,
                              'target_starttime': ft.stats.starttime})
+                    # Find secondary keys if there are secondary channels
                     elif len(ds) > 1:
+                        # Identify the component pairs
                         for sc in self.secondary_components:
                             if ft.comp in sc:
-                                new_entry['stats'].update({'secondary': sc})
+                                new_entry['stats'].update({'secondary_components': sc})
+                                break
                     else:
-                        new_entry['stats'].update({'secondary': 'NE'})
+                        new_entry['stats'].update({'secondary_components': 'NE'})
                 # If a primary key has been identified, add new entry
-                if new_entry['target_starttime'] != WindowStats.defaults['primary']:
+                if new_entry['primary_id'] is not None:
                     self.index.update(new_entry)
 
             # Assess readiness
@@ -183,8 +176,18 @@ class WindMod(BaseMod):
                 stats = index['stats']
                 id = f'{instrument}{stats.primary}'
                 ft = ds[id]
+                # Catch large forward jumps (outages)
+                if stats.target_endtime < ft.stats.starttime:
+                    # increment up window until target_starttime is within the
+                    # data time domain
+                    while stats.target_starttime < ft.stats.starttime:
+                        stats.target_starttime += self.advance_dt
+
+
+                # Get valid fraction for target window time
                 fv = ft.get_fvalid_subset(starttime=stats.target_starttime,
                                           endtime=stats.target_endtime) 
+                
                 if fv >= stats.pthresh:
                     if self._eager:
                         index.update({'ready': True})
@@ -202,21 +205,35 @@ class WindMod(BaseMod):
         return unit_input
     
     def run_unit_process(self, unit_input: dict) -> deque:
+        """_summary_
+
+        :param unit_input: _description_
+        :type unit_input: dict
+        :return: _description_
+        :rtype: deque
+        """        
         unit_output = deque()
         for inst, ds in unit_input.items():
             index = self.index[inst]
             stats = index['stats']
             if not index['ready']:
                 self.Logger.critical('Unready dictstream views are making it into `run_unit_process`')
-            traces = ds.view(starttime=stats.target_starttime, endtime=stats.target_endtime).copy()
+            # Use view + copy as an efficient way to get subset copies of large traces
+            traces = ds.view(starttime=stats.target_starttime, 
+                             endtime=stats.target_endtime).copy()
+            # Create a copy of the stats object to pass to a Window
             header = stats.copy()
+            # Generate a new window
             try:
                 window = Window(traces=traces, header=header)
             except Exception as e:
                 self.Logger.critical(rich_error_message(e))
+            # Append new_window to 
             unit_output.appendleft(window)
+            # Disarm readiness
             index['ready'] = False
-            stats.target_starttime += self.overlap_dt
+            # Advance window for next window to generate
+            stats.target_starttime += self.advance_dt
         return unit_output
     
     def put_unit_output(self, unit_output: deque) -> None:
@@ -237,511 +254,511 @@ class WindMod(BaseMod):
 
 
                     
-            # If there are traces in the instrument DictStream
-            if len(ds) == 0:
-                continue
-            # If there is a primary component present
-            for ft in ds:
-                if ft.comp in self.primary_components:
-                    self.index[instrument].update({})
-            if any(ft.comp in self.primary_components for ft in ds):
+            # # If there are traces in the instrument DictStream
+            # if len(ds) == 0:
+            #     continue
+            # # If there is a primary component present
+            # for ft in ds:
+            #     if ft.comp in self.primary_components:
+            #         self.index[instrument].update({})
+            # if any(ft.comp in self.primary_components for ft in ds):
 
 
 
 
-class WindowMod(BaseMod):
-    """
-    The WindowMod class takes windowing information from an input seisbench.models.WaveformModel object and user-defined component
-    mapping and data completeness metrics and provides a pulse method that iterates across entries in an input DictStream object and
-    generates Window copies of sampled data that pass data completeness requirements. 
+# class WindowMod(BaseMod):
+#     """
+#     The WindowMod class takes windowing information from an input seisbench.models.WaveformModel object and user-defined component
+#     mapping and data completeness metrics and provides a pulse method that iterates across entries in an input DictStream object and
+#     generates Window copies of sampled data that pass data completeness requirements. 
 
-    :param component_aliases: aliases for standard component names used in SeisBench, defaults to {"Z": "Z3", "N": "N1", "E": "E2"}
-    :type component_aliases: dict, optional
-    :param primary_component: reference component used for channel fill rules, defaults to 'Z'
-    :type primary_component: str, optional
-    :param primary_completeness_threshold: completeness fraction needed for reference component traces to pass QC, defaults to 0.95
-    :type primary_completeness_threshold: float, optional
-    :param model_name: name of the ML model the windows are intended for, defaults to "EQTransformer"
-    :type model_name: str, optional
-    :param target_sampling_rate: target sampling rate after preprocessing, defaults to 100.0
-    :type target_sampling_rate: float, optional
-    :param target_window_npts: target number of samples per window after preprocessing, defaults to 6000
-    :type target_window_npts: int, optional
-    :param target_overlap_npts: target number of overlapping samples between windows after preprocessing, defaults to 1800
-    :type target_overlap_npts: int, optional
-    :param fnfilter: fnmatch filter string to use for subsetting channel inputs, default is None
-    :type fnfilter: None or str
-        also see :meth:`~PULSE.data.dictstream.DictStream.fnselect`
-    :param pulse_type: style of running pulse, defaults to 'network'
-        Supported values:
-            'network' - attempt to create one window from each instrument per pulse
-            vv NOT IMPLEMENTED vv
-            'site' - create a window/windows for a given site per pulse iteration, tracking
-                    which site last generated windowed data. Permits for list wrapping  
-            'instrument' - under development       
-    :type pulse_type: str, optional
-    :param max_pulse_size: maximum number of iterations for a given pulse, defaults to 1
-    :type max_pulse_size: int, optional
-    :param **options: key-word argument collector to pass to Trace.trim() via TraceBuffer.trim_copy() methods
-    :type **options: kwargs
-    """
+#     :param component_aliases: aliases for standard component names used in SeisBench, defaults to {"Z": "Z3", "N": "N1", "E": "E2"}
+#     :type component_aliases: dict, optional
+#     :param primary_component: reference component used for channel fill rules, defaults to 'Z'
+#     :type primary_component: str, optional
+#     :param primary_completeness_threshold: completeness fraction needed for reference component traces to pass QC, defaults to 0.95
+#     :type primary_completeness_threshold: float, optional
+#     :param model_name: name of the ML model the windows are intended for, defaults to "EQTransformer"
+#     :type model_name: str, optional
+#     :param target_sampling_rate: target sampling rate after preprocessing, defaults to 100.0
+#     :type target_sampling_rate: float, optional
+#     :param target_window_npts: target number of samples per window after preprocessing, defaults to 6000
+#     :type target_window_npts: int, optional
+#     :param target_overlap_npts: target number of overlapping samples between windows after preprocessing, defaults to 1800
+#     :type target_overlap_npts: int, optional
+#     :param fnfilter: fnmatch filter string to use for subsetting channel inputs, default is None
+#     :type fnfilter: None or str
+#         also see :meth:`~PULSE.data.dictstream.DictStream.fnselect`
+#     :param pulse_type: style of running pulse, defaults to 'network'
+#         Supported values:
+#             'network' - attempt to create one window from each instrument per pulse
+#             vv NOT IMPLEMENTED vv
+#             'site' - create a window/windows for a given site per pulse iteration, tracking
+#                     which site last generated windowed data. Permits for list wrapping  
+#             'instrument' - under development       
+#     :type pulse_type: str, optional
+#     :param max_pulse_size: maximum number of iterations for a given pulse, defaults to 1
+#     :type max_pulse_size: int, optional
+#     :param **options: key-word argument collector to pass to Trace.trim() via TraceBuffer.trim_copy() methods
+#     :type **options: kwargs
+#     """
 
-    def __init__(
-        self,
-        primary_components='Z3',
-        secondary_components='NE12',
-        primary_completeness_threshold=0.95,
-        secondary_completeness_threshold=0.8,
-        model_name='EQTransformer',
-        target_sampling_rate=100.,
-        target_window_npts=6000,
-        target_overlap_npts=1800,
-        pad=False,
-        fill_value=None,
-        eager_generation=False,
-        stagger_sec=1.,
-        max_pulse_size=1,
-        maxlen=None,
-        name_suffix=None):
+#     def __init__(
+#         self,
+#         primary_components='Z3',
+#         secondary_components='NE12',
+#         primary_completeness_threshold=0.95,
+#         secondary_completeness_threshold=0.8,
+#         model_name='EQTransformer',
+#         target_sampling_rate=100.,
+#         target_window_npts=6000,
+#         target_overlap_npts=1800,
+#         pad=False,
+#         fill_value=None,
+#         eager_generation=False,
+#         stagger_sec=1.,
+#         max_pulse_size=1,
+#         maxlen=None,
+#         name_suffix=None):
 
-        """Initialize a WindowMod object that samples a Modictstreamream of TraceBuffer
-        objects and generates Window copies of windowed data if a reference
-        component for a given instrument in the Modictstreamream is present and has
-        sufficient data to meet windowing requirements
+#         """Initialize a WindowMod object that samples a Modictstreamream of TraceBuffer
+#         objects and generates Window copies of windowed data if a reference
+#         component for a given instrument in the Modictstreamream is present and has
+#         sufficient data to meet windowing requirements
 
-        :param component_aliases: aliases for standard component names used in SeisBench, defaults to {"Z": "Z3", "N": "N1", "E": "E2"}
-            values in the component_aliases should be an iterable that produces single character strings when iterated
-        :type component_aliases: dict, optional
-        :param primary_component: reference component code to use for channel fill rules, defaults to 'Z'.
-            Must match a key in **component_aliases**
-        :type primary_component: str, optional
-        :param primary_completeness_threshold: completeness fraction needed for reference component traces to pass QC, defaults to 0.95
-            Specified value must be :math:`\in [0,1]`. This value is used when assessing if a window is ready to be generated
-            Also see
-                :meth:`~PULSE.mod.window.WindowMod.update_window_tracker`
-                :meth:`~PULSE.data.window.Window.apply_fill_rule`
-        :type primary_completeness_threshold: float, optional
-        :param secondary_completeness_threshold: completeness fraction needed for "other" component traces to pass QC, defaults to 0.8
-            Specified value must be :math:`\in [0,1]`. This value is only used to populate **Window.stats** attributes
-            Also see :meth:`~PULSE.data.window.Window.__init__`
-        :type secondary_completeness_threshold: float, optional
-        :param model_name: name of the ML model the windows are intended for, defaults to "EQTransformer"
-        :type model_name: str, optional
-        :param target_sampling_rate: target sampling rate after preprocessing, defaults to 100.0
-            Used to determine the endtime for window generation and window advance starttimes for sequential windows
-        :type target_sampling_rate: float, optional
-        :param target_window_npts: target number of samples per window after preprocessing, defaults to 6000
-            Used to determine the endtime for window generation
-        :type target_window_npts: int, optional
-        :param target_overlap_npts: target number of overlapping samples between windows after preprocessing, defaults to 1800
-            Used to determine window starttimes for sequential windows
-        :type target_overlap_npts: int, optional
-        :param fnfilter: fnmatch filter string to use for subsetting channel inputs, default is None.
-            also see :meth:`~PULSE.data.dictstream.DictStream.fnselect`
-        :type fnfilter: NoneType or str
-        :param pulse_type: style of running pulse, defaults to 'network'
-            Supported values:
-                'network' - attempt to create one window from each instrument per iteration in a call of :meth:`~PULSE.mod.window.WindowMod.pulse`
-                TODO: Implement these or remove this feature
-                vv NOT IMPLEMENTED vv
-                'site' - create a window/windows for a given site per pulse iteration, tracking
-                        which site last generated windowed data. Permits for list wrapping  
-                'instrument' - under development       
-        :type pulse_type: str, optional
-        :param stance: window generation rule, defaults to 'patient'
-            Supported values:
-                'patient' - windows are not flagged as ready until the endtime of a reference component trace 
-                    exceeds the end of the window to be generated
-                'eager' - windows are flagged as ready as soon as sufficient data are present in the reference component trace,
-                    even if the endtime of the trace does not exceed the endtime of the window to be generated.
-                    This can produce windows sooner in exchange for potentially omitting trailing data.
-        :param max_pulse_size: maximum number of iterations for a given pulse, defaults to 1
-        :type max_pulse_size: int, optional
-        :param **options: key-word argument collector to pass to :meth:`~PULSE.data.mltrace.MLTrace.trim_copy`
-        :type **options: kwargs
-        """
-        # Initialize/inherit from BaseMod
-        super().__init__(max_pulse_size=max_pulse_size, maxlen=maxlen, name_suffix=name_suffix)
-        demerits = 0
-        # # Compatability checks for `component_aliases`
-        # if not isinstance(component_aliases, dict):
-        #     self.Logger.critical('TypeError: component_aliases must be type dict')
-        #     demerits += 1
-        # elif not all(isinstance(_v, str) and _k in _v for _k, _v in component_aliases.items()):
-        #     self.Logger.critical('SyntaxError: component_aliases values must be type str and include the key value')
-        #     demerits += 1
-        # else:
-        #     self.aliases = component_aliases
+#         :param component_aliases: aliases for standard component names used in SeisBench, defaults to {"Z": "Z3", "N": "N1", "E": "E2"}
+#             values in the component_aliases should be an iterable that produces single character strings when iterated
+#         :type component_aliases: dict, optional
+#         :param primary_component: reference component code to use for channel fill rules, defaults to 'Z'.
+#             Must match a key in **component_aliases**
+#         :type primary_component: str, optional
+#         :param primary_completeness_threshold: completeness fraction needed for reference component traces to pass QC, defaults to 0.95
+#             Specified value must be :math:`\in [0,1]`. This value is used when assessing if a window is ready to be generated
+#             Also see
+#                 :meth:`~PULSE.mod.window.WindowMod.update_window_tracker`
+#                 :meth:`~PULSE.data.window.Window.apply_fill_rule`
+#         :type primary_completeness_threshold: float, optional
+#         :param secondary_completeness_threshold: completeness fraction needed for "other" component traces to pass QC, defaults to 0.8
+#             Specified value must be :math:`\in [0,1]`. This value is only used to populate **Window.stats** attributes
+#             Also see :meth:`~PULSE.data.window.Window.__init__`
+#         :type secondary_completeness_threshold: float, optional
+#         :param model_name: name of the ML model the windows are intended for, defaults to "EQTransformer"
+#         :type model_name: str, optional
+#         :param target_sampling_rate: target sampling rate after preprocessing, defaults to 100.0
+#             Used to determine the endtime for window generation and window advance starttimes for sequential windows
+#         :type target_sampling_rate: float, optional
+#         :param target_window_npts: target number of samples per window after preprocessing, defaults to 6000
+#             Used to determine the endtime for window generation
+#         :type target_window_npts: int, optional
+#         :param target_overlap_npts: target number of overlapping samples between windows after preprocessing, defaults to 1800
+#             Used to determine window starttimes for sequential windows
+#         :type target_overlap_npts: int, optional
+#         :param fnfilter: fnmatch filter string to use for subsetting channel inputs, default is None.
+#             also see :meth:`~PULSE.data.dictstream.DictStream.fnselect`
+#         :type fnfilter: NoneType or str
+#         :param pulse_type: style of running pulse, defaults to 'network'
+#             Supported values:
+#                 'network' - attempt to create one window from each instrument per iteration in a call of :meth:`~PULSE.mod.window.WindowMod.pulse`
+#                 TODO: Implement these or remove this feature
+#                 vv NOT IMPLEMENTED vv
+#                 'site' - create a window/windows for a given site per pulse iteration, tracking
+#                         which site last generated windowed data. Permits for list wrapping  
+#                 'instrument' - under development       
+#         :type pulse_type: str, optional
+#         :param stance: window generation rule, defaults to 'patient'
+#             Supported values:
+#                 'patient' - windows are not flagged as ready until the endtime of a reference component trace 
+#                     exceeds the end of the window to be generated
+#                 'eager' - windows are flagged as ready as soon as sufficient data are present in the reference component trace,
+#                     even if the endtime of the trace does not exceed the endtime of the window to be generated.
+#                     This can produce windows sooner in exchange for potentially omitting trailing data.
+#         :param max_pulse_size: maximum number of iterations for a given pulse, defaults to 1
+#         :type max_pulse_size: int, optional
+#         :param **options: key-word argument collector to pass to :meth:`~PULSE.data.mltrace.MLTrace.trim_copy`
+#         :type **options: kwargs
+#         """
+#         # Initialize/inherit from BaseMod
+#         super().__init__(max_pulse_size=max_pulse_size, maxlen=maxlen, name_suffix=name_suffix)
+#         demerits = 0
+#         # # Compatability checks for `component_aliases`
+#         # if not isinstance(component_aliases, dict):
+#         #     self.Logger.critical('TypeError: component_aliases must be type dict')
+#         #     demerits += 1
+#         # elif not all(isinstance(_v, str) and _k in _v for _k, _v in component_aliases.items()):
+#         #     self.Logger.critical('SyntaxError: component_aliases values must be type str and include the key value')
+#         #     demerits += 1
+#         # else:
+#         #     self.aliases = component_aliases
 
-        # Compatability check for `primary_component`
-        if primary_components in self.aliases.keys():
-            refc = primary_components
-        else:
-            self.Logger.critical('ValueError: primary_component does not appear as a key in component_aliases')
-            demerits += 1
-        # Compatability check for `primary_completeness_threshold`
-        if isinstance(primary_completeness_threshold, (float, int)):
-            if 0 <= primary_completeness_threshold <= 1:
-                reft = primary_completeness_threshold
-            else:
-                self.Logger.critical('ValueError: primary_completeness_threshold out of valid range [0, 1]')
-                demerits += 1
-        else:
-            self.Logger.critical('TypeError: primary_completeness_threshold must be type int or float')
-            demerits += 1
+#         # Compatability check for `primary_component`
+#         if primary_components in self.aliases.keys():
+#             refc = primary_components
+#         else:
+#             self.Logger.critical('ValueError: primary_component does not appear as a key in component_aliases')
+#             demerits += 1
+#         # Compatability check for `primary_completeness_threshold`
+#         if isinstance(primary_completeness_threshold, (float, int)):
+#             if 0 <= primary_completeness_threshold <= 1:
+#                 reft = primary_completeness_threshold
+#             else:
+#                 self.Logger.critical('ValueError: primary_completeness_threshold out of valid range [0, 1]')
+#                 demerits += 1
+#         else:
+#             self.Logger.critical('TypeError: primary_completeness_threshold must be type int or float')
+#             demerits += 1
         
-        # Compatability check for `secondary_completeness_threshold`
-        if isinstance(secondary_completeness_threshold, (float, int)):
-            if 0 <= secondary_completeness_threshold <= 1:
-                othert = secondary_completeness_threshold
-            else:
-                self.Logger.critical('ValueError: secondary_completeness_threshold out of range')
-                demerits += 1
-        else:
-            self.Logger.critical('TypeError: secondary_completeness_threshold out of range')
-            demerits += 1
+#         # Compatability check for `secondary_completeness_threshold`
+#         if isinstance(secondary_completeness_threshold, (float, int)):
+#             if 0 <= secondary_completeness_threshold <= 1:
+#                 othert = secondary_completeness_threshold
+#             else:
+#                 self.Logger.critical('ValueError: secondary_completeness_threshold out of range')
+#                 demerits += 1
+#         else:
+#             self.Logger.critical('TypeError: secondary_completeness_threshold out of range')
+#             demerits += 1
         
-        # Compatability check for `model_name`
-        if not isinstance(model_name, str):
-            self.Logger.critical('TypeError: model_name must be type str')
-            demerits += 1
-        else:
-            self.model_name = model_name
+#         # Compatability check for `model_name`
+#         if not isinstance(model_name, str):
+#             self.Logger.critical('TypeError: model_name must be type str')
+#             demerits += 1
+#         else:
+#             self.model_name = model_name
 
-        # Compatability check for `target_sampling_rate`
-        if isinstance(target_sampling_rate, (int, float)):
-            if 0 < target_sampling_rate < 1e9:
-                refsr = target_sampling_rate
-            else:
-                self.Logger.critical('ValueError: target_sampling_rate must be in the range (0, 1e9)')
-                demerits += 1
-        else:
-            self.Logger.critical('TypeError: target_sampling_rate must be float-like')
-            demerits += 1
+#         # Compatability check for `target_sampling_rate`
+#         if isinstance(target_sampling_rate, (int, float)):
+#             if 0 < target_sampling_rate < 1e9:
+#                 refsr = target_sampling_rate
+#             else:
+#                 self.Logger.critical('ValueError: target_sampling_rate must be in the range (0, 1e9)')
+#                 demerits += 1
+#         else:
+#             self.Logger.critical('TypeError: target_sampling_rate must be float-like')
+#             demerits += 1
         
-        # Compatability check for `target_window_npts`
-        if isinstance(target_window_npts, int):
-            if 0 < target_window_npts < 1e9:
-                refn = target_window_npts
-            else:
-                self.Logger.critical('ValueError: target_window_npts must be in the range (0, 1e9)')
-                demerits += 1
-        else:
-            self.Logger.critical('TypeError: target_window_npts must be type int')
-            demerits += 1
+#         # Compatability check for `target_window_npts`
+#         if isinstance(target_window_npts, int):
+#             if 0 < target_window_npts < 1e9:
+#                 refn = target_window_npts
+#             else:
+#                 self.Logger.critical('ValueError: target_window_npts must be in the range (0, 1e9)')
+#                 demerits += 1
+#         else:
+#             self.Logger.critical('TypeError: target_window_npts must be type int')
+#             demerits += 1
         
-        # Compatability check for `target_overlap_npts`
-        if isinstance(target_overlap_npts, int):
-            if 0 <= target_overlap_npts < refn:
-                refo = target_overlap_npts
-            elif target_overlap_npts >= refn:
-                self.Logger.critical('ValueError: target_overlap_npts must be less than target_window_npts')
-                demerits += 1
-            elif target_overlap_npts < 0:
-                self.Logger.critical('ValueError: target_overlap_npts must be non-negative')
-                demerits += 1
-        else:
-            self.Logger.critical('TypeError: target_overlap_npts must be type int')
-            demerits += 1
+#         # Compatability check for `target_overlap_npts`
+#         if isinstance(target_overlap_npts, int):
+#             if 0 <= target_overlap_npts < refn:
+#                 refo = target_overlap_npts
+#             elif target_overlap_npts >= refn:
+#                 self.Logger.critical('ValueError: target_overlap_npts must be less than target_window_npts')
+#                 demerits += 1
+#             elif target_overlap_npts < 0:
+#                 self.Logger.critical('ValueError: target_overlap_npts must be non-negative')
+#                 demerits += 1
+#         else:
+#             self.Logger.critical('TypeError: target_overlap_npts must be type int')
+#             demerits += 1
         
-        ## Compatability checks for kwargs passed to MLTrace.view_copy
-        self._vckwargs={}
-        # Compatability check for `pad`
-        if not isinstance(pad, bool):
-            self.Logger.critical('TypeError: pad must be type bool')
-            demerits += 1
-        else:
-            self._vckwargs.update({'pad': pad})
+#         ## Compatability checks for kwargs passed to MLTrace.view_copy
+#         self._vckwargs={}
+#         # Compatability check for `pad`
+#         if not isinstance(pad, bool):
+#             self.Logger.critical('TypeError: pad must be type bool')
+#             demerits += 1
+#         else:
+#             self._vckwargs.update({'pad': pad})
 
-        # Compatability check for `fill_value`
-        if not isinstance(pad, (type(None), int, float)):
-            self.Logger.critical('TypeError: fill_value must be type int, float or NoneType')
-            demerits += 1
-        else:
-            self._vckwargs.update({'fill_value': fill_value})
-
-
-        # Set Defaults and Derived Attributes
-        # Calculate window length, window advance, and blinding size in seconds
-        self.window_sec = (self.target['npts'] - 1)/self.target['sampling_rate']
-        self.advance_npts = self.target['npts'] - self.target['overlap']
-        self.advance_sec = (self.target['npts'] - self.target['overlap'])/self.target['sampling_rate']
-        # Create dict for holding instrument window starttime values
-        self.window_tracker = {}
-        # Create placeholder for next available start time
-        self.next_available_start = None
-
-        # Compatability check for stagger_sec
-        if isinstance(stagger_sec, (int, float)):
-            if 0 <= stagger_sec < self.window_sec:
-                self.stagger_sec = float(stagger_sec)
-            else:
-                self.Logger.critical('ValueError: stagger_sec must be in the range [0, self.window_sec)')
-                demerits += 1
-        else:
-            self.Logger.critical('TypeError: stagger_sec must be float-like')
-            demerits += 1
+#         # Compatability check for `fill_value`
+#         if not isinstance(pad, (type(None), int, float)):
+#             self.Logger.critical('TypeError: fill_value must be type int, float or NoneType')
+#             demerits += 1
+#         else:
+#             self._vckwargs.update({'fill_value': fill_value})
 
 
-        # Compatability check for eager_generation
-        if not isinstance(eager_generation, bool):
-            self.Logger.critical('TypeError: eager_generation must be type bool.')
-            demerits += 1
-        else:
-            self.eager = eager_generation
+#         # Set Defaults and Derived Attributes
+#         # Calculate window length, window advance, and blinding size in seconds
+#         self.window_sec = (self.target['npts'] - 1)/self.target['sampling_rate']
+#         self.advance_npts = self.target['npts'] - self.target['overlap']
+#         self.advance_sec = (self.target['npts'] - self.target['overlap'])/self.target['sampling_rate']
+#         # Create dict for holding instrument window starttime values
+#         self.window_tracker = {}
+#         # Create placeholder for next available start time
+#         self.next_available_start = None
+
+#         # Compatability check for stagger_sec
+#         if isinstance(stagger_sec, (int, float)):
+#             if 0 <= stagger_sec < self.window_sec:
+#                 self.stagger_sec = float(stagger_sec)
+#             else:
+#                 self.Logger.critical('ValueError: stagger_sec must be in the range [0, self.window_sec)')
+#                 demerits += 1
+#         else:
+#             self.Logger.critical('TypeError: stagger_sec must be float-like')
+#             demerits += 1
+
+
+#         # Compatability check for eager_generation
+#         if not isinstance(eager_generation, bool):
+#             self.Logger.critical('TypeError: eager_generation must be type bool.')
+#             demerits += 1
+#         else:
+#             self.eager = eager_generation
         
-        # Make target values dictionary for look-up convienience
-        self.target = { 'sampling_rate': refsr,
-                        'overlap': refo,
-                        'npts': refn,
-                        'components': refc,
-                        'threshold': reft}
+#         # Make target values dictionary for look-up convienience
+#         self.target = { 'sampling_rate': refsr,
+#                         'overlap': refo,
+#                         'npts': refn,
+#                         'components': refc,
+#                         'threshold': reft}
 
-        if demerits > 0:
-            self.Logger.critical(f'{demerits} errors raised during initialization. Exiting on {os.EX_DATAERR}')
-            sys.exit(os.EX_DATAERR)
-    #######################################
-    # Parameterization Convenience Method #
-    #######################################
+#         if demerits > 0:
+#             self.Logger.critical(f'{demerits} errors raised during initialization. Exiting on {os.EX_DATAERR}')
+#             sys.exit(os.EX_DATAERR)
+#     #######################################
+#     # Parameterization Convenience Method #
+#     #######################################
         
-    def update_from_seisbench(self, model):
-        """
-        Helper method for (re)setting the window-defining attributes for this
-        WindowMod object from a seisbench.models.WaveformModel object:
+#     def update_from_seisbench(self, model):
+#         """
+#         Helper method for (re)setting the window-defining attributes for this
+#         WindowMod object from a seisbench.models.WaveformModel object:
 
-            self.model_name = model.name
-            self.target['sampling_rate'] = model.sampling_rate
-            self.target['npts'] = model.in_samples
-            self.target['overlap'] = model._annotate_args['overlap'][1]
-            self.primary_completeness_threshold = (model.in_samples - model._blinding[1][0])/model.in_samples
+#             self.model_name = model.name
+#             self.target['sampling_rate'] = model.sampling_rate
+#             self.target['npts'] = model.in_samples
+#             self.target['overlap'] = model._annotate_args['overlap'][1]
+#             self.primary_completeness_threshold = (model.in_samples - model._blinding[1][0])/model.in_samples
         
-        :param model: seisbench model to scrape windowing parameters from
-        :type model: seisbench.models.WaveformModel
-        """
-        if not isinstance(model, sbm.WaveformModel):
-            self.Logger.critical(f'TypeError: model is not a seisbench.models.WaveformModel child class.')
-            sys.exit(os.EX_DATAERR)
-        elif model.name != 'WaveformModel':
-            if model.sampling_rate is not None:
-                self.target.update({'sampling_rate': model.sampling_rate})
-            if model.in_samples is not None:
-                self.target.update({'npts': model.in_samples})
-            self.target.update({'overlap': model._annotate_args['overlap'][1]})
-            self.model_name = model.name
+#         :param model: seisbench model to scrape windowing parameters from
+#         :type model: seisbench.models.WaveformModel
+#         """
+#         if not isinstance(model, sbm.WaveformModel):
+#             self.Logger.critical(f'TypeError: model is not a seisbench.models.WaveformModel child class.')
+#             sys.exit(os.EX_DATAERR)
+#         elif model.name != 'WaveformModel':
+#             if model.sampling_rate is not None:
+#                 self.target.update({'sampling_rate': model.sampling_rate})
+#             if model.in_samples is not None:
+#                 self.target.update({'npts': model.in_samples})
+#             self.target.update({'overlap': model._annotate_args['overlap'][1]})
+#             self.model_name = model.name
         
-            # self.target['threshold']['ref'] = (model.in_samples - model._annotate_args['blinding'][1][0])/model.in_samples
+#             # self.target['threshold']['ref'] = (model.in_samples - model._annotate_args['blinding'][1][0])/model.in_samples
 
-        else:
-            self.Logger.critical(f'TypeError: seisbench.models.WaveformModel base class does not provide the necessary update information. Exiting on DATAERR ({os.EX_DATAERR})')
-            sys.exit(os.EX_DATAERR)
+#         else:
+#             self.Logger.critical(f'TypeError: seisbench.models.WaveformModel base class does not provide the necessary update information. Exiting on DATAERR ({os.EX_DATAERR})')
+#             sys.exit(os.EX_DATAERR)
 
-    #################################
-    # PULSE POLYMORPHIC SUBROUTINES #
-    #################################
-    def measure_input(self, input):
-        return super().measure_input(input)
+#     #################################
+#     # PULSE POLYMORPHIC SUBROUTINES #
+#     #################################
+#     def measure_input(self, input):
+#         return super().measure_input(input)
     
-    def measure_output(self):
-        return super().measure_output()
+#     def measure_output(self):
+#         return super().measure_output()
     
-    def get_unit_input(self, input):
-        if not isinstance(input, DictStream):
-            self.Logger.critical(f'TypeError: input must be type PULSE.data.dictstream.DictStream. Exiting on {os.EX_DATAERR}')
-            sys.exit(os.EX_DATAERR)
-        else:
-            if self.measure_input(input) == 0:
-                self._continue_pulsing = False
-                unit_input = None
-            else:
-                unit_input = input
-        return unit_input
+#     def get_unit_input(self, input):
+#         if not isinstance(input, DictStream):
+#             self.Logger.critical(f'TypeError: input must be type PULSE.data.dictstream.DictStream. Exiting on {os.EX_DATAERR}')
+#             sys.exit(os.EX_DATAERR)
+#         else:
+#             if self.measure_input(input) == 0:
+#                 self._continue_pulsing = False
+#                 unit_input = None
+#             else:
+#                 unit_input = input
+#         return unit_input
 
-    def run_unit_process(self, unit_input):
-        """POLYMORPHIC METHOD
+#     def run_unit_process(self, unit_input):
+#         """POLYMORPHIC METHOD
 
-        Last updated with :class:`~PULSE.mod.window.WindowMod`
+#         Last updated with :class:`~PULSE.mod.window.WindowMod`
 
-        This method wraps two subroutines:
-        - :meth:`~PULSE.mod.window.Window.update_window_tracker` - scans unit_input metadata and determines if instrument-level
-        groups of MLTrace objects it contains can produce a new window based on window generation parameters set when
-        this :class:`~PULSE.mod.window.WindowMod` object was initialized
-        - :meth:`~PULSE.mod.window.Window.generate_windows` - generates new :class:`~PULSE.data.window.Window` objects that contain
-         instrument-level view copies (via :meth:`~PULSE.data.mltrace.MLTrace.view_copy`) of data from unit_input
+#         This method wraps two subroutines:
+#         - :meth:`~PULSE.mod.window.Window.update_window_tracker` - scans unit_input metadata and determines if instrument-level
+#         groups of MLTrace objects it contains can produce a new window based on window generation parameters set when
+#         this :class:`~PULSE.mod.window.WindowMod` object was initialized
+#         - :meth:`~PULSE.mod.window.Window.generate_windows` - generates new :class:`~PULSE.data.window.Window` objects that contain
+#          instrument-level view copies (via :meth:`~PULSE.data.mltrace.MLTrace.view_copy`) of data from unit_input
 
-        :param unit_input: dictstream containing MLTrace-type objects
-        :type unit_input: PULSE.data.dictstream.DictStream
-        :return: 
-         - **unit_output** (*collections.deque*) -- double ended queue of :class:`~PULSE.data.window.Window` objects
-        """        
-        # Update window metadata with the update_window_tracker subroutine
-        self.update_window_tracker(unit_input)
-        # Iterate across site keys and associated sub-views of unit_input traces
-        unit_output = self.generate_windows(unit_input)
-        return unit_output
+#         :param unit_input: dictstream containing MLTrace-type objects
+#         :type unit_input: PULSE.data.dictstream.DictStream
+#         :return: 
+#          - **unit_output** (*collections.deque*) -- double ended queue of :class:`~PULSE.data.window.Window` objects
+#         """        
+#         # Update window metadata with the update_window_tracker subroutine
+#         self.update_window_tracker(unit_input)
+#         # Iterate across site keys and associated sub-views of unit_input traces
+#         unit_output = self.generate_windows(unit_input)
+#         return unit_output
     
-    def capture_unit_output(self, unit_output):
-        """POLYMORPHIC METHOD
+#     def capture_unit_output(self, unit_output):
+#         """POLYMORPHIC METHOD
 
-        Last updated with :class:`~PULSE.mod.window.WindowMod`
+#         Last updated with :class:`~PULSE.mod.window.WindowMod`
 
-        Use the __iadd__ dunder method to append all entries to the **WindowMod.output** :class:`~collections.deque` attribute
+#         Use the __iadd__ dunder method to append all entries to the **WindowMod.output** :class:`~collections.deque` attribute
 
-        :param unit_output: collection of :class:`~PULSE.data.window.Window` objects
-        :type unit_output: collections.deque
-        """        
-        if not isinstance(unit_output, deque):
-            self.Logger.critical(f'TypeError: unit_output is not type collections.deque. Exiting')
-            sys.exit(os.EX_DATAERR)
-        else:
-            self.output += unit_output
+#         :param unit_output: collection of :class:`~PULSE.data.window.Window` objects
+#         :type unit_output: collections.deque
+#         """        
+#         if not isinstance(unit_output, deque):
+#             self.Logger.critical(f'TypeError: unit_output is not type collections.deque. Exiting')
+#             sys.exit(os.EX_DATAERR)
+#         else:
+#             self.output += unit_output
         
     
-    def update_window_tracker(self, unit_input):
-        """Update the **WindowMod.window_tracker** attribute by scanning over the entries in **unit_input**,
-        grouped by site, instrument, and model codes and determine if the primary trace in each sub-group has 
-        enough data to produce a new data window based on parameters set when this :class:`~PULSE.mod.window.WindowMod` object was initialized.
+#     def update_window_tracker(self, unit_input):
+#         """Update the **WindowMod.window_tracker** attribute by scanning over the entries in **unit_input**,
+#         grouped by site, instrument, and model codes and determine if the primary trace in each sub-group has 
+#         enough data to produce a new data window based on parameters set when this :class:`~PULSE.mod.window.WindowMod` object was initialized.
 
-        Readiness checks are the following
-        1) Does the mltrace start before or synchronously with the starttime for the next window?
-            If this is true, proceed
-            If the next window starts before the data, the window is advanced until this check is satisfied
-        2) Does the mltrace contain the endtime for the next window?
-            If this is true, proceed
-            If using eager_generation, traces that end before the end of the next window are still considered
-            If not using eager_generation, traces that end before the end of the next window end the assessment as not-ready
-        3) Does the mltrace have enough valid data to meet the threshold?
-            If this is true, mark as ready for window generation
-            Otherwise, mark as not-ready for window generation
+#         Readiness checks are the following
+#         1) Does the mltrace start before or synchronously with the starttime for the next window?
+#             If this is true, proceed
+#             If the next window starts before the data, the window is advanced until this check is satisfied
+#         2) Does the mltrace contain the endtime for the next window?
+#             If this is true, proceed
+#             If using eager_generation, traces that end before the end of the next window are still considered
+#             If not using eager_generation, traces that end before the end of the next window end the assessment as not-ready
+#         3) Does the mltrace have enough valid data to meet the threshold?
+#             If this is true, mark as ready for window generation
+#             Otherwise, mark as not-ready for window generation
             
-        :param unit_input: dictstream containing MLTraces
-        :type unit_input: PULSE.data.dictstream.DictStream
-        """        
-        if not all(isinstance(_e, MLTrace) for _e in unit_input):
-            self.Logger.critical('TypeError: not all elements of unit_input are type PULSE.data.mltrace.MLTrace. Exiting')
-            sys.exit(os.EX_DATAERR)
-        else:
-            pass
-        # Iterate across every mltrace in unit_input
-        for mlt in unit_input:
-            fnstring = f'{mlt.site}.{mlt.inst}'
-            fnstring += f'[{self.primary_components}{self.secondary_components}]'
-            fnstring += f'.{mlt.model}'
+#         :param unit_input: dictstream containing MLTraces
+#         :type unit_input: PULSE.data.dictstream.DictStream
+#         """        
+#         if not all(isinstance(_e, MLTrace) for _e in unit_input):
+#             self.Logger.critical('TypeError: not all elements of unit_input are type PULSE.data.mltrace.MLTrace. Exiting')
+#             sys.exit(os.EX_DATAERR)
+#         else:
+#             pass
+#         # Iterate across every mltrace in unit_input
+#         for mlt in unit_input:
+#             fnstring = f'{mlt.site}.{mlt.inst}'
+#             fnstring += f'[{self.primary_components}{self.secondary_components}]'
+#             fnstring += f'.{mlt.model}'
 
-            # Skip over traces that don't have the target component (or aliases thereof)
-            if mlt.comp not in self.target['components']:
-                continue
-            # Case: Completely new site
-            elif mlt.site not in self.window_tracker.keys():
-                self.window_tracker.update({mlt.site:
-                                                {mlt.inst:
-                                                    {mlt.mod:
-                                                        {'ti': mlt.stats.starttime,
-                                                         'fnstr': fnstring,
-                                                         'primary_comp': mlt.comp,
-                                                         'ready': False}},
-                                                't0': mlt.stats.starttime}})
-            # Case: Site already exists, but new instrument code appears
-            elif mlt.inst not in self.window_tracker[mlt.site].keys():
-                self.window_tracker[mlt.site].update({mlt.inst:
-                                                        {mlt.mod:
-                                                            {'ti': self.window_tracker[mlt.site]['t0'],
-                                                             'fnstr': fnstring,
-                                                             'primary_comp': mlt.comp,
-                                                             'ready': False}}})
-            # Case: Site and instrument already exist, but new model code appears
-            elif mlt.mod not in self.window_tracker[mlt.site][mlt.inst].keys():
-                self.window_tracker[mlt.site][mlt.inst].update({mlt.mod:
-                                                                    {'ti': self.window_tracker[mlt.site]['t0'],
-                                                                     'fnstr': fnstring,
-                                                                     'primary_comp': mlt.comp
-                                                                     'ready': False}})
-            # Case: Site-Instrument-Model combination already present in tracker
-            else:
-                pass
+#             # Skip over traces that don't have the target component (or aliases thereof)
+#             if mlt.comp not in self.target['components']:
+#                 continue
+#             # Case: Completely new site
+#             elif mlt.site not in self.window_tracker.keys():
+#                 self.window_tracker.update({mlt.site:
+#                                                 {mlt.inst:
+#                                                     {mlt.mod:
+#                                                         {'ti': mlt.stats.starttime,
+#                                                          'fnstr': fnstring,
+#                                                          'primary_comp': mlt.comp,
+#                                                          'ready': False}},
+#                                                 't0': mlt.stats.starttime}})
+#             # Case: Site already exists, but new instrument code appears
+#             elif mlt.inst not in self.window_tracker[mlt.site].keys():
+#                 self.window_tracker[mlt.site].update({mlt.inst:
+#                                                         {mlt.mod:
+#                                                             {'ti': self.window_tracker[mlt.site]['t0'],
+#                                                              'fnstr': fnstring,
+#                                                              'primary_comp': mlt.comp,
+#                                                              'ready': False}}})
+#             # Case: Site and instrument already exist, but new model code appears
+#             elif mlt.mod not in self.window_tracker[mlt.site][mlt.inst].keys():
+#                 self.window_tracker[mlt.site][mlt.inst].update({mlt.mod:
+#                                                                     {'ti': self.window_tracker[mlt.site]['t0'],
+#                                                                      'fnstr': fnstring,
+#                                                                      'primary_comp': mlt.comp
+#                                                                      'ready': False}})
+#             # Case: Site-Instrument-Model combination already present in tracker
+#             else:
+#                 pass
             
-            ## ASSESS WINDOW GENERATION READINESS
-            # Get this site-instrument-model combination tracker
-            tracker = self.window_tracker[mlt.site][mlt.inst][mlt.mod]
+#             ## ASSESS WINDOW GENERATION READINESS
+#             # Get this site-instrument-model combination tracker
+#             tracker = self.window_tracker[mlt.site][mlt.inst][mlt.mod]
 
-            # Check 1: Do the data start after the next window should start?
-            if mlt.stats.starttime > tracker['ti']:
-                # Advance the next window starttime until it is >= the data starttime
-                while mlt.stats.starttime > tracker['ti']:
-                    tracker['ti'] += self.advance_sec
-            # Data include the next window starttime
-            else:
-                pass
+#             # Check 1: Do the data start after the next window should start?
+#             if mlt.stats.starttime > tracker['ti']:
+#                 # Advance the next window starttime until it is >= the data starttime
+#                 while mlt.stats.starttime > tracker['ti']:
+#                     tracker['ti'] += self.advance_sec
+#             # Data include the next window starttime
+#             else:
+#                 pass
 
-            # Check 2: Do the data end before the endtime of the next window?
-            if mlt.stats.endtime < tracker['ti'] + self.window_sec:
-                # If using eager generation - proceed to next check
-                if self.eager:
-                    pass
-                # If not using eager generation - make sure ready = False & continue to next MLTrace
-                else:
-                    tracker.update({'ready': False})
-                    continue
-            # Data include the next window endtime
-            else:
-                pass
+#             # Check 2: Do the data end before the endtime of the next window?
+#             if mlt.stats.endtime < tracker['ti'] + self.window_sec:
+#                 # If using eager generation - proceed to next check
+#                 if self.eager:
+#                     pass
+#                 # If not using eager generation - make sure ready = False & continue to next MLTrace
+#                 else:
+#                     tracker.update({'ready': False})
+#                     continue
+#             # Data include the next window endtime
+#             else:
+#                 pass
             
-            # Check 3: Does fraction of valid data meet/exceed the primary threshold?
-            fv = mlt.get_fvalid_subset(starttime=tracker['ti'], endtime = tracker['ti'] + self.window_sec)
-            # Threshold is met, update to ready
-            if fv >= self.target['threshold']:
-                tracker.update({'ready': True})
-            # Otherwise, make sure it is marked as not-ready
-            else:
-                tracker.update({'ready': False})
+#             # Check 3: Does fraction of valid data meet/exceed the primary threshold?
+#             fv = mlt.get_fvalid_subset(starttime=tracker['ti'], endtime = tracker['ti'] + self.window_sec)
+#             # Threshold is met, update to ready
+#             if fv >= self.target['threshold']:
+#                 tracker.update({'ready': True})
+#             # Otherwise, make sure it is marked as not-ready
+#             else:
+#                 tracker.update({'ready': False})
 
 
-    def generate_windows(self, unit_input):
-        """Using the readiness assessment provided by :meth:`~PULSE.mod.window.WindowMod.update_window_tracker`,
-        generate new :class:`~PULSE.data.window.Window` objects from trace-sets
+#     def generate_windows(self, unit_input):
+#         """Using the readiness assessment provided by :meth:`~PULSE.mod.window.WindowMod.update_window_tracker`,
+#         generate new :class:`~PULSE.data.window.Window` objects from trace-sets
 
-        :param unit_input: _description_
-        :type unit_input: _type_
-        :return: _description_
-        :rtype: _type_
-        """        
-        # Create unit_output holder object
-        unit_output = deque()
-        # Iterate across site codes and associated sub-dictionaries
-        for site, site_dict in self.window_tracker.items():
-            # Iterate across instrument codes and sub-dictionaries
-            for instrument, inst_dict in site_dict.items():
-                # Iterate across model codes and get associated tracker
-                for model, tracker in inst_dict.items():
-                    # If the tracker indicates enough data are present to make the next window
-                    if tracker['ready']:
-                        next_window_t0 = tracker['ti']
-                        next_window_t1 = next_window_t0 + self.window_sec
-                        _dst = unit_input.fnselect(tracker['fnstr'])
-                        traces = []
-                        for _mltb in _dst:
-                            mlt = _mltb.view_copy(
-                                starttime = next_window_t0,
-                                endtime = next_window_t1,
-                                **self._vckwargs
-                            )
-                            mlt.stats.model = self.model_name
-                            traces.append(mlt)
-                        # Generate a new PULSE.data.window.Window object
-                        # TODO: migrate processing annotations to the Window Class
-                        window = Window(traces = traces,
-                                        primary_component = tracker['primary_comp'],
-                                        target_starttime=next_window_t0,
-                                        target_sampling_rate=self.target['sampling_rate'],
-                                        target_window_npts=self.target['npts'],
-                                        header={'primary_threshold': self.target['threshold']}
-                        # Append new window to unit_output
-                        unit_output.append(window)
-                        # Advance start time for the next window from this instrument & flag as not-ready
-                        self.window_tracker[site][instrument][model]['ti'] += self.advance_sec
-                        self.window_tracker[site][instrument][model].update({'ready': False})
-                    else:
-                        continue
-        return unit_output
+#         :param unit_input: _description_
+#         :type unit_input: _type_
+#         :return: _description_
+#         :rtype: _type_
+#         """        
+#         # Create unit_output holder object
+#         unit_output = deque()
+#         # Iterate across site codes and associated sub-dictionaries
+#         for site, site_dict in self.window_tracker.items():
+#             # Iterate across instrument codes and sub-dictionaries
+#             for instrument, inst_dict in site_dict.items():
+#                 # Iterate across model codes and get associated tracker
+#                 for model, tracker in inst_dict.items():
+#                     # If the tracker indicates enough data are present to make the next window
+#                     if tracker['ready']:
+#                         next_window_t0 = tracker['ti']
+#                         next_window_t1 = next_window_t0 + self.window_sec
+#                         _dst = unit_input.fnselect(tracker['fnstr'])
+#                         traces = []
+#                         for _mltb in _dst:
+#                             mlt = _mltb.view_copy(
+#                                 starttime = next_window_t0,
+#                                 endtime = next_window_t1,
+#                                 **self._vckwargs
+#                             )
+#                             mlt.stats.model = self.model_name
+#                             traces.append(mlt)
+#                         # Generate a new PULSE.data.window.Window object
+#                         # TODO: migrate processing annotations to the Window Class
+#                         window = Window(traces = traces,
+#                                         primary_component = tracker['primary_comp'],
+#                                         target_starttime=next_window_t0,
+#                                         target_sampling_rate=self.target['sampling_rate'],
+#                                         target_window_npts=self.target['npts'],
+#                                         header={'primary_threshold': self.target['threshold']}
+#                         # Append new window to unit_output
+#                         unit_output.append(window)
+#                         # Advance start time for the next window from this instrument & flag as not-ready
+#                         self.window_tracker[site][instrument][model]['ti'] += self.advance_sec
+#                         self.window_tracker[site][instrument][model].update({'ready': False})
+#                     else:
+#                         continue
+#         return unit_output
 
 
 

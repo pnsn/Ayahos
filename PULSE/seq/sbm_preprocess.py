@@ -3,6 +3,7 @@ import seisbench.models as sbm
 
 from PULSE.mod.sequence import SeqMod, Sequence
 from PULSE.mod.process import ProcMod
+from PULSE.mod.window import WindMod
 from PULSE.data.window import Window
 
 
@@ -24,9 +25,17 @@ class SBM_PP_SeqMod(SeqMod):
         except ValueError:
             raise
 
+        if name is None:
+            name = f'{model.name}_{weight}'
+        else:
+            name = f'{name}_{model.name}_{weight}'
+
         super().__init__(max_pulse_size=max_pulse_size,
                          maxlen=None,
-                         name=f'{model.name}_{weight}')
+                         name=name)
+        sequence = Sequence(
+            WindMod()
+        )
 
         
 

@@ -27,7 +27,7 @@ contents of the DictStream. It is modeled after the ObsPy :class:`~obspy.core.tr
  * TODO: cleanup extraneous (developmental) methods that are commented out
 """
 import fnmatch
-from obspy import Trace, Stream
+from obspy import Trace, Stream, Inventory
 from PULSE.data.foldtrace import FoldTrace
 from PULSE.util.header import MLStats
 
@@ -152,10 +152,9 @@ class DictStream(Stream):
     DictStream Class Methods
     ========================
     """
-    _max_processing_info = 100
-    # supported_keys = dict(FoldTrace().id_keys).keys()
+    supported_keys = dict(FoldTrace().id_keys).keys()
     # Limit this to 'id' for now
-    supported_keys = ['id']
+    # supported_keys = ['id']
     def __init__(self, traces=[], key_attr='id', **options):
         """Initialize a :class:`~PULSE.data.dictstream.DictStream` object
 
@@ -620,7 +619,7 @@ class DictStream(Stream):
             keyset = set(self.traces.keys()).difference(keyset)
         return self.__class__(self[keyset], key_attr=self.key_attr)        
 
-    def split(self, id_element='inst', **options):
+    def split(self, id_element='instrument', **options):
         """Split this :class:`~.DictStream` into multiple :class:`~.DictStream` objects
         contained in a :class:`dict` with attrs corresponding to unique values of the
         **attr** from the contents of the original DictStream.
@@ -634,17 +633,20 @@ class DictStream(Stream):
         :param options: attr-word argument collector passed to the :meth:`~.DictStream.extend` method
         :return:
          - **out** (*PULSE.data.dictstream.DictStream) -- 
-        """   
+        """
+        # If ID element is in default elements   
         if id_element in MLStats.defaults.keys():
-            for _ft in self:
-                _k = _ft.stats[id_element]
+            keys = [_ft.stats[id_element] for _ft in self]
+        elif id_element in MLStats().get_id_keys().keys():
+            keys = [_ft.id_keys[id_element] for _ft in self]
+        else
+
 
         if id_element not in MLStats.defaults.keys():
-            breakpoint()
             raise ValueError('attr not in MLStats.defaults.keys()')
         out = {}
         for _ft in self:
-            _k = _ft.id_keys[attr]
+            _k = _ft.id_keys[id_element]
             # If _k is a new attr, create a new DictStream-like value container
             if _k not in out.keys():
                 out.update({_k: self.__class__(traces=_ft, key_attr=self.key_attr)})

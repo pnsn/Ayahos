@@ -19,7 +19,6 @@ from PULSE.data.dictstream import DictStream
 from PULSE.data.window import Window
 from PULSE.mod.base import BaseMod
 
-
 class WindowMod(BaseMod):
     """
     The WindowMod class takes windowing information from an input seisbench.models.WaveformModel object and user-defined component

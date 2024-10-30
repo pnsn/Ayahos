@@ -11,10 +11,10 @@ class TestFTBuffer(unittest.TestCase):
     def setUp(self):
         # Create 2 minute traces with 1 minute offsets
         self.ft = {'early': FoldTrace(data=np.random.rand(121),
-                                          header={'starttime': UTCDateTime(-60)}),
+                                          header={'starttime': UTCDateTime(-30)}),
                        'middle': FoldTrace(data=np.random.rand(121)),
                        'late': FoldTrace(data=np.random.rand(121),
-                                         header={'starttime': UTCDateTime(60)})}
+                                         header={'starttime': UTCDateTime(30)})}
         self.test_buff = FTBuffer()
 
     def tearDown(self):
@@ -70,10 +70,12 @@ class TestFTBuffer(unittest.TestCase):
                          buff1.maxlen)
         self.assertEqual(buff1.stats.endtime, self.ft['early'].stats.endtime)
         self.assertEqual(buff1.stats.starttime, 
-                         self.ft['early'].stats.endtime-60)
+                         self.ft['early'].stats.endtime-buff1.maxlen)
         ftr1 = self.ft['early'].copy().trim(starttime=buff1.stats.starttime)
         np.testing.assert_array_equal(buff1.data, ftr1.data)
         np.testing.assert_array_equal(buff1.fold, ftr1.fold)
+        # Make sure empty is False
+        self.assertFalse(buff1._empty)
     
     def test_internal_add_processing_info(self):
         # Conduct a destructive append
@@ -88,13 +90,13 @@ class TestFTBuffer(unittest.TestCase):
     def test_shift(self):
         self.test_buff.append(self.ft['early'])
         # shift scope of buffer 5 seconds
-        self.test_buff.shift(endtime=UTCDateTime(65))
+        self.test_buff.shift(endtime=UTCDateTime(95))
         # Assert that shifted data have correct endtime
-        self.assertEqual(self.test_buff.stats.endtime, UTCDateTime(65))
+        self.assertEqual(self.test_buff.stats.endtime, UTCDateTime(95))
         # Asesrt that shifted data are masked
         self.assertTrue(np.ma.is_masked(self.test_buff.data))
         # Test safeguards
-        for val in [UTCDateTime(60), self.test_buff.stats.endtime -  1]:
+        for val in [UTCDateTime(30), self.test_buff.stats.endtime -  1]:
             with self.assertRaises(ValueError):
                 self.test_buff.shift(endtime=val)
         for val in [True, int, 'a', 2]:
@@ -103,6 +105,25 @@ class TestFTBuffer(unittest.TestCase):
         for val in [None]:
             self.assertIsInstance(self.test_buff.shift(val), FTBuffer)
 
+    def test_subsequent_append(self):
+        # Test error with _empty
+        # with self.assertRaises(ValueError):
+        #     self.test_buff._subsequent_append(self.ft['early'].copy())
+        self.test_buff.append(self.ft['early'].copy())
+        self.test_buff._subsequent_append(self.ft['middle'].copy())
+        self.assertEqual(self.test_buff.count(), 61)
+        self.assertEqual(self.test_buff.stats.endtime, 
+                         self.ft['middle'].stats.endtime)
+        # Assert non-overlapping samples match source
+        np.testing.assert_array_equal(self.test_buff.data[31:],
+                                      self.ft['middle'].data[-30:])
+        # Fold remains at 1 outside of merged samples
+        np.testing.assert_array_equal(self.test_buff.fold[31:],
+                                      np.ones(30))
+        # Fold goes to 2 inside merged samples
+        np.testing.assert_array_equal(self.test_buff.fold[:31],
+                                      np.ones(31)*2)
+    def test_
 
         # self.assertIsInstance(self.test_buff, FTBuffer)
         # breakpoint()

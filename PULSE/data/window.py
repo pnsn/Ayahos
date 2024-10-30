@@ -19,7 +19,7 @@ import pandas as pd
 import seisbench.models as sbm
 from obspy import Trace, Stream
 from PULSE.data.dictstream import DictStream
-from PULSE.data.mltrace import MLTrace
+from PULSE.data.foldtrace import FoldTrace
 from PULSE.util.header import WindowStats
     
 ###############################################################################
@@ -43,15 +43,7 @@ class Window(DictStream):
         how entries in `traces` with matching component codes are merged.
         also see :meth:`~PULSE.data.dictstream.DictStream.__add__`
     """
-    def __init__(
-            self,
-            traces,
-            primary_component='Z',
-            target_starttime=None,
-            target_sampling_rate=None,
-            target_window_npts=None,
-            header={},
-            **options):
+    def __init__(self, traces, header={}, **options):
         """
         Initialize a PULSE.data.window.Window object
 
@@ -67,28 +59,156 @@ class Window(DictStream):
             also see :meth:`~PULSE.data.dictstream.DictStream.__add__`
         """
         # Initialize & inherit from DictStream as an empty dictstream using 'comp' key attributes
-        super().__init__(key_attr='comp')
-        header.update({'primary_component': primary_component,
-                       'target_starttime': target_starttime,
-                       'target_sampling_rate': target_sampling_rate,
-                       'target_window_npts': target_window_npts})
-        # Initialize WindowStats Header & use this to compatability check other components
+        super().__init__()
+        # Overwrite supported keys & set key-attr
+        self.supported_keys = ['comp']
+        self.key_attr = 'comp'
         self.stats = WindowStats(header=header)
-
+        
+        self._has_primary = False
         # Add traces - safety checks for repeat components handled in extend()
         self.extend(traces, **options)
-        # Update common_id -- TODO: may want to shift this to a DictStreamStats method?
-        self.stats.common_id = self.get_common_id()
 
-        # Primary component present check
-        if self.stats.primary_component not in self.traces.keys():
-            raise ValueError(f'No traces in this Window have the primary_component code {self.stats.primary_component}.')
+        self.validate()
+
+    def validate(self):
+        # Make sure primary component is present
+        if self.stats.primary not in self.traces.keys():
+            raise ValueError('Primary component (pcomp) not present')
+        # Make sure all traces are type FoldTrace
+        if not all(isinstance(ft, FoldTrace) for ft in self):
+            raise ValueError('Not all traces are type PULSE.data.foldtrace.FoldTrace')
+        # Make sure all traces are from the same instrument
+        if not all(self.primary.id_keys['instrument'] == ft.id_keys['instrument'] for ft in self):
+            raise ValueError('Not all traces are from the same instrument')
+        # Make sure there are no more than 3 traces
+        if len(self) > 3:
+            raise ValueError(f'Contains {len(self)} traces - expected l.e. 3')
         
-
-    def get_primary(self):
-        return self[self.stats.primary_component]
+    def check_targets(self, comp):
+        """Check a given FoldTrace in this :class:`~.Window` object
+        meet the target values in **stats**
+        :param comp: component code to check
+        :type comp: str
+        :return:
+         - **result** (*bool*) -- does trace meet all target values?
+        """        
+        ft = self[comp]
+        failing = []
+        if ft.stats.starttime != self.stats.target_starttime:
+            failing.append('starttime')
+        if ft.stats.sampling_rate != self.stats.target_sampling_rate:
+            failing.append('sampling_rate')
+        if ft.stats.npts != self.stats.target_npts:
+            failing.append('npts')
+        return set(failing)
     
-    primary = property(get_primary)
+    def check_starttime_alignment(self, comp):
+        """Check the alignment of a given component's starttime
+        with the target starttime
+
+        :param comp: _description_
+        :type comp: _type_
+        :return:
+         - **result** (*bool*) -- does trace starttime align with target
+           time index sampling?
+        """        
+        ft = self[comp]
+        dt = self.stats.target_starttime - ft.stats.starttime
+        result = dt*self.stats.target_sampling_rate == \
+                 int(dt*self.stats.target_sampling_rate)
+        return result
+    
+    def get_nearest_starttime(self, other):
+        dt = self.stats.target_starttime - other.stats.starttime
+        npts = dt*self.stats.target_sampling_rate
+        # Round up so starttime is inside domain of **other**
+        npts = np.ceil(npts)
+        # Calcluate nearest starttime
+        nearest = self.stats.target_starttime + npts*self.stats.delta
+        return nearest 
+
+
+
+    def check_fvalid(self, key, tolerance=1e-3):
+        if 0 <= tolerance < 0.1:
+            pass
+        else:
+            raise ValueError('tolerance must be in [0, 0.1]')
+        ft = self[key]
+
+        fvalid = ft.vf
+        if key == self.stats.primary:
+            return fvalid >= self.stats.pthresh
+        else:
+            return fvalid >= self.stats.sthresh
+
+    def sync_to_target_domain(self,
+                        fill_value='nearest',
+                        interp_method='weighted_average_slopes'):
+        """Assess all :class:`~PULSE.data.foldtrace.FoldTrace` objects
+        in this :class:`~.Window` and make one or more of the following
+        adjustments to meet the target values in the **stats** of this
+        Window.
+
+        1) starttime alignment with the target sampling vector
+        2) 
+
+        :param fill_value: _description_, defaults to 0
+        :type fill_value: int, optional
+        :param interp_method: _description_, defaults to 'weighted_average_slopes'
+        :type interp_method: str, optional
+        """        
+        for comp, ft in self.items():
+            # Run checks to get targets for improvement
+            targets = self.check_targets(comp)
+            # If foldtrace meets all target values, continue to next
+            if targets == set([]):
+                continue
+            # If the starttime needs adjustment
+            elif 'starttime' in targets:
+                # If the starttime falls into the sampling vector
+                if self.check_starttime_alignment(comp):
+                    pass
+                # Otherwise, interpolation is needed
+                else:
+                    needs_interp = True
+            # If the sampling_rate
+
+            # If the trace just needs to be trimmed/extednded
+            elif targets == {'npts'}:
+                ft.trim(endtime=self.stats.endtime,
+                        pad=True,
+                        fill_value=fill_value)
+            # If the starttime is right, but sampling is incorrect
+            elif targets == {'npts','sampling_rate'}:
+
+            # If the starttime is incorrect
+            elif 'starttime' in targets:
+                # if interpolation is NOT necessary
+                if self.check_starttime_alignment(comp):
+                    if 
+                    
+                    ft.interpolate(self.stats.target_sampling_rate,
+                                   method=interp_method,
+                                   starttime=self.stats.target_starttime)
+                    
+
+        
+                for target in targets:
+                    if 
+            elif targets == set([])
+            
+
+            for target in targets:
+                # Processing for target
+                if not isinstance(ft.data, np.ma.MaskedArray):
+                    if target == 'starttime':
+                        if 
+
+            if isinstance(ft.data, np.ma.MaskedArray):
+                st = ft.split()
+                
 
 
     # def __repr__(self, extended=False):

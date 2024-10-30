@@ -327,6 +327,56 @@ class ModStats(AttribDict):
     def asseries(self):
         return pd.Series(self.asdict())
 
+
+class WindowStats(AttribDict):
+    defaults = {
+        'primary': 'Z',
+        'pthresh': 0.95,
+        'sthresh': 0.8,
+        'target_starttime': UTCDateTime(),
+        'target_sampling_rate': 1.,
+        'target_npts': 1,
+        'processing': []
+    }
+
+    _types = {
+        'primary': str,
+        'pthresh': float,
+        'sthresh': float,
+        'target_starttime': UTCDateTime,
+        'target_sampling_rate': float,
+        'target_npts': int,
+        'processing': list
+    }
+
+    def __init__(self, header={}):
+        super(WindowStats, self).__init__()
+        if not isinstance(header, dict):
+            raise TypeError('header must be type dict')
+        self.update(header)
+
+    def __setattr__(self, key, value):
+        if key not in self.defaults.keys():
+            raise KeyError(f'key "{key}" not supported.')
+        elif isinstance(value, self._types[key]):
+            super().__setattr__(key, value)
+        else:
+            raise ValueError(f'value for key "{key}" of type "{type(value)}" is not supported.')
+    
+    def get_endtime(self):
+        return self.target_starttime + self.target_npts/self.target_sampling_rate
+    
+    endtime = property(get_endtime)
+
+    def get_delta(self):
+        return 1./self.target_sr
+    
+    delta = property(get_delta)
+        
+
+
+
+
 # ###################################################################################
 # # Dictionary Stream Stats Class Definition ########################################
 # ###################################################################################

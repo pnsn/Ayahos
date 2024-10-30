@@ -22,6 +22,7 @@ from collections import deque
 import logging, sys, os
 from obspy.core.utcdatetime import UTCDateTime
 from PULSE.util.header import ModStats
+from PULSE.util.log import CriticalExitHandler, rich_error_message
 
 # Logger at module level
 Logger = logging.getLogger(__name__)
@@ -71,6 +72,8 @@ class BaseMod(object):
 
         # Set up logging at the module object level
         self.Logger = logging.getLogger(f'{self.name}')
+        # Add critical exit handler
+        self.Logger.addHandler(CriticalExitHandler())
         # Flag input type
         self._input_types = [deque]
         # Initialize output
@@ -168,9 +171,9 @@ class BaseMod(object):
             exec(f'from {path} import {clas}')
             obj = eval(f'{clas}')
             return obj
-        except ImportError:
-            self.Logger.critical(f'ImportError: failed to import {class_path_str}. Exiting on CANTCREAT ({os.EX_CANTCREAT})')
-            sys.exit(1)
+        except ImportError as e:
+            self.Logger.critical(rich_error_message(e))
+            # self.Logger.critical(f'ImportError: failed to import {class_path_str}. Exiting on CANTCREAT ({os.EX_CANTCREAT})')
 
     ###################
     ## PULSE METHODS ##
@@ -179,7 +182,6 @@ class BaseMod(object):
         # Conduct type-check on input
         if not any(isinstance(input, _t) for _t in self._input_types):
             self.Logger.critical(f'TypeError: input ({type(input)}) is not type collections.deque. Exiting')
-            sys.exit(os.EX_DATAERR)
 
     def measure_input(self, input: deque) -> int:
         """Measure the size of an input to the pulse method
@@ -247,7 +249,7 @@ class BaseMod(object):
                 self.stats.niter = niter
         else:
             self.Logger.critical(f'exit_type "{exit_type}" not supported. Exiting')
-            sys.exit(os.EX_DATAERR)
+            # sys.exit(os.EX_DATAERR)
         self.stats.stop = exit_type
         self.stats.endtime = UTCDateTime.now()
 
@@ -271,9 +273,11 @@ class BaseMod(object):
         except IndexError:
             self._continue_pulsing = False
             unit_output = None
-        except AttributeError:
-            self.Logger.critical(f'AttributeError: input of type {type(input)} does not have method "pop". Exiting')
-            sys.exit(os.EX_USAGE)
+        except AttributeError as e:
+            self.Logger.critical(rich_error_message(e))
+
+            # self.Logger.critical(f'AttributeError: input of type {type(input)} does not have method "pop". Exiting')
+            # sys.exit(os.EX_USAGE)
         return unit_output
 
     def run_unit_process(self, unit_input: object) -> object:
@@ -479,7 +483,7 @@ class BaseMod(object):
     #         return input_size
     #     else:
     #         self.Logger.critical(f'input is not type deque. Quitting on code DATAERR ({os.EX_DATAERR})')
-    #         sys.exit(os.EX_DATAERR)
+            # sys.exit(os.EX_DATAERR)
     
     # def measure_output(self):
     #     """POLYMORPHIC METHOD

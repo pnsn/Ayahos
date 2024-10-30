@@ -1,5 +1,16 @@
 import logging, sys
 
+class CriticalExitHandler(logging.Handler):
+    def emit(self, record):
+        if record.levelno == logging.CRITICAL:
+            sys.exit(1)
+
+def rich_error_message(e):
+    etype = type(e).__name__
+    emsg = str(e)
+    return f'{etype}: {emsg}'
+
+
 def raise_error_to_log(logger, errortype, errormsg='', log_severity='DEBUG', exit_severity='CRITICAL', exit_code=1):
     if isinstance(logger, logging.Logger):
         pass

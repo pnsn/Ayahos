@@ -113,8 +113,8 @@ class TestBaseMod(unittest.TestCase):
     def test_pulse_startup(self):
         """Test the pulse_startup method."""
         self.test_mod.pulse_startup(self.test_input)
-        self.assertEqual(self.test_mod.stats.in0, len(self.test_input))
-        self.assertEqual(self.test_mod.stats.out0, 0)
+        self.assertEqual(self.test_mod.stats.in_init, len(self.test_input))
+        self.assertEqual(self.test_mod.stats.out_init, 0)
         self.assertTrue(self.test_mod._continue_pulsing)
 
     def test_pulse_shutdown(self):

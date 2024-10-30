@@ -14,10 +14,240 @@ import sys, os
 import seisbench.models as sbm
 from collections import deque
 from obspy import UTCDateTime
-from PULSE.data.mltrace import MLTrace
+from obspy.core.util.attribdict import AttribDict
+from PULSE.data.foldtrace import FoldTrace
 from PULSE.data.dictstream import DictStream
 from PULSE.data.window import Window
+from PULSE.util.header import WindowStats
+from PULSE.util.log import rich_error_message
 from PULSE.mod.base import BaseMod
+
+# class WindowIndexer(AttribDict):
+#     defaults = {'primary_id': None,
+#                 'target_starttime': None,
+#                 'ready': False}
+#     _types = {'primary_id': (type(None), str),
+#               'target_starttime': (type(None), UTCDateTime),
+#               'ready': bool}
+    
+#     def __init__(self, primary_trace: FoldTrace) -> None:
+#         super().__init__()
+#         self.primary_id = primary_trace.id
+
+
+
+
+
+
+class WindMod(BaseMod):
+    def __init__(
+            self,
+            window_stats={
+                'pthresh': 0.9,
+                'sthresh': 0.8,
+                'target_npts': 6000,
+                'target_sampling_rate': 100.,
+            },
+            primary_components={'Z','3'},
+            secondary_components={'NE','12'},
+            name='EQTransformer',
+            overlap=1800,
+            eager=False,
+            max_pulse_size=1,
+            maxlen=None):
+        
+        super().__init__(max_pulse_size=max_pulse_size,
+                         maxlen=maxlen,
+                         name=name)
+
+
+        if isinstance(primary_components, set):
+            if all(isinstance(_e, str) for _e in primary_components):
+                if all(len(_e) == 1 for _e in primary_components):
+                    self.primary_components = [_e.upper() for _e in primary_components]
+                else:
+                    self.Logger.critical('ValueError: all elements in primary_components must be single-character strings')
+            else:
+                self.Logger.critical('TypeError: all elements in primary_components must be type str')
+        else:
+            self.Logger.critical('TypeError: primary_components must be type list')
+
+        if isinstance(secondary_components, set):
+            if all(isinstance(_e, str) for _e in secondary_components):
+                if all(len(_e) == 2 for _e in secondary_components):
+                    self.secondary_components = [_e.upper() for _e in secondary_components]
+                else:
+                    self.Logger.critical('ValueError: all elements in secondary_components must be two-character strings')
+            else:
+                self.Logger.critical('TypeError: all elements in secondary_components must be type str')
+        else:
+            self.Logger.critical('TypeError: secondary_components must be type list')
+        
+        approved_presets = set(['target_sampling_rate','target_npts','pthresh','sthresh'])
+        # Use WindowStats __setattr__ to thoroughly QC window_stats
+        try:
+            if not window_stats.keys() <= approved_presets:
+                msg = f'KeyError: window_stats may only contain keys in: {approved_presets}'
+                self.Logger.critical(msg)
+        except AttributeError as msg:
+            self.Logger.critical(rich_error_message(msg))
+        try:
+            self.window_stats = WindowStats(header = window_stats)
+        except (KeyError, ValueError, TypeError) as e:
+            self.Logger.critical(self.rich_error(e))
+        
+        if isinstance(eager, bool):
+            self._eager = eager
+        else:
+            self.Logger.critical('TypeError: eager must be type bool')
+        
+        if not isinstance(overlap, (int, float)):
+            self.Logger.critical('TypeError: overlap must be type int')
+        elif not 0 <= int(overlap) <= self.window_stats.target_npts:
+            self.Logger.critical(f'ValueError: overlap must be in [0, {self.window_stats.target_npts}]')
+        else:
+            self.overlap = int(overlap)
+            self.overlap_dt = self.overlap/self.window_stats.target_sampling_rate
+        # Generate index object
+        self.index = {}
+
+    def update_from_seisbench(self, model):
+        """Update a selection of window_stats communal parameters, the module
+        name, and primary/secondary components codes using metadata contained
+        in a :class:`~seisbench.models.WaveformModel` object
+
+        :param model: seisbench model
+        :type model: seisbench.models.WaveformModel
+        """        
+        if not isinstance(model, sbm.WaveformModel):
+            self.Logger.warning('TypeError: input model is not type seisbench.models.WaveformModel')
+        else:
+            pass
+
+        self.window_stats.update({
+            'target_sampling_rate': model.sampling_rate,
+            'target_npts': model.in_samples
+        })
+        self.setname(model.name)
+        if model.component_order[0] not in self.primary_components:
+            self.primary_components.update(model.component_order[0])
+        if model.component_order[1:] not in self.secondary_components:
+            self.secondary_components.update(model.component_order[1:])
+
+    def check_input(self, input: DictStream) -> None:
+        """Check that the input is type :class:`~PULSE.data.dictstream.DictStream`
+
+        POLYMORPHIC last update with :class:`~.WindMod`
+
+        :param input: pulse input object
+        :type input: PULSE.data.dictstream.DictStream
+        """        
+        if not isinstance(input, DictStream):
+            self.Logger.critical('TypeError: input must be type PULSE.data.dictstream.DictStream')
+
+    def get_unit_input(self, input: DictStream) -> dict:
+        """Update the **index** of this :class:`~.WindMod` for new
+        and existing instrument codes in **input**
+
+        :param input: _description_
+        :type input: DictStream
+        :return: _description_
+        :rtype: dict
+        """        
+        unit_input = {}
+        # Split by instrument
+        for instrument, ds in input.split_on_key('instrument'):
+            # If this is a new instrument code
+            if instrument not in self.index.keys():
+                new_entry = {instrument: {'stats': self.window_stats.copy(),
+                                          'ready': False}}
+                # Find primary & secondary keys for this instrument
+                for ft in ds:
+                    if ft.comp in self.primary_components:
+                        new_entry['stats'].update(
+                            {'primary': ft.comp,
+                             'target_starttime': ft.stats.starttime})
+                    elif len(ds) > 1:
+                        for sc in self.secondary_components:
+                            if ft.comp in sc:
+                                new_entry['stats'].update({'secondary': sc})
+                    else:
+                        new_entry['stats'].update({'secondary': 'NE'})
+                # If a primary key has been identified, add new entry
+                if new_entry['target_starttime'] != WindowStats.defaults['primary']:
+                    self.index.update(new_entry)
+
+            # Assess readiness
+            if instrument in self.index.keys():
+                index = self.index[instrument]
+                stats = index['stats']
+                id = f'{instrument}{stats.primary}'
+                ft = ds[id]
+                fv = ft.get_fvalid_subset(starttime=stats.target_starttime,
+                                          endtime=stats.target_endtime) 
+                if fv >= stats.pthresh:
+                    if self._eager:
+                        index.update({'ready': True})
+                    else:
+                        if stats.target_endtime <= ft.stats.endtime:
+                            index.update({'ready': True})
+
+            # Capture ready instruments for windowing
+            if self.index[instrument]['ready']:
+                unit_input.update({instrument: ds})
+
+        # Trigger early stopping if no windows are approved
+        if len(unit_input) == 0:
+            self._continue_pulsing = False
+        return unit_input
+    
+    def run_unit_process(self, unit_input: dict) -> deque:
+        unit_output = deque()
+        for inst, ds in unit_input.items():
+            index = self.index[inst]
+            stats = index['stats']
+            if not index['ready']:
+                self.Logger.critical('Unready dictstream views are making it into `run_unit_process`')
+            traces = ds.view(starttime=stats.target_starttime, endtime=stats.target_endtime).copy()
+            header = stats.copy()
+            try:
+                window = Window(traces=traces, header=header)
+            except Exception as e:
+                self.Logger.critical(rich_error_message(e))
+            unit_output.appendleft(window)
+            index['ready'] = False
+            stats.target_starttime += self.overlap_dt
+        return unit_output
+    
+    def put_unit_output(self, unit_output: deque) -> None:
+        if not isinstance(unit_output, deque):
+            self.Logger.critical('TypeError: unit_output must be type collections.deque')
+        if not all(isinstance(_e, Window) for _e in unit_output):
+            self.Logger.critical('TypeError: unit_output elements are not all type PULSE.data.window.Window')
+        self.output += unit_output
+    
+
+
+            
+                
+
+
+
+                        
+
+
+                    
+            # If there are traces in the instrument DictStream
+            if len(ds) == 0:
+                continue
+            # If there is a primary component present
+            for ft in ds:
+                if ft.comp in self.primary_components:
+                    self.index[instrument].update({})
+            if any(ft.comp in self.primary_components for ft in ds):
+
+
+
 
 class WindowMod(BaseMod):
     """

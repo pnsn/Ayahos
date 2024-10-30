@@ -329,21 +329,27 @@ class ModStats(AttribDict):
 
 
 class WindowStats(AttribDict):
+    _readonly = ['target_endtime']
+    _refresh_keys = ['target_starttime','target_sampling_rate','target_npts']
     defaults = {
         'primary': 'Z',
+        'secondary': 'NE',
         'pthresh': 0.95,
         'sthresh': 0.8,
-        'target_starttime': UTCDateTime(),
+        'target_starttime': UTCDateTime(0),
         'target_sampling_rate': 1.,
+        'target_endtime': UTCDateTime(1),
         'target_npts': 1,
         'processing': []
     }
 
     _types = {
         'primary': str,
+        'secondary': str,
         'pthresh': float,
         'sthresh': float,
         'target_starttime': UTCDateTime,
+        'target_endtime': UTCDateTime,
         'target_sampling_rate': float,
         'target_npts': int,
         'processing': list
@@ -358,20 +364,39 @@ class WindowStats(AttribDict):
     def __setattr__(self, key, value):
         if key not in self.defaults.keys():
             raise KeyError(f'key "{key}" not supported.')
-        elif isinstance(value, self._types[key]):
+        if key in self._readonly:
+            raise KeyError(f'{key} is readonly')
+
+        if key in self._refresh_keys:
+            if key in ['target_sampling_rate', 'target_npts']:
+                if value <= 0:
+                    raise ValueError(f'{key} must be a positive value')
+                elif key == 'target_sampling_rate':
+                    value = float(value)
+                elif key == 'target_npts':
+                    value = int(value)
+                if isinstance(value, self._types[key]):
+                    super().__setattr__(key, value)
+                else:
+                    raise ValueError(f'value for key "{key}" of type "{type(value)}" is not supported.')
+                self.__dict__['target_endtime'] = self.target_starttime + \
+                                                    (self.target_npts - 1)/\
+                                                     self.target_sampling_rate
+        
+        if isinstance(value, self._types[key]):
             super().__setattr__(key, value)
         else:
             raise ValueError(f'value for key "{key}" of type "{type(value)}" is not supported.')
     
-    def get_endtime(self):
-        return self.target_starttime + self.target_npts/self.target_sampling_rate
+    # def get_endtime(self):
+    #     return self.target_starttime + self.target_npts/self.target_sampling_rate
     
-    endtime = property(get_endtime)
+    # endtime = property(get_endtime)
 
-    def get_delta(self):
-        return 1./self.target_sr
+    # def get_delta(self):
+    #     return 1./self.target_sr
     
-    delta = property(get_delta)
+    # delta = property(get_delta)
         
 
 

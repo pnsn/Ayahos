@@ -119,8 +119,9 @@ class Window(DictStream):
                  int(dt*self.stats.target_sampling_rate)
         return result
     
-    def get_nearest_starttime(self, other):
-        dt = self.stats.target_starttime - other.stats.starttime
+    def get_nearest_starttime(self, comp):
+        ft = self[comp]
+        dt = self.stats.target_starttime - ft.stats.starttime
         npts = dt*self.stats.target_sampling_rate
         # Round up so starttime is inside domain of **other**
         npts = np.ceil(npts)
@@ -143,9 +144,10 @@ class Window(DictStream):
         else:
             return fvalid >= self.stats.sthresh
 
-    def sync_to_target_domain(self,
-                        fill_value='nearest',
-                        interp_method='weighted_average_slopes'):
+    def sync_sampling(
+            self,
+            interp_method='weighted_average_slopes',
+            subsample_tolerance=0.01):
         """Assess all :class:`~PULSE.data.foldtrace.FoldTrace` objects
         in this :class:`~.Window` and make one or more of the following
         adjustments to meet the target values in the **stats** of this

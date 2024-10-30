@@ -190,7 +190,13 @@ class MLStats(Stats):
                    'site': self.site,
                    'inst': self.inst,
                    'comp': self.comp,
-                   'mod': self.mod
+                   'mod': self.mod,
+                   'network': self.network,
+                   'station': self.station,
+                   'location': self.location,
+                   'channel': self.channel,
+                   'model': self.model,
+                   'weight': self.weight
                   }
         out = AttribDict(id_keys)
         return out

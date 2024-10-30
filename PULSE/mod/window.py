@@ -146,7 +146,7 @@ class WindMod(BaseMod):
         """        
         unit_input = {}
         # Split by instrument
-        for instrument, ds in input.split_on_key('instrument'):
+        for instrument, ds in input.split(id_element='inst'):
             # If this is a new instrument code
             if instrument not in self.index.keys():
                 new_entry = {instrument: {'stats': self.window_stats.copy(),

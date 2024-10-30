@@ -153,9 +153,8 @@ class DictStream(Stream):
     ========================
     """
     supported_keys = dict(FoldTrace().id_keys).keys()
-    # Limit this to 'id' for now
-    # supported_keys = ['id']
-    def __init__(self, traces=[], key_attr='id', **options):
+
+    def __init__(self, traces=[], **options):
         """Initialize a :class:`~PULSE.data.dictstream.DictStream` object
 
         Parameters
@@ -170,10 +169,7 @@ class DictStream(Stream):
         # initialize as empty stream
         super().__init__()
         self.traces = {}
-        if key_attr in self.supported_keys:
-            self.key_attr = key_attr
-        else:
-            raise ValueError(f'key_attr value "{key_attr}" not supported. Supported: {self.supported_keys}')
+        self.key_attr = 'id'
         self.extend(traces, **options)
 
     #####################################################################
@@ -463,8 +459,46 @@ class DictStream(Stream):
     #####################################################################
     # SEARCH METHODS ####################################################
     #####################################################################
-    def fnsearch(self, idstring='*'):
-        """Basic search routine using :meth:`~fnmatch.filter` on
+    def select(self, **kwargs):
+        match_set = self.subset(**kwargs)
+        return self[match_set]
+    
+    
+    def subset(self, method='intersection', **kwargs):
+        
+        # Reducing methods
+        if method.lower() in ['intersection','difference']:
+            match_set = set(self.traces.keys())
+            subset = match_set
+        # Agglomorating method
+        elif method.lower() == 'union':
+            match_set = set()
+            subset = None
+        else:
+            raise ValueError(f'method {method} not supported.')
+
+        # Iterate across kwargs
+        for _k, _v in kwargs.items():
+            # Clear out None-type kwargs
+            if _v is None:
+                kwargs.pop(_k)
+                continue
+            elif _k == 'inventory':
+                iset = self.inventory_subset(_v, subset=subset)
+            elif _k == 'id':
+                iset = self.id_subset(_k, _v, subset=subset)
+            elif _k in self.supported_keys:
+                iset = self.id_keys_subset(_k, _v, subset=subset)
+            elif _k in ['sampling_rate','npts','delta','calib']:
+                iset = self.attr_subset(**{_k:_v, 'subset': subset})
+            else:
+                raise SyntaxError(f'Unexpected key-word argument "{_k}".')
+            match_set = getattr(match_set, method)(iset)
+
+        return match_set        
+
+    def id_subset(self, id=None, subset=None):
+        """Basic subset routine using :meth:`~fnmatch.filter` on
         sets of trace keys (IDs) from this DictStream's traces and
         the subset matching an input idstring.
 
@@ -484,14 +518,24 @@ class DictStream(Stream):
         :return:
             - **keyset** (*set*) - subset FoldTrace key_attr values (DictStream.traces.keys())
                 matching the provided idstring
-        """        
-        fullset = set(self.traces.keys())
-        keyset = set(fnmatch.filter(fullset, idstring))
-        return keyset
+        """
+        if subset is None:
+            subset = set(self.traces.keys())
+        elif isinstance(subset, set):
+            pass
+        else:
+            raise TypeError('subset must be type set or NoneType') 
+        if id is None:
+            match_set = subset
+        elif isinstance(id, str):
+            match_set = set(fnmatch.filter(subset, id))
+        else:
+            raise TypeError('id must be type str or NoneType')
+        return match_set
     
-    def attrsearch(self, **kwargs):
+    def attr_subset(self, subset=None, **kwargs):
         """Search for the id's of FoldTraces in this DictStream that match
-        the specified stats.attributes search values
+        the specified stats.attributes subset values
 
         Supported kwargs:
          - sampling_rate
@@ -501,29 +545,70 @@ class DictStream(Stream):
 
         :raises TypeError: _description_
         :raises AttributeError: _description_
-        """        
-        # Input compatability checks
+        """
+        if subset is None:
+            subset = set(self.traces.keys())
+        elif isinstance(subset, set):
+            pass
+        else:
+            raise TypeError('subset must be type set or NoneType') 
+        # Create output holder
+        match_set = set()
+        # Clear out NoneType kwargs
         for _k, _v in kwargs.items():
-            if _k in ['sampling_rate','npts','calib','delta']: #MLStats.defaults.keys():
-                if isinstance(_v, type(MLStats.defaults[_k])):
-                    pass
-                else:
-                    msg = f'Input {type(_v)} for attribute "{_k}" is not '
-                    msg += f'supported by PULSE.data.header.MLStats. Supported: {type(MLStats.defaults[_k])}'
-                    raise TypeError()
+            if _v is None:
+                kwargs.pop(_k)
+            elif _k == 'npts':
+                _v = int(_v)
             else:
-                raise AttributeError(f'Input attribute "{_k}" is not supported for PULSE.data.header.MLStats')
-        # Run search
-        keyset = set()
-        for _id, _ft in self.traces.items():
-            # If all values match
-            if all([_v == _ft.stats[_k] for _k, _v in kwargs.items()]):
-                # Update with id
-                keyset.update([_id])
-            else:
-                continue
-        return keyset
+                _v = float(_v)
+        
+        for id in subset:
+            _ft = self[id]
+            if all(_ft.stats[_k] == _v for _k, _v in kwargs.items()):
+                match_set.update(id)
+        return match_set
     
+    def id_keys_subset(self, id_key, pat, subset=None):
+        """Search for matching id_key values to a 
+        specified pattern using :meth:`~fnmatch.fnmatch`
+
+        Includes an option to subset
+
+        :param id_key: id_key key to use for subset
+        :type id_key: str
+        :param pat: pattern to match id_key values to
+        :type pat: str
+        :param subset: subset of trace keys (DictStream.traces.keys)
+           to limit this subset to, defaults to None.
+           None uses the full set of traces.keys().
+        :type subset: set or NoneType, optional
+        :return: matched set of traces.keys value
+        :rtype: set
+        """        
+        # Compatability check on key
+        if id_key not in self.supported_keys:
+            raise KeyError(f'{id_key} not included in FoldTrace.id_keys.')
+        
+        # Compatability check on pat
+        if not isinstance(pat, str):
+            raise TypeError('pat must be type str')
+        
+        # Compatability check on subset
+        if subset is None:
+            subset = set(self.traces.keys())
+        elif isinstance(subset, set):
+            pass
+        else:
+            raise TypeError('subset must be type set or NoneType')
+        match_set = set()
+        # Iterate across subset
+        for _k in subset:
+            if fnmatch.fnmatch(self[_k].id_keys[id_key], pat):
+                match_set.update(_k)
+
+        return match_set
+        
     def inverse_set(self, subset):
         """Return the inverse set of FoldTrace IDs from this DictStream
         for a given subset of FoldTrace IDs.
@@ -537,123 +622,21 @@ class DictStream(Stream):
             raise TypeError('subset must be type set')
         keyset = set(self.traces.keys()).difference(subset)
         return keyset
-        
+
+
+        # id_key_dict = {_k: _ft.id_keys[key] for _k, _ft in self.traces.items()}
+        # for _id, _ft in self.traces.items():
+        #     if fnmatch.fnmatch(_ft.id_keys[key])
+        # for _id, _ft in self.traces.items():
+        #     if fnmatch.fnmatch(_ft.id_keys[key], value):
+        #         matches.update(_id)
     
-    def select(self, id=None, component=None,
-               network=None, station=None,
-               location=None, channel=None,
-               sampling_rate=None, npts=None,
-               inventory=None, inverse=False):
-        """Updated wrapper around :meth:`~obspy.core.stream.Stream.select`
+    def inventory_subset(key_set, inventory):
+        pass
+        # if isinstance(inventory, Inventory):
+        #     contents = inventory.get_contents()
+        #     if len(contents['channels']) > 0:
 
-        :param id: _description_, defaults to None
-        :type id: _type_, optional
-        :param network: _description_, defaults to None
-        :type network: _type_, optional
-        :param station: _description_, defaults to None
-        :type station: _type_, optional
-        :param location: _description_, defaults to None
-        :type location: _type_, optional
-        :param channel: _description_, defaults to None
-        :type channel: _type_, optional
-        :param sampling_rate: _description_, defaults to None
-        :type sampling_rate: _type_, optional
-        :param npts: _description_, defaults to None
-        :type npts: _type_, optional
-        :param component: _description_, defaults to None
-        :type component: _type_, optional
-
-        :param inventory: _description_, defaults to None
-        :type inventory: _type_, optional
-        :param inverse: _description_, defaults to False
-        :type inverse: bool, optional
-        """
-        # Less restricted version of
-        if isinstance(inventory, Inventory):
-            contents = inventory.get_contents()
-            if len(contents['channel']) > 0:
-                invset = set(contents()['channels'])
-            elif len(contents['stations']) > 0:
-                invset = set([f'{_c}.*' for _c in contents['stations']])
-            elif len(contents['networks']) > 0:
-                invset = set([f'{_c}.*' for _c in contents['networks']])
-            keyset = invset.intersection(self.traces.keys())
-
-
-        if network is None:
-            network = '*'
-        if station is None:
-            station = '*'
-        if location is None:
-            location = '*'
-        if channel is None:
-            channel = '*'
-        if component is None:
-            pass
-        else:
-            if channel == '*':
-                channel = f'*{component}'
-
-        if inventory is None:
-            if id is None:
-                idstring = f'{network}.{station}.{location}.{channel}'
-            else:
-                idstring = id
-            keyset = self.fnsearch(idstring)
-        else:
-            invset = set(inventory.get_contents()['channels'])
-            if len(invset) == 0 and len(inventory) > 0:
-                raise NotImplementedError('inventories must be constructed to the "channel" level or finer to work with this query.')
-            else:
-                keyset = invset.intersection(self.traces.keys())
-
-        attrsearchkw = {}
-        if isinstance(sampling_rate, (int,float)):
-            attrsearchkw.update({'sampling_rate': float(sampling_rate)})
-        if isinstance(npts, (float,int)):
-            attrsearchkw.update({'npts': int(npts)})
-        if len(attrsearchkw) > 0:
-            keyset = self[keyset].attrsearch(**attrsearchkw)
-            
-        if inverse:
-            keyset = set(self.traces.keys()).difference(keyset)
-        return self.__class__(self[keyset], key_attr=self.key_attr)        
-
-    def split(self, id_element='instrument', **options):
-        """Split this :class:`~.DictStream` into multiple :class:`~.DictStream` objects
-        contained in a :class:`dict` with attrs corresponding to unique values of the
-        **attr** from the contents of the original DictStream.
-
-        The output contains views of the original data, so any modifications made
-        to the :class:`~PULSE.data.foldtrace.FoldTrace` objects in the views are
-        changes to the source data.
-
-        :param attr: attribute to use to effect the split, defaults to 'inst'
-        :type attr: str, optional
-        :param options: attr-word argument collector passed to the :meth:`~.DictStream.extend` method
-        :return:
-         - **out** (*PULSE.data.dictstream.DictStream) -- 
-        """
-        # If ID element is in default elements   
-        if id_element in MLStats.defaults.keys():
-            keys = [_ft.stats[id_element] for _ft in self]
-        elif id_element in MLStats().get_id_keys().keys():
-            keys = [_ft.id_keys[id_element] for _ft in self]
-        else
-
-
-        if id_element not in MLStats.defaults.keys():
-            raise ValueError('attr not in MLStats.defaults.keys()')
-        out = {}
-        for _ft in self:
-            _k = _ft.id_keys[id_element]
-            # If _k is a new attr, create a new DictStream-like value container
-            if _k not in out.keys():
-                out.update({_k: self.__class__(traces=_ft, key_attr=self.key_attr)})
-            # Otherwise, extend the existing DictStream-like value container
-            else:
-                out[_k].extend(_ft, **options)
-        return out
 
 
     def trim(self, starttime=None, endtime=None, pad=False,

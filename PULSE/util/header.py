@@ -181,6 +181,26 @@ class MLStats(Stats):
     def get_id_keys(self):
         """Get a dictionary of commonly used trace naming strings
 
+        ID Keys
+        -------
+        'nslc' - N.S.L.C SEED channel naming convention
+        'sncl' - S.N.C.L Earthworm channel naming convention
+        'id' - N.S.L.C(.M.W) - MLStats extension that may include
+                model and weight names.
+        'site' - Site defining elements of the SEED channel naming
+                convention (N.S)
+        'inst' - Instrument defining elements of the SEED channel
+                naming convention (N.S.L.C [minus component code])
+        'mod' - Model + Weight elements of the MLStats extension
+                to the SEED naming convention
+        'network' - SEED Network code (N)
+        'station' - SEED Station code (S)
+        'location' - SEED Location code (L)
+        'channel' - SEED Channel code (C)
+        'component' - SEED Component character of Channel Code
+        'model' - MLStats model name
+        'weight' - MLSTats weight name
+        
         :return:
          **id_keys** (*AttribDict*) -- dictionary of attribute names and values 
         """        
@@ -189,17 +209,19 @@ class MLStats(Stats):
                    'id': self.id,
                    'site': self.site,
                    'inst': self.inst,
-                   'comp': self.comp,
                    'mod': self.mod,
                    'network': self.network,
                    'station': self.station,
                    'location': self.location,
                    'channel': self.channel,
+                   'component': self.component,
                    'model': self.model,
                    'weight': self.weight
                   }
         out = AttribDict(id_keys)
         return out
+    
+    id_keys = property(get_id_keys)
 
 
 ###############################

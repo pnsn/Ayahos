@@ -26,7 +26,7 @@ contents of the DictStream. It is modeled after the ObsPy :class:`~obspy.core.tr
 
  * TODO: cleanup extraneous (developmental) methods that are commented out
 """
-import fnmatch
+import fnmatch, warnings
 from obspy import Trace, Stream, Inventory
 from PULSE.data.foldtrace import FoldTrace
 from PULSE.util.header import MLStats
@@ -152,7 +152,7 @@ class DictStream(Stream):
     DictStream Class Methods
     ========================
     """
-    supported_keys = dict(FoldTrace().id_keys).keys()
+    supported_keys = dict(MLStats().id_keys).keys()
 
     def __init__(self, traces=[], **options):
         """Initialize a :class:`~PULSE.data.dictstream.DictStream` object
@@ -169,8 +169,29 @@ class DictStream(Stream):
         # initialize as empty stream
         super().__init__()
         self.traces = {}
-        self.key_attr = 'id'
+        # Process key_attr out of options, rather than as an explicit kwarg
+        if 'key_attr' in options.keys():
+            key_attr = options.pop('key_attr')
+            if key_attr in self.supported_keys:
+                self.key_attr = key_attr
+            else:
+                raise KeyError(f'key_attr "{key_attr}" not in supported_keys.')
+        if not hasattr(self, 'key_attr'):
+            self.key_attr = 'id'
+        # Extend to add traces
         self.extend(traces, **options)
+
+    # PROPERTIES
+        
+    def get_keys(self):
+        return list(self.traces.keys())
+    
+    keys = property(get_keys)
+
+    def get_values(self):
+        return list(self.traces.values())
+    
+    values = property(get_values)
 
     #####################################################################
     # DUNDER METHOD UPDATES #############################################
@@ -220,6 +241,8 @@ class DictStream(Stream):
         """
         # Handle single item fetch
         if isinstance(index, int):
+            if index > len(self) - 1:
+                raise ValueError(f'index {index} exceeds bounds of this DictStream [0, {len(self) - 1}]')
             trace = self.traces[list(self.traces.keys())[index]]
             out = trace
         # Handle slice fetch
@@ -235,45 +258,74 @@ class DictStream(Stream):
                 raise KeyError(f'index {index} is not a key in this DictStream\'s traces attribute')
         # Handle lists & sets of keys (dictionary slice)
         elif isinstance(index, (list, set)):
+            # purely strings
             if all(isinstance(_e, str) and _e in self.traces.keys() for _e in set(index)):
                 traces = [self.traces[_k] for _k in set(index)]
-                out = self.__class__(traces=traces)
+                out = self.__class__(traces=traces, key_attr=self.key_attr)
+            # purely integers
+            elif all(isinstance(_e, int) and _e <= len(self) - 1 for _e in set(index)):
+                traces = [self.traces[_k] for _k in set(index)]
+                out = self.__class__(traces=traces, key_attr=self.key_attr)
+            # Mixed
             else:
-                raise KeyError('not all keys in index are str-type and keys in this DictStream\'s traces attribute')
+                raise IndexError('index elements are not uniformly type int or str')
         else:
-            raise TypeError('index must be type int, str, list, or slice')
+            raise TypeError(f'index type {type(index)} not supported.')
         return out
     
-    def __setitem__(self, index, trace):
+    def __setitem__(self, key, value):
         """Provides options to __setitem__ for string and int type indexing 
         consistent with :meth:`~PULSE.data.dictstream.DictStream.__getitem__`
         behaviors.
 
         Parameters
         ----------
-        :param index: index to assign trace object to, either a string-type
-            key value or int-type index value
-        :type index: int or str
-        :param trace: Trace-like object to add, will be converted into a 
-            :class:`~PULSE.data.foldtrace.FoldTrace` object if necessary
-        :type trace: obspy.core.trace.Trace
+        :param key: key to assign value object to, either a string-type
+            key value or int-type key value
+        :type key: int or str
+        :param value: Trace-like object to add, will be converted into a 
+            :class:`~PULSE.data.foldvalue.FoldTrace` object if necessary
+        :type value: obspy.core.value.Trace
         """
-        if not isinstance(trace, Trace):
-            raise TypeError(f'input object trace must be type obspy.core.trace.Trace or child. Not {type(trace)}')
-        elif not isinstance(trace, FoldTrace):
-            trace = FoldTrace(trace)
-        elif isinstance(trace, FoldTrace):
+        # Handle empty DictStream case
+        if len(self) == 0:
+            raise AttributeError('DictStream is empty. Use DictStream.extend to add values.')
+        
+        # Compatability check/conversion on value
+        if not isinstance(value, Trace):
+            raise TypeError(f'input object value must be type obspy.core.value.Trace or child. Not {type(value)}')
+        elif not isinstance(value, FoldTrace):
+            value = FoldTrace(value)
+        elif isinstance(value, FoldTrace):
             pass
         else:
             raise TypeError('Shouldn\'t have gotten here...')
-                
-        if isinstance(index, int):
-            key = list(self.traces.keys())[index]
-        elif isinstance(index, str):
-            key = index
+        # Allow integer values
+        if isinstance(key, int):
+            if key >= len(self):
+                raise ValueError(f'int-type input for "key" outside range of this DictStream [0, {len(self) - 1}]')
+            else:
+                key = self.keys[key]
+        elif isinstance(key, str):
+            pass
         else:
-            raise TypeError(f'index type {type(index)} not supported. Only int and str')
-        self.traces.update({key: trace})
+            raise TypeError('key must be type int or str')
+        
+        # Ensure valid mapping
+        if key != value.id_keys[self.key_attr]:
+            raise KeyError(f'provided/implicit key mismatches expected key for provide value: {key} != {value.id_keys[self.key_attr]}')
+        # Use update to alter/add entry
+        self.traces.update({key: value})
+
+    # def update(self, updatedict):
+    #     """update method for DictStream
+    #     Waps the :meth:`~.DictStream.__setitem__` method
+
+    #     :param updatedict: _description_
+    #     :type updatedict: _type_
+    #     """        
+    #     for _k, _v in updatedict:
+    #         self.__setitem__(_k, _v)
 
     def __delitem__(self, index):
         """Provides options to __delitem__ for string and int type indexing
@@ -330,27 +382,48 @@ class DictStream(Stream):
         :return: new DictStream object containing traces from self and other
         :rtype: PULSE.data.dictstream.DictStream
         """
+        out = self.copy()
+        if isinstance(other, (Trace, Stream)):
+            out.extend(other)
+        else:
+            raise TypeError('other must be type obspy.core.trace.Trace or obspy.core.stream.Stream')
+
+
         if isinstance(other, Trace):
             other = [other]
         if not all(isinstance(tr, Trace) for tr in other):
             raise TypeError
         traces = [tr for tr in self.traces] + other
+        # Allow for specifiying a different key_attr
         if 'key_attr' not in options.keys():
-            options.upate({'key_attr': self.key_attr}) 
+            options.update({'key_attr': self.key_attr}) 
         return self.__class__(traces=traces, **options)
 
     def __iadd__(self, other, **options):
         """
         Alias for the :meth:`~PULSE.data.dictstream.DictStream.extend`
         method, allowing rich use of the ``+=`` operator.
-         
-        Uses default arguments for the :meth:`~PULSE.data.foldtrace.FoldTrace.__add__` method
-        call at the core of this method.
         """
-        if len(options) > 0:
-            raise Exception('If you want to set non-default arguments for FoldTrace.__add__, use the `extend` method.')
-        self.extend(other) 
+        self.extend(other, **options) 
         return self           
+
+    def _add_trace(self, other: Trace, **options):
+        if isinstance(other, Trace):
+            if isinstance(other, FoldTrace):
+                pass
+            else:
+                other = FoldTrace(other)
+        else:
+            raise TypeError('other must be type obspy.core.trace.Trace')
+        
+        key = other.id_keys[self.key_attr]
+        if key not in self.traces.keys():
+            self.traces.update({key: other})
+        else:
+            try:
+                self.traces[key].__iadd__(other, **options)
+            except Exception:
+                raise 
 
     def extend(self, other, **options):
         """Core method for adding :class:`~PULSE.data.foldtrace.FoldTrace` objects
@@ -376,31 +449,23 @@ class DictStream(Stream):
         
         Also see :meth:`~PULSE.data.dictstream.DictStream.__iter__`.
         """
-        # Ensure other is in the form of a list of FoldTraces
-        traces = []
-        if isinstance(other, FoldTrace):
-            traces.append(other)
-        elif isinstance(other, Trace):
-            traces.append(FoldTrace(other))
-        elif isinstance(other, (list, Stream)):
-            for _tr in other:
-                if isinstance(_tr, FoldTrace):
-                    traces.append(_tr)
-                elif isinstance(_tr, Trace):
-                    traces.append(FoldTrace(_tr))
-                else:
-                    raise TypeError('not all elements of other are obspy Trace-like objects')
+        # Explicit safety catch for options
+        if options.keys() <= set(['method','fill_value','idtype']):
+            pass
         else:
-            raise TypeError(f'other of type {type(type)} not supported.')
-        # Add FoldTraces to DictStream
-        for _ft in traces:
-            _key = _ft.id_keys[self.key_attr]
-            # Run as in-place add
-            if _key in self.traces.keys():
-                self[_key].__iadd__(_ft, **options)
-            # Run as update
+            misfits = options.keys() - set(['method','fill_value','idtype'])
+            raise SyntaxError(f'DictStream.extend() given unexpected keyword argument(s) for internal call of FoldTrace.__add__: {misfits}')
+        # Run wrapper around _add_trace
+        try:
+            if isinstance(other, Trace):
+                self._add_trace(other, **options)
+            elif isinstance(other, (Stream, list)):
+                for tr in other:
+                    self._add_trace(tr, **options)
             else:
-                self.traces.update({_key: _ft})
+                raise TypeError('other must be type obspy.core.trace.Trace or obspy.core.stream.Stream')
+        except:
+            raise
 
     def __str__(self, short=False):
         """string representation of the full module/class path of
@@ -459,15 +524,198 @@ class DictStream(Stream):
     #####################################################################
     # SEARCH METHODS ####################################################
     #####################################################################
-    def select(self, **kwargs):
-        match_set = self.subset(**kwargs)
-        return self[match_set]
+
     
+    def split(self, id_key='inst') -> dict:
+        """Split this DictStream into a dictionary
+        of subset views based on one of the id_keys
+        key names in the :class:`~PULSE.util.header.MLStats`
+        **id_keys** attribute.
+
+        Keys
+        ----
+        'nslc' - N.S.L.C SEED channel naming convention
+        'sncl' - S.N.C.L Earthworm channel naming convention
+        'id' - N.S.L.C(.M.W) - MLStats extension that may include
+                model and weight names.
+        'site' - Site defining elements of the SEED channel naming
+                convention (N.S)
+        'inst' - Instrument defining elements of the SEED channel
+                naming convention (N.S.L.C [minus component code])
+        'mod' - Model + Weight elements of the MLStats extension
+                to the SEED naming convention
+        'network' - SEED Network code (N)
+        'station' - SEED Station code (S)
+        'location' - SEED Location code (L)
+        'channel' - SEED Channel code (C)
+        'component' - SEED Component character of Channel Code
+        'model' - MLStats model name
+        'weight' - MLSTats weight name
+                
+        :param id_key: FoldTrace.id_keys key value to
+            used to split this DictStream, defaults to 'inst'
+        :type id_key: str, optional
+        :return: 
+         - **sets** (*dict*) -- dictionary of subset
+            DictStream views keyed by unique **id_key**
+            values from the originating DictStream
+        """
+        try:
+            sets = self._split_subsets(id_key)
+        except KeyError:
+            raise
+        for _k, _v in sets.items():
+            sets.update({_k: self[_v]})
+        return sets
+
+    def _split_subsets(self, id_key: str) -> dict:
+        """
+        PRIVATE METHOD
+
+        Create a dictionary of **traces.keys()** (sub)sets
+        using a specifided id_key value
+
+        see :meth:`~.DictStream.split` documentation
+
+        :param id_key: id_key name
+        :type id_key: str
+        :raises KeyError: _description_
+        :return: _description_
+        :rtype: dict
+        """        
+        if id_key not in self.supported_keys:
+            raise KeyError(f'id_key "{id_key}" not in supported_keys.')
+        else:
+            sets = {}
+            for _ft in self:
+                id_key = _ft.id_keys[id_key]
+                if id_key not in sets.keys():
+                    sets.update({id_key: set([_ft.id_keys[self.key_attr]])})
+                else:
+                    sets[id_key].update([_ft.id_keys[self.key_attr]])
+        return sets
+
+    def select(self, method='intersection', inverse=False, **kwargs):
+        """Revised version of :meth:`~obspy.core.stream.Stream.select`
+        that uses set logic to create a subset view of this
+        DictStream's contents. Accepted key-word arguments include:
+          - id (*str*)
+          - nslc (*str*)
+          - sncl (*str*)
+          - network (*str*)
+          - station (*str*)
+          - location (*str*)
+          - channel (*str*)
+          - component (*str*)
+          - model (*str*)
+          - weight (*str*)
+          - site (*str*)
+          - inst (*str*)
+          - mod (*str*)
+          - sampling_rate (*float*)
+          - delta (*float*)
+          - calib (*float*)
+          - npts (*int*)
+
+        In Development
+          - inventory (*obspy.core.inventory.Inventory*)
+
+        All *str*-type values are Unix-style wildcard compliant,
+        All *float* and *int* values are tolerant to mismatched
+        numeric types
+
+        Uses a specified set-joining **method** to produce
+        subsets
+
+        :param method: set joining method, defaults to 'intersection'
+            Supported:
+             - 'intersection': common traces to all search criteria
+                "inner join" in SQL parlance
+                accepted aliases: "&"
+             - 'symmetric_difference': unique traces across all search criteria
+                "exclusive full join" in SQL parlance
+                accepted aliases: "^"
+             - 'union': all traces 
+                "inclusive full join" in SQL parlance
+                accepted aliasees: "|"
+            all are methods of :class:`~set`
+        :type method: str, optional
+        :param inverse: return the inverse set of the final subset?
+            Defaults to False.
+        :type inverse: bool, optional.
+        :return:
+         - **ds_view** (*PULSE.data.dictstream.DictStream*) -- 
+            subset view of this dictstream (or it's inverse)
+        """
+        # Try to run subset
+        try:      
+            match_set = self._match(method=method, **kwargs)
+        # Telegraph internal errors to this level.
+        except: 
+            raise
+        # Apply inverse if True
+        if inverse:
+            match_set = self._inverse_set(match_set)
+        ds_view = self[match_set]
+        return ds_view
     
-    def subset(self, method='intersection', **kwargs):
-        
+    def _inverse_set(self, subset):
+        """Return the inverse set of FoldTrace IDs from this DictStream
+        for a given subset of FoldTrace IDs.
+
+        :param subset: subset to difference from the set of IDs in this DictStream
+        :type subset: set
+        :return:
+         - **keyset** (*set*) -- inverse set of FoldTrace ID keys
+        """        
+        if not isinstance(subset, set):
+            raise TypeError('subset must be type set')
+        keyset = set(self.traces.keys()).difference(subset)
+        return keyset
+    
+    def _match(self, method='intersection', **kwargs):
+        """
+        PRIVATE METHOD
+
+        Create a subset of **traces.keys()** from this
+        DictStream based on one or more
+
+        :param method: set joining method, defaults to 'intersection'
+            Supported:
+             - 'intersection': common traces to all search criteria
+                "inner join" in SQL parlance
+                accepted aliases: "&"
+             - 'symmetric_difference': unique traces across all search criteria
+                "exclusive full join" in SQL parlance
+                accepted aliases: "^"
+             - 'union': all traces 
+                "inclusive full join" in SQL parlance
+                accepted aliasees: "|"
+            all are methods of :class:`~set`
+        :type method: str, optional
+        :param inverse: return the inverse set of the final subset?
+            Defaults to False.
+        :type inverse: bool, optional.
+        :return:
+         - **ds_view** (*PULSE.data.dictstream.DictStream*) -- 
+            subset view of this dictstream (or it's inverse)
+        """
+        # Parse operator aliases
+        if method == '&':
+            method = 'intersection'
+        elif method == '|':
+            method = 'union'
+        elif method == '^':
+            method = 'symmetric_difference'
+        else:
+            pass
+
+        # Handle null-search
+        if len(kwargs) == 0:
+            match_set = set(self.traces.keys())
+            warnings.warn('No search parameters provided. Returning full set.')
         # Reducing methods
-        if method.lower() in ['intersection','difference']:
+        elif method.lower() in ['intersection','symmetric_difference']:
             match_set = set(self.traces.keys())
             subset = match_set
         # Agglomorating method
@@ -476,7 +724,7 @@ class DictStream(Stream):
             subset = None
         else:
             raise ValueError(f'method {method} not supported.')
-
+        
         # Iterate across kwargs
         for _k, _v in kwargs.items():
             # Clear out None-type kwargs
@@ -484,67 +732,82 @@ class DictStream(Stream):
                 kwargs.pop(_k)
                 continue
             elif _k == 'inventory':
-                iset = self.inventory_subset(_v, subset=subset)
+                try:
+                    iset = self._match_inventory(_v, subset=subset)
+                except:
+                    raise
             elif _k == 'id':
-                iset = self.id_subset(_k, _v, subset=subset)
-            elif _k in self.supported_keys:
-                iset = self.id_keys_subset(_k, _v, subset=subset)
+                try:
+                    iset = self._match_id_keys(_k, _v, subset=subset)
+                except:
+                    raise
             elif _k in ['sampling_rate','npts','delta','calib']:
-                iset = self.attr_subset(**{_k:_v, 'subset': subset})
+                try:
+                    iset = self._match_stats(**{_k:_v, 'subset': subset})
+                except:
+                    raise
             else:
                 raise SyntaxError(f'Unexpected key-word argument "{_k}".')
             match_set = getattr(match_set, method)(iset)
 
         return match_set        
 
-    def id_subset(self, id=None, subset=None):
-        """Basic subset routine using :meth:`~fnmatch.filter` on
-        sets of trace keys (IDs) from this DictStream's traces and
-        the subset matching an input idstring.
+    # def id_subset(self, id=None, subset=None):
+    #     """Basic subset routine using :meth:`~fnmatch.filter` on
+    #     sets of trace keys (IDs) from this DictStream's traces and
+    #     the subset matching an input idstring.
 
-        idstring accepts UNIX wildcard statements
+    #     idstring accepts UNIX wildcard statements
 
-        .. Note::
-            The :class:`~PULSE.data.foldtrace.FoldTrace` objects contained in
-            the **output** :class:`~.DictStream` object are views of the original
-            data. Thus, changes made to the contents of **output** change the
-            contents of the originating DictStream. Use the :meth:`~.DictStream.copy`
-            method on the output or source to make new in-memory copies of their
-            contents.
+    #     .. Note::
+    #         The :class:`~PULSE.data.foldtrace.FoldTrace` objects contained in
+    #         the **output** :class:`~.DictStream` object are views of the original
+    #         data. Thus, changes made to the contents of **output** change the
+    #         contents of the originating DictStream. Use the :meth:`~.DictStream.copy`
+    #         method on the output or source to make new in-memory copies of their
+    #         contents.
 
-        :param idstring: wildcard-compliant ID string to use for subsetting
-            this DictStream, defaults to '*'
-        :type idstring: str, optional
-        :return:
-            - **keyset** (*set*) - subset FoldTrace key_attr values (DictStream.traces.keys())
-                matching the provided idstring
-        """
-        if subset is None:
-            subset = set(self.traces.keys())
-        elif isinstance(subset, set):
-            pass
-        else:
-            raise TypeError('subset must be type set or NoneType') 
-        if id is None:
-            match_set = subset
-        elif isinstance(id, str):
-            match_set = set(fnmatch.filter(subset, id))
-        else:
-            raise TypeError('id must be type str or NoneType')
-        return match_set
+    #     :param idstring: wildcard-compliant ID string to use for subsetting
+    #         this DictStream, defaults to '*'
+    #     :type idstring: str, optional
+    #     :return:
+    #         - **keyset** (*set*) - subset FoldTrace key_attr values (DictStream.traces.keys())
+    #             matching the provided idstring
+    #     """
+    #     if subset is None:
+    #         subset = set(self.traces.keys())
+    #     elif isinstance(subset, set):
+    #         pass
+    #     else:
+    #         raise TypeError('subset must be type set or NoneType') 
+    #     if id is None:
+    #         match_set = subset
+    #     elif isinstance(id, str):
+    #         match_set = set(fnmatch.filter(subset, id))
+    #     else:
+    #         raise TypeError('id must be type str or NoneType')
+    #     return match_set
     
-    def attr_subset(self, subset=None, **kwargs):
+    def _match_stats(self, subset=None, **kwargs):
         """Search for the id's of FoldTraces in this DictStream that match
         the specified stats.attributes subset values
 
         Supported kwargs:
-         - sampling_rate
+         - sampling_rate (*)
          - npts
          - calib
          - delta
 
-        :raises TypeError: _description_
-        :raises AttributeError: _description_
+        :param subset: subset list of **traces** keys to truncate
+            the search, defaults to None
+            None input starts search with all keys of the **traces**
+            attribute of this DictStream
+        :type subset: set or NoneType, optional.
+        :return:
+         - **match_set** (*set*) - set of matching keys from
+            DictStream.traces.
+        FIXME: Should this only allow for one kwarg at a time? If not
+        I need to implement a "method" argument
         """
         if subset is None:
             subset = set(self.traces.keys())
@@ -558,6 +821,8 @@ class DictStream(Stream):
         for _k, _v in kwargs.items():
             if _v is None:
                 kwargs.pop(_k)
+            if _k not in ['npts','sampling_rate','calib','delta']:
+                raise KeyError(f'Unexpected kwarg "{_k}"')
             elif _k == 'npts':
                 _v = int(_v)
             else:
@@ -569,7 +834,7 @@ class DictStream(Stream):
                 match_set.update(id)
         return match_set
     
-    def id_keys_subset(self, id_key, pat, subset=None):
+    def _match_id_keys(self, id_key, pat=None, subset=None):
         """Search for matching id_key values to a 
         specified pattern using :meth:`~fnmatch.fnmatch`
 
@@ -601,27 +866,22 @@ class DictStream(Stream):
             pass
         else:
             raise TypeError('subset must be type set or NoneType')
-        match_set = set()
-        # Iterate across subset
-        for _k in subset:
-            if fnmatch.fnmatch(self[_k].id_keys[id_key], pat):
-                match_set.update(_k)
+
+        # if id_key matches the key_attr for this DictStream, 
+        # use faster fnmatch.filter method
+        if id_key == self.key_attr:
+            match_set = set(fnmatch.filter(self[subset].traces.keys(), pat))
+        # otherwise iterate over traces and find matches
+        # with the fnmatch.fnmatch method
+        else:
+            match_set = set()
+            for _k in subset:
+                if fnmatch.fnmatch(self[_k].id_keys[id_key], pat):
+                    match_set.update([_k])
 
         return match_set
         
-    def inverse_set(self, subset):
-        """Return the inverse set of FoldTrace IDs from this DictStream
-        for a given subset of FoldTrace IDs.
 
-        :param subset: subset to difference from the set of IDs in this DictStream
-        :type subset: set
-        :return:
-         - **keyset** (*set*) -- inverse set of FoldTrace ID keys
-        """        
-        if not isinstance(subset, set):
-            raise TypeError('subset must be type set')
-        keyset = set(self.traces.keys()).difference(subset)
-        return keyset
 
 
         # id_key_dict = {_k: _ft.id_keys[key] for _k, _ft in self.traces.items()}
@@ -631,13 +891,17 @@ class DictStream(Stream):
         #     if fnmatch.fnmatch(_ft.id_keys[key], value):
         #         matches.update(_id)
     
-    def inventory_subset(key_set, inventory):
-        pass
+    def _match_inventory(key_set, inv):
+        if not isinstance(inv, Inventory):
+            raise TypeError('inv must be type obspy.core.inventory.Inventory')
+        raise NotImplementedError('Work In Progress')
         # if isinstance(inventory, Inventory):
         #     contents = inventory.get_contents()
         #     if len(contents['channels']) > 0:
 
 
+
+    ## TRACE PROCESSING METHODS ##
 
     def trim(self, starttime=None, endtime=None, pad=False,
              fill_value=None, nearest_sample=True,

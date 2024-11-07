@@ -12,10 +12,12 @@ from PULSE.test.example_data import (load_townsend_example,
 
 
 class TestDictStream(unittest.TestCase):
-    # Load waveform data onec
+    # Load waveform data once
     sm_st = read()
     md_st, md_inv = load_townsend_example(Path().cwd())[:2]
     lg_st, lg_inv = load_seattle_example(Path().cwd())[:2]
+
+
     def setUp(self):
         self.ft = FoldTrace(self.md_st[0].copy())
         self.ds0 = DictStream()
@@ -169,6 +171,35 @@ class TestDictStream(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.ds0['BW.RJOB..EHZ'] = self.sm_ds['BW.RJOB.EHN']
 
+    def test_split_on(self):
+        # Iterate across all supported keys
+        for id_key in DictStream().supported_keys:
+            # Run split
+            split = self.md_ds.split_on(id_key=id_key)
+            # Assert split result type
+            self.assertIsInstance(split, dict)
+            # Assert that all keys are consistent 
+            checkset = {_ft.id_keys[id_key] for _ft in self.md_ds}
+            self.assertEqual(checkset, split.keys())
+            # Assert that the number of traces split equals the original number
+            total = sum([len(_v) for _v in split.values()])
+            self.assertEqual(total, len(self.md_ds))
+            # Check contents
+            for _k, _v in split.items():
+                # Assert type
+                self.assertIsInstance(_v, DictStream)
+                # Assert not-empty
+                self.assertGreater(len(_v), 0)
+                # Check individual traces
+                for _ft in _v:
+                    # Check type
+                    self.assertIsInstance(_ft, FoldTrace)
+                    # Check that key matches
+                    self.assertEqual(_ft.id_keys[id_key], _k)
+
+    ###################################
+    ## SET-LOGIC SEARCH METHOD TESTS ##
+    ###################################
 
     def test_match_inventory(self):
         with self.assertRaises(NotImplementedError):
@@ -226,18 +257,18 @@ class TestDictStream(unittest.TestCase):
             for _k2 in match_set2:
                 self.assertTrue(fnmatch.fnmatch(self.md_ds[_k2].id_keys[_k], _v))
 
-    def test_match_stats(self):
-        # Setup
-        lg_ds = DictStream(self.lg_st)
-        # Add non 1. valued calib
-        for _ft in lg_ds[::5]:
-            _ft.stats.calib = 2.
-        # Set individual 
-        test_vals = {'npts': 4001,'sampling_rate': 100., 'calib': 2., 'delta': 1./200.}
-        for _k, _v in test_vals:
-        npts_set = lg_ds._match_stats(npts=4001)
-        self.assertTrue(all(lg_ds[_k].stats.npts == 4001 for _k in npts_set))
-        for _k, _v in tes
+    # def test_match_stats(self):
+    #     # Setup
+    #     lg_ds = DictStream(self.lg_st)
+    #     # Add non 1. valued calib
+    #     for _ft in lg_ds[::5]:
+    #         _ft.stats.calib = 2.
+    #     # Set individual 
+    #     test_vals = {'npts': 4001,'sampling_rate': 100., 'calib': 2., 'delta': 1./200.}
+    #     for _k, _v in test_vals:
+    #     npts_set = lg_ds._match_stats(npts=4001)
+    #     self.assertTrue(all(lg_ds[_k].stats.npts == 4001 for _k in npts_set))
+    #     for _k, _v in tes
 
 
 

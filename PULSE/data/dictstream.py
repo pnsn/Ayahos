@@ -519,18 +519,20 @@ class DictStream(Stream):
             rstr += f'{_lf:} : {_trf.__repr__(id_length=id_length)}\n'
             rstr += f'[Use "print({type(self).__name__}.__repr__(extended=True))" to print all labels and FoldTraces]'
         return rstr
-    
 
-    #####################################################################
-    # SEARCH METHODS ####################################################
-    #####################################################################
+    ######################
+    ## SUB-VIEW METHODS ##
+    ######################
 
-    
-    def split(self, id_key='inst') -> dict:
+    def split_on(self, id_key='inst') -> dict:
         """Split this DictStream into a dictionary
-        of subset views based on one of the id_keys
+        of subset DictStreams based on one of the id_keys
         key names in the :class:`~PULSE.util.header.MLStats`
-        **id_keys** attribute.
+        **id_keys** attribute. 
+        
+        .. note::
+        FoldTrace objects in subset DictStreams are views of the original data.
+        Use :meth:`~.DictStream.copy` to create independent copies.
 
         Keys
         ----
@@ -556,49 +558,34 @@ class DictStream(Stream):
             used to split this DictStream, defaults to 'inst'
         :type id_key: str, optional
         :return: 
-         - **sets** (*dict*) -- dictionary of subset
+         - **output** (*dict*) -- dictionary of subset
             DictStream views keyed by unique **id_key**
             values from the originating DictStream
         """
-        try:
-            sets = self._split_subsets(id_key)
-        except KeyError:
-            raise
-        for _k, _v in sets.items():
-            sets.update({_k: self[_v]})
-        return sets
-
-    def _split_subsets(self, id_key: str) -> dict:
-        """
-        PRIVATE METHOD
-
-        Create a dictionary of **traces.keys()** (sub)sets
-        using a specifided id_key value
-
-        see :meth:`~.DictStream.split` documentation
-
-        :param id_key: id_key name
-        :type id_key: str
-        :raises KeyError: _description_
-        :return: _description_
-        :rtype: dict
-        """        
         if id_key not in self.supported_keys:
-            raise KeyError(f'id_key "{id_key}" not in supported_keys.')
+            raise KeyError(f'id_key {id_key} not supported. See DictStream().supported_keys')
         else:
-            sets = {}
+            output = {}
             for _ft in self:
-                id_key = _ft.id_keys[id_key]
-                if id_key not in sets.keys():
-                    sets.update({id_key: set([_ft.id_keys[self.key_attr]])})
-                else:
-                    sets[id_key].update([_ft.id_keys[self.key_attr]])
-        return sets
+                # Get trace key
+                _k = _ft.id_keys[id_key]
+                if _k not in output:
+                    output.update({_k: DictStream(key_attr=self.key_attr)})
+                output[_k].extend(_ft)
+        return output
+
+    #####################################################################
+    # SEARCH METHODS ####################################################
+    #####################################################################
+
+    
 
     def select(self, method='intersection', inverse=False, **kwargs):
         """Revised version of :meth:`~obspy.core.stream.Stream.select`
         that uses set logic to create a subset view of this
-        DictStream's contents. Accepted key-word arguments include:
+        DictStream's contents.
+        
+        Accepted key-word arguments include:
           - id (*str*)
           - nslc (*str*)
           - sncl (*str*)

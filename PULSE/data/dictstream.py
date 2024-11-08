@@ -577,14 +577,48 @@ class DictStream(Stream):
     #####################################################################
     # SEARCH METHODS ####################################################
     #####################################################################
-
-    
+    # def select(self, **kwargs):
+    #     # Compatability checks
+    #     for _k, _v in kwargs.items():
+    #         if _k in self.supported_keys:
+    #             if isinstance(_v, str):
+    #                 pass
+    #             else:
+    #                 raise TypeError(f'Type for {_k} is not supported. Must be type str')
+    #         elif _k in MLStats._types.keys():
+    #             if isinstance(_v, MLStats._types[_k]):
+    #                 pass
+    #             else:
+    #                 raise TypeError(f'Type for {_k} is not supported')
+    #         else:
+    #             raise KeyError(f'Unexpected key-word argument {_k}')
+        
 
     def select(self, method='intersection', inverse=False, **kwargs):
         """Revised version of :meth:`~obspy.core.stream.Stream.select`
-        that uses set logic to create a subset view of this
+        that uses set-logic to create a subset view of this
         DictStream's contents.
         
+        :param method: method for joining sets created by each
+            specified key-word argument (see below), defaults to 'intersection'
+            Supported:
+             - 'intersection': common traces to all search criteria
+                "inner join" in SQL parlance
+                accepted aliases: "&"
+             - 'symmetric_difference': unique traces across all search criteria
+                "exclusive full join" in SQL parlance
+                accepted aliases: "^"
+             - 'union': all traces 
+                "inclusive full join" in SQL parlance
+                accepted aliasees: "|"
+            all are methods of :class:`~set`
+        :type method: str, optional
+        :param inverse: should the inverse set of the final subset be returned?
+            Defaults to False
+        :type inverse: bool, optional
+        :param kwargs: key-word argument collector. The order of kwargs
+            dictates the order in which individual sets are joined
+
         Accepted key-word arguments include:
           - id (*str*)
           - nslc (*str*)
@@ -611,32 +645,13 @@ class DictStream(Stream):
         All *float* and *int* values are tolerant to mismatched
         numeric types
 
-        Uses a specified set-joining **method** to produce
-        subsets
-
-        :param method: set joining method, defaults to 'intersection'
-            Supported:
-             - 'intersection': common traces to all search criteria
-                "inner join" in SQL parlance
-                accepted aliases: "&"
-             - 'symmetric_difference': unique traces across all search criteria
-                "exclusive full join" in SQL parlance
-                accepted aliases: "^"
-             - 'union': all traces 
-                "inclusive full join" in SQL parlance
-                accepted aliasees: "|"
-            all are methods of :class:`~set`
-        :type method: str, optional
-        :param inverse: return the inverse set of the final subset?
-            Defaults to False.
-        :type inverse: bool, optional.
-        :return:
-         - **ds_view** (*PULSE.data.dictstream.DictStream*) -- 
-            subset view of this dictstream (or it's inverse)
+        :returns:
+         - **ds_view** (*PULSE.data.dictstream.DictStream**) - subset view
+            of this DictStream based on search parameters (or its inverse)
         """
         # Try to run subset
         try:      
-            match_set = self._match(method=method, **kwargs)
+            match_set = self._search(method=method, **kwargs)
         # Telegraph internal errors to this level.
         except: 
             raise
@@ -653,14 +668,13 @@ class DictStream(Stream):
         :param subset: subset to difference from the set of IDs in this DictStream
         :type subset: set
         :return:
-         - **keyset** (*set*) -- inverse set of FoldTrace ID keys
-        """        
-        if not isinstance(subset, set):
-            raise TypeError('subset must be type set')
-        keyset = set(self.traces.keys()).difference(subset)
-        return keyset
+         - **inverse_set** (*set*) -- inverse set of FoldTrace ID keys
+        """
+        subset = self._check_subset(subset)
+        inverse_set = set(self.get_keys()).difference(subset)
+        return inverse_set
     
-    def _match(self, method='intersection', **kwargs):
+    def _search(self, method='intersection', **kwargs):
         """
         PRIVATE METHOD
 
@@ -669,16 +683,16 @@ class DictStream(Stream):
 
         :param method: set joining method, defaults to 'intersection'
             Supported:
-             - 'intersection': common traces to all search criteria
+             - 'intersection': traces meet all criteria
                 "inner join" in SQL parlance
                 accepted aliases: "&"
-             - 'symmetric_difference': unique traces across all search criteria
-                "exclusive full join" in SQL parlance
-                accepted aliases: "^"
-             - 'union': all traces 
+             - 'union': all traces that meet any criteria
                 "inclusive full join" in SQL parlance
                 accepted aliasees: "|"
-            all are methods of :class:`~set`
+            In Development:
+            - 'difference': traces meet only one criterion
+                "exclusive full join" in SQL parlance
+                accepted aliases: "^"
         :type method: str, optional
         :param inverse: return the inverse set of the final subset?
             Defaults to False.
@@ -687,22 +701,27 @@ class DictStream(Stream):
          - **ds_view** (*PULSE.data.dictstream.DictStream*) -- 
             subset view of this dictstream (or it's inverse)
         """
+        inverse = False
         # Parse operator aliases
         if method == '&':
             method = 'intersection'
         elif method == '|':
             method = 'union'
-        elif method == '^':
-            method = 'symmetric_difference'
-        else:
+        elif method in ['^', 'difference']:
+            raise NotImplementedError('difference method in development')
+            # method = 'intersection'
+            # inverse = True
+        elif method in ['intersection','union']:
             pass
+        else:
+            raise ValueError(f'method "{method}" not supported.')
 
         # Handle null-search
         if len(kwargs) == 0:
             match_set = set(self.traces.keys())
             warnings.warn('No search parameters provided. Returning full set.')
         # Reducing methods
-        elif method.lower() in ['intersection','symmetric_difference']:
+        elif method.lower() == 'intersection':
             match_set = set(self.traces.keys())
             subset = match_set
         # Agglomorating method
@@ -719,23 +738,17 @@ class DictStream(Stream):
                 kwargs.pop(_k)
                 continue
             elif _k == 'inventory':
-                try:
-                    iset = self._match_inventory(_v, subset=subset)
-                except:
-                    raise
-            elif _k == 'id':
-                try:
-                    iset = self._match_id_keys(_k, _v, subset=subset)
-                except:
-                    raise
+                iset = self._match_inventory(_v, subset=subset)
+            elif _k in self.supported_keys:
+                iset = self._search_ids(_k, _v, subset=subset)
             elif _k in ['sampling_rate','npts','delta','calib']:
-                try:
-                    iset = self._match_stats(**{_k:_v, 'subset': subset})
-                except:
-                    raise
+                iset = self._match_stats(_k, _v, subset=subset)
             else:
                 raise SyntaxError(f'Unexpected key-word argument "{_k}".')
             match_set = getattr(match_set, method)(iset)
+
+        if inverse:
+            match_set = self._inverse_set(match_set)
 
         return match_set        
 
@@ -775,16 +788,41 @@ class DictStream(Stream):
     #         raise TypeError('id must be type str or NoneType')
     #     return match_set
     
-    def _match_stats(self, subset=None, **kwargs):
+    def _check_subset(self, subset=None):
+        """Run formatting/compatability checks on `subset`
+
+        :param subset: subset of keys in **traces**, defaults to None
+        :type subset: NoneType, set, list, tuple, dict_keys, optional
+        :raises TypeError: If subset type is non-conforming
+        :return:
+         - **subset** (*set*) -- formatted subset
+           if None is input, returns the set-type representation of
+           all keys in this DictStream's **traces** attribute
+        """        
+        if subset is None:
+            subset = set(self.get_keys())
+        elif isinstance(subset, (list, tuple, type(dict().keys()))):
+            subset = set(subset)
+        elif isinstance(subset, set):
+            pass
+        else:
+            raise TypeError('subset must be set-like')
+        return subset
+
+    def _match_stats(self, key, value, subset=None):
         """Search for the id's of FoldTraces in this DictStream that match
         the specified stats.attributes subset values
 
-        Supported kwargs:
-         - sampling_rate (*)
-         - npts
-         - calib
-         - delta
+        Supported keys:
+         - sampling_rate (*float*)
+         - npts (*int*)
+         - calib (*float*)
+         - delta (*float*)
 
+        :param key: attribute key to query
+        :type key: str
+        :param value: sought attribute value
+        :type key: int or float
         :param subset: subset list of **traces** keys to truncate
             the search, defaults to None
             None input starts search with all keys of the **traces**
@@ -792,36 +830,29 @@ class DictStream(Stream):
         :type subset: set or NoneType, optional.
         :return:
          - **match_set** (*set*) - set of matching keys from
-            DictStream.traces.
-        FIXME: Should this only allow for one kwarg at a time? If not
-        I need to implement a "method" argument
+            DictStream.traces
         """
-        if subset is None:
-            subset = set(self.traces.keys())
-        elif isinstance(subset, set):
-            pass
-        else:
-            raise TypeError('subset must be type set or NoneType') 
+        subset = self._check_subset(subset=subset)
+
         # Create output holder
         match_set = set()
         # Clear out NoneType kwargs
-        for _k, _v in kwargs.items():
-            if _v is None:
-                kwargs.pop(_k)
-            if _k not in ['npts','sampling_rate','calib','delta']:
-                raise KeyError(f'Unexpected kwarg "{_k}"')
-            elif _k == 'npts':
-                _v = int(_v)
+        if key not in ['npts','sampling_rate','calib','delta']:
+            raise KeyError(f'key {key} not supported.')
+        elif key == 'npts':
+            if isinstance(value, (int, float)):
+                value = int(value)
             else:
-                _v = float(_v)
-        
-        for id in subset:
-            _ft = self[id]
-            if all(_ft.stats[_k] == _v for _k, _v in kwargs.items()):
-                match_set.update(id)
+                raise ValueError('value for key "npts" must be int-like')
+        else:
+            if isinstance(value, (int, float)):
+                value = float(value)
+            else:
+                raise ValueError(f'value for key "{key}" must be float-like')
+        match_set = {_ft.id_keys[self.key_attr] for _ft in self[subset] if _ft.stats[key] == value}
         return match_set
     
-    def _match_id_keys(self, id_key, pat=None, subset=None):
+    def _search_ids(self, key, value, subset=None):
         """Search for matching id_key values to a 
         specified pattern using :meth:`~fnmatch.fnmatch`
 
@@ -837,54 +868,93 @@ class DictStream(Stream):
         :type subset: set or NoneType, optional
         :return: matched set of traces.keys value
         :rtype: set
-        """        
-        # Compatability check on key
-        if id_key not in self.supported_keys:
-            raise KeyError(f'{id_key} not included in FoldTrace.id_keys.')
-        
-        # Compatability check on pat
-        if not isinstance(pat, str):
-            raise TypeError('pat must be type str')
-        
-        # Compatability check on subset
+        """ 
+        if not isinstance(value, str):
+            raise ValueError('value must be type str')
+        if key not in self.supported_keys:
+            raise KeyError(f'key "{key}" not supported. See DictStream().supported_keys')
+        # If checking full set
         if subset is None:
-            subset = set(self.traces.keys())
-        elif isinstance(subset, set):
-            pass
+            # If running on key_attr, leverage get_keys() to get pre-existing set
+            if key == self.key_attr:
+                match_set = set(fnmatch.filter(self.get_keys(), value))
+            # Otherwise run iteration
+            else:
+                match_set = {_ft.id_keys[self.key_attr] for _ft in self if fnmatch.fnmatch(_ft.id_keys[key], value)}
         else:
-            raise TypeError('subset must be type set or NoneType')
+            subset = self._check_subset(subset)
+            if key == self.key_attr:
+                match_set = set(fnmatch.filter(self[subset].get_keys(), value))
+            else:
+                match_set = {_ft.id_keys[self.key_attr] for _ft in self[subset] if fnmatch.fnmatch(_ft.id_keys[key], value)}
+        return match_set    
+        
+        
+    
+    # def _match_id_keys(self, id_key, pat=None, subset=None):
+    #     """Search for matching id_key values to a 
+    #     specified pattern using :meth:`~fnmatch.fnmatch`
 
-        # if id_key matches the key_attr for this DictStream, 
-        # use faster fnmatch.filter method
-        if id_key == self.key_attr:
-            match_set = set(fnmatch.filter(self[subset].traces.keys(), pat))
-        # otherwise iterate over traces and find matches
-        # with the fnmatch.fnmatch method
-        else:
-            match_set = set()
-            for _k in subset:
-                if fnmatch.fnmatch(self[_k].id_keys[id_key], pat):
-                    match_set.update([_k])
+    #     Includes an option to subset
 
-        return match_set
+    #     :param id_key: id_key key to use for subset
+    #     :type id_key: str
+    #     :param pat: pattern to match id_key values to
+    #     :type pat: str
+    #     :param subset: subset of trace keys (DictStream.traces.keys)
+    #        to limit this subset to, defaults to None.
+    #        None uses the full set of traces.keys().
+    #     :type subset: set or NoneType, optional
+    #     :return: matched set of traces.keys value
+    #     :rtype: set
+    #     """        
+    #     # Compatability check on key
+    #     if id_key not in self.supported_keys:
+    #         raise KeyError(f'{id_key} not included in FoldTrace.id_keys.')
+        
+    #     # Compatability check on pat
+    #     if not isinstance(pat, str):
+    #         raise TypeError('pat must be type str')
+        
+    #     # Compatability check on subset
+    #     if subset is None:
+    #         subset = set(self.traces.keys())
+    #     elif isinstance(subset, set):
+    #         pass
+    #     else:
+    #         raise TypeError('subset must be type set or NoneType')
+
+    #     # if id_key matches the key_attr for this DictStream, 
+    #     # use faster fnmatch.filter method
+    #     if id_key == self.key_attr:
+    #         match_set = set(fnmatch.filter(self[subset].traces.keys(), pat))
+    #     # otherwise iterate over traces and find matches
+    #     # with the fnmatch.fnmatch method
+    #     else:
+    #         match_set = set()
+    #         for _k in subset:
+    #             if fnmatch.fnmatch(self[_k].id_keys[id_key], pat):
+    #                 match_set.update([_k])
+
+    #     return match_set
         
 
 
 
-        # id_key_dict = {_k: _ft.id_keys[key] for _k, _ft in self.traces.items()}
-        # for _id, _ft in self.traces.items():
-        #     if fnmatch.fnmatch(_ft.id_keys[key])
-        # for _id, _ft in self.traces.items():
-        #     if fnmatch.fnmatch(_ft.id_keys[key], value):
-        #         matches.update(_id)
+    #     # id_key_dict = {_k: _ft.id_keys[key] for _k, _ft in self.traces.items()}
+    #     # for _id, _ft in self.traces.items():
+    #     #     if fnmatch.fnmatch(_ft.id_keys[key])
+    #     # for _id, _ft in self.traces.items():
+    #     #     if fnmatch.fnmatch(_ft.id_keys[key], value):
+    #     #         matches.update(_id)
     
-    def _match_inventory(key_set, inv):
-        if not isinstance(inv, Inventory):
-            raise TypeError('inv must be type obspy.core.inventory.Inventory')
-        raise NotImplementedError('Work In Progress')
-        # if isinstance(inventory, Inventory):
-        #     contents = inventory.get_contents()
-        #     if len(contents['channels']) > 0:
+    # def _match_inventory(key_set, inv):
+    #     if not isinstance(inv, Inventory):
+    #         raise TypeError('inv must be type obspy.core.inventory.Inventory')
+    #     raise NotImplementedError('Work In Progress')
+    #     # if isinstance(inventory, Inventory):
+    #     #     contents = inventory.get_contents()
+    #     #     if len(contents['channels']) > 0:
 
 
 

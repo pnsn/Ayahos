@@ -252,9 +252,8 @@ class SeqMod(BaseMod):
         # else:
         try:
             self.sequence = Sequence(modules)
-        except (TypeError, SyntaxError, KeyError) as msg:
-            self.Logger.critical(f'Sequence: {msg}. Exiting')
-            sys.exit(os.EX_USAGE)
+        except (TypeError, SyntaxError, KeyError):
+            raise 
 
         # Overwrite output
         self.output = self.sequence.output
@@ -264,17 +263,14 @@ class SeqMod(BaseMod):
 
         # Additional compatability check for maxlen
         if maxlen is None:
-            self.Logger.warning('NoneType maxlen for SeqMod will result in all metadata being stored on RAM! Exiting')
-            sys.exit(os.EX_USAGE)
+            raise ValueError('NoneType maxlen for SeqMod will result in all metadata being stored on RAM!')
         elif isinstance(maxlen, (int, float)):
             if maxlen > 0:
                 self.stats.maxlen = float(maxlen)
             else:
-                self.Logger.critical('maxlen must be a positive value. Exiting.')
-                sys.exit(os.EX_DATAERR)
+                raise ValueError('maxlen must be a positive value')
         else:
-            self.Logger.critical('maxlen must be a positive float-like value. Exiting.')
-            sys.exit(os.EX_DATAERR)
+            raise TypeError('maxlen must be a positive float-like value. Exiting.')
 
         # Create dataframe holder for pulse metadata
         self.metadata = pd.DataFrame()
@@ -306,8 +302,7 @@ class SeqMod(BaseMod):
             after execution of **max_pulse_size** chained pulses.
         """        
         if len(self.sequence) == 0:
-            self.Logger.critical('Cannot run "pulse" with an empty SeqMod. Exiting')
-            sys.exit(os.EX_USAGE)
+            self.Logger.critical('Cannot run "pulse" with an empty SeqMod')
         else:
             super().pulse(input)
         return self.output

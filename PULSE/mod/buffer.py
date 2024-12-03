@@ -25,6 +25,9 @@ class BufferMod(BaseMod):
     waveform data and metadata into :class:`~PULSE.data.ftbuffer.FTBuffer` objects hosted
     in a :class:`~PULSE.data.dictstream.DictStream` object
 
+    Parameters
+    ----------
+    
     :param method: method to use for :meth:`~PULSE.data.ftbuffer.FTBuffer.__iadd__` calls used
         to add waveform data to existing :class:`~.FTBuffer` objects in this :class:`~.BufferMod`,
         defaults to 3.
@@ -66,7 +69,28 @@ class BufferMod(BaseMod):
             max_pulse_size=1000,
             name=None,
             **options):
+        """Initialize a :class:`~.BufferMod` object
 
+        :param method: method to use for :meth:`~PULSE.data.ftbuffer.FTBuffer.__iadd__` calls used
+            to add waveform data to existing :class:`~.FTBuffer` objects in this :class:`~.BufferMod`,
+            defaults to 3.
+            Supported methods:
+            0 - overlapping samples are masked and fold is set to 0 at these samples
+            2 - overlapping samples are filled with max value of overlap and fold is added at these samples
+            3 - overlapping samples are averaged and fold is added at these samples
+        :type method: int, optional
+        :param fill_value: fill value for true gaps (i.e., not masked values from method=0), defaults to None
+        :type fill_value: scalar, optional
+        :param maxlen: maximum length of FTBuffers in seconds, defaults to 300.
+            Must fall into the range :math:`$maxlen \in \left(0, 1200 \\right]$`
+        :type maxlen: float-like, optional
+        :param max_pulse_size: maximum number of iterations to run inside a call of :meth:`~.BufferMod.pulse`,
+            defaults to 1000
+        :type max_pulse_size: int, optional
+        :param name: optional name suffix to append to this BufferMod's **name** attribute, defaults to None
+        :type name: str or NoneType, optional
+        :param options: kwarg collector passed to the initialization of the :class:`~.DictStream` **output** attribute
+        """    
         super().__init__(max_pulse_size=max_pulse_size,
                          maxlen=maxlen,
                          name=name)

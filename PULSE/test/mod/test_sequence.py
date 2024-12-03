@@ -1,3 +1,12 @@
+"""
+:module: PULSE.test.mod.test_sequence
+:auth: Nathan T. Stevens
+:email: ntsteven (at) uw.edu
+:org: Pacific Northwest Seismic Network
+:license: AGPL-3.0
+:purpose: Unit Test :class:`~unittest.TestCase` for :class:`~PULSE.mod.sequence.Sequence`
+"""
+
 import pytest
 from collections import deque
 from unittest import TestCase
@@ -7,18 +16,24 @@ import pandas as pd
 from PULSE.mod.base import BaseMod
 from PULSE.mod.sequence import Sequence
 
-class TestSequence(TestCase):
 
+class TestSequence(TestCase):
+    """A :class:`~unittest.TestCase` for :class:`~.Sequence`
+    """    
     def setUp(self):
+        """Set up a sequence of BaseMod objects and another, slightly different
+        BaseMod with a name that matches one of the Mod objects in the sequence
+        """        
         self.test_input = [BaseMod(name='0'), BaseMod(name='1')]
         self.test_seq = Sequence(self.test_input)
         self.test_mod = BaseMod(name='0', max_pulse_size=2)
 
-
     def tearDown(self):
         del self.test_input
+        del self.test_seq
+        del self.test_mod
 
-    def test_init(self):
+    def test___init__(self):
         self.assertIsInstance(self.test_seq, dict)
         self.assertIsInstance(self.test_seq, Sequence)
 
@@ -62,9 +77,11 @@ class TestSequence(TestCase):
             seq1 = self.test_seq.copy()
             seq1.update(inpt)
         # Test errors
-        for module in [int , [1], {'BaseMod_1': BaseMod(name='0')}, {'BaseMod_0': 'abc'}]:
-            with pytest.raises(TypeError):
+        for module in [int , [1], {'BaseMod_0': 'abc'}]:
+            with self.assertRaises(TypeError):
                 seq1.update(module)
+        with self.assertRaises(KeyError):
+            seq1.update({'BaseMod_1': BaseMod(name='0')})
                 
     def test_validate(self):
         """Test the **validate** method of :class:`~.Sequence`

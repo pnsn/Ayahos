@@ -14,10 +14,10 @@ _________
    :undoc-members:
    :show-inheritance:
 
-mltracebuff
+ftbuffer
 ___________
 
-.. automodule:: PULSE.data.mltracebuff
+.. automodule:: PULSE.data.ftbuffer
    :members:
    :undoc-members:
    :show-inheritance:

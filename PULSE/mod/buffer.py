@@ -9,7 +9,7 @@
     object containing :class:`~PULSE.data.mltracebuff.MLTraceBuff` objects keyed to the Buffers' id attribute
 """
 import logging, sys, os, typing
-
+from collections import deque
 from obspy import Trace
 
 from PULSE.mod.base import BaseMod
@@ -21,9 +21,46 @@ from PULSE.data.dictstream import DictStream
 Logger = logging.getLogger(__name__)
 
 class BufferMod(BaseMod):
+    """PULSE :mod:`~PULSE.mod` module for buffering :class:`~obspy.core.trace.Trace` like
+    waveform data and metadata into :class:`~PULSE.data.ftbuffer.FTBuffer` objects hosted
+    in a :class:`~PULSE.data.dictstream.DictStream` object
+
+    :param method: method to use for :meth:`~PULSE.data.ftbuffer.FTBuffer.__iadd__` calls used
+        to add waveform data to existing :class:`~.FTBuffer` objects in this :class:`~.BufferMod`,
+        defaults to 3.
+        Supported methods:
+        0 - overlapping samples are masked and fold is set to 0 at these samples
+        2 - overlapping samples are filled with max value of overlap and fold is added at these samples
+        3 - overlapping samples are averaged and fold is added at these samples
+    :type method: int, optional
+    :param fill_value: fill value for true gaps (i.e., not masked values from method=0), defaults to None
+    :type fill_value: scalar, optional
+    :param maxlen: maximum length of FTBuffers in seconds, defaults to 300.
+        Must fall into the range :math:`$maxlen \in \left(0, 1200 \\right]$`
+    :type maxlen: float-like, optional
+    :param max_pulse_size: maximum number of iterations to run inside a call of :meth:`~.BufferMod.pulse`,
+        defaults to 1000
+    :type max_pulse_size: int, optional
+    :param name: optional name suffix to append to this BufferMod's **name** attribute, defaults to None
+    :type name: str or NoneType, optional
+    :param options: kwarg collector passed to the initialization of the :class:`~.DictStream` **output** attribute
+
+    Public Attributes
+    -----------------
+    :var output: :class:`~.DictStream` object hosting :class:`~.FTBuffer` objects
+    :var method: method for __add__ used in :meth:`~.FTBuffer.append` calls
+    :var fill_value: 
+    :var maxlen: maximum length in seconds for FTBuffer objects hosted in this BufferMod
+    :var max_pulse_size: maximum number of iterations per pulse
+
+    Private Attributes
+    ------------------
+    :var _input_types: List of accepted types for :meth:`~.BufferMod.input`
+
+    """    
     def __init__(
             self,
-            mode=3,
+            method=3,
             fill_value=None,
             maxlen=300.,
             max_pulse_size=1000,
@@ -34,40 +71,76 @@ class BufferMod(BaseMod):
                          maxlen=maxlen,
                          name=name)
         # Compatability checks for add_method
-        if mode in [0,2,3]:
-            self.mode = mode
+        if method in [0,2,3]:
+            self.method = method
         else:
-            self.Logger.critical(f'__add__ mode "{mode}" not supported. Supported values: 0, 2, 3')
-            sys.exit(os.EX_USAGE)
-        
+            raise ValueError(f'__iadd__ method "{method}" not supported. Supported values: 0, 2, 3')        
         # Added checks for maxlen
         if isinstance(maxlen, (int, float)):
             if not 1200 >= maxlen > 0:
-                self.Logger.critical(f'maxlen falls outside safe bounds for buffer lengths (0, 1200] sec. Exiting')
-                sys.exit(os.EX_USAGE)
+                raise ValueError(f'maxlen falls outside safe bounds for buffer lengths (0, 1200] sec')
             else:
                 self.stats.maxlen = float(maxlen)
         else:
-            self.Logger.critical(f'maxlen of type {type(maxlen)} not supported for buffer scaling. Exiting')
-            sys.exit(os.EX_USAGE)
+            raise TypeError(f'maxlen of type {type(maxlen)} not supported for buffer scaling')
         
         if isinstance(fill_value, (int, float, type(None))):
             self.fill_value = fill_value
         else:
-            self.Logger.critical(f'fill_value must be type int, float, or NoneType. Exiting')
-            sys.exit(os.EX_USAGE)
+            raise TypeError(f'fill_value must be type int, float, or NoneType')
 
         # Change output to DictStream
         self.output = DictStream(**options)
 
+
+    #############################
+    # Inherited `pulse` Methods #
+    #############################
         
+    def pulse(self, input: deque) -> DictStream:
+        """The **pulse** method for :class:`~.BufferMod` that
+        pops :class:`~obspy.core.trace.Trace`-like objects off a
+        :class:`~.deque` and appends them to :class:`~.FTBuffer` objects
+        hosted in the :class:`~.BufferMod`'s **output** attribute
+        (a :class:`~.DictStream` object).
+
+        POLYMORPHIC: Last updated with :class:`~.BufferMod`
+
+        :param input: collection of :class:`~obspy.core.trace.Trace`-like objects
+        :type input: deque
+        :return:
+         - **output** (*DictStream*) -- view of this BufferMod's **output** attribute
+        """
+        return super().pulse(input)
+
+    def check_input(self, input: deque) -> None:
+        super().check_input(input)
+    
+    def measure_input(self, input: deque) -> int:
+        return super().measure_input(input)
+    
+    def measure_output(self) -> int:       
+        return len(self.output)
+
+    def pulse_startup(self, input: deque) -> None:
+        super().pulse_startup(input)
+    
+    def pulse_shutdown(self, input: deque, niter: int, exit_type: str) -> None:
+        super().pulse_shutdown(input, niter, exit_type)
+    
+    def get_unit_input(self, input: deque) -> Trace:
+        return super().get_unit_input(input)
+
+    ##############################
+    ### Updated pulse Methods ####
+    ##############################
 
     def run_unit_process(self, unit_input: Trace) -> FoldTrace:
-        """Unit process for :class:`~.BuffMod` that ascertains
+        """Unit process for :class:`~.BufferMod` that ascertains
         if an input ObsPy Trace-like object corresponds to an
-        existing :class:`~PULSE.data.ftbuff.FTBuff` object in its
+        existing :class:`~PULSE.data.ftbuffer.FTBuffer` object in its
         **output** attribute, or if its ID is not present. If
-        the input Trace is a new ID, it is converted into a FTBuff
+        the input Trace is a new ID, it is converted into a FTBuffer
         object, where
 
         :param unit_input: waveform object
@@ -78,13 +151,16 @@ class BufferMod(BaseMod):
             - FoldTrace if it's **id** attribute is present in **output**
             - FTBuff if it's **id** attribute is not present in **output**
         :rtype: typing.Union[FoldTrace, FTBuff]
-        """        
+        """
+        # If not a FoldTrace
         if not isinstance(unit_input, FoldTrace):
+            # If is a Trace - convert ot FoldTrace & alias to unit_output
             if isinstance(unit_input, Trace):
                 unit_output = FoldTrace(unit_input)
+            # Otherwise raise critical
             else:
                 self.Logger.critical(f'unit_input of type "{type(unit_input)}" not supported. Must be ObsPy Trace-like.')
-                sys.exit(os.EX_DATAERR)
+        # If is a fold Trace, alias to unit_output
         else:
             unit_output = unit_input
         return unit_output
@@ -102,7 +178,6 @@ class BufferMod(BaseMod):
         """        
         if not isinstance(unit_output, FoldTrace):
             self.Logger.critical(f'unit_output must be type PULSE.data.foldtrace.FoldTrace')
-            sys.exit(os.EX_DATAERR)
         # Get the relevant id key value for the **output** DictStream object
         key = unit_output.id_keys[self.output.key_attr]
         # If trace ID already exists in output, pass unit_output to other
@@ -112,7 +187,8 @@ class BufferMod(BaseMod):
         # the unit_input and pass the FTBuffer object to other
         else:
             other = FTBuffer(bufflen=self.stats.maxlen,
-                             method=self.method)
+                             method=self.method,
+                             fill_value=self.fill_value)
             other.append(unit_output)
         
         # If other is a FTBuffer, use extend to add a new entry to DictStream
@@ -139,10 +215,10 @@ class BufferMod(BaseMod):
 
 #     .. rubric:: For SeisBench WaveformModel Prediction Buffering (Stacking)
 #     We recommend the following adjustments to the preset arguments:
-#         - pre_blinding -- set to similar values as your model's **_annotate_args['blinding']** value
-#         - add_method -- set to 2 ('max') or 3 ('avg') to match the corresponding value in your model's
+#         - pre_blinding -- set to similar values as your methodl's **_annotate_args['blinding']** value
+#         - add_method -- set to 2 ('max') or 3 ('avg') to match the corresponding value in your methodl's
 #             **_annotate_args['stacking'] value.
-#         - bufflen -- set to 3+ times the prediction window length (model.pred_sample/model.sampling_rate)
+#         - bufflen -- set to 3+ times the prediction window length (methodl.pred_sample/methodl.sampling_rate)
 #     E.g., For EQTransformer you might consider the following adjustments:
 #         - pre_blinding = (500,500)
 #         - add_method = 3
@@ -264,7 +340,7 @@ class BufferMod(BaseMod):
 #             demerits += 1
 
 #         if demerits != 0:
-#             self.Logger.critical(f'BufferMod.__init__ raised {demerits} errors. Exiting on EX_DATAERR ({os.EX_DATAERR})')
+#             self.Logger.critical(f'BufferMod.__init__ raised {demerits} errors on EX_DATAERR ({os.EX_DATAERR})')
 #             sys.exit(os.EX_DATAERR)
 #         else:
 #             self.Logger.debug(f'{self.__name__()} initalized successfully')

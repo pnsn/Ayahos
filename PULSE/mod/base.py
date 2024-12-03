@@ -244,8 +244,7 @@ class BaseMod(object):
             else:
                 self.stats.niter = niter
         else:
-            self.Logger.critical(f'exit_type "{exit_type}" not supported. Exiting')
-            # sys.exit(os.EX_DATAERR)
+            self.Logger.critical(f'exit_type "{exit_type}" not supported')
         self.stats.stop = exit_type
         self.stats.endtime = UTCDateTime.now()
 
@@ -269,8 +268,7 @@ class BaseMod(object):
 
         POLYMORPHIC: last update with :class:`~.BaseMod`
 
-        :return:
-            - **measure** (*int*) -- length of **output**
+        :returns: **measure** (*int*) -- length of **output**
         """  
         return len(self.output)
 
@@ -282,7 +280,7 @@ class BaseMod(object):
 
         :param input: collection of input objects
         :type input: deque
-        :return: **unit_input** (*object* or *NoneType*) -- 
+        :returns: **unit_input** (*object* or *NoneType*) -- 
             unit input object. Empty input returns None
         """        
         try:

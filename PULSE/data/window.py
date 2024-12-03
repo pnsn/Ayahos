@@ -29,19 +29,19 @@ from PULSE.util.header import WindowStats
 Logger = logging.getLogger(__name__)
 
 class Window(DictStream):
-    """A child-class of :class:`~PULSE.data.dictstream.DictStream` that uses trace component codes as
-    keys and is intended to faciliate processing of a collection of windowed traces from a single seismometer. 
+    """A child-class of :class:`~PULSE.data.dictstream.DictStream`
+    that uses trace component codes as keys and is intended to
+    faciliate processing of a collection of windowed traces from
+    a single seismometer. 
 
-    :param traces: list of MLTrace-like objects to insert at initialization
-    :type traces: list or PULSE.data.mltrace.MLTrace-like
-    :param primary_component: component code for the primary trace used in assessing data completeness, defaults to "Z".
-    :type primary_component: str, optional
-    :param header: non-default values to pass to the :class:`~PULSE.data.header.WindowStats` object on initialization, defaults to {}.
+    :param traces: list of FoldTrace-like objects to ingest at
+        initialization, defaults to [].
+    :type traces: :class:`~.FoldTrace` or iterable thereof, optional
+    :param header: Non-default arguments to pass to :class:`~.WindowStats`,
+        defaults to {}.
     :type header: dict, optional
-    
-    **options: collector for key-word arguments passed to :meth:`~PULSE.data.window.Window.__add__` in determining
+    **options: collector for key-word arguments passed to :meth:`~.Window.__add__` in determining
         how entries in `traces` with matching component codes are merged.
-        also see :meth:`~PULSE.data.dictstream.DictStream.__add__`
     """
     def __init__(self, traces=[], header={}, **options):
         """
@@ -61,30 +61,42 @@ class Window(DictStream):
         # Initialize & inherit from DictStream as an empty dictstream using 'comp' key attributes
         super().__init__()
         # Overwrite supported keys & set key-attr
-        self.supported_keys = ['comp']
-        self.key_attr = 'comp'
+        # self.supported_keys = ['comp']
+        self.key_attr = 'component'
         self.stats = WindowStats(header=header)
         
         # Add traces - safety checks for repeat components handled in extend()
         if len(traces) > 0:
             self.extend(traces, **options)
-            breakpoint()
             self.validate()
 
     def validate(self):
         # Make sure primary component is present
         if self.stats.get_primary_component() not in self.traces.keys():
-            raise ValueError('Primary component (pcomp) not present')
+            raise ValueError('Primary component is not present')
         # Make sure all traces are type FoldTrace
         if not all(isinstance(ft, FoldTrace) for ft in self):
             raise ValueError('Not all traces are type PULSE.data.foldtrace.FoldTrace')
         # Make sure all traces are from the same instrument
-        if not all(self.primary.id_keys['instrument'] == ft.id_keys['instrument'] for ft in self):
+        if not all(self.primary.id_keys['inst'] == ft.id_keys['inst'] for ft in self):
             raise ValueError('Not all traces are from the same instrument')
         # Make sure there are no more than 3 traces
         if len(self) > 3:
             raise ValueError(f'Contains {len(self)} traces - expected l.e. 3')
         
+    def get_primary(self):
+        pid = self.stats.primary_id
+        if isinstance(pid, str):
+            pcomp = pid[-1]
+            if pcomp in self.keys:
+                return self.traces[pcomp]
+            else:
+                return None
+        else:
+            return None
+        
+    primary = property(get_primary)
+
     def check_targets(self, comp):
         """Check a given FoldTrace in this :class:`~.Window` object
         meet the target values in **stats**
@@ -139,7 +151,7 @@ class Window(DictStream):
         ft = self[key]
 
         fvalid = ft.vf
-        if key == self.stats.primary:
+        if key == self.stats.primary_id:
             return fvalid >= self.stats.pthresh
         else:
             return fvalid >= self.stats.sthresh

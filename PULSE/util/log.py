@@ -1,9 +1,16 @@
 import logging, sys
 
 class CriticalExitHandler(logging.Handler):
+    def __init__(self, exit_code=1):
+        super().__init__()
+        if isinstance(exit_code, int):
+            self.exit_code = exit_code
+        else:
+            raise ValueError('exit_code must be type int')
+
     def emit(self, record):
         if record.levelno == logging.CRITICAL:
-            sys.exit(1)
+            sys.exit(self.exit_code)
 
 def rich_error_message(e):
     etype = type(e).__name__

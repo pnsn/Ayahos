@@ -93,22 +93,20 @@ class ProcMod(BaseMod):
         self.pclass = self.import_class(pclass)
         # pmethod compatability checks
         if pmethod not in [func for func in dir(self.pclass) if callable(getattr(self.pclass, func))]:
-            msg = f'AttributeError: pmethod "{pmethod}" is not defined in {self.pclass} properties or methods. '
-            self.Logger.critical(msg)
-            sys.exit(os.EX_USAGE)
+            msg = f'pmethod "{pmethod}" is not defined in {self.pclass} properties or methods. '
+            raise AttributeError(msg)
+            # self.Logger.critical(msg)
         else:
             self.pmethod = pmethod
         # pkwargs compatability checks
         if isinstance(pkwargs, dict):
             self.pkwargs = pkwargs
         else:
-            self.Logger.critical(f'TypeError: input "pkwargs" must be type dict. Exiting')
-            sys.exit(os.EX_USAGE)
+            raise TypeError(f'input "pkwargs" must be type dict. Exiting')
 
         # Compatability check for mode
         if mode not in ['inplace','output']:
-            self.Logger.critical(f'ValueError: input "mode = {mode}" not supported. Exiting.')
-            sys.exit(os.EX_USAGE)
+            raise ValueError(f'input "mode = {mode}" not supported. Exiting.')
         else:
             self.mode = mode
         if name is None:

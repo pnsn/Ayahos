@@ -47,27 +47,35 @@ class Sequence(dict):
     :var current_stats: pandas.DataFrame-formatted summary of the
             **stats** attributes of the modules in this sequence
     """    
-    def __init__(self, modules=[]) -> None:
+    def __init__(self, modules={}):
         """Initialize a :class:`~.Sequence` object
 
-        :param modules: PULSE Module or iterable group thereof, defaults to [].
+        :param modules: PULSE Module or iterable group thereof, defaults to {}.
             Supported iterables: list, set, tuple, dict
         :type modules: PULSE.mod.base.BaseMod or iterable, optional
+        :returns: **sequence** (*PULSE.mod.sequence.Sequence*) - sequence of BaseMod objects
         """        
         # Initialize as dictionary
         super().__init__()
         self.update(modules)
         self.validate()
     
+    
     def update(self, modules):
+        """Update this sequence with one or more :class:`~.BaseMod`-type objects
+        while preserving the order of the input **modules**
+
+        Note: :class:`~dict` type inputs must have keys matching the **name** attribute
+        of the the associated :class:`~.BaseMod` value.
+
+        :param modules: a single :class:`~.BaseMod` object or iterable collection thereof
+        :type modules: :class:`~.BaseMod` or list, dict, set, or tuple thereof
+        """        
+        # If modules is basemod
         if isinstance(modules, BaseMod):
             super().update({modules.name: modules})
-        elif isinstance(modules, (list, set, tuple)):
-            for _e, mod in enumerate(modules):
-                if not isinstance(mod, BaseMod):
-                    raise TypeError(f'Element {_e} in "modules" is not type PULSE.mod.base.BaseMod')
-                else:
-                    self.update({mod.name: mod})
+
+        # If modules is dict
         elif isinstance(modules, dict):
             for _k, _v in modules.items():
                 if isinstance(_v, BaseMod):
@@ -77,8 +85,23 @@ class Sequence(dict):
                         raise KeyError(f'Key "{_k}" does not match module name "{_v.name}"')
                 else:
                     raise TypeError(f'Item keyed to {_k} is not type PULSE.mod.base.BaseMod')
+                
+        # otherwise if modules is iterable
+        elif hasattr(modules, '__iter__'):
+            bad_elements = []
+            for _e, mod in enumerate(modules):
+                if not isinstance(mod, BaseMod):
+                    bad_elements.append(_e)
+
+                else:
+                    self.update({mod.name: mod})
+            if len(bad_elements) > 0:
+                # breakpoint()
+                raise TypeError(f'Element(s) {bad_elements} in "modules" is not type PULSE.mod.base.BaseMod')
+        
+        # Catch everything else
         else:
-            raise TypeError('Input "modules" must be type PULSE.mod.base.BaseMod or an iterable collection thereof')
+            raise TypeError('Input "modules" must be type PULSE.mod.base.BaseMod or an iterable thereof')
 
     def validate(self):
         """Determine if this is a valid sequence:
@@ -99,20 +122,19 @@ class Sequence(dict):
                     raise SyntaxError(msg)
                 
     def copy(self):
-        """Create a deep copy of this :class:`~.Sequence`
+        """Create a deep copy of this :class:`~.Sequence` object
 
-        :return: 
-            - **copy** (*PULSE.mod.sequence.Sequence*) - deep copy'd object
+        :return: **newmod** (*PULSE.mod.sequence.Sequence*) - deepcopy of this sequence
         """        
         return copy.deepcopy(self)
         
-    def get_current_stats(self):
+    def get_current_stats(self) -> pd.DataFrame:
         """Create a :class:`~pandas.DataFrame` object that
         summarizes the current :class:`~PULSE.util.header.PulseStats`
         contents for all modules in this sequence, in order.
 
-        :return: current status dataframe
-        :rtype: pandas.DataFrame
+        :returns: **df** (*pandas.DataFrame*) -- pulse stats summary
+            for the most recent pulse sequence triggered
         """        
         df = pd.DataFrame()
         for _v in self.values():
@@ -124,11 +146,10 @@ class Sequence(dict):
     
     current_stats = property(get_current_stats)
 
-    def get_first(self):
+    def get_first(self) -> BaseMod:
         """Return a view of the first module in this :class:`~.Sequence` object
 
-        :return:
-         - **first** (*PULSE.mod.base.BaseMod*) - first module in sequence
+        :returns: **first** (*PULSE.mod.base.BaseMod*) -- first module in sequence
         """ 
         return self[self.names[0]]
     
@@ -137,8 +158,7 @@ class Sequence(dict):
     def get_last(self):
         """Return a view of the last module in this :class:`~.Sequence` object
 
-        :return:
-         - **last** (*PULSE.mod.base.BaseMod*) - last module in sequence
+        :return: **last** (*PULSE.mod.base.BaseMod*) - last module in sequence
         """        
         return self[self.names[-1]]
     
@@ -147,14 +167,19 @@ class Sequence(dict):
     def get_names(self):
         """return a list-formatted set of module names
 
-        :return:
-         - **names** (*list*) - list of module names
+        :returns: **names** (*list*) - list of module names
         """        
         return list(self.keys())
     
     names = property(get_names)
 
-    def get_input_types(self):
+    def get_input_types(self) -> typing.Union[list, None]:
+        """Get the **_input_types** attribute for the first
+        element in this :class:`~.Sequence`
+
+        :returns: **_input_types** (*list* or **NoneType**) -- list of input type(s)
+            accepted by the first element in this Sequence
+        """        
         if len(self) > 0:
             return self.first._input_types
         else:
@@ -202,27 +227,33 @@ class SeqMod(BaseMod):
     the most recent *endtime* value minus a given line's *endtime* value. Lines with ages older
     thank meta_max_age are deleted.
 
-    :param modules: collection of modules that are executed in their provided order, defaults to {}
-    :type modules: :class:`~PULSE.mod.base.BaseMod`, or list / dict thereof, optional
-    :param meta_max_age: maximum relative age of metadata in seconds, defaults to 60.
-    :type meta_max_age: float-like, optional
-    :param max_pulse_size: maximum number of iterations to run the sequence of pulses, defaults to 1.
+    Parameters
+    ----------
+    :param modules: collection of :class:`~.BaseMod` objects, defaults to [BaseMod()].
+    :type modules: :class:`~.BaseMod` or iterable collection thereof, optional
+        also see: :meth:`~.Sequence.__init__`
+    :param maxlen: maximum relative age of metadata in seconds, defaults to 60.
+    :type maxlen: float-like, optional
+    :param max_pulse_size: maximum number of iterations to run the sequence
+        of pulses per call of this SeqMod's :meth:`~.SeqMod.pulse` method,
+        defaults to 1.
     :type max_pulse_size: int, optional
-    :param maxlen: maximum length of the **output** of this SequenceMod if it has an empty **sequence**, defaults to None
-    :type maxlen: None or int, optional
     :param name: string or integer to append to the end of this SequenceMod's __name__ attribute as "name", defaults to None
     :type name: None, int, str, optional.
 
-    :var sequence: An order-sensitive dictionary of :mod:`~PULSE.mod` class objects to run in sequence
-    :var output: If this SequenceMod is non-empty, this is an alias to the **output** of the last :mod:`~PULSE.mod` object
-        in **sequence**. If this SequenceMod is empty, this is a :class:`~collections.deque` inherited from :class:`~PULSE.mod.base.BaseMod`
-    :var metadata: This :class:`~pandas.dataframe.DataFrame` object holds metadata collected from the **stats** attribute
-        of each :mod:`~PULSE.mod` object in **sequence** when :meth:`~PULSE.mod.sequence.SequenceMod.pulse` is called.
-        If the SequenceMod is empty, then metadata are collected from the **SequenceMod.stats** attribute
+    Attributes
+    ----------
+    :var sequence: A :class:`~.Sequence` object hosting one or more :class:`~.BaseMod`-type
+        objects
+    :var output: A view of the **output** attribute of the last element in **sequence**
+    :var metadata: A :class:`~pandas.dataframe.DataFrame` object that holds metadata 
+        collected from the **stats** attribute of each :mod:`~PULSE.mod` object 
+        in **sequence** when :meth:`~PULSE.mod.sequence.SequenceMod.pulse` is called.
+    :var maxlen: Maximum relative age in seconds for entries in **metadata** based on
+        their *endtime* values
     :var names: A list-formatted, order-sensitive set of **sequence** keys.
-    :var Logger: the Logger instance for a given SequenceMod object, named with it's __name__ attribute
-    :var _nonempty: This flag denotes if the **SequenceMod.sequence** is non-empty (True) or empty (False)
-    :var _max_age: Maximum relative age in seconds for entries in **metadata** based on their *endtime* values
+    :var Logger: the Logger instance for a given SequenceMod object,
+        named with it's __name__ attribute
     """
 
     def __init__(
@@ -233,23 +264,21 @@ class SeqMod(BaseMod):
             name=None):
         """Create a :class:`~PULSE.mod.sequence.SequenceMod` object
 
-        :param sequence: collection of modules that are executed in their provided order, defaults to {}
-        :type sequence: PULSE.mod.base.BaseMod, or list / dict thereof, optional
-        :param meta_max_age: maximum relative age of metadata in seconds, defaults to 60.
-        :type meta_max_age: float-like, optional
-        :param max_pulse_size: maximum number of iterations to run the sequence of pulses, defaults to 1.
+        :param modules: collection of :class:`~.BaseMod` objects, defaults to [BaseMod()].
+        :type modules: :class:`~.BaseMod` or iterable collection thereof, optional
+            also see: :meth:`~.Sequence.__init__`
+        :param maxlen: maximum relative age of metadata in seconds, defaults to 60.
+        :type maxlen: float-like, optional
+        :param max_pulse_size: maximum number of iterations to run the sequence
+            of pulses per call of this SeqMod's :meth:`~.SeqMod.pulse` method,
+            defaults to 1.
         :type max_pulse_size: int, optional
-        :param maxlen: maximum length of the **output** of this SequenceMod if it has an empty **sequence**, defaults to None
-        :type maxlen: None or int, optional
         :param name: string or integer to append to the end of this SequenceMod's __name__ attribute as "name", defaults to None
         :type name: None, int, str, optional.
         """
-        # Inherit from BaseMod
+        # Inherit from BaseMod - maxlen=None because this will be inherited from sequence.last
         super().__init__(max_pulse_size=max_pulse_size, maxlen=None, name=name)
         # Initialize Sequence
-        # if isinstance(modules, Sequence):
-        #     self.sequence = modules
-        # else:
         try:
             self.sequence = Sequence(modules)
         except (TypeError, SyntaxError, KeyError):
@@ -261,16 +290,17 @@ class SeqMod(BaseMod):
         # Overwrite _input_types
         self._input_types = self.sequence._input_types
 
-        # Additional compatability check for maxlen
+        # check that maxlen is not None (unbounded)
         if maxlen is None:
             raise ValueError('NoneType maxlen for SeqMod will result in all metadata being stored on RAM!')
+        # If maxlen is float-like
         elif isinstance(maxlen, (int, float)):
-            if maxlen > 0:
+            if 1200 >= maxlen > 0:
                 self.stats.maxlen = float(maxlen)
-            else:
-                raise ValueError('maxlen must be a positive value')
+            else: 
+                raise ValueError('maxlen must be in (0, 1200] seconds')
         else:
-            raise TypeError('maxlen must be a positive float-like value. Exiting.')
+            raise TypeError('maxlen must be a positive float-like value.')
 
         # Create dataframe holder for pulse metadata
         self.metadata = pd.DataFrame()
@@ -297,8 +327,7 @@ class SeqMod(BaseMod):
         :param input: input object for the first module in this sequence
         :type input: object
         :raises AttributeError: If pulse is executed on an empty SeqMod
-        :return:
-         - **output** (*object*) -- output of the last module in this sequence
+        :returns: **output** (*object*) -- output of the last module in this sequence
             after execution of **max_pulse_size** chained pulses.
         """        
         if len(self.sequence) == 0:
@@ -306,9 +335,11 @@ class SeqMod(BaseMod):
         else:
             super().pulse(input)
         return self.output
-        
+    
+    ## POLYMORPHIC METHODS ##
+
     def check_input(self, input):
-        """Use the :meth:`~.check_input` method of the first
+        """Use the :meth:`~BaseMod.check_input` method of the first
         :class:`~PULSE.mod.base.BaseMod`-type object in this SeqMod's
         **sequence** to make sure the provided input to :meth:`~.SeqMod.pulse`
         conforms to that first module's _input_types.
@@ -347,19 +378,30 @@ class SeqMod(BaseMod):
     
     def get_unit_input(self, input: object) -> object:
         """Pass the input object provided to :meth:`~.SeqMod.pulse` to
-        the :meth:`~PULSE.mod.base.BaseMod.pulse` method of the first
+        the :meth:`~.BaseMod.pulse` method of the first :class:`~.BaseMod`
+        object in **sequence**
 
         POLYMORPHIC: last update with :class:`~.SeqMod`
         
-        :param intput: _description_
-        :type intput: object
-        :return: _description_
-        :rtype: object
+        :param input: input object
+        :type input: object
+        :returns: **unit_input** (*object*) -- view of input object
         """        
         unit_input = input
         return unit_input
     
     def run_unit_process(self, unit_input) -> list:
+        """Chain the pulse inputs/outputs of the :class:`~.BaseMod`-type objects
+        in **sequence** together and capture the summary statistics from
+        the specified pulse call
+
+        :param unit_input: input object to the first :class:`~.BaseMod` object's :meth:`~.BaseMod.pulse`
+            method
+        :type unit_input: object
+        :returns: **unit_output** (*pandas.DataFrame*) -- dataframe holding ordered
+            summary statistics from the most recent :meth:`~.BaseMod.pulse` call of
+            each :class:`~.BaseMod` object in **sequence**
+        """        
         for _e, mod in enumerate(self.sequence.values()):
             if _e == 0:
                 y = mod.pulse(unit_input)
@@ -368,15 +410,16 @@ class SeqMod(BaseMod):
         unit_output = self.sequence.current_stats
         return unit_output
 
-    def put_unit_output(self, unit_output):
+    def put_unit_output(self, unit_output) -> None:
         """Store the **current_stats** summary from a single
         sequence of pulses in the **metadata** attribute
         of this :class:`~.SeqMod` and flush out metadata
         that are older than **maxlen** seconds relative to
         the most curent endtime in **metadata**.
 
-        :param unit_output: _description_
-        :type unit_output: _type_
+        :param unit_output: dataframe containing statistics from the
+            most recen pulse sequence
+        :type unit_output: pandas.DataFrame
         """        
         # Concatenate 
         self.metadata = pd.concat([self.metadata, unit_output],

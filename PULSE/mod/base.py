@@ -73,7 +73,7 @@ class BaseMod(object):
         # Set up logging at the module object level
         self.Logger = logging.getLogger(f'{self.name}')
         # Add critical exit handler
-        self.Logger.addHandler(CriticalExitHandler())
+        self.Logger.addHandler(CriticalExitHandler(exit_code=1))
         # Flag input type
         self._input_types = [deque]
         # Initialize output
@@ -360,7 +360,7 @@ class BaseMod(object):
                                     niter=_n + 1,
                                     exit_type='early-put')
                 return self.output
-        # If iterations conclude, 
+        # If iterations conclude due to end of iterations
         self.pulse_shutdown(input,
                             niter=self.stats.mps,
                             exit_type='max')

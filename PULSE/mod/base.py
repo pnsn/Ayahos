@@ -16,7 +16,7 @@
     they were modified.
 
 """
-
+import typing
 from copy import deepcopy
 from collections import deque
 import logging, sys, os
@@ -73,7 +73,7 @@ class BaseMod(object):
         # Set up logging at the module object level
         self.Logger = logging.getLogger(f'{self.name}')
         # Add critical exit handler
-        self.Logger.addHandler(CriticalExitHandler(exit_code=1))
+        # self.Logger.addHandler(CriticalExitHandler(exit_code=1))
         # Flag input type
         self._input_types = [deque]
         # Initialize output
@@ -88,6 +88,10 @@ class BaseMod(object):
     def __repr__(self, full=False):
         """
         Return a string report essential user data for this BaseMod object
+        :param full: should the __str__ representation of **output** be returned?
+            defaults to `False`
+        :type full: bool, optional
+        :returns: **rstr** (*str*) -- representative string
         """
         rstr = self.stats.__str__()
         if full:
@@ -95,7 +99,8 @@ class BaseMod(object):
         return rstr
 
     def __str__(self):
-        """Return self.__class__ string for this BaseMod object"""
+        """Return self.__class__ string for this BaseMod object
+        :returns: **rstr** (*str*) -- representative string"""
         rstr = self.__class__ 
         return rstr
     
@@ -107,10 +112,15 @@ class BaseMod(object):
         
         Name must include the class name, or **name** will
         be appended to the class name as ClassName_name.
-        e.g., name = test --> BaseMod_test
 
-        name=None uses the class name (e.g., BaseMod)
-
+        .. rubric:: Example
+        >>> from PULSE.mod.base import BaseMod
+        >>> base = BaseMod(name=None)
+        >>> base.name
+        BaseMod
+        >>> base.setname(name='test')
+        >>> base.name
+        BaseMod_test
 
         :param name: Name of this module, defaults to None
         :type name: str or NoneType, optional.
@@ -124,10 +134,9 @@ class BaseMod(object):
                 self.stats.name = name
         else:
             raise TypeError('name must be type None or str')
-        
         self.name = self.stats.name
 
-    def copy(self, newname=False):
+    def copy(self, newname=None):
         """Return a deepcopy of this object with the 
         option to give it a new name using :meth:`~.BaseMod.setname`
         
@@ -135,11 +144,12 @@ class BaseMod(object):
             default is None
         :type newname: str, bool, or NoneType, optional
         
-        :returns:
-         - **newmod** (*same as self*) -- new copy of mod object
+        :returns: **newmod** (*same as self*) -- new copy of mod object
         """
         newmod = deepcopy(self)
-        if not newname:
+        if newname is None:
+            return newmod
+        elif not newname:
             return newmod
         else:
             newmod.setname(newname)
@@ -178,39 +188,23 @@ class BaseMod(object):
     ###################
     ## PULSE METHODS ##
     ###################
+            
+    ## UTILITY METHODS -- THESE DON'T CHANGE ACROSS MODs ##
     def check_input(self, input: deque) -> None:
+        """Check that **input** type matches a type in **_input_types**
+
+        UTILITY METHOD
+        """        
         # Conduct type-check on input
         if not any(isinstance(input, _t) for _t in self._input_types):
             self.Logger.critical(f'TypeError: input ({type(input)}) is not type collections.deque. Exiting')
 
-    def measure_input(self, input: deque) -> int:
-        """Measure the size of an input to the pulse method
-        for this :class:`~.BaseMod`-type object
-
-        POLYMORPHIC: last update with :class:`~.BaseMod`
-
-        :param input: input collection of unit inputs
-        :type input: collections.deque
-        :return:
-            - **measure** (*int*) -- length of **input**
-        """        
-        return len(input)
-    
-    def measure_output(self) -> int:
-        """Measure the size of the output attribute of
-        this :class:`~.BaseMod`-type object
-
-        POLYMORPHIC: last update with :class:`~.BaseMod`
-
-        :return:
-            - **measure** (*int*) -- length of **output**
-        """  
-        return len(self.output)
-
     def pulse_startup(self, input: deque) -> None:
         """Run startup checks and metadata capture
-         at the outset of a call of :meth:`~.pulse`
+        at the outset of a call of :meth:`~.pulse`
         
+        UTILITY METHOD
+
         :param input: collection of input objects
         :type input: deque
         """        
@@ -223,11 +217,13 @@ class BaseMod(object):
         """Run shutdown checks and metadata capture
         at the conclusion of a call of :meth:`~.BaseMod.pulse`
 
+        UTILITY METHOD
+
         :param input: collection of input objects
         :type input: deque
         :param niter: current iteration number (0-indexed)
         :type niter: int
-        :param exit_type: reason for conclusion
+        :param exit_type: human-readable reason pulse call shut down
         :type exit_type: str
             Supported exit_type values & meanings:
                 - 'nodata' -- pulse received a non-NoneType input with 0 length
@@ -253,20 +249,41 @@ class BaseMod(object):
         self.stats.stop = exit_type
         self.stats.endtime = UTCDateTime.now()
 
+    ## POLYMORPHIC METHODS -- THESE WILL CHANGE ACROSS MODs ##
 
-    def get_unit_input(self, input: deque) -> object:
-        """Extract a unit process input object from input
+    def measure_input(self, input: deque) -> int:
+        """Measure the size of an input to the pulse method
+        for this :class:`~.BaseMod`-type object
 
         POLYMORPHIC: last update with :class:`~.BaseMod`
 
-        Here,
-            pop an object off input
-            Early stopping if input is an empty deque
+        :param input: input collection of unit inputs
+        :type input: collections.deque
+        :returns: **measure** (*int*) -- length of **input**
+        """        
+        return len(input)
+    
+    def measure_output(self) -> int:
+        """Measure the size of the output attribute of
+        this :class:`~.BaseMod`-type object
+
+        POLYMORPHIC: last update with :class:`~.BaseMod`
+
+        :return:
+            - **measure** (*int*) -- length of **output**
+        """  
+        return len(self.output)
+
+    def get_unit_input(self, input: deque) -> typing.Union[object, type(None)]:
+        """:meth:`~collections.deque.pop` an object off
+        off **input** and pass as **unit_input**
+
+        POLYMORPHIC: last update with :class:`~.BaseMod`
 
         :param input: collection of input objects
         :type input: deque
-        :return:
-         - **unit_input** (*object* or *NoneType*) -- unit input object. Empty input returns None
+        :return: **unit_input** (*object* or *NoneType*) -- 
+            unit input object. Empty input returns None
         """        
         try:
             unit_output = input.pop()
@@ -291,8 +308,8 @@ class BaseMod(object):
 
         :param unit_input: unit input object
         :type unit_input: object
-        :return: 
-         - **unit_output** (*object*) -- the same object as unit_input
+        :returns: **unit_output** (*object*) -- 
+            the same object as unit_input
         """        
         unit_output = unit_input
         return unit_output
@@ -307,7 +324,7 @@ class BaseMod(object):
             appendleft unit_output to the **output** attribute
             No early stopping clauses
 
-        :param unit_output: _description_
+        :param unit_output: output object from :meth:`~.BaseMod.run_unit_process`
         :type unit_output: object
         """        
         self.output.appendleft(unit_output)
@@ -315,13 +332,13 @@ class BaseMod(object):
     #######################
     ## CORE PULSE METHOD ##
     #######################
-    def pulse(self, input):
+    def pulse(self, input: deque) -> deque:
         """Core method for
 
-        :param input: _description_
-        :type input: _type_
-        :return: _description_
-        :rtype: _type_
+        :param input: collection of objects
+        :type input: collections.deque
+        :returns: **output** (*deque*) -- view of this BaseMod's **output**
+            attribute
         """
         # Run initial check on input type/properties
         self.check_input(input)

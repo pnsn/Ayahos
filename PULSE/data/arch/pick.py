@@ -10,8 +10,8 @@
 import logging
 import numpy as np
 from obspy import UTCDateTime
-from PULSE.data.mltrace import MLTrace
-from PULSE.data.message import Logo
+from PULSE.data.arch.mltrace import MLTrace
+from PULSE.data.arch.message import Logo
 import seisbench.util.annotations as sua
 
 Logger = logging.getLogger(__name__)

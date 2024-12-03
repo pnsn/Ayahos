@@ -14,7 +14,7 @@ from PULSE.util.stats import estimate_moments, fit_normal_pdf_curve, estimate_qu
 import numpy as np
 from obspy import Trace, UTCDateTime
 from obspy.core.util.attribdict import AttribDict
-from PULSE.data.mltrace import MLTrace
+from PULSE.data.arch.mltrace import MLTrace
 from scipy.cluster.vq import *
 
 Logger = logging.getLogger(__name__)

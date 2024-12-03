@@ -1,15 +1,74 @@
+"""
+:module: PULSE.data.ftbuffer
+:auth: Nathan T. Stevens
+:email: ntsteven (at) uw.edu
+:org: Pacific Northwest Seismic Network
+:license: AGPL-3
+:purpose: 
+    This module contains the class definition of a FoldTrace buffer (FTBuffer)
+"""
+
 from obspy import UTCDateTime
 
 from PULSE.data.foldtrace import FoldTrace
 
 class FTBuffer(FoldTrace):
-    
+    """A :class:`~.FoldTrace` child-class for buffering :class:`~.FoldTrace`
+    objects with matching IDs that favors buffering new, incoming data.
+
+    Parameters
+    ----------
+    :param maxlen: maximum buffer length in seconds, defaults to 60.
+        value must be :math:$\in \left(0, 1200\\right]
+    :type maxlen: float, optional
+    :param method: in-place add method to use (:meth:`~.FoldTrace.__iadd__`), 
+        defaults to 3.
+        Supported:
+            0 - Overlapping samples are masked and fold is set to 0
+            2 - Overlapping samples are set to max values and fold is added
+            3 - Overlapping samples are averaged and fold is added
+    :type method: int, optional
+    :param fill_value: fill value for non-overlapping empty entries,
+        defaults to None
+    :type fill_value: scalar, optional
+    :param dtype: default data type to use for **data** and **fold**,
+        defaults to None.
+        also see :meth:`~.FoldTrace.__init__`
+    :type dtype: type, optional
+
+    Additional Attributes
+    ---------------------
+    :var maxlen: maximum buffer length in seconds
+    :var method: method to use for __iadd__ calls inside :meth:`~.FTBuffer.append`
+    :var fill_value: fill value for empty buffer samples. Also see :meth:`~.FoldTrace.trim`
+
+    """    
     def __init__(
             self,
             maxlen=60.,
             method=3,
             fill_value=None,
             dtype=None):
+        """Initialize a FoldTrace Buffer (FTBuffer) object
+
+        :param maxlen: maximum buffer length in seconds, defaults to 60.
+            value must be :math:$\in \left(0, 1200\\right]
+        :type maxlen: float, optional
+        :param method: in-place add method to use (:meth:`~.FoldTrace.__iadd__`), 
+            defaults to 3.
+            Supported:
+                0 - Overlapping samples are masked and fold is set to 0
+                2 - Overlapping samples are set to max values and fold is added
+                3 - Overlapping samples are averaged and fold is added
+        :type method: int, optional
+        :param fill_value: fill value for non-overlapping empty entries,
+            defaults to None
+        :type fill_value: scalar, optional
+        :param dtype: default data type to use for **data** and **fold**,
+            defaults to None.
+            also see :meth:`~.FoldTrace.__init__`
+        :type dtype: type, optional
+        """        
         super().__init__(dtype=dtype)
         if isinstance(maxlen, bool):
             raise TypeError('maxlen must be type int or float')
@@ -28,12 +87,7 @@ class FTBuffer(FoldTrace):
 
         self.fill_value = fill_value
     
-    def _internal_add_processing_info(self, info):
-        # Disable processing tracking for buffers
-        return
-
-
-    def append(self, other):
+    def append(self, other: FoldTrace):
         """Add waveform data and metadata to this FTBuffer object
         in a manner that always favors adding more recent data.
 
@@ -86,6 +140,35 @@ class FTBuffer(FoldTrace):
             except ValueError as msg:
                 raise ValueError(msg)
     
+    #####################
+    ## PRIVATE METHODS ##
+    #####################
+            
+    def _internal_add_processing_info(self, info):
+        # Disable processing tracking for buffers
+        return
+
+    def _shift(self, endtime: UTCDateTime):
+        """A reduced-options version of :meth:`~obspy.core.trace.Trace.trim`
+        specifically for :class:`~.FTBuffer` objects that passes the pre-set
+        `fill_value` as an argument and requires `pad=True` and `nearest_sample=True`
+
+        :param endtime: new endtime to use for this buffer, defaults to None
+        :type endtime: :class:`~obspy.UTCDateTime`, optional
+        """
+        if endtime is None:
+            return self
+        elif isinstance(endtime, UTCDateTime):
+            if endtime >= self.stats.endtime:
+                new_st = endtime - self.maxlen
+            else:
+                raise ValueError('Cannot rewind buffer: endtime < buffer endtime')
+        else:
+            raise TypeError('endtime must be type UTCDateTime')
+        FoldTrace.trim(self, starttime=new_st, endtime=endtime,
+                       pad=True, fill_value=self.fill_value,
+                       nearest_sample=True)
+        return self
 
     def _first_append(self, other: FoldTrace) -> None:
         """Private Method - handles initial appends / re-initialization
@@ -154,34 +237,15 @@ class FTBuffer(FoldTrace):
             other.trim(starttime=new_st, endtime=new_et,
                        pad=False, nearest_sample=False)
             # TODO: Check if this is sufficiently efficient.
-            self.shift(new_et)
+            self._shift(new_et)
             self.__iadd__(other, method=self.method)
 
-    def shift(self, endtime: UTCDateTime):
-        """A reduced-options version of :meth:`~obspy.core.trace.Trace.trim`
-        specifically for :class:`~.FTBuffer` objects that passes the pre-set
-        `fill_value` as an argument and requires `pad=True` and `nearest_sample=True`
 
-        :param starttime: _description_, defaults to None
-        :type starttime: _type_, optional
-        :param endtime: _description_, defaults to None
-        :type endtime: _type_, optional
-        """
-        if endtime is None:
-            return self
-        elif isinstance(endtime, UTCDateTime):
-            if endtime >= self.stats.endtime:
-                new_st = endtime - self.maxlen
-            else:
-                raise ValueError('Cannot rewind buffer: endtime < buffer endtime')
-        else:
-            raise TypeError('endtime must be type UTCDateTime')
-        FoldTrace.trim(self, starttime=new_st, endtime=endtime,
-                       pad=True, fill_value=self.fill_value,
-                       nearest_sample=True)
-        return self
         
 
+
+### TODO: Clean up extraneous code below
+### TODO: Check efficiency of 
 
 #         ## CASE 0) FAR FUTURE APPENDS
 #         if other.stats.endtime - self.maxlen > self.stats.endtime:

@@ -92,22 +92,25 @@ class BufferMod(BaseMod):
         :param options: kwarg collector passed to the initialization of the :class:`~.DictStream` **output** attribute
         """    
         super().__init__(max_pulse_size=max_pulse_size,
-                         maxlen=maxlen,
+                         maxlen=None,
                          name=name)
         # Compatability checks for add_method
         if method in [0,2,3]:
             self.method = method
         else:
             raise ValueError(f'__iadd__ method "{method}" not supported. Supported values: 0, 2, 3')        
-        # Added checks for maxlen
+        
+        # Compatability checks for maxlen
         if isinstance(maxlen, (int, float)):
             if not 1200 >= maxlen > 0:
                 raise ValueError(f'maxlen falls outside safe bounds for buffer lengths (0, 1200] sec')
             else:
                 self.stats.maxlen = float(maxlen)
+                self.maxlen = float(maxlen)
         else:
             raise TypeError(f'maxlen of type {type(maxlen)} not supported for buffer scaling')
         
+        # Compatability checks for fill_value
         if isinstance(fill_value, (int, float, type(None))):
             self.fill_value = fill_value
         else:
@@ -184,6 +187,7 @@ class BufferMod(BaseMod):
             # Otherwise raise critical
             else:
                 self.Logger.critical(f'unit_input of type "{type(unit_input)}" not supported. Must be ObsPy Trace-like.')
+                unit_output = None
         # If is a fold Trace, alias to unit_output
         else:
             unit_output = unit_input
@@ -201,26 +205,24 @@ class BufferMod(BaseMod):
         :type unit_output: PULSE.data.foldtrace.FoldTrace
         """        
         if not isinstance(unit_output, FoldTrace):
-            self.Logger.critical(f'unit_output must be type PULSE.data.foldtrace.FoldTrace')
-        # Get the relevant id key value for the **output** DictStream object
-        key = unit_output.id_keys[self.output.key_attr]
-        # If trace ID already exists in output, pass unit_output to other
-        if key in self.output.keys():
-            other = unit_output
-        # If trace ID does not exist in output, initialize a FTBuffer using
-        # the unit_input and pass the FTBuffer object to other
+            self.Logger.critical(f'unit_output must be type PULSE.data.foldtrace.FoldTrace, not {type(unit_output)}')
+            return
         else:
-            other = FTBuffer(bufflen=self.stats.maxlen,
-                             method=self.method,
-                             fill_value=self.fill_value)
-            other.append(unit_output)
-        
-        # If other is a FTBuffer, use extend to add a new entry to DictStream
-        if isinstance(other, FTBuffer):
-            self.output.extend(other)
-        # If other is just a FoldTrace, use append to add
-        elif isinstance(other, FoldTrace):
-            self.output.append(other)
+            # Get the relevant id key value for the **output** DictStream object
+            key = unit_output.id_keys[self.output.key_attr]
+            # If trace ID already exists in output, pass unit_output to other
+            if key not in self.output.keys:
+                # Initialize FTBuffer
+                other = FTBuffer(maxlen=self.stats.maxlen,
+                                method=self.method,
+                                fill_value=self.fill_value)
+                # Populate with unit_output
+                other.append(unit_output)
+                # Append buffer to output
+                self.output.extend(other)
+            # If other is just a FoldTrace, use append to add
+            else:
+                self.output.extend(unit_output)
         
 
         

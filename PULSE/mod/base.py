@@ -19,10 +19,10 @@
 import typing
 from copy import deepcopy
 from collections import deque
-import logging, sys, os
+import logging
 from obspy.core.utcdatetime import UTCDateTime
 from PULSE.util.header import ModStats
-from PULSE.util.log import CriticalExitHandler, rich_error_message
+from PULSE.util.log import rich_error_message
 
 # Logger at module level
 Logger = logging.getLogger(__name__)
@@ -274,7 +274,7 @@ class BaseMod(object):
         """  
         return len(self.output)
 
-    def get_unit_input(self, input: deque) -> typing.Union[object, type(None)]:
+    def get_unit_input(self, input: deque) -> typing.Union[object, None]:
         """:meth:`~collections.deque.pop` an object off
         off **input** and pass as **unit_input**
 

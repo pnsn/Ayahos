@@ -449,6 +449,17 @@ class WindowStats(AttribDict):
                 ids.append('.'.join(parts))
             return ids
     
+    def __str__(self):
+        prioritized_keys = ['primary_id','pthresh',
+                            'secondary_components','sthresh',
+                            'target_starttime','target_endtime',
+                            'target_sampling_rate',
+                            'target_npts']
+        return self._pretty_str(priorized_keys=prioritized_keys)
+
+    def _repr_pretty_(self, p, cycle):
+        p.text(str(self))
+
     # def get_endtime(self):
     #     return self.target_starttime + self.target_npts/self.target_sampling_rate
     

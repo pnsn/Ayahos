@@ -652,7 +652,7 @@ class FoldTrace(Trace):
             endtime = self.stats.endtime
         target_npts = (endtime - starttime)*self.stats.sampling_rate + 1
         view =  self.view(starttime=starttime, endtime=endtime)
-        valid_npts = view.data[view.fold > threshold]
+        valid_npts = len(view.data[view.fold > threshold])
         return valid_npts/target_npts
     
     vf = property(get_valid_fraction)

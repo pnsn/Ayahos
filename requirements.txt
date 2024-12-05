@@ -4,6 +4,7 @@ numpy
 obspy
 pandas
 ipython
+torch
 sphinx=7.4.7
 sphinx-rtd-theme=2.0.0
 sphinxcontrib-bibtex=2.6.3

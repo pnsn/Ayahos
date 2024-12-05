@@ -15,7 +15,7 @@ classifiers = [
     "Development Status :: 3 - Alpha"
 ]
 dependencies = [
-    "torch<2.3",
+    "torch",
     "seisbench",
     "cython",
     "numpy<2",

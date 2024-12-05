@@ -21,6 +21,7 @@ primary channels (e.g., Z and pressure on an OBS).
 import logging, os, sys, warnings, typing
 import numpy as np
 import pandas as pd
+from torch import Tensor
 import seisbench.models as sbm
 from obspy import Trace, Stream
 from PULSE.data.dictstream import DictStream
@@ -139,37 +140,126 @@ class Window(DictStream):
             self._validate()
 
     ### SUMMATIVE METHODS ###
+            
     def preprocess(self, rule=1, threshold_tolerance=1e-3, fold_threshold=0, **options):
         for comp in self.keys:
             self.preprocess_component(comp, **options)
         self.fill_missing_traces(rule=rule,
                                  tolerance=threshold_tolerance,
                                  threshold=fold_threshold)
+
+    def preprocess_check(self, components=None):
+        """Conduct the following checks on the contents of a preprocessed
+        :class:`~.Window` object:
+
+        1) All required components are present
+        2) All components meet target_ values in **stats**
+        3) All components' data are non-masked
         
 
-    def to_tensor(self, component_axis=0, fill_value=0., reorder=False):
-        # Make sure all targets are met
-        if not all(self._check_targets(comp) is None for comp in self.keys):
-            raise ValueError('One or more components do not meet targets')
-        
-        # Get order, allowing for alternative user-specified order
-        if isinstance(reorder, str):
-            order = reorder
+        :param components: components to check, defaults to None
+            None: use primary component + secondary components in **stats**
+            str: use specified components, case sensitive
+        :type components: None or str, optional
+        :return: **order** (*str*) -- verified component order
+        """      
+        # QC component order
+        if isinstance(components, str):
+            if not all(_c in self.keys for _c in components):
+                raise KeyError('Not all specified components are present in this window')
+            else:
+                order = components
         else:
             order = self.stats.get_primary_component() + self.stats.secondary_components
+            if not all(_c in self.keys for _c in order):
+                raise ValueError('Not all components in stats are present in traces')
         
-        # Make sure all components required are present
-        if not all(_e in self.keys for _e in order):
-            raise KeyError(f'One or more components are missing from expected order: {order}')
-        
-        if component_axis == 0:
-            shp = (len(order), self.stats.target_npts)
-        else:
-            shp = (self.stats.target_npts, len(order))
+        for _c in order:
+            # Check if specified components meet all target requirements
+            result = self._check_targets(_c)
+            if result is not None:
+                raise ValueError(f'component "{_c}" does not meet the following targets: {result}')
+            # Check that specified components are not masked (can still be masked arrays)        
+            if np.ma.is_masked(self[_c].data):
+                raise AttributeError(f'component "{_c}" is masked')
+            
+        return order
 
-        npy_tensor = np.full(shape=shp, fill_value=fill_value)
+    def to_npy_tensor(self, component_axis=0, components=None):
+        """Convert the pre-processed contents of this :class:`~.Window` into a
+        numpy array that meets the scaling specifications for a SeisBench
+        WaveformModel input. This method holds off on converting the tensor
+        into a :class:`~torch.Tensor` to allow 
+
+        :param component_axis: axis indexing components, defaults to 0
+            This varies with SeisBench model architecture, i.e., 
+            EQTransformer uses component_axis=0
+            PhaseNet uses component_axis=1
+        :type component_axis: int, optional
+        :param components: specified component order, defaults to None
+            None results in primary component + secondary components
+        :type components: None or str, optional
+        :param output_type: 
+        :return: _description_
+        :rtype: _type_
+        """        
+        order = self.preprocess_check(components=components)
+        
+        # Form tensor with appropriate dimensions
+        shp = (len(order), self.stats.target_npts)
+        tensor = np.full(shape=shp, fill_value=0.)
+
+        # Fill in Tensor
+        for _e, _c in enumerate(order):
+            # Catch case where data attribute is still a masked array with no masking
+            if isinstance(self[_c].data, np.ma.MaskedArray):
+                tensor[_e, :] = self[_c].data.data
+            else:
+                tensor[_e, :] = self[_c].data
+
+        # If components are axis 1 (columns) transpose
+        if component_axis == 1:
+            tensor = tensor.T
+        return tensor
+
+    def bundle_metadata(self, components=None):
+        """Returns an integer-keyed dictionary containing
+        views of the specified components' **stats**
+
+        Note that the **stats** objects are views of the
+        objects in this :class:`~.Window` and they should
+        be deepcopy'd before manipulating
+
+        :param components: list of component codes to bundle,
+            defaults to None
+            None - uses primary component + secondary components
+        :type components: None or str, optional
+        :return: **metadata** (*dict*) -- dictionary of metadata
+        """
+        # Run checks and get order
+        order = self.preprocess_check(components=components)
+        # Bundle metadata
+        metadata = {_e: self[_c].stats for _e, _c in enumerate(order)}
+        return metadata
     
+    def collapse_fold(self, components=None):
+        """Sum the fold vectors of all (or specified) components
+        in this :class:`~.Window`
 
+        :param components: string of component codes to include
+            in the fold collapse, defaults to None
+            None -> uses primary component + secondary components
+        :type components: bool, optional
+        :return: **summed_fold** (*numpy.ndarray*) -- summed fold vector
+        """ 
+        # Run checks and get order     
+        order = self.preporcess_check(components=components)
+        # Initialize new summed_fold vector
+        summed_fold = np.full(shape=(self.stats.target_npts,), fill_value=0.)
+        # Iterate across desired components and sum fold
+        for _c in order:
+            summed_fold += self[_c].fold
+        return summed_fold
 
     ### COMPONENT-LEVEL METHODS ###
     def preprocess_component(

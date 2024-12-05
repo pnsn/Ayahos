@@ -197,7 +197,7 @@ class BaseMod(object):
         """        
         # Conduct type-check on input
         if not any(isinstance(input, _t) for _t in self._input_types):
-            self.Logger.critical(f'TypeError: input ({type(input)}) is not type collections.deque. Exiting')
+            raise TypeError(f'input type "{type(input)})" is not in {self._input_types}')
 
     def pulse_startup(self, input: deque) -> None:
         """Run startup checks and metadata capture

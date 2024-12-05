@@ -49,32 +49,33 @@ class WindMod(BaseMod):
                 if all(len(_e) == 1 for _e in primary_components):
                     self.primary_components = [_e.upper() for _e in primary_components]
                 else:
-                    self.Logger.critical('ValueError: all elements in primary_components must be single-character strings')
+                    raise ValueError(f'all elements in primary_components must be single-character strings')
             else:
-                self.Logger.critical('TypeError: all elements in primary_components must be type str')
+                raise TypeError(f'all elements in primary_components must be type str')
         else:
-            self.Logger.critical('TypeError: primary_components must be type list')
+            raise TypeError('primary_components must be type set')
+        
         # Compatability Check for secondary_components
         if isinstance(secondary_components, set):
             if all(isinstance(_e, str) for _e in secondary_components):
                 if all(len(_e) == 2 for _e in secondary_components):
                     self.secondary_components = [_e.upper() for _e in secondary_components]
                 else:
-                    self.Logger.critical('ValueError: all elements in secondary_components must be two-character strings')
+                    raise ValueError('all elements in secondary_components must be two-character strings')
             else:
-                self.Logger.critical('TypeError: all elements in secondary_components must be type str')
+                raise TypeError('all elements in secondary_components must be type str')
         else:
-            self.Logger.critical('TypeError: secondary_components must be type list')
+            raise TypeError('secondary_components must be type list')
         
         # Compatability check for window_stats
         approved_presets = set(['target_sampling_rate','target_npts','pthresh','sthresh'])
         # Use WindowStats __setattr__ to thoroughly QC window_stats
         try:
             if not window_stats.keys() <= approved_presets:
-                msg = f'KeyError: window_stats may only contain keys in: {approved_presets}'
-                self.Logger.critical(msg)
-        except AttributeError as msg:
-            self.Logger.critical(rich_error_message(msg))
+                msg = f'window_stats may only contain keys in: {approved_presets}'
+                raise KeyError(msg)
+        except AttributeError:
+            raise
         try:
             self.window_stats = WindowStats(header = window_stats)
         except (KeyError, ValueError, TypeError) as e:
@@ -84,13 +85,13 @@ class WindMod(BaseMod):
         if isinstance(eager, bool):
             self._eager = eager
         else:
-            self.Logger.critical('TypeError: eager must be type bool')
+            raise TypeError('eager must be type bool')
         
         # Compatability check for overlap
         if not isinstance(overlap, (int, float)):
-            self.Logger.critical('TypeError: overlap must be type int')
+            raise TypeError('overlap must be type int')
         elif not 0 <= int(overlap) <= self.window_stats.target_npts:
-            self.Logger.critical(f'ValueError: overlap must be in [0, {self.window_stats.target_npts}]')
+            raise ValueError(f'overlap must be in [0, {self.window_stats.target_npts}]')
         else:
             self.overlap = int(overlap)
         # Calculate derived values

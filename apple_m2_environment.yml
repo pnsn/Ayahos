@@ -1,0 +1,12 @@
+name: pulse_apple
+channels:
+ - defaults
+ - apple
+ - pytorch
+dependencies:
+ - pip
+ - git
+ - pytorch
+ - torchvision
+ - pip:
+    - seisbench

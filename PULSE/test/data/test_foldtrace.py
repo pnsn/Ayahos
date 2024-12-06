@@ -478,13 +478,13 @@ class TestFoldTrace(TestTrace):
     ## VIEW-BASED METHOD TESTS ##
     #############################
     def test_view(self):
-        ft = FoldTrace(data=np.arange(10))
+        ft = FoldTrace(data=np.arange(10), header={'sampling_rate': 2.})
         # Test None inputs
         view = ft.view()
         assert ft == view
         # Test starttime within source time domain
         view = ft.view(starttime = ft.stats.starttime + 2)
-        assert view.count() == 8
+        assert view.count() == 6
         assert view.stats.starttime == ft.stats.starttime + 2
         assert view.stats.endtime == ft.stats.endtime
         # Test starttime at start
@@ -495,7 +495,7 @@ class TestFoldTrace(TestTrace):
         assert ft == view
         # Test specified endtime within domain
         view = ft.view(endtime = ft.stats.endtime - 1)
-        assert view.count() == 9
+        assert view.count() == 8
         assert view.stats.starttime == ft.stats.starttime
         assert view.stats.endtime == ft.stats.endtime - 1
         # Test endtime at end
@@ -507,19 +507,20 @@ class TestFoldTrace(TestTrace):
         # Specify both start and endtime
         view = ft.view(starttime = ft.stats.starttime + 2,
                            endtime = ft.stats.endtime - 2)
-        assert view.count() == 6
+        assert view.count() == 2
         assert view.stats.starttime == ft.stats.starttime + 2
         assert view.stats.endtime == ft.stats.endtime - 2
         assert all(view.data == ft.copy().trim(starttime = view.stats.starttime,
                                            endtime = view.stats.endtime))
         # Assert that modifying data in view modifies source data
         ft_bu = ft.copy()
+        view = ft.view()
         view.data[0] += 1
-        assert view.data[0] == ft_bu.data[2] + 1
-        assert view.data[0] == ft.data[2]
+        assert view.data[0] == ft_bu.data[0] + 1
+        assert view.data[0] == ft.data[0]
         view.fold[0] += 1
-        assert view.fold[0] == ft_bu.fold[2] + 1
-        assert view.fold[0] == ft.fold[2]
+        assert view.fold[0] == ft_bu.fold[0] + 1
+        assert view.fold[0] == ft.fold[0]
 
     #################################
     ## DATA MODIFYING METHOD TESTS ##

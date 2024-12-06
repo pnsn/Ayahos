@@ -639,7 +639,7 @@ class FoldTrace(Trace):
         # ff = self.stats.utc2nearest_index(endtime, ref='endtime') + 1
         header = self.stats.copy()
         if ii is not None:
-            header.starttime += ii*self.stats.sampling_rate
+            header.starttime += ii/self.stats.sampling_rate
         ftr = FoldTrace(header=header)
         ftr.data = self.data[ii:ff]
         ftr.fold = self.fold[ii:ff]
@@ -755,6 +755,7 @@ class FoldTrace(Trace):
         Trace._ltrim(self, starttime, pad=pad,
                      nearest_sample=nearest_sample,
                      fill_value=None)
+                     
         npts_new = self.stats.npts
         # For shortened vectors
         if npts_old > npts_new:

@@ -218,7 +218,7 @@ class SBMMod(BaseMod):
             # Compose numpy tensor entry
             unit_input['data'][_e, :, :] = window.to_npy_tensor(components=order)
             # Compose collapsed fold entry
-            unit_input['fold'][_e, :, :] = window.collapse_fold(components=order)
+            unit_input['fold'][_e, :] = window.collapse_fold(components=order)
             # Appendleft metadata to mdq
             unit_input['meta'].append(window.primary.stats.copy())
 
@@ -288,7 +288,9 @@ class SBMMod(BaseMod):
 
         :param unit_output: dictionary containing
          - 'data' - input waveform data presented to the ML model
-         - 'meta' - metadata from the primary c
+         - 'meta' - metadata from the primary component of the source window
+         - 'fold' - collapsed fold for each waveform window
+         - 'pred' - predictions (sub-dictionary)
         :type unit_output: dict
         """        
         meta = unit_output['meta']
@@ -307,7 +309,7 @@ class SBMMod(BaseMod):
                     _pred = _p[_wn, _l, :]
                     # Update copy of metadata
                     __meta = _meta.copy()
-                    __meta.channel = __meta.channel[:-1] + _label
+                    __meta.channel = __meta.channel[:-1] + _label[0].upper()
                     __meta.model = self.model.name
                     __meta.weight = _weight
                     # Compose FoldTrace

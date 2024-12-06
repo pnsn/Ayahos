@@ -264,11 +264,14 @@ class TestFoldTrace(TestTrace):
         assert len(tr) == 1800
         assert tr[0] == 0
         assert tr[799] == 799
+        # give options on what masking value is applied
         if _e in [0,1]:
             assert tr[800].mask
             assert tr[999].mask
+            # Default masking for integer dtypes
             if _e == 0:
                 tr.data.fill_value = 999999
+            # Prescribed masking value (must be integer in this test)
             elif _e == 1:
                 tr.data.fill_value == 0
         elif _e == 2:
@@ -619,7 +622,9 @@ class TestFoldTrace(TestTrace):
         ft2 = ft.copy()._ltrim(start - 2, pad=True)
         assert ft2.count() == 103
         assert all(ft2.data[2:] == ft.data)
-        assert np.ma.is_masked(ft2.data)
+        assert not np.ma.is_masked(ft2.data)
+        # NOTE: This 999999 value is the default fill_value for integer dtypes
+        assert all(ft2.data[:2]==999999)
         assert all(ft2.fold[:2] == 0)
         assert all(ft2.fold[2:52] == 1)
         assert all(ft2.fold[52:] == 2)
@@ -628,6 +633,12 @@ class TestFoldTrace(TestTrace):
         assert not np.ma.is_masked(ft2.data)
         assert all(ft2.data[:2] == 80)
         assert all(ft2.data[2:] == ft.data)
+        # Padding trim without apply_fill
+        ft2 = ft.copy()._ltrim(start - 2, pad=True, fill_value=80, apply_fill=False)
+        assert np.ma.is_masked(ft2.data)
+        assert ft2.data.fill_value == 80
+        assert all(ft2.data.mask[:2])
+        assert not any(ft2.data.mask[2:])
 
     def test_rtrim(self):
         # Setup
@@ -653,7 +664,8 @@ class TestFoldTrace(TestTrace):
         tr2 = tr.copy()._rtrim(end + 2, pad=True)
         assert tr2.count() == 103
         assert all(tr2.data[:-2] == tr.data)
-        assert np.ma.is_masked(tr2.data)
+        assert not np.ma.is_masked(tr2.data)
+        assert all(tr2.data[-2:] == 999999)
         assert all(tr2.fold[-2:] == 0)
         assert all(tr2.fold[:50] == 1)
         assert all(tr2.fold[50:-2] == 2)
@@ -662,6 +674,13 @@ class TestFoldTrace(TestTrace):
         assert not np.ma.is_masked(tr2.data)
         assert all(tr2.data[-2:] == 80)
         assert all(tr2.data[:-2] == tr.data)    
+        # Padding trim without apply_fill
+        tr2= tr.copy()._rtrim(end + 2, pad=True, fill_value=80, apply_fill=False)
+        assert np.ma.is_masked(tr2.data)
+        assert tr2.data.fill_value == 80
+        assert all(tr2.data.mask[-2:])
+        assert not any(tr2.data.mask[:-2])
+
 
     def test_trim(self):
         tr = FoldTrace(data=np.arange(101))
@@ -700,7 +719,9 @@ class TestFoldTrace(TestTrace):
         tr2 = tr.copy().trim(starttime = start - 2,
                              endtime = end + 3,
                              pad=True)
-        assert np.ma.is_masked(tr2.data)
+        assert not np.ma.is_masked(tr2.data)
+        assert all(tr2.data[:2] == 999999)
+        assert all(tr2.data[-3:] == 999999)
         assert tr2.count() == 101+5
         # combined call with padding and fill_value
         tr2 = tr.copy().trim(starttime = start - 2,
@@ -715,19 +736,57 @@ class TestFoldTrace(TestTrace):
         assert all(tr2.fold[:2] == 0)
         assert all(tr2.fold[-2:] == 0)
         assert all(tr2.fold[2:-3] == tr.fold)
+        # Padding without apply_fill
+        tr2 = tr.copy().trim(starttime = start - 2,
+                             endtime = end + 3,
+                             pad=True,
+                             fill_value = 0.,
+                             apply_fill=False)
+        assert np.ma.is_masked(tr2.data)
+        assert tr2.data.fill_value == 0.
 
-    def test_trim_fill_value_float(self):
-        ft = FoldTrace(read()[0])
-        for fv in [-999, None, 0., 1.]:
+    def test_trim_on_masked(self):
+        tr = read()[0]
+        tr.data = np.ma.MaskedArray(
+            data = tr.data,
+            mask = [False]*tr.count(),
+            fill_value=-999.
+        )
+        tr.data.mask[1000:1500] = True
+        ft = FoldTrace(tr)
+        # Make sure masking -> 0 fold is enforced
+        assert all(ft.fold[1000:1500] == 0)
+        for fv in [0., 0, None, 999]:
+            # applying fill values
             ft2 = ft.copy().trim(
-                starttime = ft.stats.starttime-5,
+                endtime = tr.stats.endtime + 10,
+                fill_value = fv,
+                pad=True)
+            # not applying fill values
+            ft3 = ft.copy().trim(
+                endtime = tr.stats.endtime + 10,
                 pad=True,
-                fill_value=fv)
-            assert isinstance(ft2, FoldTrace)
-            if fv is None:
-                assert np.ma.is_masked(ft2.data)
+                fill_value = fv,
+                apply_fill = False
+            )
+            # Assert that ft2 is not masked
+            assert not np.ma.is_masked(ft2.data)
+            # Assert that ft3 is masked
+            assert np.ma.is_masked(ft3.data)
+            # Assert that both foldtraces have the same fold vectors
+            np.testing.assert_array_equal(ft2.fold, ft3.fold)
+            # Assert that the fill values in ft2 match the fill_value for ft3
+            if fv is not None:
+                assert ft3.data.fill_value == fv
             else:
-                assert ft2.data[0] == fv
+                # NOTE: This value is the default fill_value for floating dtypes
+                assert ft3.data.fill_value == 1e20
+            assert all(ft2.data[ft3.data.mask] == ft3.data.fill_value)
+
+            
+           
+
+
 
     def test_split(self):
         # Setup

@@ -9,11 +9,12 @@
 """
 import copy, warnings
 import numpy as np
+from obspy.core.utcdatetime import UTCDateTime
 from obspy.core.trace import Trace, Stats
 from obspy.core.stream import Stream
 from PULSE.util.header import MLStats
 
-# FIXME: Track down processing metadata bleed
+# FIXME: Track down processing metadata bleed - has to do with copy/deepcopy of MLStats
 
 class FoldTrace(Trace):
     """A :class:`~obspy.core.trace.Trace` child class that adds:
@@ -728,7 +729,7 @@ class FoldTrace(Trace):
             self._rtrim(teo, nearest_sample=nearest_sample, **options)
         return self
     
-    def _ltrim(self, starttime, pad=False, nearest_sample=True, fill_value=None):
+    def _ltrim(self, starttime, pad=False, nearest_sample=True, fill_value=None, apply_fill=True):
         """Updated :meth:`~obspy.core.trace._ltrim` method that also trims/pads the
         left end of the **fold** attribute for this FoldTrace object. Padding values
         for **fold** are always set to 0.
@@ -743,10 +744,17 @@ class FoldTrace(Trace):
         :param fill_value: what fill value should be applied to padding **data**
             samples, defaults to None
         :type fill_value: scalar, optional
+        :param apply_fill: should the fill_value be applied (i.e., fill masked values)?
+            Defaults to `True`. This default value emulates its parent class method's behavior
+        :type apply_fill: bool, optional
+
         """        
         npts_old = self.stats.npts
-        # Trim Data
-        Trace._ltrim(self, starttime, pad=pad, nearest_sample=nearest_sample, fill_value=fill_value)
+
+        # Trim Data with masking for padding samples
+        Trace._ltrim(self, starttime, pad=pad,
+                     nearest_sample=nearest_sample,
+                     fill_value=None)
         npts_new = self.stats.npts
         # For shortened vectors
         if npts_old > npts_new:
@@ -760,10 +768,23 @@ class FoldTrace(Trace):
             self.fold = new_fold
         else:
             pass
+
+        # Bugfix for uniform fill_value application on gappy data
+        if np.ma.is_masked(self.data):
+            if fill_value is None:
+                pass
+            elif fill_value != self.data.fill_value:
+                self.data.fill_value = fill_value
+        
+        # Add option for if fill should be applied
+        if apply_fill:
+            if isinstance(self.data, np.ma.MaskedArray):
+                self.data = self.data.filled()
+
         self.verify()
         return self
     
-    def _rtrim(self, endtime, pad=False, nearest_sample=True, fill_value=None):
+    def _rtrim(self, endtime, pad=False, nearest_sample=True, fill_value=None, apply_fill=True):
         """Updated :meth:`~obspy.core.trace._rtrim` method that also trims/pads the
         right end of the **fold** attribute for this FoldTrace object. Padding values
         for **fold** are always set to 0.
@@ -778,9 +799,18 @@ class FoldTrace(Trace):
         :param fill_value: what fill value should be applied to padding **data**
             samples, defaults to None
         :type fill_value: scalar, optional
+        :param apply_fill: should the fill_value be applied (i.e., fill masked values)?
+            Defaults to `True`. This default value emulates its parent class method's behavior
+        :type apply_fill: bool, optional
+
         """  
         npts_old = self.stats.npts
-        Trace._rtrim(self, endtime, pad=pad, nearest_sample=nearest_sample, fill_value=fill_value)
+
+        # Trim with masking for padding samples
+        Trace._rtrim(self, endtime, pad=pad,
+                     nearest_sample=nearest_sample,
+                     fill_value=None)
+        
         npts_new = self.stats.npts
         if npts_old > npts_new:
             self.fold = self.fold[:npts_new]
@@ -790,15 +820,30 @@ class FoldTrace(Trace):
             self.fold = new_fold
         else:
             pass
+
+        # Bugfix for uniform fill_value application on gappy data
+        if np.ma.is_masked(self.data):
+            if fill_value is None:
+                pass
+            elif fill_value != self.data.fill_value:
+                self.data.fill_value = fill_value
+        
+        # Add option for if fill should be applied
+        if apply_fill:
+            if isinstance(self.data, np.ma.MaskedArray):
+                self.data = self.data.filled()
+
         self.verify()
         return self
     
     # PUBLIC UPDATED METHODS #
-    def trim(self, starttime=None, endtime=None, pad=False, nearest_sample=True, fill_value=None):
+    def trim(self, starttime=None, endtime=None, pad=False, nearest_sample=True, fill_value=None, apply_fill=True):
         """Trim/pad this FoldTrace to the specified starting and/or ending times
         with the option to pad and fill **data** values. Wraps updated methods:
         :meth:`~obspy.core.trace.Trace._ltrim` -> :meth:`~PULSE.data.foldtrace.FoldTrace._ltrim`
         :meth:`~obspy.core.trace.Trace._rtrim` -> :meth:`~PULSE.data.foldtrace.FoldTrace._rtrim`
+
+
 
         :param starttime: new starting time, defaults to None
             None uses current starttime of this FoldTrace
@@ -810,16 +855,46 @@ class FoldTrace(Trace):
         :param nearest_sample: should nearest sample inclusion be used? Defaults to True
             also see :meth:`~obspy.core.trace.Trace.trim` documentation
         :type nearest_sample: bool, optional
-        :param fill_value: padding fill value, defaults to None
+        :param fill_value:  fill value to assign to masked/padding values, defaults to None
         :type fill_value: scalar, optional
-        """        
-        super().trim(starttime=starttime,
-                     endtime=endtime,
-                     pad=pad,
-                     nearest_sample=nearest_sample,
-                     fill_value=fill_value)
+        :param apply_fill: should the fill_value be applied (i.e., fill masked values)?
+            Defaults to `True`. This behavior matches behavoirs of its parent class method
+        :type apply_fill: bool, optional
+        """
+        if isinstance(starttime, UTCDateTime):
+            if isinstance(endtime, UTCDateTime):
+                if starttime > endtime:
+                    raise ValueError('starttime is larger than endtime')
+        if starttime:
+            self._ltrim(starttime, pad=pad, nearest_sample=nearest_sample,
+                        fill_value=fill_value, apply_fill=apply_fill)
+        if endtime:
+            self._rtrim(endtime, pad=pad, nearest_sample=nearest_sample,
+                        fill_value=fill_value, apply_fill=apply_fill)
+
         self.verify()
         return self
+        
+
+
+        # # Trim with masking for gaps/padding
+        # super().trim(starttime=starttime,
+        #              endtime=endtime,
+        #              pad=pad,
+        #              nearest_sample=nearest_sample,
+        #              fill_value=None)
+        # # Bugfix for uniform fill_value application on gappy data
+        # if np.ma.is_masked(self.data):
+        #     if fill_value is None:
+        #         pass
+        #     elif fill_value != self.data.fill_value:
+        #         self.data.fill_value = fill_value
+        
+        # # Add option for if fill should be applied
+        # if apply_fill:
+        #     if isinstance(self.data, np.ma.MaskedArray):
+        #         self.data = self.data.filled()
+
     
     def split(self, ascopy=True):
         """Split this FoldTrace into an :class:`~obspy.core.stream.Stream` object

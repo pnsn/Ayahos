@@ -1,7 +1,7 @@
 import unittest, fnmatch
 from pathlib import Path
 from random import sample
-
+import numpy as np
 from obspy import Stream, read, Trace, UTCDateTime
 
 from PULSE.util.header import MLStats
@@ -439,9 +439,84 @@ class TestDictStream(unittest.TestCase):
         # Test padding
         ts = min([_ft.stats.starttime for _ft in self.md_ds])
         te = max([_ft.stats.endtime for _ft in self.md_ds])
+        # No padding
         ds_np = self.md_ds.copy().trim(starttime=ts, endtime=te)
+        # With padding and default fill value
         ds_p = self.md_ds.copy().trim(starttime=ts, endtime=te, pad=True)
+        # With padding and fill_value
+        ds_pf = self.md_ds.copy().trim(starttime=ts, endtime=te, pad=True, fill_value=0)
+        # With padding, fill_value, and non-application
+        ds_pfm = self.md_ds.copy().trim(starttime=ts, endtime=te, pad=True, fill_value=0, apply_fill=False)
+        # breakpoint()
+        # Iterate across all traces
+        for _id in self.md_ds.keys:
+            # Assert that the non-padded data and fold match the source (we should only be padding here, not triming)
+            np.testing.assert_array_equal(ds_np[_id].data, self.md_ds[_id].data)
+            np.testing.assert_array_equal(ds_np[_id].fold, self.md_ds[_id].fold)
+            # Assert that all metadata except processing remains the same for non-padded
+            for _k, _v in ds_np[_id].stats.items():
+                if _k != 'processing':
+                    self.assertEqual(_v, self.md_ds[_id].stats[_k])
+
+            # Assert that the padded + filled fold and non-padding samples match source
+            mask = ds_pfm[_id].data.mask
+            # Assert that the data for the non-filled set is masked
+            self.assertTrue(np.ma.is_masked(ds_pfm[_id].data))
+            # Assert that the fill_value for the mask is 0
+            self.assertEqual(ds_pfm[_id].data.fill_value, 0)
+
+            # Assert that non-masked values are identical in filled 
+            np.testing.assert_array_equal(ds_p[_id].data[~mask], ds_pf[_id].data[~mask])
+            # Assert that masked values in the two filled examples are all different values
+            self.assertFalse(any(ds_p[_id].data[mask]==ds_pf[_id].data[mask]))
+            # Assert that the masked, filled values match the fill_value provided
+            if isinstance(ds_p[_id].data[0], float):
+                self.assertTrue(all(ds_p[_id].data[mask] == 1e20))
+            elif isinstance(ds_p[_id].data[0], int):
+                self.assertTrue(all(ds_p[_id].data[mask] == 999999))             
+            self.assertTrue(all(ds_pf[_id].data[mask] == 0))
+
+
+            # Assert that padded has different starttime
+            self.assertEqual(ds_p[_id].stats.starttime, ts)
+            self.assertEqual(ds_p[_id].stats.endtime, te)
+            # Assert that padded does not have masked values
+            self.assertFalse(np.ma.is_masked(ds_p[_id].data))
+            # Assert that specified masked padded
+            self.assertFalse(np.ma.is_masked(ds_pf[_id].data))
+            # Assert that non-applied fill is masked
+            self.assertTrue(np.ma.is_masked(ds_pfm[_id].data))
+            # Assert that fold for masked values are 0-ed out
+            self.assertTrue(all(_e==0 for _e in ds_p[_id].fold[mask]))    
+            self.assertTrue(all(_e==0 for _e in ds_pf[_id].fold[mask]))    
+            self.assertTrue(all(_e==0 for _e in ds_pfm[_id].fold[mask]))    
+
+
+    def test_view(self):
+        ds = self.md_ds.copy()
+        view = ds.view()
+        # Assert view is the same as the original for default arguments
+        self.assertEqual(view, ds)
+        # narrowed starttime
+        ts = ds[0].stats.starttime + 1
+        view = ds.view(starttime=ts)
+        for _id in view.keys:
+            # Assert view starttime for "trimmed" traces is within 1 sample of the specified starttime
+            if ds[_id].stats.starttime < ts:
+                breakpoint()
+                self.assertAlmostEqual(view[_id].stats.starttime, ts, delta=ds[_id].stats.delta)
+            else:
+                self.assertEqual(view[_id].stats.starttime, ds[_id].stats.starttime)
+
         
+        # for _k, _v in view.stats.items():
+        #     if _k != 'starttime':
+        #         self.assertEqual(_v, ft.stats.starttime)
+        # breakpoint()
+        # np.testing.assert_array_equal(view.data, ft.data[100:])
+
+
+# TODO: view tests, normalize tests
 
         # # Scale the number of keys
         # for nkeys in range(2, len(search_keys)):

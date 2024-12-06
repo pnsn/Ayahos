@@ -962,7 +962,7 @@ class DictStream(Stream):
 
     def trim(self, starttime=None, endtime=None, pad=False,
              fill_value=None, nearest_sample=True,
-             keep_empty_traces=True):
+             keep_empty_traces=True, apply_fill=True):
         """Trim the :class:`~PULSE.data.foldtrace.FoldTrace` objects in this
         :class:`~.DictStream` using a uniform set of inputs for
         :meth:`~PULSE.data.foldtrace.FoldTrace.trim`
@@ -976,7 +976,7 @@ class DictStream(Stream):
         :type endtime: obspy.core.utcdatetime.UTCDateTime, optional
         :param pad: option to allow padding, defaults to False
         :type pad: bool, optional
-        :param fill_value: fill value to assign to padded values, defaults to None
+        :param fill_value: fill value to assign to masked/padding values, defaults to None
         :type fill_value: scalar, optional
         :param nearest_sample: should trimming go to the nearest sample (True) or 
             strictly samples within specified starttime and endtime bounds (False)?
@@ -984,13 +984,16 @@ class DictStream(Stream):
         :type nearest_sample: bool, optional
         :param keep_empty_traces: should empty traces be kept? Defaults to True
         :type keep_empty_traces: bool, optional
+        :param apply_fill: should masked values be filled with fill_value? Defaults to True
+        :type apply_fill: bool, optional
         """        
         for _id, _ft in self.traces.items():
             _ft.trim(starttime=starttime,
                      endtime=endtime,
                      pad=pad,
                      fill_value=fill_value,
-                     nearest_sample=nearest_sample)
+                     nearest_sample=nearest_sample,
+                     apply_fill=apply_fill)
             if _ft.count() > 0:
                 self[_id] = _ft
             elif keep_empty_traces:
@@ -1060,8 +1063,8 @@ class DictStream(Stream):
     
 
 
-    def filter(self, *args, **kwargs):
-        Stream.filter(self, *args, **kwargs)
+    # def filter(self, *args, **kwargs):
+    #     Stream.filter(self, *args, **kwargs)
 
     
     

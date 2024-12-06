@@ -284,6 +284,9 @@ class SBMMod(BaseMod):
         the predictions (and metadata) arising from an input
         :class:`~.Window` object
 
+        Converts data/meta/fold/pred dictionary output from
+        run_unit_process into DictStream objects 
+
         POLYMORPHIC: last updated with :class:`~.SBMMod`
 
         :param unit_output: dictionary containing

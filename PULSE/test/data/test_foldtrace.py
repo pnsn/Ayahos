@@ -468,7 +468,7 @@ class TestFoldTrace(TestTrace):
         tr.verify()
         tr = FoldTrace(data=np.array([1]))
         tr.verify()
-        tr = FoldTrace(load_townsend_example()[0])
+        tr = FoldTrace(load_townsend_example()[0][0])
         tr.verify()
 
     #############################
@@ -715,6 +715,19 @@ class TestFoldTrace(TestTrace):
         assert all(tr2.fold[:2] == 0)
         assert all(tr2.fold[-2:] == 0)
         assert all(tr2.fold[2:-3] == tr.fold)
+
+    def test_trim_fill_value_float(self):
+        ft = FoldTrace(read()[0])
+        for fv in [-999, None, 0., 1.]:
+            ft2 = ft.copy().trim(
+                starttime = ft.stats.starttime-5,
+                pad=True,
+                fill_value=fv)
+            assert isinstance(ft2, FoldTrace)
+            if fv is None:
+                assert np.ma.is_masked(ft2.data)
+            else:
+                assert ft2.data[0] == fv
 
     def test_split(self):
         # Setup

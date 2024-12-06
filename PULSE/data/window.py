@@ -177,7 +177,7 @@ class Window(DictStream):
         for _c in order:
             # Check if specified components meet all target requirements
             result = self._check_targets(_c)
-            if result is not None:
+            if result != set():
                 raise ValueError(f'component "{_c}" does not meet the following targets: {result}')
             # Check that specified components are not masked (can still be masked arrays)        
             if np.ma.is_masked(self[_c].data):
@@ -253,7 +253,7 @@ class Window(DictStream):
         :return: **summed_fold** (*numpy.ndarray*) -- summed fold vector
         """ 
         # Run checks and get order     
-        order = self.preporcess_check(components=components)
+        order = self.preprocess_check(components=components)
         # Initialize new summed_fold vector
         summed_fold = np.full(shape=(self.stats.target_npts,), fill_value=0.)
         # Iterate across desired components and sum fold

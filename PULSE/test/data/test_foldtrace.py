@@ -1124,7 +1124,7 @@ class TestFoldTrace(TestTrace):
         tr = read()[0]
         ft = FoldTrace(tr.copy())
         # Test string norm inputs
-        for _nrm in ['max','minmax','peak','std','standard']:
+        for _nrm in ['max','minmax','peak','std','standard','sigma']:
             if _nrm in ['max','minmax','peak']:
                 tr2 = tr.copy().normalize(norm=None)
             else:

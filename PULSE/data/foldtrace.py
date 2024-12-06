@@ -618,6 +618,8 @@ class FoldTrace(Trace):
         # if no specified starttime, use initial starttime
         if starttime is None:
             ii = None
+        elif not isinstance(starttime, UTCDateTime):
+            raise TypeError('starttime must be type obspy.UTCDateTime or NoneType')
         # if starttime is specified before the start of this FoldTrace,
         # start from starttime of this FoldTrace
         elif starttime <= self.stats.starttime:
@@ -628,6 +630,8 @@ class FoldTrace(Trace):
         # if no specified endtime, use initial endtime
         if endtime is None:
             ff = None
+        elif not isinstance(endtime, UTCDateTime):
+            raise TypeError('endtime must be type obspy.UTCDateTime or NoneType')
         # if endtime is specified after the end of this FoldTrace,
         # end at the endtime of this FoldTrace
         elif endtime >= self.stats.endtime:
@@ -1075,6 +1079,17 @@ class FoldTrace(Trace):
         self._interp_fold(old_stats.starttime, old_stats.sampling_rate)
         return self
 
+    def max(self):
+        # Add in check to ignore masked data
+        if np.ma.is_masked(self.data):
+            data = self.data.data[~self.data.mask]
+        else:
+            data = self.data
+        value = max(abs(np.nanmax(data)), abs(np.nanmin(data)))
+        return value
+    
+
+
     def normalize(self, norm=None):
         """Normalize this FoldTrace's **data** values using
         normalization norm calculated from non-masked values
@@ -1084,24 +1099,27 @@ class FoldTrace(Trace):
 
         **fold** values are not modified by this method.
 
-        :param type: name of normalization norm type, defaults to 'max'
+        :param norm: name of normalization type or numeric norm, defaults to 'max'
             Supported Values:
                 'max' - maximum amplitude
                     accepted aliases include: 'minmax' and 'peak'
                 'std' - standard deviation
                     accepted aliases include: 'standard'
+                int/float - passed as the norm
         :type type: str, optional
         """        
         if norm in [None, 'max','minmax','peak']:
             norm = self.max()
-        elif norm in ['std','standard']:
+        elif norm in ['std','standard','sigma']:
             norm = self.std()
-        elif isinstance(norm, (int, float)):
+        elif isinstance(norm, float):
+            pass
+        elif isinstance(norm, int):
             pass
         else:
             raise ValueError(f'type {type} not supported.')
-        # Use built-in method
         Trace.normalize(self, norm=norm)
+
         return self
         
     

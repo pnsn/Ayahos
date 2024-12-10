@@ -1142,3 +1142,21 @@ class TestFoldTrace(TestTrace):
             np.testing.assert_array_equal(ft2.data, tr2.data)
             # Assert fold not changed
             np.testing.assert_array_equal(ft2.fold, ft.fold)
+
+    def test_taper_double_processing_bugfix(self):
+        # Setup
+        tr = read()[0]
+        ft = FoldTrace(tr)
+        ftc = ft.copy()
+        pcount = len(ft.stats.processing)
+        assert pcount == 0
+        # Apply Method
+        ft.taper(0.05)
+        # Assert that taper only adds one processing entry
+        assert len(ft.stats.processing) == 1
+        # Assert that entry is a taper entry
+        assert 'taper' in ft.stats.processing[0]
+        # Assert that all other stats are the same besides processing
+        for _k, _v in ft.stats.items():
+            if _k != 'processing':
+                assert ftc.stats[_k] == _v

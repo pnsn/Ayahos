@@ -963,11 +963,14 @@ class FoldTrace(Trace):
         :param taper_fold: should the tapering also be applied to **fold**? Defaults to True
         :type taper_fold: bool, optional
         """   
+        pcount = len(self.stats.processing)
         if taper_fold:
-            ftf = FoldTrace(data=self.fold, header=self.stats)
+            ftf = FoldTrace(data=self.fold, header=self.stats.copy())
             Trace.taper(ftf, max_percentage, type=type, max_length=max_length, side=side, **kwargs)
             self.fold = ftf.data
         Trace.taper(self, max_percentage, type=type, max_length=max_length, side=side, **kwargs)
+        if len(self.stats.processing) - pcount > 1:
+            breakpoint()
         return self
 
     def interpolate(self, sampling_rate, method='weighted_average_slopes',

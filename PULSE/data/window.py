@@ -117,16 +117,6 @@ class Window(DictStream):
                             raise ValueError(f'{tr.id} is not one of the specified secondary components')
                     else:
                         raise ValueError(f'{tr.id} is a repeat component')
-                # if len(c2) != 2:
-                #     if len(c2) == 1:
-                #         if c2 in ['N','E']:
-                #             c2 = 'NE'
-                #         elif c2 in ['1','2']:
-                #             c2 = '12'
-                #     elif len(c2) == 0:
-                #         c2 == 'NE'
-                #     elif len(c2) > 2:
-                #         raise ValueError(f'too many secondary components: {c2}')
                 header.update({'secondary_components': c2})
 
         # Populate stats
@@ -138,457 +128,7 @@ class Window(DictStream):
             self.extend(traces, **options)
             # Final check - validate contents if traces are present        
             self._validate()
-
-    ### SUMMATIVE METHODS ###
-            
-    def preprocess(self, rule=1, threshold_tolerance=1e-3, fold_threshold=0, **options):
-        for comp in self.keys:
-            self.preprocess_component(comp, **options)
-        self.fill_missing_traces(rule=rule,
-                                 tolerance=threshold_tolerance,
-                                 threshold=fold_threshold)
-
-    def preprocess_check(self, components=None):
-        """Conduct the following checks on the contents of a preprocessed
-        :class:`~.Window` object:
-
-        1) All required components are present
-        2) All components meet target_ values in **stats**
-        3) All components' data are non-masked
-        
-
-        :param components: components to check, defaults to None
-            None: use primary component + secondary components in **stats**
-            str: use specified components, case sensitive
-        :type components: None or str, optional
-        :return: **order** (*str*) -- verified component order
-        """      
-        # QC component order
-        if isinstance(components, str):
-            if not all(_c in self.keys for _c in components):
-                raise KeyError('Not all specified components are present in this window')
-            else:
-                order = components
-        else:
-            order = self.stats.get_primary_component() + self.stats.secondary_components
-            if not all(_c in self.keys for _c in order):
-                raise ValueError('Not all components in stats are present in traces')
-        
-        for _c in order:
-            # Check if specified components meet all target requirements
-            result = self._check_targets(_c)
-            if result != set():
-                raise ValueError(f'component "{_c}" does not meet the following targets: {result}')
-            # Check that specified components are not masked (can still be masked arrays)        
-            if np.ma.is_masked(self[_c].data):
-                raise AttributeError(f'component "{_c}" is masked')
-            
-        return order
-
-    def to_npy_tensor(self, component_axis=0, components=None):
-        """Convert the pre-processed contents of this :class:`~.Window` into a
-        numpy array that meets the scaling specifications for a SeisBench
-        WaveformModel input. This method holds off on converting the tensor
-        into a :class:`~torch.Tensor` to allow 
-
-        :param component_axis: axis indexing components, defaults to 0
-            This varies with SeisBench model architecture, i.e., 
-            EQTransformer uses component_axis=0
-            PhaseNet uses component_axis=1
-        :type component_axis: int, optional
-        :param components: specified component order, defaults to None
-            None results in primary component + secondary components
-        :type components: None or str, optional
-        :param output_type: 
-        :return: _description_
-        :rtype: _type_
-        """        
-        order = self.preprocess_check(components=components)
-        
-        # Form tensor with appropriate dimensions
-        shp = (len(order), self.stats.target_npts)
-        tensor = np.full(shape=shp, fill_value=0.)
-
-        # Fill in Tensor
-        for _e, _c in enumerate(order):
-            # Catch case where data attribute is still a masked array with no masking
-            if isinstance(self[_c].data, np.ma.MaskedArray):
-                tensor[_e, :] = self[_c].data.data
-            else:
-                tensor[_e, :] = self[_c].data
-
-        # If components are axis 1 (columns) transpose
-        if component_axis == 1:
-            tensor = tensor.T
-        return tensor
-
-    def bundle_metadata(self, components=None):
-        """Returns an integer-keyed dictionary containing
-        views of the specified components' **stats**
-
-        Note that the **stats** objects are views of the
-        objects in this :class:`~.Window` and they should
-        be deepcopy'd before manipulating
-
-        :param components: list of component codes to bundle,
-            defaults to None
-            None - uses primary component + secondary components
-        :type components: None or str, optional
-        :return: **metadata** (*dict*) -- dictionary of metadata
-        """
-        # Run checks and get order
-        order = self.preprocess_check(components=components)
-        # Bundle metadata
-        metadata = {_e: self[_c].stats for _e, _c in enumerate(order)}
-        return metadata
-    
-    def collapse_fold(self, components=None):
-        """Sum the fold vectors of all (or specified) components
-        in this :class:`~.Window`
-
-        :param components: string of component codes to include
-            in the fold collapse, defaults to None
-            None -> uses primary component + secondary components
-        :type components: bool, optional
-        :return: **summed_fold** (*numpy.ndarray*) -- summed fold vector
-        """ 
-        # Run checks and get order     
-        order = self.preprocess_check(components=components)
-        # Initialize new summed_fold vector
-        summed_fold = np.full(shape=(self.stats.target_npts,), fill_value=0.)
-        # Iterate across desired components and sum fold
-        for _c in order:
-            summed_fold += self[_c].fold
-        return summed_fold
-
-    ### COMPONENT-LEVEL METHODS ###
-    def preprocess_component(
-            self,
-            comp,
-            filter={'type': 'bandpass', 'freqmin': 1., 'freqmax': 45.},
-            detrend={'type': 'linear'},
-            resample={'method':'resample'},
-            taper={'max_percentage': None, 'max_length': 0.06},
-            trim={'fill_value': 0.}):
-        
-        if comp not in self.keys:
-            raise KeyError
-        if not isinstance(filter, (dict, type(None))):
-            raise TypeError
-        if not isinstance(detrend, (dict, type(None))):
-            raise TypeError
-        if not isinstance(resample, (dict, type(None))):
-            raise TypeError
-        elif 'method' not in detrend.keys():
-            raise KeyError
-        if not isinstance(taper, (dict, type(None))):
-            raise TypeError
-        if not isinstance(trim, (dict, type(None))):
-            raise TypeError
-
-        # Create views of contiguous elements of the component
-        st = self[comp].split(ascopy=False)
-        # For each contiguous piece
-        for ft in st:
-            # Pre-filter
-            if filter is not None:
-                ft.filter(**filter)
-            # Detrend
-            if detrend is not None:
-                ft.detrend(**detrend)
-            # Resample
-            if resample is not None:
-                rmethod = resample.pop('method')
-                getattr(ft,rmethod)(**resample)
-            # Taper
-            if taper is not None:
-                ft.taper(**taper)
-        # TODO: Test if inplace modifications will cause chaos with processing
-        
-            
-
-    def sync_to_targets(self, comp, 
-                        resample_kwargs={}, 
-                        starttime_shift_kwargs={},
-                        time_domain_kwargs={}):
-        """Summative method for modifying a specified component
-        trace to meet specified **target_** values in **stats**
-
-        Order of operations:
-        :meth:`~.Window.adjust_sampling_rate` - uses resample_kwargs
-        :meth:`~.Window.adjust_starttime` - uses starttime_shift_kwargs
-        :meth:`~.Window.adjust_time_domain` - uses time_domain_kwargs
-
-        :param comp: component code for component to sync
-        :type comp: str
-        :param resample_kwargs: dictionary to host non-default arguments
-            for :meth:`~.Window.adjust_sampling_rate`, defaults to {}
-        :type resample_kwargs: dict, optional
-        :param starttime_shift_kwargs: dictionary to host non-default arguments
-            for :meth:`~.Window.adjust_starttime`, defaults to {}
-        :type starttime_shift_kwargs: dict, optional
-        :param time_domain_kwargs: dictionary to host non-default arguments
-            for :meth:`~.Window.adjust_time_domain`, defaults to {}
-        :type time_domain_kwargs: dict, optional
-        """        
-        self.adjust_sampling_rate(comp, **resample_kwargs)
-        self.adjust_starttime(comp, **starttime_shift_kwargs)
-        self.adjust_time_domain(comp, **time_domain_kwargs)
-        
-
-    def adjust_sampling_rate(self, comp, method='resample', **options):
-        """Adjust the sampling rate of a component in this :class:`~.Window`
-        to match the **target_sampling_rate** specified in **stats**
-
-        This method uses :meth:`~.FoldTrace.apply_to_gappy` to apply resampling
-        on contiguous segments of the component's **data** and **fold** attributes
-
-        If the component is already sampled at **target_sampling_rate**, no changes
-        are applied. If resampling is required, changes are made in-place on the
-        component. 
-
-        :param comp: component code of the trace to potentially resample
-        :type comp: str
-        :param method: resampling method name, defaults to 'resample'
-            Supported: `resample`, `interpolate`, `decimate`
-        :type method: str, optional
-        :parm options: key-word argument collector passed to the specified
-            resampling **method**
-        """        
-        if method not in ['resample','interpolate','decimate']:
-            raise ValueError(f'method "{method}" not supported')
-        
-        ft = self[comp]
-        sr_old = ft.stats.sampling_rate
-        sr_new = self.stats.target_sampling_rate
-        if method in ['resample','interpolate']:
-            options.update({'sampling_rate': sr_new})
-        else:
-            if int(sr_old/sr_new) != sr_old/sr_new:
-                raise ValueError(f'resampling with "{method}" does not permit non-integer decimation factor')
-            else:
-                options.update({'factor': int(sr_old/sr_new)})
-        # Sampling rates match - do nothing
-        if sr_old == sr_new:
-            return
-        # Otherwise apply method using FoldTrace's gap-circumventing method `apply_to_gappy`
-        else:
-            ft.apply_to_gappy(method, **options)
-    
-    def adjust_time_domain(self, comp, fill_value=None):
-        """Adjust the time domain for a specified component
-        by trimming/padding the trace as necessary using
-        :meth:`~.FoldTrace.trim` with `nearest_sample`=`False`.
-
-        :param comp: component code of the trace to trim/pad
-        :type comp: str
-        :param fill_value: fill value for padding values, defaults to None
-        :type fill_value: scalar, optional
-            also see :meth:`~.FoldTrace.trim`
-        """        
-        ft = self[comp]
-        tst = self.stats.target_starttime
-        tet = self.stats.target_endtime
-        # If already cut correctly, do nothing
-        if tst == ft.stats.starttime and tet == ft.stats.endtime:
-            return
-        else:        
-            ft.trim(starttime=self.stats.target_starttime,
-                    endtime=self.stats.target_endtime,
-                    pad=True, fill_value=fill_value,
-                    nearest_sample=False)
-            
-    def adjust_starttime(self, comp, subsample_tolerance=0.01, **options):
-        """Adjust the starttime of a component trace to the sampling
-        index described by target values in **stats** using either a petty
-        time shift for small subsample adjustments, or interpolation for
-        larger subsample adjustments.
-        
-        Behaviors
-        ---------
-        Modifications are made in-place on the specified component.
-
-        Modification behaviors are dictated by how large of a subsample
-        adjustment is necessary to place the component's starttime into
-        the discretized time sampling specified by the target_ values
-        in this :class:`~.Window`'s **stats** attribute
-        Aligned - no change
-
-        Misalignment <= **subsample_tolerance** of a sample - 
-            only starttime is updated, a "petty adjustment".
-
-        Misailgnment > **subsample_tolerance** of a sample - uses 
-           :meth:`~.FoldTrace.interpolate` referenced to the first
-           aligned timestamp after the original starttime of
-           the component being adjusted.
-
-        Parameters
-        ----------
-        :param comp: component to adjust
-        :type comp: str
-        :param subsample_tolerance: fraction of a sample allowance for 
-            using "petty adjustment" behavior, defaults to 0.01
-            Value must be :math:`\\in[0, 0.05]`
-        :type subsample_tolerance: float, optional
-        :param options: key-word argument collector passed to the
-            :meth:`~.FoldTrace.interpolate` call in this method.
-        """        
-        if isinstance(subsample_tolerance, int):
-            subsample_tolerance = float(subsample_tolerance)
-        if not isinstance(subsample_tolerance, float):
-            raise TypeError('subsample_tolerance must be type float')
-        if not 0 <= subsample_tolerance <= 0.05:
-            raise ValueError('subsample_tolerance must be in [0, 0.05]')
-        ft = self[comp]
-
-        # If perfectly aligned, continue to next trace
-        if self._check_starttime_alignment(comp):
-            return
-
-        # If not perfectly aligned, see if within tolerance
-        target_start = self._get_nearest_starttime(comp, roundup=False)
-        dnpts = np.abs(target_start - ft.stats.starttime)*\
-            self.stats.target_sampling_rate
-        # If within tolerance, do simple adjustment to starttime
-        if dnpts < subsample_tolerance:
-            ft.stats.starttime = target_start
-        # Otherwise, use interpolation
-        else:
-            # Get first target-aligned timestamp within the domain of the trace
-            target_start = self._get_nearest_starttime(comp, roundup=True)
-            # Then conduct interpolation at same sampling rate, aligning
-            # with the target starttime sampling domain
-            ft.interpolate(sampling_rate=ft.stats.sampling_rate,
-                            starttime=target_start, **options)
-
-
-
-
-    def fill_missing_traces(self, rule='primary', **options):
-        """Fill missing/ill-informed traces in this :class:`~.Window`
-        using information from an informative trace.
-
-        "informative" here is defined as a trace having a valid fraction of 
-        its data (per :meth:`~.FoldTrace.get_valid_fraction`) in the target
-        time range specified in **stats** that meets or exceeds the relevant 
-        threshold for that trace's componet designation:
-         - **pthresh** for the primary component
-         - **sthresh** for secondary components
-
-        Fill rules provided by this method are based on a range of strategies
-        used in the literature to analyze data that do not meet the input layer
-        expectations of machine learning models: uninterrupted, 3-component data.
-
-        Rules
-        -----
-        In all cases, cloned :class:`~.FoldTrace` **fold** is set to 0 for all
-        samples, reflecting that the clones do not add to information density
-        for this window.
-
-        In all cases, the component code of clones are updated to match the
-        missing/ill-informed trace
-
-        [0] 'zeros' -- Replace missing/ill-informed traces with a clone of the
-            primary component trace with its **data** set to a 0-vector. 
-            Follows methods in :cite:`Retailleau2022`.
-
-        [1] 'primary' -- Replace missing/ill-informed traces with copies of the
-            primary component trace. Follows methods in :cite:`Ni2023`.
-
-        [2] 'secondary' -- If one secondary component traces is sufficiently
-            informative, replace missing/ill-informed secondary traces with
-            a copy of the informative secondary component trace. If all
-            secondary traces are missing/ill-informed, reverts to behavors
-            for rule 'primary'. Follows methods in :cite:`Lara2023`.
-        
-        This method conducts in-place modifications to the contents of this
-        :class:`~.Window` object. If you want to preserve the original contents
-        use :meth:`~.Window.copy`
-
-        Parameters
-        ----------
-        :param rule: rule to use, defaults to 'primary'.
-            Also supports integer aliases (the [#] values above)
-        :type rule: str or int, optional
-        :param options: key-word argument collector passed to 
-            :meth:`~.Window._check_fvalid` calls within this method
-        
-        """
-        rules = ['zeros','primary','secondary']
-        if isinstance(rule, int):
-            if 0 <= rule <= 2:
-                rule = rules[rule]
-            else:
-                raise ValueError('Integer aliased rule must be in [0, 2]')
-        elif isinstance(rule, str):
-            if rule.lower() in rules:
-                rule = rule.lower()
-        else:
-            raise ValueError(f'rule "{rule}" not supported')
-        
-        # Validate to check primary
-        self._validate()
-        # Get primary component
-        pcpt = self.primary.stats.component
-        # Get shorthand for secondary components
-        scpt = self.stats.secondary_components
-
-        # run valid fraction checks on present traces
-        fv_checks = {_k: self._check_fvalid(_k, **options) for _k in self.keys}
-
-        # fill in secondary components that are missing
-        for _c in scpt:
-            # show missing components it as failing
-            if _c not in fv_checks.keys():
-                fv_checks.update({_c: False})
-
-        # Make sure the primary component has sufficient valid data
-        if not fv_checks[pcpt]:
-            raise ValueError(f'insufficient data in primary component {pcpt}')
-            
-        # If all components are passing, do nothing
-        if all(_v for _v in fv_checks.items()):
-            return
-        # If any secondaries pass
-        elif any(fv_checks[_c] for _c in scpt):
-            # If using secondary
-            if rule == 'secondary':
-                # flag the cloneable component
-                for _c in scpt:
-                    if fv_checks[_c]:
-                        donor = _c
-                        break
-            # Otherwise, flag primary for cloning
-            else:
-                donor = pcpt
-        # If all secondaries fail, use primary as the donor 
-        else:
-            donor = pcpt
-
-        # Create clone of donor component
-        ftd = self[donor].copy()
-        # Set clone fold to 0 (adds no information density)
-        ftd.fold *= 0.
-        # If using `zeros` rule, make data a 0-vector on the clone
-        if rule == 'zeros':
-            ftd.data *= 0.
-        # Iterate across components
-        for comp, passing in fv_checks.items():
-            # If component failed checks
-            if not passing:
-                # Make a copy of the clone trace -> replacement trace
-                ftr = ftd.copy()
-                # Update the replacement trace component code
-                ftr.stats.channel = ftr.stats.channel[:-1] + comp
-                # Replace/add in the Window
-                if comp in self.keys:
-                    self[comp] = ftr
-                else:
-                    self.extend(ftr)
-
-
-
-    ### DUNDER METHODS ###
+### DUNDER METHODS ###
 
 
     def __repr__(self) -> str:
@@ -608,9 +148,7 @@ class Window(DictStream):
                 rstr += f'{_k}: {_v}\n'
         return rstr
 
-
-
-    ### PRIVATE METHODS AND PROPERTY ASSIGNMENTS ###
+    ### PRIVATE METHODS, PROPERTY ASSIGNMENTS, SUBROUTINES ###
     def _validate(self) -> None:
         """Validate essential elements of this :class:`~.Window` object
 
@@ -770,6 +308,472 @@ class Window(DictStream):
         # If assessing secondary components
         else:
             return fvalid >= self.stats.sthresh
+        
+    def _preprocess_check(self, components=None):
+        """Conduct the following checks on the contents of a preprocessed
+        :class:`~.Window` object:
+
+        1) All required components are present
+        2) All components meet target_ values in **stats**
+        3) All components' data are non-masked
+        
+
+        :param components: components to check, defaults to None
+            None: use primary component + secondary components in **stats**
+            str: use specified components, case sensitive
+        :type components: None or str, optional
+        :return: **order** (*str*) -- verified component order
+        """      
+        # QC component order
+        if isinstance(components, str):
+            if not all(_c in self.keys for _c in components):
+                raise KeyError('Not all specified components are present in this window')
+            else:
+                order = components
+        else:
+            order = self.stats.get_primary_component() + self.stats.secondary_components
+            if not all(_c in self.keys for _c in order):
+                raise ValueError('Not all components in stats are present in traces')
+        
+        for _c in order:
+            # Check if specified components meet all target requirements
+            result = self._check_targets(_c)
+            if result != set():
+                raise ValueError(f'component "{_c}" does not meet the following targets: {result}')
+            # Check that specified components are not masked (can still be masked arrays)        
+            if np.ma.is_masked(self[_c].data):
+                raise AttributeError(f'component "{_c}" is masked')
+            
+        return order
+    ###############################
+    ### COMPONENT-LEVEL METHODS ###
+    ###############################
+        
+    # def adjust_sampling_rate(self, comp, method='resample', **options):
+    #     """Adjust the sampling rate of a component in this :class:`~.Window`
+    #     to match the **target_sampling_rate** specified in **stats**
+
+    #     This method uses :meth:`~.FoldTrace.apply_to_gappy` to apply resampling
+    #     on contiguous segments of the component's **data** and **fold** attributes
+
+    #     If the component is already sampled at **target_sampling_rate**, no changes
+    #     are applied. If resampling is required, changes are made in-place on the
+    #     component. 
+
+    #     :param comp: component code of the trace to potentially resample
+    #     :type comp: str
+    #     :param method: resampling method name, defaults to 'resample'
+    #         Supported: `resample`, `interpolate`, `decimate`
+    #     :type method: str, optional
+    #     :parm options: key-word argument collector passed to the specified
+    #         resampling **method**
+    #     """        
+    #     if method not in ['resample','interpolate','decimate']:
+    #         raise ValueError(f'method "{method}" not supported')
+        
+    #     ft = self[comp]
+    #     sr_old = ft.stats.sampling_rate
+    #     sr_new = self.stats.target_sampling_rate
+    #     if method in ['resample','interpolate']:
+    #         options.update({'sampling_rate': sr_new})
+    #     else:
+    #         if int(sr_old/sr_new) != sr_old/sr_new:
+    #             raise ValueError(f'resampling with "{method}" does not permit non-integer decimation factor')
+    #         else:
+    #             options.update({'factor': int(sr_old/sr_new)})
+    #     # Sampling rates match - do nothing
+    #     if sr_old == sr_new:
+    #         return
+    #     # Otherwise apply method using FoldTrace's gap-circumventing method `apply_to_gappy`
+    #     else:
+    #         ft.apply_to_gappy(method, **options)
+    
+    # def adjust_time_domain(self, comp, fill_value=None):
+    #     """Adjust the time domain for a specified component
+    #     by trimming/padding the trace as necessary using
+    #     :meth:`~.FoldTrace.trim` with `nearest_sample`=`False`.
+
+    #     :param comp: component code of the trace to trim/pad
+    #     :type comp: str
+    #     :param fill_value: fill value for padding values, defaults to None
+    #     :type fill_value: scalar, optional
+    #         also see :meth:`~.FoldTrace.trim`
+    #     """        
+    #     ft = self[comp]
+    #     tst = self.stats.target_starttime
+    #     tet = self.stats.target_endtime
+    #     # If already cut correctly, do nothing
+    #     if tst == ft.stats.starttime and tet == ft.stats.endtime:
+    #         return
+    #     else:        
+    #         ft.trim(starttime=self.stats.target_starttime,
+    #                 endtime=self.stats.target_endtime,
+    #                 pad=True, fill_value=fill_value,
+    #                 nearest_sample=False)
+            
+    def align_starttime(self, comp, subsample_tolerance=0.01, **options):
+        """Align the starttime of a component trace to the sampling
+        index described by target values in **stats** using either a petty
+        time shift for small subsample adjustments, or interpolation for
+        larger subsample adjustments.
+        
+        Behaviors
+        ---------
+        Modifications are made in-place on the specified component.
+
+        Modification behaviors are dictated by how large of a subsample
+        adjustment is necessary to place the component's starttime into
+        the discretized time sampling specified by the target_ values
+        in this :class:`~.Window`'s **stats** attribute
+        Aligned - no change
+
+        Misalignment <= **subsample_tolerance** of a sample - 
+            only starttime is updated, a "petty adjustment".
+
+        Misailgnment > **subsample_tolerance** of a sample - uses 
+           :meth:`~.FoldTrace.interpolate` referenced to the first
+           aligned timestamp after the original starttime of
+           the component being adjusted.
+
+        Parameters
+        ----------
+        :param comp: component to adjust
+        :type comp: str
+        :param subsample_tolerance: fraction of a sample allowance for 
+            using "petty adjustment" behavior, defaults to 0.01
+            Value must be :math:`\\in[0, 0.05]`
+        :type subsample_tolerance: float, optional
+        :param options: key-word argument collector passed to the
+            :meth:`~.FoldTrace.interpolate` call in this method.
+        """        
+        if isinstance(subsample_tolerance, int):
+            subsample_tolerance = float(subsample_tolerance)
+        if not isinstance(subsample_tolerance, float):
+            raise TypeError(f'subsample_tolerance must be type float. Not type {type(subsample_tolerance)}')
+        if not 0 <= subsample_tolerance <= 0.05:
+            raise ValueError('subsample_tolerance must be in [0, 0.05]')
+        ft = self[comp]
+
+        # If perfectly aligned, continue to next trace
+        if self._check_starttime_alignment(comp):
+            return
+
+        # If not perfectly aligned, see if within tolerance
+        target_start = self._get_nearest_starttime(comp, roundup=False)
+        dnpts = np.abs(target_start - ft.stats.starttime)*\
+            self.stats.target_sampling_rate
+        # If within tolerance, do simple adjustment to starttime
+        if dnpts < subsample_tolerance:
+            ft.stats.starttime = target_start
+        # Otherwise, use interpolation
+        else:
+            # Get first target-aligned timestamp within the domain of the trace
+            target_start = self._get_nearest_starttime(comp, roundup=True)
+            # Then conduct interpolation at same sampling rate, aligning
+            # with the target starttime sampling domain
+            ft.interpolate(sampling_rate=ft.stats.sampling_rate,
+                            starttime=target_start, **options)
+
+    #########################
+    ### SUMMATIVE METHODS ###
+    #########################
+
+    ## Component Level Summative Methods ##
+            
+    def preprocess_component(
+            self,
+            comp,
+            align={},
+            filter={'type': 'bandpass', 'freqmin': 1., 'freqmax': 45.},
+            detrend={'type': 'linear'},
+            resample={'method':'resample'},
+            taper={'max_percentage': None, 'max_length': 0.06},
+            trim={'fill_value': 0.}):
+        
+        if comp not in self.keys:
+            raise KeyError
+
+        # Alignment (assessment) is required
+        if not isinstance(align, dict):
+            raise TypeError('align must be type dict')
+
+        # Filtering is optional, but suggested
+        if not isinstance(filter, (dict, type(None))):
+            raise TypeError('filter must be type dict or NoneType')
+        elif isinstance(filter, dict):
+            if 'type' not in filter.keys():
+                raise AttributeError('filter required kwarg "type" not present')
+            
+        # Detrending is optional, but suggested
+        if not isinstance(detrend, (dict, type(None))):
+            raise TypeError('detrend must be type dict or NoneType')
+        elif isinstance(detrend, dict):
+            if 'method' not in detrend.keys():
+                raise AttributeError('detrend required kwarg "method" not present')
+        
+        # Resampling (assessment) is required
+        if not isinstance(resample, dict):
+            raise TypeError('resample must be type dict')
+        elif 'method' not in resample.kwargs():
+            raise AttributeError('resample required kwarg "method" not present')
+        
+        # Tapering is optional, but suggested
+        if not isinstance(taper, (dict, type(None))):
+            raise TypeError('taper must be type dict or NoneType')
+        
+        # Trimming (assessment) is required
+        if not isinstance(trim, dict):
+            raise TypeError('trim must be type dict')
+        
+        # Run alignment (check) subroutine
+        self.align_starttime(comp, **align)
+
+        # Create views of contiguous elements of the component
+        for _ft in self[comp].split(ascopy=False):
+            # Filter
+            if filter is not None:
+                _ft.filter(**filter)
+            # Detrend
+            if detrend is not None:
+                _ft.detrend(**detrend)
+            # Resample
+            rmethod = resample.pop('method')
+            getattr(_ft,rmethod)(**resample)
+            # Taper
+            if taper is not None:
+                _ft.taper(**taper)
+        
+        
+        # TODO: Test if inplace modifications will cause chaos with processing
+    
+
+    ## Window Level Summative Methods ##
+                
+    def sync_to_targets(self, comp, 
+                        resample_kwargs={}, 
+                        starttime_shift_kwargs={},
+                        time_domain_kwargs={}):
+        """Summative method for modifying a specified component
+        trace to meet specified **target_** values in **stats**
+
+        Order of operations:
+        :meth:`~.Window.adjust_sampling_rate` - uses resample_kwargs
+        :meth:`~.Window.align_starttime` - uses starttime_shift_kwargs
+        :meth:`~.Window.adjust_time_domain` - uses time_domain_kwargs
+
+        :param comp: component code for component to sync
+        :type comp: str
+        :param resample_kwargs: dictionary to host non-default arguments
+            for :meth:`~.Window.adjust_sampling_rate`, defaults to {}
+        :type resample_kwargs: dict, optional
+        :param starttime_shift_kwargs: dictionary to host non-default arguments
+            for :meth:`~.Window.align_starttime`, defaults to {}
+        :type starttime_shift_kwargs: dict, optional
+        :param time_domain_kwargs: dictionary to host non-default arguments
+            for :meth:`~.Window.adjust_time_domain`, defaults to {}
+        :type time_domain_kwargs: dict, optional
+        """        
+        self.adjust_sampling_rate(comp, **resample_kwargs)
+        self.align_starttime(comp, **starttime_shift_kwargs)
+        self.adjust_time_domain(comp, **time_domain_kwargs)
+    
+    ### Window Level Summative Methods ###
+
+    def preprocess(self, rule=1, threshold_tolerance=1e-3, fold_threshold=0, **options):
+        for comp in self.keys:
+            self.preprocess_component(comp, **options)
+        self.fill_missing_traces(rule=rule,
+                                 tolerance=threshold_tolerance,
+                                 threshold=fold_threshold)
+
+
+
+    def fill_missing_traces(self, rule='primary', **options):
+        """Fill missing/ill-informed traces in this :class:`~.Window`
+        using information from an informative trace.
+
+        "informative" here is defined as a trace having a valid fraction of 
+        its data (per :meth:`~.FoldTrace.get_valid_fraction`) in the target
+        time range specified in **stats** that meets or exceeds the relevant 
+        threshold for that trace's componet designation:
+         - **pthresh** for the primary component
+         - **sthresh** for secondary components
+
+        Fill rules provided by this method are based on a range of strategies
+        used in the literature to analyze data that do not meet the input layer
+        expectations of machine learning models: uninterrupted, 3-component data.
+
+        Rules
+        -----
+        In all cases, cloned :class:`~.FoldTrace` **fold** is set to 0 for all
+        samples, reflecting that the clones do not add to information density
+        for this window.
+
+        In all cases, the component code of clones are updated to match the
+        missing/ill-informed trace
+
+        [0] 'zeros' -- Replace missing/ill-informed traces with a clone of the
+            primary component trace with its **data** set to a 0-vector. 
+            Follows methods in :cite:`Retailleau2022`.
+
+        [1] 'primary' -- Replace missing/ill-informed traces with copies of the
+            primary component trace. Follows methods in :cite:`Ni2023`.
+
+        [2] 'secondary' -- If one secondary component traces is sufficiently
+            informative, replace missing/ill-informed secondary traces with
+            a copy of the informative secondary component trace. If all
+            secondary traces are missing/ill-informed, reverts to behavors
+            for rule 'primary'. Follows methods in :cite:`Lara2023`.
+        
+        This method conducts in-place modifications to the contents of this
+        :class:`~.Window` object. If you want to preserve the original contents
+        use :meth:`~.Window.copy`
+
+        Parameters
+        ----------
+        :param rule: rule to use, defaults to 'primary'.
+            Also supports integer aliases (the [#] values above)
+        :type rule: str or int, optional
+        :param options: key-word argument collector passed to 
+            :meth:`~.Window._check_fvalid` calls within this method
+        
+        """
+        rules = ['zeros','primary','secondary']
+        if isinstance(rule, int):
+            if 0 <= rule <= 2:
+                rule = rules[rule]
+            else:
+                raise ValueError('Integer aliased rule must be in [0, 2]')
+        elif isinstance(rule, str):
+            if rule.lower() in rules:
+                rule = rule.lower()
+        else:
+            raise ValueError(f'rule "{rule}" not supported')
+        
+        # Validate to check primary
+        self._validate()
+        # Get primary component
+        pcpt = self.primary.stats.component
+        # Get shorthand for secondary components
+        scpt = self.stats.secondary_components
+
+        # run valid fraction checks on present traces
+        fv_checks = {_k: self._check_fvalid(_k, **options) for _k in self.keys}
+
+        # fill in secondary components that are missing
+        for _c in scpt:
+            # show missing components it as failing
+            if _c not in fv_checks.keys():
+                fv_checks.update({_c: False})
+
+        # Make sure the primary component has sufficient valid data
+        if not fv_checks[pcpt]:
+            raise ValueError(f'insufficient data in primary component {pcpt}')
+            
+        # If all components are passing, do nothing
+        if all(_v for _v in fv_checks.items()):
+            return
+        # If any secondaries pass
+        elif any(fv_checks[_c] for _c in scpt):
+            # If using secondary
+            if rule == 'secondary':
+                # flag the cloneable component
+                for _c in scpt:
+                    if fv_checks[_c]:
+                        donor = _c
+                        break
+            # Otherwise, flag primary for cloning
+            else:
+                donor = pcpt
+        # If all secondaries fail, use primary as the donor 
+        else:
+            donor = pcpt
+
+        # Create clone of donor component
+        ftd = self[donor].copy()
+        # Set clone fold to 0 (adds no information density)
+        ftd.fold *= 0.
+        # If using `zeros` rule, make data a 0-vector on the clone
+        if rule == 'zeros':
+            ftd.data *= 0.
+        # Iterate across components
+        for comp, passing in fv_checks.items():
+            # If component failed checks
+            if not passing:
+                # Make a copy of the clone trace -> replacement trace
+                ftr = ftd.copy()
+                # Update the replacement trace component code
+                ftr.stats.channel = ftr.stats.channel[:-1] + comp
+                # Replace/add in the Window
+                if comp in self.keys:
+                    self[comp] = ftr
+                else:
+                    self.extend(ftr)
+
+
+    def to_npy_tensor(self, component_axis=0, components=None):
+        """Convert the pre-processed contents of this :class:`~.Window` into a
+        numpy array that meets the scaling specifications for a SeisBench
+        WaveformModel input. This method holds off on converting the tensor
+        into a :class:`~torch.Tensor` to allow 
+
+        :param component_axis: axis indexing components, defaults to 0
+            This varies with SeisBench model architecture, i.e., 
+            EQTransformer uses component_axis=0
+            PhaseNet uses component_axis=1
+        :type component_axis: int, optional
+        :param components: specified component order, defaults to None
+            None results in primary component + secondary components
+        :type components: None or str, optional
+        :param output_type: 
+        :return: _description_
+        :rtype: _type_
+        """        
+        order = self.preprocess_check(components=components)
+        
+        # Form tensor with appropriate dimensions
+        shp = (len(order), self.stats.target_npts)
+        tensor = np.full(shape=shp, fill_value=0.)
+
+        # Fill in Tensor
+        for _e, _c in enumerate(order):
+            # Catch case where data attribute is still a masked array with no masking
+            if isinstance(self[_c].data, np.ma.MaskedArray):
+                tensor[_e, :] = self[_c].data.data
+            else:
+                tensor[_e, :] = self[_c].data
+
+        # If components are axis 1 (columns) transpose
+        if component_axis == 1:
+            tensor = tensor.T
+        return tensor
+    
+    def collapse_fold(self, components=None):
+        """Sum the fold vectors of all (or specified) components
+        in this :class:`~.Window`
+
+        :param components: string of component codes to include
+            in the fold collapse, defaults to None
+            None -> uses primary component + secondary components
+        :type components: bool, optional
+        :return: **summed_fold** (*numpy.ndarray*) -- summed fold vector
+        """ 
+        # Run checks and get order     
+        order = self.preprocess_check(components=components)
+        # Initialize new summed_fold vector
+        summed_fold = np.full(shape=(self.stats.target_npts,), fill_value=0.)
+        # Iterate across desired components and sum fold
+        for _c in order:
+            summed_fold += self[_c].fold
+        return summed_fold
+
+    
+
+
+
+
+
+    
 
     
 

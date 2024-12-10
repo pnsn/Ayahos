@@ -10,6 +10,9 @@ from PULSE.util.header import WindowStats
 from PULSE.test.example_data import load_townsend_example
 
 class TestWindow(unittest.TestCase):
+
+    ### TEST SETUP ###
+
     st, _, _ = load_townsend_example(Path().cwd())
 
     def setUp(self):
@@ -30,6 +33,8 @@ class TestWindow(unittest.TestCase):
         del self.sub_header
         del self.tflds
         del self.win
+
+    ### __INIT__ ###
 
     def test__init__(self):
         win = Window()
@@ -95,7 +100,9 @@ class TestWindow(unittest.TestCase):
             if _k != 'Z':
                 self.assertIn(_k, win.stats.secondary_components)
 
-    def test_validate(self):
+    ### PRIVATE (SUBROUTINE) METHODS TESTING ###
+
+    def test__validate(self):
         # Primary not present error
         with self.assertRaises(ValueError):
             Window(traces=self.ds.select(id='*.EN[EN]'),
@@ -113,22 +120,22 @@ class TestWindow(unittest.TestCase):
         with self.assertRaises(ValueError):
             Window(traces=self.ds, header=self.sub_header)
     
-    def test_get_primary(self):
-        # Assert that get_primary returns the same as primary_id from source
-        self.assertEqual(self.win.get_primary(), self.ds[self.sub_header['primary_id']])
-        # Assert that empty window get_primary returns none
-        self.assertIsNone(Window().get_primary())
+    def test__get_primary(self):
+        # Assert that _get_primary returns the same as primary_id from source
+        self.assertEqual(self.win._get_primary(), self.ds[self.sub_header['primary_id']])
+        # Assert that empty window _get_primary returns none
+        self.assertIsNone(Window()._get_primary())
         # Assert that window missing primary returns None
         self.win.pop('Z')
-        self.assertIsNone(self.win.get_primary())
+        self.assertIsNone(self.win._get_primary())
 
 
-    def test_check_targets(self):
+    def test__check_targets(self):
         self.win.stats.target_starttime += 0.1
 
         flds = {'starttime','sampling_rate','npts'}
         for ft in self.win:
-            result = self.win.check_targets(ft.stats.component)
+            result = self.win._check_targets(ft.stats.component)
             self.assertEqual(flds, result)
         counter = 0
         for fld in flds:
@@ -138,95 +145,172 @@ class TestWindow(unittest.TestCase):
             tmp_flds.remove(fld)
             counter += 1
             for ft in tmp_win:
-                result = tmp_win.check_targets(ft.stats.component)
+                result = tmp_win._check_targets(ft.stats.component)
                 self.assertEqual(tmp_flds, result)
 
-    def test_check_starttime_alignment(self):
+    def test__check_starttime_alignment(self):
         for ft in self.win:
-            result = self.win.check_starttime_alignment(ft.stats.component)
+            result = self.win._check_starttime_alignment(ft.stats.component)
             self.assertTrue(result)
         self.win[0].stats.starttime += 0.0001
         for _e, ft in enumerate(self.win):
-            result = self.win.check_starttime_alignment(ft.stats.component)
+            result = self.win._check_starttime_alignment(ft.stats.component)
             if _e == 0:
                 self.assertFalse(result)
             else:
                 self.assertTrue(result)
 
-    def test_get_nearest_starttime(self):
+    def test__get_nearest_starttime(self):
         # Test slight positive misalignment
         self.win.stats.target_starttime += 1.00001
         for _c in self.win.keys:
-            nearest = self.win.get_nearest_starttime(_c)
+            nearest = self.win._get_nearest_starttime(_c)
             self.assertEqual(nearest, self.win[_c].stats.starttime + 0.00001)
         # Test slight negative misalignment with/without roundup
         self.win.stats.target_starttime -= 2.00002
         for _c in self.win.keys:
-            nearest = self.win.get_nearest_starttime(_c)
+            nearest = self.win._get_nearest_starttime(_c)
             self.assertEqual(nearest, self.win[_c].stats.starttime + 0.01999)
-            nearest = self.win.get_nearest_starttime(_c, roundup=False)
+            nearest = self.win._get_nearest_starttime(_c, roundup=False)
             self.assertEqual(nearest, self.win[_c].stats.starttime - 0.00001)
 
-    def test_check_fvalid(self):
+    def test__check_fvalid(self):
         # Test all passing case
         for _c in self.win.keys:
-            self.assertTrue(self.win.check_fvalid(_c))
+            self.assertTrue(self.win._check_fvalid(_c))
         # Test case where only secondary traces pass
         self.win.stats.target_starttime -= 6/50
         for _c in self.win.keys:
             if _c == 'Z':
-                self.assertFalse(self.win.check_fvalid(_c))
+                self.assertFalse(self.win._check_fvalid(_c))
             else:
-                self.assertTrue(self.win.check_fvalid(_c))
+                self.assertTrue(self.win._check_fvalid(_c))
         # Test case where none pass
         self.win.stats.target_starttime += 300
         for _c in self.win.keys:
-            self.assertFalse(self.win.check_fvalid(_c))
+            self.assertFalse(self.win._check_fvalid(_c))
     
-    def test_sync_samplign(self):
-        # Misalign Z component by a very small amount
-        self.win['Z'].stats.starttime -= 0.00001
-        # Misalign N component by half a sample
-        self.win['N'].stats.starttime += 0.005
-        # Check that both fail alignment test
-        for _c in ['Z','N']:
-            self.assertFalse(self.win.check_starttime_alignment(_c))
-        # Create copy to sync
-        win2 = self.win.copy()
-        
-        # Check no-change case
-        win2.sync_sampling('E')
-        self.assertEqual(win2['E'], self.win['E'])
-        
-        # Check minor adjustment case
-        win2.sync_sampling('Z')
-        # Assert that the data have not changed
-        np.testing.assert_array_equal(win2['Z'].data, self.win['Z'].data)
-        # Assert that the metadata have changed
-        self.assertNotEqual(win2['Z'], self.win['Z'])
-        # Assert that the shifted starttime aligns with target
-        self.assertTrue(win2.check_starttime_alignment('Z'))
-        # Assert no change in processing
-        self.assertEqual(win2['Z'].stats.processing,
-                         self.win['Z'].stats.processing)
 
-        # Check interpolation case
-        win2.sync_sampling('N')
-        # Assert that the interpolated starttime is at or after the original starttime
-        self.assertLessEqual(self.win['N'].stats.starttime,
-                             win2['N'].stats.starttime)
-        # Assert that the interpolated starttime aligns with target
-        self.assertTrue(win2.check_starttime_alignment('N'))
-        # Assert that processing shows interpolation
-        self.assertIn('interpolate',
-                      win2['N'].stats.processing[-1])
-        
-        # Assert compatability errors
+    def test__preprocess_check(self):
+        self.assertFalse(True)
+
+    ### PUBLIC METHODS TESTING ###
+
+    def test_align_starttime(self):
+        # Pretest for small perturbation
+        self.assertEqual(self.win['Z'].stats.starttime, self.win.stats.target_starttime)
+        self.assertEqual(len(self.win['Z'].stats.processing), 0)
+        # Test perturbation correction
+        for _e, _pert in enumerate([0.0001, 1.0001, 0.005, 1.005]):
+            self.win['Z'].stats.starttime += _pert
+            self.assertNotEqual(self.win['Z'].stats.starttime, self.win._get_nearest_starttime('Z'))
+            self.win.align_starttime('Z')
+            self.assertEqual(self.win['Z'].stats.starttime, self.win._get_nearest_starttime('Z'))
+            if _e < 2:
+                self.assertEqual(len(self.win['Z'].stats.processing), 0)
+            else:
+                self.assertIn('interpolate', self.win['Z'].stats.processing[-1])
+
+        # Test errors
         with self.assertRaises(TypeError):
-            win2.sync_sampling('N', sample_tol='abc')
-        for val in [-1., 2., 0.50000001]:
+            self.win.align_starttime('Z', subsample_tolerance='a')
+        for _arg in [-1, -1e-9, 0.05 + 1e-9]:
             with self.assertRaises(ValueError):
-                win2.sync_sampling('N', sample_tol=val)
+                self.win.align_starttime('Z', subsample_tolerance=_arg)
+        
+
+
+        # # Test large, but close perturbation
+        # for _e, _pert in enumerate([0.005, 1.005]):
+        #     self.win['Z'].stats.starttime += _pert
+        #     self.assertNotEqual(self.win['Z'].stats.starttime)
+
+        
+
+
+    ### Summative Methods                    
+    # Component Level
+    def test_sync_to_targets(self):
+        self.assertTrue(False)
+
+    # def test_preprocess_component(self):
+    #     # setup adjusted input
+    #     for ft in self.win:
+
+
+    #     # Test wrong component error
+    #     for _arg in ['Q', 1]:
+    #         with self.assertRaises(KeyError):
+    #             self.win.preprocess_component(_arg)
+    #     # Test wrong format for kwarg holder (combinations)
+    #     for _arg in ['aaa', ['foo','bar','baz'], 1, 1.]:
+    #         for _fld in ['filter','detrend','resample','taper','trim']:
+    #             kwarg = {_fld: _arg}
+    #             with self.assertRaises(TypeError):
+    #                 self.win.preprocess_component('Z', **kwarg)
+    #     for badkwarg in [{'filter': {'method': 'bandpass'}, 'detrend': {'type': 'linear'}}]:
+    #         with self.assertRaises(AttributeError):
+    #             self.win.preprocess_component('Z', **badkwarg)           
+
+    # Window Level    
+    def test_collapse_fold(self):
+        self.assertTrue(False)
+
+    def test_fill_missing_traces(self):
+        self.assertTrue(False)
+
+    def test_to_npy_tensor(self):
+        self.assertTrue(False)
+
+
+    
+
+    
+
+    # def test_sync_sampling(self):
+    #     # Misalign Z component by a very small amount
+    #     self.win['Z'].stats.starttime -= 0.00001
+    #     # Misalign N component by half a sample
+    #     self.win['N'].stats.starttime += 0.005
+    #     # Check that both fail alignment test
+    #     for _c in ['Z','N']:
+    #         self.assertFalse(self.win._check_starttime_alignment(_c))
+    #     # Create copy to sync
+    #     win2 = self.win.copy()
+        
+    #     # Check no-change case
+    #     win2.sync_sampling('E')
+    #     self.assertEqual(win2['E'], self.win['E'])
+        
+    #     # Check minor adjustment case
+    #     win2.sync_sampling('Z')
+    #     # Assert that the data have not changed
+    #     np.testing.assert_array_equal(win2['Z'].data, self.win['Z'].data)
+    #     # Assert that the metadata have changed
+    #     self.assertNotEqual(win2['Z'], self.win['Z'])
+    #     # Assert that the shifted starttime aligns with target
+    #     self.assertTrue(win2._check_starttime_alignment('Z'))
+    #     # Assert no change in processing
+    #     self.assertEqual(win2['Z'].stats.processing,
+    #                      self.win['Z'].stats.processing)
+
+    #     # Check interpolation case
+    #     win2.sync_sampling('N')
+    #     # Assert that the interpolated starttime is at or after the original starttime
+    #     self.assertLessEqual(self.win['N'].stats.starttime,
+    #                          win2['N'].stats.starttime)
+    #     # Assert that the interpolated starttime aligns with target
+    #     self.assertTrue(win2._check_starttime_alignment('N'))
+    #     # Assert that processing shows interpolation
+    #     self.assertIn('interpolate',
+    #                   win2['N'].stats.processing[-1])
+        
+    #     # Assert compatability errors
+    #     with self.assertRaises(TypeError):
+    #         win2.sync_sampling('N', sample_tol='abc')
+    #     for val in [-1., 2., 0.50000001]:
+    #         with self.assertRaises(ValueError):
+    #             win2.sync_sampling('N', sample_tol=val)
 
 
     

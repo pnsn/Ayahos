@@ -842,6 +842,10 @@ class FoldTrace(Trace):
         return self
     
     # PUBLIC UPDATED METHODS #
+
+        
+
+
     def trim(self, starttime=None, endtime=None, pad=False, nearest_sample=True, fill_value=None, apply_fill=True):
         """Trim/pad this FoldTrace to the specified starting and/or ending times
         with the option to pad and fill **data** values. Wraps updated methods:
@@ -972,6 +976,49 @@ class FoldTrace(Trace):
         if len(self.stats.processing) - pcount > 1:
             breakpoint()
         return self
+
+
+    def align_starttime(self, starttime, sampling_rate, subsample_tolerance=0.01, **options):
+
+        if isinstance(subsample_tolerance, int):
+            subsample_tolerance = float(subsample_tolerance)
+        if not isinstance(subsample_tolerance, float):
+            raise TypeError(f'subsample_tolerance must be type float. Not type {type(subsample_tolerance)}')
+        if not 0 <= subsample_tolerance <= 0.05:
+            raise ValueError('subsample_tolerance must be in [0, 0.05]')
+        
+        if not isinstance(starttime, UTCDateTime):
+            raise TypeError
+        
+        if not isinstance(sampling_rate, (int, float)):
+            raise TypeError
+        elif isinstance(sampling_rate, int):
+            sampling_rate = float(sampling_rate)
+
+        # If exact match, do nothing
+        if starttime == self.stats.starttime:
+            return
+
+        # Calculate nearest starttime
+        dt = starttime - self.stats.starttime
+        npts = dt*sampling_rate
+
+        
+        nearest_starttime = starttime - np.round(npts)/sampling_rate
+        dnpts = np.abs(nearest_starttime - self.stats.starttime)*sampling_rate
+        if dnpts <= subsample_tolerance:
+            self.stats.append(f'PULSE 0.0.0: align_starttime(starttime={starttime}, sampling_rate={sampling_rate}, subsample_tolerance={subsample_tolerance})')
+            self.stats.starttime = starttime
+
+        else:
+            self.interpolate(sampling_rate=self.stats.sampling_rate,
+                             starttime=starttime,
+                             **options)
+            
+
+        
+
+
 
     def interpolate(self, sampling_rate, method='weighted_average_slopes',
                     starttime=None, npts=None, time_shift=0.0,

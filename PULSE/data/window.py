@@ -345,71 +345,12 @@ class Window(DictStream):
                 raise AttributeError(f'component "{_c}" is masked')
             
         return order
-    ###############################
-    ### COMPONENT-LEVEL METHODS ###
-    ###############################
-        
-    # def adjust_sampling_rate(self, comp, method='resample', **options):
-    #     """Adjust the sampling rate of a component in this :class:`~.Window`
-    #     to match the **target_sampling_rate** specified in **stats**
-
-    #     This method uses :meth:`~.FoldTrace.apply_to_gappy` to apply resampling
-    #     on contiguous segments of the component's **data** and **fold** attributes
-
-    #     If the component is already sampled at **target_sampling_rate**, no changes
-    #     are applied. If resampling is required, changes are made in-place on the
-    #     component. 
-
-    #     :param comp: component code of the trace to potentially resample
-    #     :type comp: str
-    #     :param method: resampling method name, defaults to 'resample'
-    #         Supported: `resample`, `interpolate`, `decimate`
-    #     :type method: str, optional
-    #     :parm options: key-word argument collector passed to the specified
-    #         resampling **method**
-    #     """        
-    #     if method not in ['resample','interpolate','decimate']:
-    #         raise ValueError(f'method "{method}" not supported')
-        
-    #     ft = self[comp]
-    #     sr_old = ft.stats.sampling_rate
-    #     sr_new = self.stats.target_sampling_rate
-    #     if method in ['resample','interpolate']:
-    #         options.update({'sampling_rate': sr_new})
-    #     else:
-    #         if int(sr_old/sr_new) != sr_old/sr_new:
-    #             raise ValueError(f'resampling with "{method}" does not permit non-integer decimation factor')
-    #         else:
-    #             options.update({'factor': int(sr_old/sr_new)})
-    #     # Sampling rates match - do nothing
-    #     if sr_old == sr_new:
-    #         return
-    #     # Otherwise apply method using FoldTrace's gap-circumventing method `apply_to_gappy`
-    #     else:
-    #         ft.apply_to_gappy(method, **options)
     
-    # def adjust_time_domain(self, comp, fill_value=None):
-    #     """Adjust the time domain for a specified component
-    #     by trimming/padding the trace as necessary using
-    #     :meth:`~.FoldTrace.trim` with `nearest_sample`=`False`.
-
-    #     :param comp: component code of the trace to trim/pad
-    #     :type comp: str
-    #     :param fill_value: fill value for padding values, defaults to None
-    #     :type fill_value: scalar, optional
-    #         also see :meth:`~.FoldTrace.trim`
-    #     """        
-    #     ft = self[comp]
-    #     tst = self.stats.target_starttime
-    #     tet = self.stats.target_endtime
-    #     # If already cut correctly, do nothing
-    #     if tst == ft.stats.starttime and tet == ft.stats.endtime:
-    #         return
-    #     else:        
-    #         ft.trim(starttime=self.stats.target_starttime,
-    #                 endtime=self.stats.target_endtime,
-    #                 pad=True, fill_value=fill_value,
-    #                 nearest_sample=False)
+    ######################
+    ### PUBLIC METHODS ###
+    ######################
+  
+    # Component Methods
             
     def align_starttime(self, comp, subsample_tolerance=0.01, **options):
         """Align the starttime of a component trace to the sampling
@@ -463,7 +404,8 @@ class Window(DictStream):
         dnpts = np.abs(target_start - ft.stats.starttime)*\
             self.stats.target_sampling_rate
         # If within tolerance, do simple adjustment to starttime
-        if dnpts < subsample_tolerance:
+        if dnpts <= subsample_tolerance:
+            ft.stats.processing.append(f'PULSE 0.0.0: align_starttime(subsample_tolerance={subsample_tolerance})')
             ft.stats.starttime = target_start
         # Otherwise, use interpolation
         else:
@@ -473,12 +415,6 @@ class Window(DictStream):
             # with the target starttime sampling domain
             ft.interpolate(sampling_rate=ft.stats.sampling_rate,
                             starttime=target_start, **options)
-
-    #########################
-    ### SUMMATIVE METHODS ###
-    #########################
-
-    ## Component Level Summative Methods ##
             
     def preprocess_component(
             self,
@@ -489,7 +425,51 @@ class Window(DictStream):
             resample={'method':'resample'},
             taper={'max_percentage': None, 'max_length': 0.06},
             trim={'fill_value': 0.}):
-        
+        """Apply the following pre-processing pipeline on a specified component
+        in this :class:`~.Window` object
+
+        align - align the temporal sampling with the target sampling domain
+            uses :meth:`~.Window.align_starttime`
+            REQUIRED
+        split component trace into contiguous elements
+        For each element:
+            filter - apply a filter to the component trace element
+                OPTIONAL (turned of with None input)
+            detrend - detrend the component trace element
+                OPTIONAL (turned of with None input)
+            resample - resample the component trace element to the target sampling_rate
+                REQUIRED
+            taper - apply a taper to the component trace element on both ends
+                OPTIONAL (turned of with None input)
+        trim - trim the component trace to the target starttime and endtime and
+            insert fill_values
+            REQUIRED
+
+        :param comp: _description_
+        :type comp: _type_
+        :param align: _description_, defaults to {}
+        :type align: dict, optional
+        :param filter: _description_, defaults to {'type': 'bandpass', 'freqmin': 1., 'freqmax': 45.}
+        :type filter: dict, optional
+        :param detrend: _description_, defaults to {'type': 'linear'}
+        :type detrend: dict, optional
+        :param resample: _description_, defaults to {'method':'resample'}
+        :type resample: dict, optional
+        :param taper: _description_, defaults to {'max_percentage': None, 'max_length': 0.06}
+        :type taper: dict, optional
+        :param trim: _description_, defaults to {'fill_value': 0.}
+        :type trim: dict, optional
+        :raises KeyError: _description_
+        :raises TypeError: _description_
+        :raises TypeError: _description_
+        :raises AttributeError: _description_
+        :raises TypeError: _description_
+        :raises AttributeError: _description_
+        :raises TypeError: _description_
+        :raises AttributeError: _description_
+        :raises TypeError: _description_
+        :raises TypeError: _description_
+        """        
         if comp not in self.keys:
             raise KeyError
 
@@ -508,13 +488,14 @@ class Window(DictStream):
         if not isinstance(detrend, (dict, type(None))):
             raise TypeError('detrend must be type dict or NoneType')
         elif isinstance(detrend, dict):
-            if 'method' not in detrend.keys():
-                raise AttributeError('detrend required kwarg "method" not present')
+            if 'type' not in detrend.keys():
+                raise AttributeError('detrend required kwarg "type" not present')
         
         # Resampling (assessment) is required
         if not isinstance(resample, dict):
             raise TypeError('resample must be type dict')
-        elif 'method' not in resample.kwargs():
+        elif 'method' not in resample.keys():
+            breakpoint()
             raise AttributeError('resample required kwarg "method" not present')
         
         # Tapering is optional, but suggested
@@ -524,6 +505,11 @@ class Window(DictStream):
         # Trimming (assessment) is required
         if not isinstance(trim, dict):
             raise TypeError('trim must be type dict')
+        elif 'fill_value' not in trim.keys():
+            raise AttributeError('trim required kwarg "fill_value" not present')
+        elif trim['fill_value'] is None:
+            raise ValueError('fill_value must be a float-like value')
+        
         
         # Run alignment (check) subroutine
         self.align_starttime(comp, **align)
@@ -538,16 +524,26 @@ class Window(DictStream):
                 _ft.detrend(**detrend)
             # Resample
             rmethod = resample.pop('method')
-            getattr(_ft,rmethod)(**resample)
+            if _ft.stats.sampling_rate != self.stats.target_sampling_rate:
+                resample.update({'sampling_rate': self.stats.target_sampling_rate})
+                getattr(_ft,rmethod)(**resample)
+            # FIXME: In testing multiple calls of this method in a test result decay
+            resample.update({'method': rmethod})
             # Taper
             if taper is not None:
                 _ft.taper(**taper)
-        
-        
+        # Trim/Pad/Fill
+        if self[comp].stats.starttime != self.stats.target_starttime:
+            trim.update({'starttime': self.stats.target_starttime})
+        if self[comp].stats.endtime != self.stats.target_endtime:
+            trim.update({'endtime': self.stats.target_endtime})
+        # Require 'pad' to be True & apply_fill to be True
+        trim.update({'pad': True, 'apply_fill': True})
+        self[comp].trim(**trim)
         # TODO: Test if inplace modifications will cause chaos with processing
     
 
-    ## Window Level Summative Methods ##
+    ## Window-Level Summative Methods ##
                 
     def sync_to_targets(self, comp, 
                         resample_kwargs={}, 

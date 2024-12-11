@@ -27,6 +27,22 @@ class TestWindow(unittest.TestCase):
                           header=self.sub_header)
         self.tflds = {'starttime','npts','sampling_rate'}
 
+        self.win_pert = Window(traces=self.sub_st.copy().select(channel='?N?'))
+        # setup scruffed window  
+        for _e, comp in enumerate(['Z','N','E']):
+            ft = self.win_pert[comp]
+            # Shift starttime: one unshifted, one req' petty, one req' interpolated
+            ft.stats.starttime += _e*0.01*ft.stats.delta
+            # Shift sampling rate: lower, on target, higher
+            ft.stats.sampling_rate += (_e - 1)*0.8
+            # Trim out some samples: short, long, on target
+            perts = [-1, 1, 0]
+            ft.trim(starttime=ft.stats.starttime+perts[_e]*0.5, endtime=ft.stats.endtime-perts[_e]*0.5, pad=True, fill_value=0.)
+        # FIXME: QC these and re-apply test in :meth:`~.test_preprocess_component`
+        self.expected_processing = {'Z': ['filter','detrend','resample','taper'],
+                                    'N': ['filter','detrend','align_starttime','taper','trim'],
+                                    'E': ['interpolate','filter','detrend','resample','taper','trim']}
+
     def tearDown(self):
         del self.sub_st
         del self.ds
@@ -196,6 +212,8 @@ class TestWindow(unittest.TestCase):
 
     ### PUBLIC METHODS TESTING ###
 
+    # Component-Level Methods
+        
     def test_align_starttime(self):
         # Pretest for small perturbation
         self.assertEqual(self.win['Z'].stats.starttime, self.win.stats.target_starttime)
@@ -207,10 +225,9 @@ class TestWindow(unittest.TestCase):
             self.win.align_starttime('Z')
             self.assertEqual(self.win['Z'].stats.starttime, self.win._get_nearest_starttime('Z'))
             if _e < 2:
-                self.assertEqual(len(self.win['Z'].stats.processing), 0)
+                self.assertIn('align_starttime', self.win['Z'].stats.processing[-1])
             else:
                 self.assertIn('interpolate', self.win['Z'].stats.processing[-1])
-
         # Test errors
         with self.assertRaises(TypeError):
             self.win.align_starttime('Z', subsample_tolerance='a')
@@ -218,41 +235,78 @@ class TestWindow(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.win.align_starttime('Z', subsample_tolerance=_arg)
         
+    def test_preprocess_component(self):
+        # Pretest
+        for comp in self.win_pert.keys:
+            self.assertNotEqual(self.win_pert._check_targets(comp), set([]))
+        for comp in self.win_pert.keys:
+            self.win_pert.preprocess_component(comp)
+        # Check that all targets are met
+        for ft in self.win_pert:
+            self.assertEqual(ft.stats.starttime, self.win_pert.stats.target_starttime)
+            self.assertEqual(ft.stats.sampling_rate, self.win_pert.stats.target_sampling_rate)
+            self.assertEqual(ft.stats.npts, self.win_pert.stats.target_npts)
 
+        # FIXME: Revitalize these processing log tests
+        # for comp, expectation in self.expected_processing.items():
+        #     ft = self.win_pert[comp]
+        #     if len(expectation) != len(ft.stats.processing):
+        #         breakpoint()
+        #     self.assertEqual(len(expectation), len(ft.stats.processing))
+        #     for _e, E in enumerate(expectation):
+        #         self.assertIn(E, ft.stats.processing[_e])
+
+    def test_preprocess_component_gappy(self):
+        for ft in self.win_pert:
+            ft.data = np.ma.MaskedArray(data=ft.data,
+                                        mask=[False]*ft.count())
+            ft.data.mask[2000:3000] = True
+        for comp in self.win_pert.keys:
+            # Assert corrections are needed
+            self.assertNotEqual(self.win_pert._check_targets(comp), set([]))
+            # Assert data are masked
+            self.assertTrue(np.ma.is_masked(self.win_pert[comp].data))
+            # Run process
+            self.win_pert.preprocess_component(comp)
+            # Assert all targets are now met
+            self.assertEqual(self.win_pert._check_targets(comp), set([]))
+            # Assert that data are now continuous
+            self.assertFalse(np.ma.is_masked(self.win_pert[comp].data))
+            # Assert that masked values have values of 0
+            np.testing.assert_array_equal(np.zeros(1000, dtype=self.win_pert[comp].dtype), self.win_pert[comp].data[2000:3000])
+
+        
+
+
+    # def test_preprocess_component_errors(self):
+
+
+    #     # Test wrong component error
+    #     for _arg in ['Q', 1]:
+    #         with self.assertRaises(KeyError):
+    #             self.win_pert.preprocess_component(_arg)
+    #     # Test non-dict required errors
+    #     for _arg in [['a'], 1]:
+    #         for _fld in ['align','resample','trim']
+    #         with self.assertRaises
+        # # Test wrong format for kwarg holder (combinations)
+        # for _arg in ['aaa', ['foo','bar','baz'], 1, 1.]:
+        #     for _fld in ['filter','detrend','resample','taper','trim']:
+        #         kwarg = {_fld: _arg}
+        #         with self.assertRaises(TypeError):
+        #             self.win.preprocess_component('Z', **kwarg)
+        # for badkwarg in [{'filter': {'method': 'bandpass'}, 'detrend': {'type': 'linear'}}]:
+        #     with self.assertRaises(AttributeError):
+        #         self.win.preprocess_component('Z', **badkwarg)          
 
         # # Test large, but close perturbation
         # for _e, _pert in enumerate([0.005, 1.005]):
         #     self.win['Z'].stats.starttime += _pert
         #     self.assertNotEqual(self.win['Z'].stats.starttime)
 
-        
-
-
-    ### Summative Methods                    
-    # Component Level
-    def test_sync_to_targets(self):
+    def test_preprocess(self):
         self.assertTrue(False)
 
-    # def test_preprocess_component(self):
-    #     # setup adjusted input
-    #     for ft in self.win:
-
-
-    #     # Test wrong component error
-    #     for _arg in ['Q', 1]:
-    #         with self.assertRaises(KeyError):
-    #             self.win.preprocess_component(_arg)
-    #     # Test wrong format for kwarg holder (combinations)
-    #     for _arg in ['aaa', ['foo','bar','baz'], 1, 1.]:
-    #         for _fld in ['filter','detrend','resample','taper','trim']:
-    #             kwarg = {_fld: _arg}
-    #             with self.assertRaises(TypeError):
-    #                 self.win.preprocess_component('Z', **kwarg)
-    #     for badkwarg in [{'filter': {'method': 'bandpass'}, 'detrend': {'type': 'linear'}}]:
-    #         with self.assertRaises(AttributeError):
-    #             self.win.preprocess_component('Z', **badkwarg)           
-
-    # Window Level    
     def test_collapse_fold(self):
         self.assertTrue(False)
 

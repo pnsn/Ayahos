@@ -1160,3 +1160,59 @@ class TestFoldTrace(TestTrace):
         for _k, _v in ft.stats.items():
             if _k != 'processing':
                 assert ftc.stats[_k] == _v
+
+    def test_align_starttime(self):
+        # Setup
+        ft0 = FoldTrace(data=np.ones(10))
+        ts = UTCDateTime(0)
+        assert len(ft0.stats.processing) == 0
+
+        # Test small positive adjustment
+        ft = ft0.copy()
+        ft.align_starttime(ts+0.01, 1)
+        assert ft.stats.starttime == ts+0.01
+        assert len(ft.stats.processing) == 1
+        assert 'align_starttime' in ft.stats.processing[-1]
+
+        # Test small negative adjustment
+        ft = ft0.copy()
+        ft.align_starttime(ts-0.01, 1)
+        assert ft.stats.starttime == ts-0.01
+
+        # Test large, but near-enough positive adjustment
+        ft = ft0.copy()
+        ft.align_starttime(ts+1.01, 1)
+        assert ft.stats.starttime == ts + 0.01
+        # Test large, but near-enough negative adjustment
+        ft = ft0.copy()
+        ft.align_starttime(ts-1.01, 1)
+        assert ft.stats.starttime == ts - 0.01
+
+        # Test small, but too far positive adjustment
+        ft = ft0.copy()
+        ft.align_starttime(ts + 0.04, 1)
+        assert ft.stats.starttime == ts +0.04
+        assert 'interpolate' in ft.stats.processing[-1]
+        # Test small, but too far negative adjustment
+        ft = ft0.copy()
+        ft.align_starttime(ts-0.04, 1)
+        assert ft.stats.starttime == ts + 1 - 0.04
+
+        # Test large, too far, positive adjustment
+        ft = ft0.copy()
+        ft.align_starttime(ts + 1.04, 1)
+        assert ft.stats.starttime == ts + 0.04
+
+        # Test large, too far, negative adjustment
+        ft = ft0.copy()
+        ft.align_starttime(ts - 1.04, 1)
+        assert ft.stats.starttime == ts + 1 - 0.04
+
+        # Test different sampling rate that accurately aligns to current
+        ft = ft0.copy()
+        ft.align_starttime(ts + 0.01, 100)
+        assert ft.stats.starttime == ts
+        # Test different sampling rate that does not align
+        ft = ft0.copy()
+        ft.align_starttime(ts + 0.01, 10)
+        assert ft.stats.starttime == ts + 0.01

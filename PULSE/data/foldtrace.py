@@ -843,16 +843,11 @@ class FoldTrace(Trace):
     
     # PUBLIC UPDATED METHODS #
 
-        
-
-
     def trim(self, starttime=None, endtime=None, pad=False, nearest_sample=True, fill_value=None, apply_fill=True):
         """Trim/pad this FoldTrace to the specified starting and/or ending times
         with the option to pad and fill **data** values. Wraps updated methods:
         :meth:`~obspy.core.trace.Trace._ltrim` -> :meth:`~PULSE.data.foldtrace.FoldTrace._ltrim`
         :meth:`~obspy.core.trace.Trace._rtrim` -> :meth:`~PULSE.data.foldtrace.FoldTrace._rtrim`
-
-
 
         :param starttime: new starting time, defaults to None
             None uses current starttime of this FoldTrace
@@ -979,46 +974,71 @@ class FoldTrace(Trace):
 
 
     def align_starttime(self, starttime, sampling_rate, subsample_tolerance=0.01, **options):
+        """Align the starttime of a component trace to the sampling
+        index described by target values in **stats** using either a petty
+        time shift for small subsample adjustments, or interpolation for
+        larger subsample adjustments.
+        
+        Behaviors
+        ---------
+        Modifications are made in-place on the specified component.
 
+        Modification behaviors are dictated by how large of a subsample
+        adjustment is necessary to place the component's starttime into
+        the discretized time sampling index specified by inputs **starttime**
+        and **sampling_rate**
+
+        Misalignment <= **subsample_tolerance** of a sample - 
+            only starttime is updated, a "petty adjustment".
+
+        Misailgnment > **subsample_tolerance** of a sample - uses 
+           :meth:`~.FoldTrace.interpolate` referenced to the first
+           aligned timestamp after the original starttime of
+           the component being adjusted.
+
+        Parameters
+        ----------
+        :param starttime: reference starttime for the new sampling index
+        :type starttime: obspy.UTCDateTime
+        :param sampling_rate: sampling rate for the new sampling index
+        :type sampling_rate: float
+        :param subsample_tolerance: subsample tolerance fraction determining
+            if a "petty adjustment" is applied, defaults to 0.01
+            Must be a value :math:`\in` [0., 0.05]
+        :type subsample_tolerance: float, optional
+        """
+        # Argument compatability checks
         if isinstance(subsample_tolerance, int):
             subsample_tolerance = float(subsample_tolerance)
         if not isinstance(subsample_tolerance, float):
             raise TypeError(f'subsample_tolerance must be type float. Not type {type(subsample_tolerance)}')
         if not 0 <= subsample_tolerance <= 0.05:
             raise ValueError('subsample_tolerance must be in [0, 0.05]')
-        
         if not isinstance(starttime, UTCDateTime):
             raise TypeError
-        
         if not isinstance(sampling_rate, (int, float)):
             raise TypeError
         elif isinstance(sampling_rate, int):
             sampling_rate = float(sampling_rate)
-
         # If exact match, do nothing
         if starttime == self.stats.starttime:
             return
-
         # Calculate nearest starttime
         dt = starttime - self.stats.starttime
-        npts = dt*sampling_rate
-
-        
+        npts = dt*sampling_rate        
         nearest_starttime = starttime - np.round(npts)/sampling_rate
+        # Get sample fraction of misalignment
         dnpts = np.abs(nearest_starttime - self.stats.starttime)*sampling_rate
+        # If misalignment is small, use "petty adjustment"
         if dnpts <= subsample_tolerance:
-            self.stats.append(f'PULSE 0.0.0: align_starttime(starttime={starttime}, sampling_rate={sampling_rate}, subsample_tolerance={subsample_tolerance})')
-            self.stats.starttime = starttime
-
+            self.stats.processing.append(f'PULSE 0.0.0: align_starttime(starttime={starttime}, sampling_rate={sampling_rate}, subsample_tolerance={subsample_tolerance})')
+            self.stats.starttime = nearest_starttime
+        # Otherwise, use interpolation starting from the nearest starttime within the current trace
         else:
+            nearest_starttime = starttime - np.floor(npts)/sampling_rate
             self.interpolate(sampling_rate=self.stats.sampling_rate,
-                             starttime=starttime,
+                             starttime=nearest_starttime,
                              **options)
-            
-
-        
-
-
 
     def interpolate(self, sampling_rate, method='weighted_average_slopes',
                     starttime=None, npts=None, time_shift=0.0,

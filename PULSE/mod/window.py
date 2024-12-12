@@ -101,6 +101,8 @@ class WindMod(BaseMod):
     
         # Generate index object
         self.index = {}
+        # Set input_types
+        self._input_types = [DictStream]
 
     def update_from_seisbench(self, model):
         """Update a selection of window_stats communal parameters, the module
@@ -125,16 +127,6 @@ class WindMod(BaseMod):
         if model.component_order[1:] not in self.secondary_components:
             self.secondary_components.update(model.component_order[1:])
 
-    def check_input(self, input: DictStream) -> None:
-        """Check that the input is type :class:`~PULSE.data.dictstream.DictStream`
-
-        POLYMORPHIC last update with :class:`~.WindMod`
-
-        :param input: pulse input object
-        :type input: PULSE.data.dictstream.DictStream
-        """        
-        if not isinstance(input, DictStream):
-            self.Logger.critical('TypeError: input must be type PULSE.data.dictstream.DictStream')
 
     def get_unit_input(self, input: DictStream) -> dict:
         """Update the **index** of this :class:`~.WindMod` for new
@@ -146,55 +138,55 @@ class WindMod(BaseMod):
         :rtype: dict
         """        
         unit_input = {}
+
         # Split by instrument
-        for instrument, ds in input.split(id_element='inst'):
+        for instrument, ds in input.split_on().items():
+            ### POPULATE NEW ENTRIES IN **INDEX** ###
             # If this is a new instrument code
             if instrument not in self.index.keys():
-                new_entry = {instrument: {'stats': self.window_stats.copy(),
-                                          'ready': False}}
+                new_entry = {'stats': self.window_stats.copy(),
+                             'ready': False}
                 # Find primary & secondary keys for this instrument
                 for ft in ds:
-                    if ft.comp in self.primary_components:
-                        new_entry['stats'].update(
-                            {'primary_id': ft.id,
-                             'target_starttime': ft.stats.starttime})
+                    # If this is a primary component, populate primary_id and target_starttime
+                    if ft.stats.component in self.primary_components:
+                        new_entry['stats'].primary_id = ft.id
+                        new_entry['stats'].target_starttime = ft.stats.starttime
                     # Find secondary keys if there are secondary channels
                     elif len(ds) > 1:
                         # Identify the component pairs
                         for sc in self.secondary_components:
-                            if ft.comp in sc:
+                            if ft.stats.component in sc:
                                 new_entry['stats'].update({'secondary_components': sc})
                                 break
                     else:
                         new_entry['stats'].update({'secondary_components': 'NE'})
                 # If a primary key has been identified, add new entry
-                if new_entry['primary_id'] is not None:
-                    self.index.update(new_entry)
+                if new_entry['stats']['primary_id'] is not None:
+                    self.index.update({instrument: new_entry})
 
-            # Assess readiness
+            ### ASSESS READINESS TO GENERATE NEW WINDOWS ###
             if instrument in self.index.keys():
-                index = self.index[instrument]
-                stats = index['stats']
-                id = f'{instrument}{stats.primary}'
-                ft = ds[id]
+                _index = self.index[instrument]
+                _ws = _index['stats']
+                # Get primary component
+                ft_prime = ds[_ws.primary_id]
                 # Catch large forward jumps (outages)
-                if stats.target_endtime < ft.stats.starttime:
+                if _ws.target_endtime < ft_prime.stats.starttime:
                     # increment up window until target_starttime is within the
                     # data time domain
-                    while stats.target_starttime < ft.stats.starttime:
-                        stats.target_starttime += self.advance_dt
-
+                    while _ws.target_starttime < ft.stats.starttime:
+                        _ws.target_starttime += self.advance_dt
 
                 # Get valid fraction for target window time
-                fv = ft.get_fvalid_subset(starttime=stats.target_starttime,
-                                          endtime=stats.target_endtime) 
-                
-                if fv >= stats.pthresh:
+                fv = ft_prime.get_valid_fraction(starttime=_ws.target_starttime,
+                                          endtime=_ws.target_endtime) 
+                if fv >= _ws.pthresh:
                     if self._eager:
-                        index.update({'ready': True})
+                        _index.update({'ready': True})
                     else:
-                        if stats.target_endtime <= ft.stats.endtime:
-                            index.update({'ready': True})
+                        if _ws.target_endtime <= ft.stats.endtime:
+                            _index.update({'ready': True})
 
             # Capture ready instruments for windowing
             if self.index[instrument]['ready']:

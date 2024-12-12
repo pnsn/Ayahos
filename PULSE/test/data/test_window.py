@@ -518,7 +518,6 @@ class TestWindow(unittest.TestCase):
         # Assert removing the component gives the same as ignoring
         np.testing.assert_array_equal(sfZN, sf)
 
-
         # Assert target-failing window rases AttributeError
         with self.assertRaises(AttributeError):
             self.win_pert.collapse_fold()

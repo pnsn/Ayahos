@@ -149,6 +149,8 @@ class Window(DictStream):
         return rstr
 
     def __eq__(self, other):
+        """Allow rich implementation of the == operator
+        """        
         if not isinstance(other, Window):
             return False
         if self.traces != other.traces:
@@ -194,6 +196,11 @@ class Window(DictStream):
     primary = property(_get_primary)
 
     def _get_order(self) -> str:
+        """Get the preferred component order specified
+        as the primary_id component + the secondary_component codes
+
+        :returns: **order** (*str*) -- string containing ordered component codes
+        """        
         pid = self.stats.get_primary_component()
         sids = self.stats.secondary_components
         return pid + sids
@@ -324,49 +331,17 @@ class Window(DictStream):
         # If assessing secondary components
         else:
             return fvalid >= self.stats.sthresh
-        
-    # TODO: migrate to PULSE.mod.window.WindMod
-    # def _preprocess_check(self, components=None):
-    #     """Conduct the following checks on the contents of a preprocessed
-    #     :class:`~.Window` object:
-
-    #     1) All required components are present
-    #     2) All components meet target_ values in **stats**
-    #     3) All components' data are non-masked
-        
-
-    #     :param components: components to check, defaults to None
-    #         None: use primary component + secondary components in **stats**
-    #         str: use specified components, case sensitive
-    #     :type components: None or str, optional
-    #     :return: **order** (*str*) -- verified component order
-    #     """      
-    #     # QC component order
-    #     if isinstance(components, str):
-    #         if not all(_c in self.keys for _c in components):
-    #             raise KeyError('Not all specified components are present in this window')
-    #         else:
-    #             order = components
-    #     else:
-    #         order = self.stats.get_primary_component() + self.stats.secondary_components
-    #         if not all(_c in self.keys for _c in order):
-    #             raise ValueError('Not all components in stats are present in traces')
-        
-    #     for _c in order:
-    #         # Check if specified components meet all target requirements
-    #         result = self._check_targets(_c)
-    #         if result != set():
-    #             raise ValueError(f'component "{_c}" does not meet the following targets: {result}')
-    #         # Check that specified components are not masked (can still be masked arrays)        
-    #         if np.ma.is_masked(self[_c].data):
-    #             raise AttributeError(f'component "{_c}" is masked')
-            
-        # return order
-    
+     
     ######################
     ### PUBLIC METHODS ###
     ######################
     def copy(self):
+        """Create a deepcopy of the traces
+        and metadata contained in this :class:`~.Window` object
+
+        :return: _description_
+        :rtype: _type_
+        """        
         window = super().copy()
         window.stats = self.stats.copy()
         # window = self.__class__(traces=[ft.copy() for ft in self],
@@ -662,6 +637,31 @@ class Window(DictStream):
                     self.extend(ftr)
 
     def preprocess(self, components=None, rule=1, threshold_tolerance=1e-3, fold_threshold=0, **options):
+        """Preprocess specified components of this :class:`~.Window` object
+        using the workflow described in :meth:`~.Window.preprocess_component`
+        and subsequently fill any missing/under-informative components using
+        :meth:`~.Window.fill_missing_traces`
+
+        :param components: components to preprocess, defaults to None
+            - None processes the primary and any existing secondary components
+            specified in this Window object's **stats**
+            - An iterable that returns characters (e.g., 'Z12') will
+            result in processing Z 1 and 2 (if they are present)
+        :type components: NoneType or iterable collection of characters, optional
+        :param rule: missing/under-informative fill rule, defaults to 1
+            see :meth:`~.Window.fill_missing_traces` for more information
+        :type rule: int or str, optional
+        :param threshold_tolerance: Tolerance for components to meet their
+            valid data fraction threshold, defaults to 1e-3
+            threshold in :meth:`~.Window._check_fvalid`
+        :type threshold_tolerance: float, optional
+        :param fold_threshold: Cutoff for fold values to be considered
+            valid samples, defaults to 0
+            fthresh in :meth:`~.Window._check_fvalid`
+        :type fold_threshold: int, optional
+        :param options: key-word argument collector passed to
+            :meth:`~.Window.preprocess_component`
+        """        
         if components is None:
             components = self.keys
         elif hasattr(components, '__iter__'):

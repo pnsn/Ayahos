@@ -148,6 +148,15 @@ class Window(DictStream):
                 rstr += f'{_k}: {_v}\n'
         return rstr
 
+    def __eq__(self, other):
+        if not isinstance(other, Window):
+            return False
+        if self.traces != other.traces:
+            return False
+        if self.stats != other.stats:
+            return False
+        return True
+
     ### PRIVATE METHODS, PROPERTY ASSIGNMENTS, SUBROUTINES ###
     def _validate(self) -> None:
         """Validate essential elements of this :class:`~.Window` object

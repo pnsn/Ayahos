@@ -118,6 +118,24 @@ class TestWindow(unittest.TestCase):
             if _k != 'Z':
                 self.assertIn(_k, win.stats.secondary_components)
 
+    ### __eq__ ###
+    def test___eq__(self):
+        w1 = Window(traces=self.sub_st.select(channel='?N?').copy())
+        w2 = Window(traces=self.sub_st.select(channel='?N?').copy())
+        # Test mutual equalities
+        self.assertEqual(self.winx, w1)
+        self.assertEqual(self.winx, w2)
+        self.assertEqual(w1, w2)
+        
+        # Test change metadata
+        w1.stats.secondary_components='12'
+        self.assertNotEqual(self.winx, w1)
+        self.assertEqual(self.winx, w2)
+        # Test change traces
+        w2.pop('E')
+        self.assertNotEqual(self.winx, w2)
+
+
     ### PRIVATE (SUBROUTINE) METHODS TESTING ###
 
     def test__validate(self):
@@ -214,6 +232,16 @@ class TestWindow(unittest.TestCase):
         self.assertEqual(self.winx.order, self.winx._get_order())
 
     ### PUBLIC METHODS TESTING ###
+    def test_copy(self):
+        w1 = self.winx.copy()
+        w2 = self.winx.copy()
+
+        self.assertEqual(self.winx, w1)
+        self.assertEqual(self.winx, w2)
+        self.assertEqual(w1, w2)
+        w1.stats.secondary_components='12'
+        self.assertNotEqual(self.winx, w1)
+        self.assertEqual(self.winx, w2)
 
         
     def test_preprocess_component(self):
@@ -432,7 +460,10 @@ class TestWindow(unittest.TestCase):
         with self.assertRaises(AttributeError):
             self.win_pert.to_npy_tensor()
    
-    # def test_preprocess(self):
+    def test_preprocess(self):
+        wp1 = self.win_pert.copy()
+        wp2 = self.win_pert.copy()
+
 
 
     # def test_preprocess_component_errors(self):

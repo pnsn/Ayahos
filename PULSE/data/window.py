@@ -661,14 +661,18 @@ class Window(DictStream):
                 else:
                     self.extend(ftr)
 
-    def preprocess(self, alt_order=None, rule=1, threshold_tolerance=1e-3, fold_threshold=0, **options):
-        pcid = self.stats.get_primary_component()
-        if alt_order is None:
-            order = pcid + self.stats.secondary_components
-        elif isinstance(alt_order, 'str'):
-            if not self.stats.get_primary_component() in alt_order:
-                raise KeyError('alt_order does not include the primary component code {}')
-        for comp in order:
+    def preprocess(self, components=None, rule=1, threshold_tolerance=1e-3, fold_threshold=0, **options):
+        if components is None:
+            components = self.keys
+        elif hasattr(components, '__iter__'):
+            if all(isinstance(_e, str) for _e in components):
+                pass
+            else:
+                raise TypeError('Not all specified components in "components" are type str')
+        else:
+            raise AttributeError('components must be an iterable comporising component codes or None')
+
+        for comp in components:
             if comp in self.keys:
                 self.preprocess_component(comp, **options)
             else:
@@ -710,7 +714,7 @@ class Window(DictStream):
                 raise ValueError('Not all specified components in "components" are present')
         # If components isn't iterable - attribute error
         else:
-            raise AttributeError('components must be an iterable comprising component code characters')
+            raise AttributeError('components must be an iterable comprising component code characters or None')
 
         # Form tensor with appropriate dimensions
         shp = (len(components), self.stats.target_npts)

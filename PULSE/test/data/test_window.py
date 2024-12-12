@@ -465,6 +465,40 @@ class TestWindow(unittest.TestCase):
     def test_preprocess(self):
         wp1 = self.win_pert.copy()
         wp2 = self.win_pert.copy()
+        # Run method 
+        wp1.preprocess()
+        # Assert that process_component produces the same
+        # when no traces are missing
+        for _c in wp2.order:
+            wp2.preprocess_component(_c)
+        self.assertEqual(wp1, wp2)
+        # Require a channel to be filled
+        wp3 = self.win_pert.copy()
+        wp3.pop('E')
+        wp3.preprocess()
+        self.assertNotEqual(wp1, wp3)
+        for _c in wp1.order:
+            # Component is present
+            self.assertIn(_c, wp3.keys)
+            # If not the dropped component, assert all is equal
+            if _c != 'E':
+                self.assertEqual(wp1[_c], wp3[_c])
+            else:
+                # Assert replacement doesn't equal original
+                self.assertNotEqual(wp1[_c], wp3[_c])
+                # Assert replacement equals donor Z
+                np.testing.assert_array_equal(wp3['Z'].data, wp3[_c].data)
+        # ERROR TESTS
+        # TypeError from non-str iterable components
+        with self.assertRaises(TypeError):
+            wp3.preprocess(components=[1])
+        # Attribute error from non-iterable components
+        with self.assertRaises(AttributeError):
+            wp3.preprocess(components=1)
+        # Remaining errors covered by fill_missing_traces test suite
+    
+
+
 
 
 
@@ -493,9 +527,6 @@ class TestWindow(unittest.TestCase):
         # for _e, _pert in enumerate([0.005, 1.005]):
         #     self.win['Z'].stats.starttime += _pert
         #     self.assertNotEqual(self.win['Z'].stats.starttime)
-
-    def test_preprocess(self):
-        self.assertTrue(False)
 
     def test_collapse_fold(self):
         self.assertTrue(False)

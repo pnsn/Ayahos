@@ -33,6 +33,7 @@ class TestWindMod(unittest.TestCase):
             self.test_mod.check_input(deque([]))
 
     def test_get_unit_input(self):
+        # Make an appropriately scaled WindMod for the seattle record-section example
         test_mod = WindMod(window_stats={'target_npts': 1000, 'target_sampling_rate': 100.}, overlap=200)
         ds_save = self.ds.copy()
         self.assertEqual(test_mod.index, {})
@@ -58,7 +59,7 @@ class TestWindMod(unittest.TestCase):
         self.assertFalse(test_mod._continue_pulsing)
         # Assert that ui is empty dict
         self.assertEqual(ui, {})
-        
+
 
 
     def test_update_from_seisbench(self):

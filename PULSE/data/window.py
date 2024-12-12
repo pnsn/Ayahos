@@ -698,7 +698,7 @@ class Window(DictStream):
                 pass
             # Otherwise raise key error
             else:
-                raise KeyError('Not all specified components in "components" are present')
+                raise ValueError('Not all specified components in "components" are present')
         # If components isn't iterable - attribute error
         else:
             raise AttributeError('components must be an iterable comprising component code characters')

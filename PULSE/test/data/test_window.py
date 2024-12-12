@@ -423,9 +423,14 @@ class TestWindow(unittest.TestCase):
         # ERROR TESTS
         # AttributeError from components input without __iter__
         with self.assertRaises(AttributeError):
-            self.winx.to_npy_tensor(1)
-        # KeyError from iterable, but mismatching 
-        # for _arg in ['a',1]
+            self.winx.to_npy_tensor(components=1)
+        # ValueError from mismatching iterable
+        for _arg in ['a','123','ZE1',[1,2,3]]:
+            with self.assertRaises(ValueError):
+                self.winx.to_npy_tensor(components=_arg)
+        # AttributeError from having failing traces
+        with self.assertRaises(AttributeError):
+            self.win_pert.to_npy_tensor()
    
     # def test_preprocess(self):
 
@@ -460,9 +465,6 @@ class TestWindow(unittest.TestCase):
         self.assertTrue(False)
 
     def test_collapse_fold(self):
-        self.assertTrue(False)
-
-    def test_to_npy_tensor(self):
         self.assertTrue(False)
 
 

@@ -235,14 +235,16 @@ class TestWindow(unittest.TestCase):
     def test_copy(self):
         w1 = self.winx.copy()
         w2 = self.winx.copy()
-
         self.assertEqual(self.winx, w1)
         self.assertEqual(self.winx, w2)
         self.assertEqual(w1, w2)
+        # Assert that changing metadata doesn't back-propagate
         w1.stats.secondary_components='12'
         self.assertNotEqual(self.winx, w1)
-        self.assertEqual(self.winx, w2)
-
+        # Assert that dropping traces doesn't back propagate
+        w2.pop('E')
+        self.assertIn('E', self.winx.keys)
+        self.assertNotIn('E', w2.keys)
         
     def test_preprocess_component(self):
         # Pretest

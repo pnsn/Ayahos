@@ -128,9 +128,9 @@ class Window(DictStream):
             self.extend(traces, **options)
             # Final check - validate contents if traces are present        
             self._validate()
-### DUNDER METHODS ###
-
-
+    
+    
+    ### DUNDER METHODS ###
     def __repr__(self) -> str:
         """Provide a representative string for the metadata 
         and traces in this :class:`~.Window`. Primary component
@@ -309,113 +309,55 @@ class Window(DictStream):
         else:
             return fvalid >= self.stats.sthresh
         
-    def _preprocess_check(self, components=None):
-        """Conduct the following checks on the contents of a preprocessed
-        :class:`~.Window` object:
+    # TODO: migrate to PULSE.mod.window.WindMod
+    # def _preprocess_check(self, components=None):
+    #     """Conduct the following checks on the contents of a preprocessed
+    #     :class:`~.Window` object:
 
-        1) All required components are present
-        2) All components meet target_ values in **stats**
-        3) All components' data are non-masked
+    #     1) All required components are present
+    #     2) All components meet target_ values in **stats**
+    #     3) All components' data are non-masked
         
 
-        :param components: components to check, defaults to None
-            None: use primary component + secondary components in **stats**
-            str: use specified components, case sensitive
-        :type components: None or str, optional
-        :return: **order** (*str*) -- verified component order
-        """      
-        # QC component order
-        if isinstance(components, str):
-            if not all(_c in self.keys for _c in components):
-                raise KeyError('Not all specified components are present in this window')
-            else:
-                order = components
-        else:
-            order = self.stats.get_primary_component() + self.stats.secondary_components
-            if not all(_c in self.keys for _c in order):
-                raise ValueError('Not all components in stats are present in traces')
+    #     :param components: components to check, defaults to None
+    #         None: use primary component + secondary components in **stats**
+    #         str: use specified components, case sensitive
+    #     :type components: None or str, optional
+    #     :return: **order** (*str*) -- verified component order
+    #     """      
+    #     # QC component order
+    #     if isinstance(components, str):
+    #         if not all(_c in self.keys for _c in components):
+    #             raise KeyError('Not all specified components are present in this window')
+    #         else:
+    #             order = components
+    #     else:
+    #         order = self.stats.get_primary_component() + self.stats.secondary_components
+    #         if not all(_c in self.keys for _c in order):
+    #             raise ValueError('Not all components in stats are present in traces')
         
-        for _c in order:
-            # Check if specified components meet all target requirements
-            result = self._check_targets(_c)
-            if result != set():
-                raise ValueError(f'component "{_c}" does not meet the following targets: {result}')
-            # Check that specified components are not masked (can still be masked arrays)        
-            if np.ma.is_masked(self[_c].data):
-                raise AttributeError(f'component "{_c}" is masked')
+    #     for _c in order:
+    #         # Check if specified components meet all target requirements
+    #         result = self._check_targets(_c)
+    #         if result != set():
+    #             raise ValueError(f'component "{_c}" does not meet the following targets: {result}')
+    #         # Check that specified components are not masked (can still be masked arrays)        
+    #         if np.ma.is_masked(self[_c].data):
+    #             raise AttributeError(f'component "{_c}" is masked')
             
-        return order
+        # return order
     
     ######################
     ### PUBLIC METHODS ###
     ######################
-  
-    # Component Methods
-            
-    def align_starttime(self, comp, subsample_tolerance=0.01, **options):
-        """Align the starttime of a component trace to the sampling
-        index described by target values in **stats** using either a petty
-        time shift for small subsample adjustments, or interpolation for
-        larger subsample adjustments.
-        
-        Behaviors
-        ---------
-        Modifications are made in-place on the specified component.
+    def copy(self):
+        window = super().copy()
+        window.stats = self.stats.copy()
+        # window = self.__class__(traces=[ft.copy() for ft in self],
+        #                         header=self.stats.copy())
+        return window
 
-        Modification behaviors are dictated by how large of a subsample
-        adjustment is necessary to place the component's starttime into
-        the discretized time sampling specified by the target_ values
-        in this :class:`~.Window`'s **stats** attribute
-        Aligned - no change
 
-        Misalignment <= **subsample_tolerance** of a sample - 
-            only starttime is updated, a "petty adjustment".
-
-        Misailgnment > **subsample_tolerance** of a sample - uses 
-           :meth:`~.FoldTrace.interpolate` referenced to the first
-           aligned timestamp after the original starttime of
-           the component being adjusted.
-
-        Parameters
-        ----------
-        :param comp: component to adjust
-        :type comp: str
-        :param subsample_tolerance: fraction of a sample allowance for 
-            using "petty adjustment" behavior, defaults to 0.01
-            Value must be :math:`\\in[0, 0.05]`
-        :type subsample_tolerance: float, optional
-        :param options: key-word argument collector passed to the
-            :meth:`~.FoldTrace.interpolate` call in this method.
-        """        
-        if isinstance(subsample_tolerance, int):
-            subsample_tolerance = float(subsample_tolerance)
-        if not isinstance(subsample_tolerance, float):
-            raise TypeError(f'subsample_tolerance must be type float. Not type {type(subsample_tolerance)}')
-        if not 0 <= subsample_tolerance <= 0.05:
-            raise ValueError('subsample_tolerance must be in [0, 0.05]')
-        ft = self[comp]
-
-        # If perfectly aligned, continue to next trace
-        if self._check_starttime_alignment(comp):
-            return
-
-        # If not perfectly aligned, see if within tolerance
-        target_start = self._get_nearest_starttime(comp, roundup=False)
-        dnpts = np.abs(target_start - ft.stats.starttime)*\
-            self.stats.target_sampling_rate
-        # If within tolerance, do simple adjustment to starttime
-        if dnpts <= subsample_tolerance:
-            ft.stats.processing.append(f'PULSE 0.0.0: align_starttime(subsample_tolerance={subsample_tolerance})')
-            ft.stats.starttime = target_start
-        # Otherwise, use interpolation
-        else:
-            # Get first target-aligned timestamp within the domain of the trace
-            target_start = self._get_nearest_starttime(comp, roundup=True)
-            # Then conduct interpolation at same sampling rate, aligning
-            # with the target starttime sampling domain
-            ft.interpolate(sampling_rate=ft.stats.sampling_rate,
-                            starttime=target_start, **options)
-            
     def preprocess_component(
             self,
             comp,
@@ -428,54 +370,76 @@ class Window(DictStream):
         """Apply the following pre-processing pipeline on a specified component
         in this :class:`~.Window` object
 
-        align - align the temporal sampling with the target sampling domain
-            uses :meth:`~.Window.align_starttime`
-            REQUIRED
+        Workflow
+        --------
         split component trace into contiguous elements
-        For each element:
+        using :meth:`~.FoldTrace.split` with **ascopy**=`False`
+        for each element:
+            align - align the temporal sampling with the target sampling domain
+                uses :meth:`~.FoldTrace.align_starttime`
+                REQUIRED
             filter - apply a filter to the component trace element
+                uses :meth:`~.FoldTrace.filter`
                 OPTIONAL (turned of with None input)
             detrend - detrend the component trace element
+                uses :meth:`~.FoldTrace.detrend`
                 OPTIONAL (turned of with None input)
+            demean - remove the mean of the component trace element
+                uses :meth:`~.FoldTrace.detrend` with **type** = `demean`
             resample - resample the component trace element to the target sampling_rate
+                uses one of the following methods (passed as {'method':'<name>'})
+                'resample': uses :meth:`~.FoldTrace.resample`
+                'interpolate': uses :meth:`~.FoldTrace.interpolate`
+                'decimate': uses :meth:`~.FoldTrace.decimate`
                 REQUIRED
             taper - apply a taper to the component trace element on both ends
+                uses :meth:`~.FoldTrace.taper`
                 OPTIONAL (turned of with None input)
-        trim - trim the component trace to the target starttime and endtime and
-            insert fill_values
+        
+        trim - trim / pad the component trace and fill masked values
+            uses :meth:`~.FoldTrace.trim`
+            hard sets **pad**=`True` and **apply_fill**=`True`
             REQUIRED
 
-        :param comp: _description_
-        :type comp: _type_
-        :param align: _description_, defaults to {}
+        Parameters
+        ----------
+        :param comp: component code for trace to process
+        :type comp: str
+        :param align: optional arguments to pass to :meth:`~.FoldTrace.align_starttime`,
+            defaults to {}
         :type align: dict, optional
-        :param filter: _description_, defaults to {'type': 'bandpass', 'freqmin': 1., 'freqmax': 45.}
-        :type filter: dict, optional
-        :param detrend: _description_, defaults to {'type': 'linear'}
-        :type detrend: dict, optional
-        :param resample: _description_, defaults to {'method':'resample'}
+        :param filter: arguments to pass to :meth:`~.FoldTrace.filter`,
+            defaults to {'type': 'bandpass', 'freqmin': 1., 'freqmax': 45.}
+            Input of None turns off filtering
+        :type filter: dict or NoneType, optional
+        :param detrend: arguments to pass to :meth:`~.FoldTrace.detrend`,
+            defaults to {'type': 'linear'}
+            Input of None turns off filtering
+        :type detrend: dict or NoneType, optional
+        :param resample: arguments to pass to pass to the specified resampling
+            method (see above), defaults to {'method':'resample'}
+            Key 'method' is required
         :type resample: dict, optional
-        :param taper: _description_, defaults to {'max_percentage': None, 'max_length': 0.06}
-        :type taper: dict, optional
-        :param trim: _description_, defaults to {'fill_value': 0.}
+        :param taper: arguments to pass to :meth:`~.FoldTrace.taper`,
+            defaults to {'max_percentage': None, 'max_length': 0.06}
+            Input of None turns off tapering
+        :type taper: dict or NoneType, optional
+        :param trim: arguments to pass to :meth:`~.FoldTrace.trim`,
+            defaults to {'fill_value': 0.}
+            'fill_value' is a required input
         :type trim: dict, optional
-        :raises KeyError: _description_
-        :raises TypeError: _description_
-        :raises TypeError: _description_
-        :raises AttributeError: _description_
-        :raises TypeError: _description_
-        :raises AttributeError: _description_
-        :raises TypeError: _description_
-        :raises AttributeError: _description_
-        :raises TypeError: _description_
-        :raises TypeError: _description_
         """        
         if comp not in self.keys:
             raise KeyError
 
         # Alignment (assessment) is required
+        if isinstance(align, type(None)):
+            align = {}
         if not isinstance(align, dict):
             raise TypeError('align must be type dict')
+        else:
+            align.update({'starttime': self.stats.target_starttime,
+                          'sampling_rate': self.stats.target_sampling_rate})
 
         # Filtering is optional, but suggested
         if not isinstance(filter, (dict, type(None))):
@@ -495,7 +459,6 @@ class Window(DictStream):
         if not isinstance(resample, dict):
             raise TypeError('resample must be type dict')
         elif 'method' not in resample.keys():
-            breakpoint()
             raise AttributeError('resample required kwarg "method" not present')
         
         # Tapering is optional, but suggested
@@ -510,18 +473,24 @@ class Window(DictStream):
         elif trim['fill_value'] is None:
             raise ValueError('fill_value must be a float-like value')
         
-        
-        # Run alignment (check) subroutine
-        self.align_starttime(comp, **align)
 
-        # Create views of contiguous elements of the component
-        for _ft in self[comp].split(ascopy=False):
-            # Filter
-            if filter is not None:
-                _ft.filter(**filter)
+
+        # Create copies of contiguous elements of the component
+        st = self[comp].split(ascopy=True)
+        # Iterate across elements
+        for _e, _ft in enumerate(st):
+
             # Detrend
             if detrend is not None:
                 _ft.detrend(**detrend)
+            # # Demean
+            # _ft.detrend(type='demean')
+            # Filter
+            if filter is not None:
+                _ft.filter(**filter)
+            # Align starttime
+            _ft.align_starttime(self.stats.target_starttime,
+                                self.stats.target_sampling_rate)
             # Resample
             rmethod = resample.pop('method')
             if _ft.stats.sampling_rate != self.stats.target_sampling_rate:
@@ -532,6 +501,14 @@ class Window(DictStream):
             # Taper
             if taper is not None:
                 _ft.taper(**taper)
+            # Reassemble processed trace elements
+            if _e == 0:
+                _ft_new = _ft.copy()
+            else:
+                _ft_new += _ft
+        # Assign update fold trace
+        self[comp] = _ft_new
+
         # Trim/Pad/Fill
         if self[comp].stats.starttime != self.stats.target_starttime:
             trim.update({'starttime': self.stats.target_starttime})
@@ -542,47 +519,8 @@ class Window(DictStream):
         self[comp].trim(**trim)
         # TODO: Test if inplace modifications will cause chaos with processing
     
-
-    ## Window-Level Summative Methods ##
-                
-    def sync_to_targets(self, comp, 
-                        resample_kwargs={}, 
-                        starttime_shift_kwargs={},
-                        time_domain_kwargs={}):
-        """Summative method for modifying a specified component
-        trace to meet specified **target_** values in **stats**
-
-        Order of operations:
-        :meth:`~.Window.adjust_sampling_rate` - uses resample_kwargs
-        :meth:`~.Window.align_starttime` - uses starttime_shift_kwargs
-        :meth:`~.Window.adjust_time_domain` - uses time_domain_kwargs
-
-        :param comp: component code for component to sync
-        :type comp: str
-        :param resample_kwargs: dictionary to host non-default arguments
-            for :meth:`~.Window.adjust_sampling_rate`, defaults to {}
-        :type resample_kwargs: dict, optional
-        :param starttime_shift_kwargs: dictionary to host non-default arguments
-            for :meth:`~.Window.align_starttime`, defaults to {}
-        :type starttime_shift_kwargs: dict, optional
-        :param time_domain_kwargs: dictionary to host non-default arguments
-            for :meth:`~.Window.adjust_time_domain`, defaults to {}
-        :type time_domain_kwargs: dict, optional
-        """        
-        self.adjust_sampling_rate(comp, **resample_kwargs)
-        self.align_starttime(comp, **starttime_shift_kwargs)
-        self.adjust_time_domain(comp, **time_domain_kwargs)
     
-    ### Window Level Summative Methods ###
-
-    def preprocess(self, rule=1, threshold_tolerance=1e-3, fold_threshold=0, **options):
-        for comp in self.keys:
-            self.preprocess_component(comp, **options)
-        self.fill_missing_traces(rule=rule,
-                                 tolerance=threshold_tolerance,
-                                 threshold=fold_threshold)
-
-
+    ### Window Level Methods ###
 
     def fill_missing_traces(self, rule='primary', **options):
         """Fill missing/ill-informed traces in this :class:`~.Window`
@@ -643,6 +581,8 @@ class Window(DictStream):
         elif isinstance(rule, str):
             if rule.lower() in rules:
                 rule = rule.lower()
+            else:
+                raise ValueError('rule "{rule}" not supported')
         else:
             raise ValueError(f'rule "{rule}" not supported')
         
@@ -661,13 +601,12 @@ class Window(DictStream):
             # show missing components it as failing
             if _c not in fv_checks.keys():
                 fv_checks.update({_c: False})
-
         # Make sure the primary component has sufficient valid data
         if not fv_checks[pcpt]:
             raise ValueError(f'insufficient data in primary component {pcpt}')
             
         # If all components are passing, do nothing
-        if all(_v for _v in fv_checks.items()):
+        if all(_v for _v in fv_checks.values()):
             return
         # If any secondaries pass
         elif any(fv_checks[_c] for _c in scpt):
@@ -688,10 +627,10 @@ class Window(DictStream):
         # Create clone of donor component
         ftd = self[donor].copy()
         # Set clone fold to 0 (adds no information density)
-        ftd.fold *= 0.
+        ftd.fold = ftd.data*0
         # If using `zeros` rule, make data a 0-vector on the clone
         if rule == 'zeros':
-            ftd.data *= 0.
+            ftd.data = ftd.data*0
         # Iterate across components
         for comp, passing in fv_checks.items():
             # If component failed checks
@@ -705,6 +644,23 @@ class Window(DictStream):
                     self[comp] = ftr
                 else:
                     self.extend(ftr)
+
+    def preprocess(self, alt_order=None, rule=1, threshold_tolerance=1e-3, fold_threshold=0, **options):
+        pcid = self.stats.get_primary_component()
+        if alt_order is None:
+            order = pcid + self.stats.secondary_components
+        elif isinstance(alt_order, 'str'):
+            if not self.stats.get_primary_component() in alt_order:
+                raise KeyError('alt_order does not include the primary component code {}')
+        for comp in order:
+            if comp in self.keys:
+                self.preprocess_component(comp, **options)
+            else:
+                pass
+            
+        self.fill_missing_traces(rule=rule,
+                                 tolerance=threshold_tolerance,
+                                 threshold=fold_threshold)
 
 
     def to_npy_tensor(self, component_axis=0, components=None):

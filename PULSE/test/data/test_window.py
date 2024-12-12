@@ -205,40 +205,16 @@ class TestWindow(unittest.TestCase):
         self.win.stats.target_starttime += 300
         for _c in self.win.keys:
             self.assertFalse(self.win._check_fvalid(_c))
-    
 
-    def test__preprocess_check(self):
-        self.assertFalse(True)
 
     ### PUBLIC METHODS TESTING ###
 
-    # Component-Level Methods
-        
-    def test_align_starttime(self):
-        # Pretest for small perturbation
-        self.assertEqual(self.win['Z'].stats.starttime, self.win.stats.target_starttime)
-        self.assertEqual(len(self.win['Z'].stats.processing), 0)
-        # Test perturbation correction
-        for _e, _pert in enumerate([0.0001, 1.0001, 0.005, 1.005]):
-            self.win['Z'].stats.starttime += _pert
-            self.assertNotEqual(self.win['Z'].stats.starttime, self.win._get_nearest_starttime('Z'))
-            self.win.align_starttime('Z')
-            self.assertEqual(self.win['Z'].stats.starttime, self.win._get_nearest_starttime('Z'))
-            if _e < 2:
-                self.assertIn('align_starttime', self.win['Z'].stats.processing[-1])
-            else:
-                self.assertIn('interpolate', self.win['Z'].stats.processing[-1])
-        # Test errors
-        with self.assertRaises(TypeError):
-            self.win.align_starttime('Z', subsample_tolerance='a')
-        for _arg in [-1, -1e-9, 0.05 + 1e-9]:
-            with self.assertRaises(ValueError):
-                self.win.align_starttime('Z', subsample_tolerance=_arg)
         
     def test_preprocess_component(self):
         # Pretest
         for comp in self.win_pert.keys:
             self.assertNotEqual(self.win_pert._check_targets(comp), set([]))
+        # Run preprocessing
         for comp in self.win_pert.keys:
             self.win_pert.preprocess_component(comp)
         # Check that all targets are met
@@ -269,13 +245,158 @@ class TestWindow(unittest.TestCase):
             # Run process
             self.win_pert.preprocess_component(comp)
             # Assert all targets are now met
-            self.assertEqual(self.win_pert._check_targets(comp), set([]))
+            result = self.win_pert._check_targets(comp)
+            self.assertEqual(len(result), 0)
+            # self.assertEqual(self.win_pert._check_targets(comp), set([]))
             # Assert that data are now continuous
             self.assertFalse(np.ma.is_masked(self.win_pert[comp].data))
-            # Assert that masked values have values of 0
-            np.testing.assert_array_equal(np.zeros(1000, dtype=self.win_pert[comp].dtype), self.win_pert[comp].data[2000:3000])
 
+    def test_preprocess_component_errors(self):
+        # Test KeyError on comp
+        for _arg in ['Q',1]:
+            with self.assertRaises(KeyError):
+                self.win_pert.preprocess_component(_arg)
+        # Test Type Error on required
+        for _arg in ['resample','trim']:
+            for _val in ['a', ['a'], None]:
+                inp = {_arg: _val}
+                with self.assertRaises(TypeError):
+                    self.win_pert.preprocess_component('Z', **inp)
+        # Test TypeError on optional
+        for _arg in ['filter','detrend','taper']:
+            for _val in ['a', ['a']]:
+                inp = {_arg: _val}
+                with self.assertRaises(TypeError):
+                    self.win_pert.preprocess_component('Z', **inp)
+        # Test AttributeError on required kwargs
+        for _arg in ['filter','detrend','resample']:
+            inp = {_arg: {}}
+            with self.assertRaises(AttributeError):
+                self.win_pert.preprocess_component('Z', **inp)
+
+    def test_fill_missing_traces(self):
+        # Test no effect on passing window
+        fill_win = self.win.copy()
+        fill_win.fill_missing_traces()
+        self.assertEqual(fill_win, self.win)
+
+        winx = self.win.copy()
+        # Remove North Trace
+        winx.pop('N')
+        # Assert North trace is gone
+        self.assertNotIn('N', winx.keys)
+        # Iterate across fill rule and aliases
+        for rule in ['zeros','primary','secondary', 0, 1, 2]:
+            winxN = winx.copy()
+            # Apply fill rule to copy
+            self.assertNotIn('N', winxN.keys)
+            winxN.fill_missing_traces(rule=rule)
+            # Assert N is now present
+            # TODO: Remove once fully passing
+            if 'N' not in winxN.keys:
+                breakpoint()
+            self.assertIn('N', winxN.keys)
+
+            # Assert N has the rule-appropriate data
+            if rule in ['zeros',0]:
+                self.assertTrue(all(winxN['N'].data == 0))
+            elif rule in ['primary', 1]:
+                np.testing.assert_array_equal(winxN['Z'].data, winxN['N'].data)
+            elif rule in ['secondary', 2]:
+                np.testing.assert_array_equal(winxN['E'].data, winxN['N'].data)
+
+            # Assert N has 0 fold
+            self.assertTrue(all(winxN['N'].fold == 0))
+
+            # Assert donor still has 1 fold & clone has almost all the same metadata
+            if rule in ['zeros','primary',0, 1]:
+                self.assertTrue(all(winxN['Z'].fold == 1))
+                for _k, _v in winxN['Z'].stats.items():
+                    if _k != 'channel':
+                        self.assertEqual(_v, winxN['N'].stats[_k])
+                    else:
+                        self.assertEqual(_v[:-1] + 'N', winxN['N'].stats[_k])
+            else:
+                self.assertTrue(all(winxN['E'].fold == 1))
+                for _k, _v in winxN['E'].stats.items():
+                    if _k != 'channel':
+                        self.assertEqual(_v, winxN['N'].stats[_k])
+                    else:
+                        self.assertEqual(_v[:-1] + 'N', winxN['N'].stats[_k])
+            
+    def test_fill_missing_traces_secondary(self):
+        # TEST1 Setup: E at sthresh
+        winx = Window(traces=self.sub_st.select(channel='?N?'))
+        winx.pop('N')
+        winx1 = winx.copy()
+        winx1['E'].trim(endtime=winx1.stats.target_endtime - 30)
+        # Assert that 'E' still passes
+        self.assertTrue(winx1._check_fvalid('E'))
+
+        # Apply fill rule
+        winx1.fill_missing_traces(rule=2)
+
+        # Assert that 'N' is present
+        self.assertIn('N', winx1.keys)
+        # Assert N data matches E data
+        np.testing.assert_array_equal(winx1['N'].data, winx1['E'].data)
         
+        # TEST2 Setup: E below sthresh
+        winx1 = winx.copy()
+        # FIXME: If processing logging is reintroduced to FoldTrace - will need to correct this marker
+        winx1['E'].trim(endtime=winx1.stats.target_endtime - 50)
+        winx1['Z'].stats.processing.append('marker')
+        # setup checks
+        self.assertNotIn('N', winx1.keys)
+        self.assertFalse(winx1._check_fvalid('E'))
+        self.assertEqual(winx1['Z'].stats.processing, ['marker'])
+        self.assertEqual(winx1['E'].stats.processing, [])
+
+        # Apply rule
+        winx1.fill_missing_traces(rule=2)
+        self.assertIn('N', winx1.keys)
+        for comp in 'EN':
+            for _k, _v in winx1['Z'].stats.items():
+                # Assert that stats are almost identical
+                if _k != 'channel':
+                    self.assertEqual(_v, winx1[comp].stats[_k])
+                    # Assert that processing is empty on clone
+                    if _k == 'processing':
+                        self.assertEqual(_v, ['marker'])
+                else:
+                    self.assertEqual(_v[:-1]+comp, winx1[comp].stats[_k])
+                # Assert clone data matches donor
+                np.testing.assert_array_equal(winx1['Z'].data, winx1[comp].data)
+                # Assert clone fold is 0
+                self.assertTrue(all(winx1[comp].fold==0))
+    
+    def test_fill_missing_traces_errors(self):
+        winx = Window(traces=self.sub_st.select(channel='?N?'))
+        # setup precheck
+        self.assertTrue(winx._check_fvalid('Z'))
+        # Unapproved rule TypeError
+        for _arg in ['a', 3, 1.1]:
+            with self.assertRaises(ValueError):
+                winx.fill_missing_traces(rule=_arg)
+
+        # Insufficient data in primary component ValueError
+        winx['Z'].trim(endtime = winx.stats.target_endtime - 50)
+        # setup check
+        self.assertFalse(winx._check_fvalid('Z'))
+        with self.assertRaises(ValueError):
+            winx.fill_missing_traces()
+
+        # Missing primary component ValueError (inherited from _validate)
+        winx.pop('Z')
+        self.assertEqual(winx.stats.get_primary_component(), 'Z')
+        self.assertNotIn('Z', winx.keys)
+        with self.assertRaises(ValueError):
+            winx.fill_missing_traces()
+        
+
+
+
+    # def test_preprocess(self):
 
 
     # def test_preprocess_component_errors(self):
@@ -308,9 +429,6 @@ class TestWindow(unittest.TestCase):
         self.assertTrue(False)
 
     def test_collapse_fold(self):
-        self.assertTrue(False)
-
-    def test_fill_missing_traces(self):
         self.assertTrue(False)
 
     def test_to_npy_tensor(self):

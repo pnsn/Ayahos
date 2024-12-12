@@ -42,6 +42,8 @@ class TestWindow(unittest.TestCase):
         self.expected_processing = {'Z': ['filter','detrend','resample','taper'],
                                     'N': ['filter','detrend','align_starttime','taper','trim'],
                                     'E': ['interpolate','filter','detrend','resample','taper','trim']}
+        
+        self.winx = Window(traces=self.sub_st.select(channel='?N?'))
 
     def tearDown(self):
         del self.sub_st
@@ -207,6 +209,10 @@ class TestWindow(unittest.TestCase):
             self.assertFalse(self.win._check_fvalid(_c))
 
 
+    def test__get_order(self):
+        self.assertEqual('ZEN', self.winx.order)
+        self.assertEqual(self.winx.order, self.winx._get_order())
+
     ### PUBLIC METHODS TESTING ###
 
         
@@ -292,9 +298,6 @@ class TestWindow(unittest.TestCase):
             self.assertNotIn('N', winxN.keys)
             winxN.fill_missing_traces(rule=rule)
             # Assert N is now present
-            # TODO: Remove once fully passing
-            if 'N' not in winxN.keys:
-                breakpoint()
             self.assertIn('N', winxN.keys)
 
             # Assert N has the rule-appropriate data
@@ -325,10 +328,9 @@ class TestWindow(unittest.TestCase):
                         self.assertEqual(_v[:-1] + 'N', winxN['N'].stats[_k])
             
     def test_fill_missing_traces_secondary(self):
+        self.winx.pop('N')
         # TEST1 Setup: E at sthresh
-        winx = Window(traces=self.sub_st.select(channel='?N?'))
-        winx.pop('N')
-        winx1 = winx.copy()
+        winx1 = self.winx.copy()
         winx1['E'].trim(endtime=winx1.stats.target_endtime - 30)
         # Assert that 'E' still passes
         self.assertTrue(winx1._check_fvalid('E'))
@@ -342,7 +344,7 @@ class TestWindow(unittest.TestCase):
         np.testing.assert_array_equal(winx1['N'].data, winx1['E'].data)
         
         # TEST2 Setup: E below sthresh
-        winx1 = winx.copy()
+        winx1 = self.winx.copy()
         # FIXME: If processing logging is reintroduced to FoldTrace - will need to correct this marker
         winx1['E'].trim(endtime=winx1.stats.target_endtime - 50)
         winx1['Z'].stats.processing.append('marker')
@@ -371,31 +373,60 @@ class TestWindow(unittest.TestCase):
                 self.assertTrue(all(winx1[comp].fold==0))
     
     def test_fill_missing_traces_errors(self):
-        winx = Window(traces=self.sub_st.select(channel='?N?'))
         # setup precheck
-        self.assertTrue(winx._check_fvalid('Z'))
+        self.assertTrue(self.winx._check_fvalid('Z'))
         # Unapproved rule TypeError
         for _arg in ['a', 3, 1.1]:
             with self.assertRaises(ValueError):
-                winx.fill_missing_traces(rule=_arg)
+                self.winx.fill_missing_traces(rule=_arg)
 
         # Insufficient data in primary component ValueError
-        winx['Z'].trim(endtime = winx.stats.target_endtime - 50)
+        self.winx['Z'].trim(endtime = self.winx.stats.target_endtime - 50)
         # setup check
-        self.assertFalse(winx._check_fvalid('Z'))
+        self.assertFalse(self.winx._check_fvalid('Z'))
         with self.assertRaises(ValueError):
-            winx.fill_missing_traces()
+            self.winx.fill_missing_traces()
 
         # Missing primary component ValueError (inherited from _validate)
-        winx.pop('Z')
-        self.assertEqual(winx.stats.get_primary_component(), 'Z')
-        self.assertNotIn('Z', winx.keys)
+        self.winx.pop('Z')
+        self.assertEqual(self.winx.stats.get_primary_component(), 'Z')
+        self.assertNotIn('Z', self.winx.keys)
         with self.assertRaises(ValueError):
-            winx.fill_missing_traces()
+            self.winx.fill_missing_traces()
         
 
+    def test_fill_missing_traces_mismatched(self):
+        # TEST 1 SINGLE MISMATCHED SECONDARY
+        self.winx.stats.secondary_components='E1'
+        self.assertEqual(set('ZNE'), set(self.winx.keys))
+        self.winx.fill_missing_traces()
+        self.assertEqual(set('ZNE1'), set(self.winx.keys))
+        self.assertTrue(all(self.winx['1'].fold==0))
 
+    
+    def test_to_npy_tensor(self):
+        x = self.winx.to_npy_tensor()
+        # Assert shape is correct
+        self.assertEqual(x.shape, (3, 15000))
+        order = self.winx.order
+        # Assert data are in the correct order and identical
+        for _e, _c in enumerate(order):
+            np.testing.assert_array_equal(self.winx[_c].data, x[_e,:])
+        # Change order
+        x = self.winx.to_npy_tensor(components='ENZ')
+        self.assertNotEqual('ENZ', order)
+        self.assertEqual(x.shape, (3, 15000))
+        # Assert data are in the new specified order
+        for _e, _c in enumerate('ENZ'):
+            np.testing.assert_array_equal(self.winx[_c].data, x[_e, :])
 
+        # ERROR TESTS
+        # AttributeError from components input without __iter__
+        with self.assertRaises(AttributeError):
+            self.winx.to_npy_tensor(1)
+        # KeyError from iterable, but mismatching 
+        # for _arg in ['a',1]
+   
     # def test_preprocess(self):
 
 

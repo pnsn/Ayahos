@@ -184,6 +184,13 @@ class Window(DictStream):
         
     primary = property(_get_primary)
 
+    def _get_order(self) -> str:
+        pid = self.stats.get_primary_component()
+        sids = self.stats.secondary_components
+        return pid + sids
+
+    order = property(_get_order)
+
     def _check_targets(self, comp: str) -> set:
         """Check a given FoldTrace in this :class:`~.Window` object
         meet the target values in **stats**
@@ -663,7 +670,7 @@ class Window(DictStream):
                                  threshold=fold_threshold)
 
 
-    def to_npy_tensor(self, component_axis=0, components=None):
+    def to_npy_tensor(self, components=None):
         """Convert the pre-processed contents of this :class:`~.Window` into a
         numpy array that meets the scaling specifications for a SeisBench
         WaveformModel input. This method holds off on converting the tensor
@@ -680,24 +687,38 @@ class Window(DictStream):
         :param output_type: 
         :return: _description_
         :rtype: _type_
-        """        
-        order = self.preprocess_check(components=components)
-        
+        """
+        # If component_order is None, use content from header
+        if components is None:
+            components = self.order
+        # For all candidate components, make sure they are iterables
+        if hasattr(components, '__iter__'): 
+            # That call only extant traces
+            if all(_k in self.keys for _k in components):
+                pass
+            # Otherwise raise key error
+            else:
+                raise KeyError('Not all specified components in "components" are present')
+        # If components isn't iterable - attribute error
+        else:
+            raise AttributeError('components must be an iterable comprising component code characters')
+
         # Form tensor with appropriate dimensions
-        shp = (len(order), self.stats.target_npts)
+        shp = (len(components), self.stats.target_npts)
         tensor = np.full(shape=shp, fill_value=0.)
 
         # Fill in Tensor
-        for _e, _c in enumerate(order):
+        for _e, _c in enumerate(components):
+            # Make sure component passes checks
+            result = self._check_targets(_c)
+            if result != set([]):
+                raise AttributeError(f'Component "{_c}" falied the following: {result}')
             # Catch case where data attribute is still a masked array with no masking
             if isinstance(self[_c].data, np.ma.MaskedArray):
                 tensor[_e, :] = self[_c].data.data
             else:
                 tensor[_e, :] = self[_c].data
 
-        # If components are axis 1 (columns) transpose
-        if component_axis == 1:
-            tensor = tensor.T
         return tensor
     
     def collapse_fold(self, components=None):

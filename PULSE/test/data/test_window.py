@@ -498,6 +498,43 @@ class TestWindow(unittest.TestCase):
         # Remaining errors covered by fill_missing_traces test suite
     
 
+    def test_collapse_fold(self):
+        w1 = self.winx.copy()
+        w1['Z'].fold *= 2
+        self.assertTrue(all(w1['Z'].fold == 2))
+        self.assertTrue(all(w1['N'].fold == 1))
+        # Assert runs and retursn 2 + 1 + 1 vectors
+        sf = w1.collapse_fold()
+        self.assertTrue(all(sf == 4))
+        # Assert ignoring one component retunrs 2 + 1 vectors
+        sfZN = w1.collapse_fold('ZN')
+        self.assertTrue(all(sfZN==3))
+        # Remove one component
+        w1.pop('N')
+        # Assert still runs and returns 2 + 1 vectors
+        sf = w1.collapse_fold()
+        self.assertTrue(all(sf == 3))
+
+        # Assert removing the component gives the same as ignoring
+        np.testing.assert_array_equal(sfZN, sf)
+
+
+        # Assert target-failing window rases AttributeError
+        with self.assertRaises(AttributeError):
+            self.win_pert.collapse_fold()
+        # Assert non-iterable components raises AttributeError
+        with self.assertRaises(AttributeError):
+            self.winx.collapse_fold(1)
+        with self.assertRaises(ValueError):
+            self.winx.collapse_fold('123')
+        
+
+
+
+
+
+
+
 
 
 
@@ -527,9 +564,6 @@ class TestWindow(unittest.TestCase):
         # for _e, _pert in enumerate([0.005, 1.005]):
         #     self.win['Z'].stats.starttime += _pert
         #     self.assertNotEqual(self.win['Z'].stats.starttime)
-
-    def test_collapse_fold(self):
-        self.assertTrue(False)
 
 
     

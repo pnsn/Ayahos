@@ -680,7 +680,7 @@ class Window(DictStream):
             
         self.fill_missing_traces(rule=rule,
                                  tolerance=threshold_tolerance,
-                                 threshold=fold_threshold)
+                                 fthresh=fold_threshold)
 
 
     def to_npy_tensor(self, components=None):
@@ -744,13 +744,27 @@ class Window(DictStream):
         :type components: bool, optional
         :return: **summed_fold** (*numpy.ndarray*) -- summed fold vector
         """ 
-        # Run checks and get order     
-        order = self.preprocess_check(components=components)
+        if components is None:
+            components = self.order
+        elif hasattr(components, "__iter__"):
+            if all(_e in self.keys for _e in components):
+                pass
+            else:
+                raise ValueError('Element(s) of "components" do not correspond to components in this Window')
+        else:
+            raise AttributeError('components must be an iterable comprising component codes in this Window or None')
+
         # Initialize new summed_fold vector
         summed_fold = np.full(shape=(self.stats.target_npts,), fill_value=0.)
         # Iterate across desired components and sum fold
-        for _c in order:
-            summed_fold += self[_c].fold
+        for _c in components:
+            if _c in self.keys:
+                result = self._check_targets(_c)
+                if result != set([]):
+                    raise AttributeError(f'Component "{_c}" failed these tests: {result}')
+                summed_fold += self[_c].fold
+            else:
+                continue
         return summed_fold
 
     

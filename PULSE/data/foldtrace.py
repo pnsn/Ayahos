@@ -543,7 +543,6 @@ class FoldTrace(Trace):
         return rstr
 
     ## NEW PUBLIC METHODS ##
-
     
     def astype(self, dtype=None):
         """Conduct an in-place change of this FoldTrace's **dtype**
@@ -1004,7 +1003,7 @@ class FoldTrace(Trace):
         :type sampling_rate: float
         :param subsample_tolerance: subsample tolerance fraction determining
             if a "petty adjustment" is applied, defaults to 0.01
-            Must be a value :math:`\in` [0., 0.05]
+            Must be a value :math:`\in` [0., 0.5]
         :type subsample_tolerance: float, optional
         """
         # Argument compatability checks
@@ -1012,8 +1011,8 @@ class FoldTrace(Trace):
             subsample_tolerance = float(subsample_tolerance)
         if not isinstance(subsample_tolerance, float):
             raise TypeError(f'subsample_tolerance must be type float. Not type {type(subsample_tolerance)}')
-        if not 0 <= subsample_tolerance <= 0.05:
-            raise ValueError('subsample_tolerance must be in [0, 0.05]')
+        if not 0 <= subsample_tolerance <= 0.5:
+            raise ValueError('subsample_tolerance must be in [0, 0.5]')
         if not isinstance(starttime, UTCDateTime):
             raise TypeError
         if not isinstance(sampling_rate, (int, float)):
@@ -1023,6 +1022,7 @@ class FoldTrace(Trace):
         # If exact match, do nothing
         if starttime == self.stats.starttime:
             return
+        
         # Calculate nearest starttime
         dt = starttime - self.stats.starttime
         npts = dt*sampling_rate        

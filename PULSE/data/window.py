@@ -82,7 +82,15 @@ class Window(DictStream):
         # Bug-patch for bleed issue in testing FIXME
         if header is None:
             header = {}
-        elif not isinstance(header, dict):
+        elif isinstance(header, dict):
+            pass
+        elif isinstance(header, WindowStats):
+            hdr = {}
+            for _k, _v in header.items():
+                if _k not in header._readonly:
+                    hdr.update({_k: _v})
+            header = hdr
+        else:
             raise TypeError
 
         # Compatability Check for primary_component

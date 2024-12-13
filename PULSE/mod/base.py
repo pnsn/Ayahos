@@ -190,7 +190,7 @@ class BaseMod(object):
     ###################
             
     ## UTILITY METHODS -- THESE DON'T CHANGE ACROSS MODs ##
-    def check_input(self, input: deque) -> None:
+    def check_input(self, input) -> None:
         """Check that **input** type matches a type in **_input_types**
 
         UTILITY METHOD
@@ -284,16 +284,16 @@ class BaseMod(object):
             unit input object. Empty input returns None
         """        
         try:
-            unit_output = input.pop()
+            unit_input = input.pop()
         except IndexError:
             self._continue_pulsing = False
-            unit_output = None
+            unit_input = None
         except AttributeError as e:
             self.Logger.critical(rich_error_message(e))
 
             # self.Logger.critical(f'AttributeError: input of type {type(input)} does not have method "pop". Exiting')
             # sys.exit(os.EX_USAGE)
-        return unit_output
+        return unit_input
 
     def run_unit_process(self, unit_input: object) -> object:
         """Run the unit process on a unit input object

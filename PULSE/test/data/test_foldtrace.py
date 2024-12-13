@@ -1216,3 +1216,39 @@ class TestFoldTrace(TestTrace):
         ft = ft0.copy()
         ft.align_starttime(ts + 0.01, 10)
         assert ft.stats.starttime == ts + 0.01
+
+    def test_blind(self):
+        for _arg in [1, 100, (50, 40), -1, -1.1, 1.1, (1,2,3), 'a', [1,2], (40000, 40000), 400000]:
+            ft = FoldTrace(read()[0])
+            assert all(ft.fold == 1)
+            
+            if isinstance(_arg, int):
+                if ft.count()//2 > _arg > 0:
+                    ft.blind(_arg)
+                    assert all(ft.fold[:_arg] == 0)
+                    assert all(ft.fold[-_arg:] == 0)
+                else:
+                    with pytest.raises(ValueError):
+                        ft.blind(_arg)
+            elif isinstance(_arg, tuple):
+                if len(_arg) == 2:
+                    if all(isinstance(_a, int) for _a in _arg):
+                        if all(ft.count()//2 >= _a >= 0 for _a in _arg):            
+                            ft.blind(_arg)
+                            assert all(ft.fold[:_arg[0]] == 0)
+                            assert all(ft.fold[-_arg[1]:] == 0)
+                        else:
+                            with pytest.raises(ValueError):
+                                ft.blind(_arg)
+                    else:
+                        with pytest.raises(TypeError):
+                            ft.blind(_arg)
+                else:
+                    with pytest.raises(AttributeError):
+                        ft.blind(_arg)
+
+            else:
+                with pytest.raises(TypeError):
+                    ft.blind(_arg)
+            
+                

@@ -318,6 +318,8 @@ class SBMMod(BaseMod):
                     # Compose FoldTrace
                     _ft = FoldTrace(data=_pred, fold=_fold,
                                     header=__meta)
+                    # Apply blinding
+                    _ft.blind(self.model._annotate_args['blinding'])
                     # Append to out
                     out.extend(_ft)
             # Attach out to output

@@ -1,7 +1,8 @@
 from unittest import TestCase
 from collections import deque
 
-from obspy.core.event import Pick, ResourceIdentifier, WaveformStreamID, QuantityError
+import numpy as np
+from obspy.core.event import Pick
 from obspy import read
 from seisbench.models import PhaseNet
 
@@ -113,7 +114,7 @@ class TestPickMod(TestCase):
         self.assertEqual(unit_input, self.ds_pred)
 
     def test_run_unit_process(self):
-        unit_input = self.ds_pred.copy()
+        unit_input = self.ds_pred
         mod = PickMod()
         unit_output = mod.run_unit_process(unit_input)
         # Assert Type
@@ -134,15 +135,38 @@ class TestPickMod(TestCase):
             tp = _e.time
             ti = _e.time - _e.time_errors.lower_uncertainty
             tf = _e.time + _e.time_errors.upper_uncertainty
-            # Reconstitute peak
+            # Reconstitute peak value
             mag = (mod.threshold/(1 - _e.time_errors.confidence_level/100))
+            # Reconstitude relative peak sample position
+            mpos = int((tp - ti)*100)
             _ift = unit_input.select(component=_e.phase_hint)[0].view(starttime=ti, endtime=tf)
             # Assert that max values are within rounding
             self.assertAlmostEqual(_ift.max(), mag, places=6)
-            
+            # Assert that max position is accurate to 1 sample
+            self.assertAlmostEqual(mpos, np.argmax(_ift.data), delta=1)
+        
+        # Error check
+        for _arg in [self.ds_pred[0].copy(), 'a', 1.1, 1]:
+            with self.assertRaises(TypeError):
+                mod.run_unit_process(_arg)
+        
+    def test_put_unit_output(self):
+        # Setup
+        mod = PickMod()
+        self.assertEqual(len(mod.output), 0)
+        unit_output = mod.run_unit_process(self.ds_pred)
+        uol = len(unit_output)
+        uoc = unit_output.copy()
+        # Run test process
+        mod.put_unit_output(unit_output)
 
+        # Assert shifts in unit_output and mod.output element counts
+        self.assertEqual(len(mod.output), uol)
+        self.assertEqual(len(unit_output), 0)
 
-            breakpoint()
-
-
-        # unit_output 
+        # Assert that ordering is preserved
+        for _e in range(uol):
+            if mod.output[_e] != uoc[_e]:
+                breakpoint()
+            self.assertEqual(mod.output[_e], uoc[_e])
+        

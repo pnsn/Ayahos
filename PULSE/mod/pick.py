@@ -38,12 +38,14 @@ class PickMod(BaseMod):
     and use the component code of their originating :class:`~.FoldTrace`
     as their **phase_hint** attribute.
 
-    Pick Object Formatting
-    ----------------------
+    Pick Object Definitions
+    -----------------------
+    **NOTE: A key re-definition here is the time_errors attribute**
+
     time - maximum CRF value timing
-    time_error - lower_uncertainty = delta seconds from `time` to trigger onset
-               - upper_uncertainty = delta seconds from `time` to trigger offset
-               - confidence_level = (1 - threshold/max_CRF_value)*100
+    time_errors - lower_uncertainty = delta seconds from `time` to trigger onset
+                - upper_uncertainty = delta seconds from `time` to trigger offset
+                - confidence_level = (1 - threshold/max_CRF_value)*100
     resource_id - model and weight names are saved in the path, if present
     method_id - model and weight names are saved in the path, if present
     waveform_id - NSLC code (drops Model and Weight identifiers), with component codes replaced with `?`
@@ -228,6 +230,9 @@ class PickMod(BaseMod):
         :param unit_output: collection of :class:`~.Pick` objects
         :type unit_output: deque
         """
+        for _e in range(len(unit_output)):
+            _p = unit_output.pop()
+            self.output.appendleft(_p)
         # If there is more than one element in unit_output      
         if len(unit_output) > 1:
             # Reverse the deque order to counteract the flip imposed by extendleft()

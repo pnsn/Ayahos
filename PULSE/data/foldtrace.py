@@ -1192,4 +1192,44 @@ class FoldTrace(Trace):
 
         return self
         
-    
+    def blind(self, npts):
+        """Apply 'blinding' to this FoldTrace where values
+        at the left and right edges of the FoldTrace have
+        their fold set to 0. Terminology comes from blinding
+        procedure usedin SeisBench (and ML detector/pickers
+        in general)
+
+        :param npts: number of samples to blind
+            int input - blind npts samples on both sides
+            2-tuple input - blind npts[0] samples on the left
+                and npts[1] samples on the right
+        :type npts: int or tuple
+        """        
+        # Compatability check for blinding npts of type int
+        if isinstance(npts, int):
+            if npts >= 0:
+                bl, br = npts, npts
+            else:
+                raise ValueError('int npts must be non-negative')
+        # Compatability check for blinding npts of type tuple
+        elif isinstance(npts, tuple):
+            if len(npts) == 2:
+                if all(isinstance(_n, int) for _n in npts):
+                    if all(_n >= 0 for _n in npts):
+                        bl, br = npts
+                    else:
+                        raise ValueError('tuple npts contents must be non-negative')
+                else:
+                    raise TypeError('tuple npts must contain only type int')
+            else:
+                raise AttributeError('tuple npts must be a 2-tuple')
+        else:
+            raise TypeError('npts must be type int or a 2-tuple thereof')
+        # Check that blinding isn't too large
+        if bl > self.count()//2:
+            raise ValueError('left blinding value exceeds half-length of FoldTrace')
+        if br > self.count()//2:
+            raise ValueError('right blinding value exceeds half-length of FoldTrace')
+        # Apply Blinding
+        self.fold[:bl] = 0
+        self.fold[-br:] = 0

@@ -233,10 +233,3 @@ class PickMod(BaseMod):
         for _e in range(len(unit_output)):
             _p = unit_output.pop()
             self.output.appendleft(_p)
-        # If there is more than one element in unit_output      
-        if len(unit_output) > 1:
-            # Reverse the deque order to counteract the flip imposed by extendleft()
-            unit_output.reverse()
-        # extend the deque to the left so entries grow older (processing wise)
-        # from left to right
-        self.output.extendleft(unit_output)

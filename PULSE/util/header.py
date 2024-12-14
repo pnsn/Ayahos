@@ -399,6 +399,10 @@ class WindowStats(AttribDict):
         if key in self._readonly:
             raise KeyError(f'{key} is readonly')
 
+        if key == 'target_sampling_rate':
+            if isinstance(value, int):
+                value = float(value)
+
         if not isinstance(value, self._types[key]):
             raise ValueError(f'{key} of type "{type(value)}" not supported.')
 

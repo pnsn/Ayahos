@@ -10,122 +10,155 @@
     # TODO: Need to write pulse subroutines with simplified structure
 
 """
-import sys, os
-import seisbench.models as sbm
 from collections import deque
-from obspy import UTCDateTime
-from obspy.core.util.attribdict import AttribDict
-from PULSE.data.foldtrace import FoldTrace
+from warnings import warn
 from PULSE.data.dictstream import DictStream
 from PULSE.data.window import Window
 from PULSE.util.header import WindowStats
-from PULSE.util.log import rich_error_message
 from PULSE.mod.base import BaseMod
 
 class WindMod(BaseMod):
+    
     def __init__(
             self,
-            window_stats={
-                'pthresh': 0.9,
-                'sthresh': 0.8,
-                'target_npts': 6000,
-                'target_sampling_rate': 100.,
-            },
+            name='EQTransformer',
+            target_npts = 6000,
+            target_sampling_rate = 100.,
+            overlap_npts=1800,
+            primary_threshold = 0.9,
+            secondary_threshold = 0.8,
             primary_components={'Z','3'},
             secondary_components={'NE','12'},
-            name='EQTransformer',
-            overlap=1800,
-            eager=False,
+            windowing_mode='normal',
+            blind_after_sampling=False,
             max_pulse_size=1,
             maxlen=None):
         # Inherit from BaseMod
         super().__init__(max_pulse_size=max_pulse_size,
                          maxlen=maxlen,
                          name=name)
-
-        # Compatability Check for primary_components
-        if isinstance(primary_components, set):
-            if all(isinstance(_e, str) for _e in primary_components):
-                if all(len(_e) == 1 for _e in primary_components):
-                    self.primary_components = [_e.upper() for _e in primary_components]
-                else:
-                    raise ValueError(f'all elements in primary_components must be single-character strings')
-            else:
-                raise TypeError(f'all elements in primary_components must be type str')
+        # Compose window_stats
+        self.window_stats = WindowStats()
+        if isinstance(target_npts, (float,int)):
+            self.window_stats.update({'target_npts': target_npts})
         else:
-            raise TypeError('primary_components must be type set')
-        
-        # Compatability Check for secondary_components
-        if isinstance(secondary_components, set):
-            if all(isinstance(_e, str) for _e in secondary_components):
-                if all(len(_e) == 2 for _e in secondary_components):
-                    self.secondary_components = [_e.upper() for _e in secondary_components]
-                else:
-                    raise ValueError('all elements in secondary_components must be two-character strings')
-            else:
-                raise TypeError('all elements in secondary_components must be type str')
+            raise TypeError('target_npts must be int-like')
+        if isinstance(target_sampling_rate, (int, float)):
+            self.window_stats.update({'target_sampling_rate': target_sampling_rate})
         else:
-            raise TypeError('secondary_components must be type list')
-        
-        # Compatability check for window_stats
-        approved_presets = set(['target_sampling_rate','target_npts','pthresh','sthresh'])
-        # Use WindowStats __setattr__ to thoroughly QC window_stats
-        try:
-            if not window_stats.keys() <= approved_presets:
-                msg = f'window_stats may only contain keys in: {approved_presets}'
-                raise KeyError(msg)
-        except AttributeError:
-            raise
-        try:
-            self.window_stats = WindowStats(header = window_stats)
-        except (KeyError, ValueError, TypeError) as e:
-            self.Logger.critical(rich_error_message(e))
-        
-        # Compatability check for eager
-        if isinstance(eager, bool):
-            self._eager = eager
+            raise TypeError('target_sampling_rate must be float-like')
+        if isinstance(primary_threshold, float):
+            self.window_stats.update({'pthresh': primary_threshold})
         else:
-            raise TypeError('eager must be type bool')
-        
-        # Compatability check for overlap
-        if not isinstance(overlap, (int, float)):
-            raise TypeError('overlap must be type int')
-        elif not 0 <= int(overlap) <= self.window_stats.target_npts:
-            raise ValueError(f'overlap must be in [0, {self.window_stats.target_npts}]')
+            raise TypeError('primary_threshold must be type float')
+        if isinstance(secondary_threshold, float):
+            self.window_stats.update({'sthresh': secondary_threshold})
         else:
-            self.overlap = int(overlap)
-        # Calculate derived values
-        self.overlap_dt = self.overlap/self.window_stats.target_sampling_rate
-        self.advance = (self.window_stats.target_npts - self.overlap - 1)
-        self.advance_dt = self.advance/self.window_stats.target_sampling_rate
-    
+            raise TypeError('secondary_threshold must be type float')
+        
+        # Assign attributes leveraging __setattr__
+        self.primary_components = primary_components
+        self.secondary_components = secondary_components
+        self.windowing_mode = windowing_mode
+        self.blind_after_sampling = blind_after_sampling        
+        self.overlap_npts = int(overlap_npts)
         # Generate index object
         self.index = {}
         # Set input_types
         self._input_types = [DictStream]
 
-    def update_from_seisbench(self, model):
-        """Update a selection of window_stats communal parameters, the module
-        name, and primary/secondary components codes using metadata contained
-        in a :class:`~seisbench.models.WaveformModel` object
 
-        :param model: seisbench model
-        :type model: seisbench.models.WaveformModel
+    ### Define derived attributes with properties ##
+    def get_window_dt(self):
+        return self.window_stats.target_npts/self.window_stats.target_sampling_rate
+    
+    window_dt = property(get_window_dt)
+
+    def get_overlap_dt(self):
+        return self.overlap_npts/self.window_stats.target_sampling_rate
+    
+    overlap_dt = property(get_overlap_dt)
+
+    def get_advance_dt(self):
+        advance = (self.window_stats.target_npts - self.overlap_npts - 1)
+        return advance/self.window_stats.target_sampling_rate
+
+    advance_dt = property(get_advance_dt) 
+
+    def get_padded_dt(self):
+        # Get the delta seconds offset for 'windowing_mode' = 'padded'
+        return self.window_dt - self.overlap_dt
+    
+    padded_dt = property(get_padded_dt)
+
+    ### DUNDER METHODS ###
+
+    def __setattr__(self, key, value):
+        """Define attribute setting rules to allow for parameter changes
+        with greater user ease during and after initializing a WindMod
+
+        :param key: _description_
+        :type key: _type_
+        :param value: _description_
+        :type value: _type_
+        :raises TypeError: _description_
+        :raises ValueError: _description_
+        :raises TypeError: _description_
+        :raises ValueError: _description_
+        :raises ValueError: _description_
+        :raises ValueError: _description_
+        :raises ValueError: _description_
+        :raises ValueError: _description_
+        :raises SyntaxError: _description_
         """        
-        if not isinstance(model, sbm.WaveformModel):
-            self.Logger.warning('TypeError: input model is not type seisbench.models.WaveformModel')
-        else:
-            pass
+        if key == 'blind_after_sampling':
+            if not isinstance(value, bool):
+                raise TypeError('blind_after_sampling must be type bool')
+        
+        if key == 'overlap_npts':
+            if isinstance(value, float):
+                if value == int(value):
+                    value = int(value)
+                else:
+                    raise ValueError(f'{key} must be int-like')
+            if not isinstance(value, int):
+                raise TypeError('overlap must be type int')
+            elif value < 0:
+                raise ValueError('overlap must be non-negative')
+            elif value > self.window_stats.target_npts:
+                raise ValueError('overlap cannot exceed target_npts')
+            
+        if key == 'windowing_mode':
+            if value.lower() not in ['normal','eager','padded']:
+                raise ValueError(f'{key} "{value}" not supported')
+            else:
+                value = value.lower()
 
-        self.window_stats.update({
-            'target_sampling_rate': model.sampling_rate,
-            'target_npts': model.in_samples
-        })
-        self.setname(model.name)
-        if model.component_order[0] not in self.primary_components:
-            self.primary_components.update(model.component_order[0])
-        if model.component_order[1:] not in self.secondary_components:
-            self.secondary_components.update(model.component_order[1:])
+        if key in ['primary_components','secondary_components']:
+            if not isinstance(value, set):
+                try:
+                    value = set(value)
+                except Exception:
+                    raise
+            
+            if all(isinstance(_e, str) for _e in value):
+                # Primary must be a single charcter
+                if key == 'primary_components':
+                    if all(len(_e) == 1 for _e in value):
+                        value = set(value)
+                    else:
+                        raise ValueError
+                # Secondaries must be 2+ characters
+                elif key == 'secondary_components':
+                    if all(len(_e) > 1 for _e in value):
+                        value = set(value)
+                    else:
+                        raise ValueError
+            else:
+                raise SyntaxError
+                
+        super().__setattr__(key, value)
+
 
 
     def get_unit_input(self, input: DictStream) -> dict:
@@ -170,24 +203,32 @@ class WindMod(BaseMod):
                 _index = self.index[instrument]
                 _ws = _index['stats']
                 # Get primary component
-                ft_prime = ds[_ws.primary_id]
+                _ft = ds[_ws.primary_id]
                 # Catch large forward jumps (outages)
-                if _ws.target_endtime < ft_prime.stats.starttime:
+                if _ws.target_endtime < _ft.stats.starttime:
                     # increment up window until target_starttime is within the
                     # data time domain
                     while _ws.target_starttime < ft.stats.starttime:
                         _ws.target_starttime += self.advance_dt
-
-                # Get valid fraction for target window time
-                fv = ft_prime.get_valid_fraction(starttime=_ws.target_starttime,
-                                          endtime=_ws.target_endtime) 
-                if fv >= _ws.pthresh:
-                    if self._eager:
-                        _index.update({'ready': True})
-                    else:
-                        if _ws.target_endtime <= ft.stats.endtime:
-                            _index.update({'ready': True})
-
+                # Assess readiness for 'normal' and 'eager' windowing
+                if self.windowing_mode in ['normal','eager']:
+                    fv = _ft.get_valid_fraction(
+                        starttime=_ws.target_starttime,
+                        endtime=_ws.target_endtime) 
+                    # If there are enough valid data to make the next window
+                    if fv > _ws.pthresh:
+                        # If eager, go ahead (even if the target_endtime isn't in the buffer yet)
+                        if self.windowing_mode == 'eager':
+                            _index['ready'] = True
+                        # If normal, make sure the target_endtime exists in the buffer
+                        elif self.windowing_mode == 'normal':
+                            if _ws.target_endtime <= ft.stats.endtime:
+                                _index['ready'] = True
+                        # If padded, make sure target_endtime is at least a window length behind the buffer end
+                        elif self.windowing_mode == 'padded':
+                            if _ws.target_endtime <= (ft.stats.endtime + self.window_dt):
+                                _index['ready'] = True
+                
             # Capture ready instruments for windowing
             if self.index[instrument]['ready']:
                 unit_input.update({instrument: ds})
@@ -198,37 +239,32 @@ class WindMod(BaseMod):
         return unit_input
     
     def run_unit_process(self, unit_input: dict) -> deque:
-        """_summary_
-
-        :param unit_input: _description_
-        :type unit_input: dict
-        :return: _description_
-        :rtype: deque
-        """        
         unit_output = deque()
-        for inst, ds in unit_input.items():
-            index = self.index[inst]
-            stats = index['stats']
-            if not index['ready']:
-                self.Logger.critical('Unready dictstream views are making it into `run_unit_process`')
-            # Use view + copy as an efficient way to get subset copies of large traces
-            traces = ds.view(starttime=stats.target_starttime, 
-                             endtime=stats.target_endtime).copy()
-            # Create a copy of the stats object to pass to a Window
-            header = stats.copy()
-            # Generate a new window
-            try:
-                window = Window(traces=traces, header=header)
-            except Exception as e:
-                self.Logger.critical(rich_error_message(e))
-            # Append new_window to 
+        for icode, ds in unit_input.items():
+            _index = self.index[icode]
+            _stats = _index['stats']
+            if not _index['ready']:
+                raise RuntimeError('Unready dictstream views are making it past get_unit_input')
+            traces = ds.view(starttime=_stats.target_starttime,
+                             endtime=_stats.target_endtime).copy()
+            header = _stats.copy()
+            # Generate window
+            window = Window(traces=traces, header=header)
+            # Append new window to unit_output
             unit_output.appendleft(window)
-            # Disarm readiness
-            index['ready'] = False
-            # Advance window for next window to generate
-            stats.target_starttime += self.advance_dt
+            # Update index to reflect new window generation
+            _index['ready'] = False
+            _stats.target_starttime += self.advance_dt
+            # Apply blinding if specified
+            if self.blind_after_sampling:
+                for ft in ds:
+                    # Make a view of the foldtrace
+                    vft = ft.view(starttime=_stats.target_starttime,
+                                  endtime=_stats.target_endtime)
+                    # Set fold to 0 in the view
+                    vft.fold = vft.fold*0
         return unit_output
-    
+                
     def put_unit_output(self, unit_output: deque) -> None:
         if not isinstance(unit_output, deque):
             self.Logger.critical('TypeError: unit_output must be type collections.deque')

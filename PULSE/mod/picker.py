@@ -1,5 +1,5 @@
 """
-:module: PULSE.mod.pick
+:module: PULSE.mod.picker
 :auth: Nathan T. Stevens
 :email: ntsteven (at) uw.edu
 :org: Pacific Northwest Seismic Network

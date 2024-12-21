@@ -14,7 +14,7 @@ from unittest import TestCase
 import pandas as pd
 
 from PULSE.mod.base import BaseMod
-from PULSE.mod.sequence import Sequence
+from PULSE.mod.sequencer import Sequence
 
 
 class TestSequence(TestCase):

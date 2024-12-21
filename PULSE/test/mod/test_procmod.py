@@ -5,7 +5,7 @@ from obspy import read
 
 from PULSE.data.foldtrace import FoldTrace
 from PULSE.data.dictstream import DictStream
-from PULSE.mod.process import ProcMod, BaseMod
+from PULSE.mod.processer import ProcMod, BaseMod
 
 class TestProcMod(unittest.TestCase):
 

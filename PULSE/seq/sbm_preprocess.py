@@ -1,9 +1,9 @@
 
 import seisbench.models as sbm
 
-from PULSE.mod.sequence import SeqMod, Sequence
-from PULSE.mod.process import ProcMod
-from PULSE.mod.window import WindMod
+from PULSE.mod.sequencer import SeqMod, Sequence
+from PULSE.mod.processer import ProcMod
+from PULSE.mod.windower import WindMod
 from PULSE.data.window import Window
 
 

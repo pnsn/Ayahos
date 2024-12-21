@@ -15,7 +15,7 @@
 """
 import os, sys
 from PULSE.mod.base import BaseMod
-from PULSE.mod.sequence import SequenceMod
+from PULSE.mod.sequencer import SequenceMod
 from PULSE.mod.pyew import PyEWMod, EWTransactMod
 
 

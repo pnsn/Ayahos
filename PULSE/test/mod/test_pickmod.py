@@ -9,7 +9,7 @@ from seisbench.models import PhaseNet
 from PULSE.data.foldtrace import FoldTrace
 from PULSE.data.dictstream import DictStream
 from PULSE.mod.base import BaseMod
-from PULSE.mod.pick import PickMod
+from PULSE.mod.picker import PickMod
 
 class TestPickMod(TestCase):
     # Load 3C data once

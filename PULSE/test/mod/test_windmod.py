@@ -4,7 +4,7 @@ from collections import deque
 
 from PULSE.util.header import WindowStats
 from PULSE.mod.base import BaseMod
-from PULSE.mod.window import WindMod
+from PULSE.mod.windower import WindMod
 from PULSE.data.dictstream import DictStream
 from PULSE.test.example_data import load_seattle_example
 

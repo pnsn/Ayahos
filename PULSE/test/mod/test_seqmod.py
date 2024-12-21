@@ -10,7 +10,7 @@ import unittest, logging, time
 from collections import deque
 from pandas import DataFrame
 from PULSE.mod.base import BaseMod
-from PULSE.mod.sequence import Sequence, SeqMod
+from PULSE.mod.sequencer import Sequence, SeqMod
 
 
 class TestSeqMod(unittest.TestCase):

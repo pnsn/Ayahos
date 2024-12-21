@@ -5,13 +5,19 @@
 :org: Pacific Northwest Seismic Network
 :license: AGPL-3.0
 :purpose:
-    This conatins the class definition for a module that facilitates data window generation
+    This conatins the class definition for a module that facilitates regularly spaced
+    generation of time-windowed views of contents of a :class:`~.DictStream` object.
+
+    This is a more-abstracted version of the :class:`~PULSE.mod.windower.WindMod` class
 
     # TODO: Need to write pulse subroutines with simplified structure
 
 """
 from collections import deque
 from warnings import warn
+
+from obspy import UTCDateTime
+
 from PULSE.util.header import MLStats
 from PULSE.data.dictstream import DictStream
 from PULSE.data.window import Window
@@ -25,8 +31,9 @@ class SampleMod(BaseMod):
             length=60.,
             step=42.,
             min_valid_frac=0.9,
-            reference='Z',
+            ref_val='Z',
             ref_key='component',
+            split_key='instrument',
             mode='normal',
             max_pulse_size=1,
             maxlen=None,
@@ -39,7 +46,7 @@ class SampleMod(BaseMod):
         self.step = step
         self.min_valid_frac = min_valid_frac
         self.ref_key = ref_key
-        self.reference = reference
+        self.ref_val = ref_val
         self.mode = mode
         # Generate index object
         self.index = {}
@@ -47,6 +54,23 @@ class SampleMod(BaseMod):
         self._input_types = [DictStream]
 
     def __setattr__(self, key, value):
+        """Farm out attribute setting safety checks to this
+        method, rather than re-writing them in multiple method
+        headers!
+
+        :param key: _description_
+        :type key: _type_
+        :param value: _description_
+        :type value: _type_
+        :raises TypeError: _description_
+        :raises ValueError: _description_
+        :raises NotImplementedError: _description_
+        :raises ValueError: _description_
+        :raises ValueError: _description_
+        :raises KeyError: _description_
+        :raises TypeError: _description_
+        :raises AttributeError: _description_
+        """        
         if key in ['length','step', 'min_valid_fract']:
             if isinstance(value, (int, float)):
                 value = float(value)
@@ -67,13 +91,13 @@ class SampleMod(BaseMod):
             if value > 1:
                 raise ValueError
 
-        if key == 'ref_key':
+        if key in ['ref_key', 'split_key']:
             if value in dict(MLStats().id_keys).keys():
                 pass
             else:
                 raise KeyError
 
-        if key == 'reference':
+        if key == 'ref_val':
             if hasattr(value, '__iter__'):
                 if all(isinstance(_e, str) for _e in value):
                     value = set(value)
@@ -81,6 +105,7 @@ class SampleMod(BaseMod):
                     raise TypeError
             else:
                 raise AttributeError
+            
         if key == 'mode':
             if value.lower() in ['normal','eager','padded']:
                 value = value.lower()
@@ -168,6 +193,105 @@ class SampleMod(BaseMod):
             self._continue_pulsing = False
         return unit_input
     
+    def get_unit_input(self, input: deque) -> dict:
+        unit_input = {}
+        for _val, _ds in input.split_on(self.split_key).items():
+            self._assess_new_entry(_val, _ds)
+            if _val in self.index.keys():
+                self._cross_check_registered_ids(_val, _ds)
+                self._assess_entry_readiness(unit_input, _val, _ds)
+            else:
+                continue
+            
+        return unit_input
+    
+
+    def _assess_new_entry(self, _val, _ds):
+        # New Entry Generation
+        if _val not in self.index.keys():
+            primaries = set()
+            secondaries = set()
+            for _id, _ft in _ds.traces.items():
+                if _ft.key_attr[self.ref_key] in self.ref_val:
+                    primaries.add(_id)
+                else:
+                    secondaries.add(_id)
+            # If there is one or more primaries, generate new entry
+            if len(primaries) >= 1:
+                # Set t0 to NOW
+                t0 = UTCDateTime()
+                # Find the earliest starttime in the DictStream view
+                for _p in primaries:
+                    if _ds[_p].stats.starttime < t0:
+                        t0 = _ds[_p].stats.starttime
+                # Populate new_entry
+                new_entry = {'p_ids': primaries,
+                                's_ids': secondaries,
+                                'ready': False,
+                                'ti': t0,
+                                'tf': t0 + self.length}
+                # Register new_entry
+                self.index.update({_val: new_entry})
+    def _cross_check_registered_ids:
+        # Entry Readiness Assessment
+        if _val in self.index.keys():
+            _index = self.index[_val]
+            # Iterate across _ds to check id registration and primary time(s)
+            _ti = []
+            __ti = []
+            _tf = []
+            __tf = []
+            for _id, _ft in _ds.traces.items():
+                # Check if ids are registered
+                if _id in _index['p_ids']:
+                    _ti.append(_ft.stats.starttime)
+                    _tf.append(_ft.stats.endtime)
+                elif _id in _index['s_ids']:
+                    __ti.append(_ft.stats.starttime)
+                    __tf.append(_ft.stats.endtime)
+                # Catch new ids coming in
+                else:
+                    if _ft.key_attr[self.ref_key] in self.ref_val:
+                        _index['p_ids'].add(_id)
+                        _ti.append(_ft.stats.starttime)
+                        _tf.append(_ft.stats.endtime)
+                    else:
+                        _index['s_ids'].add(_id)
+                        __ti.append(_ft.stats.starttime)
+                        __tf.append(_ft.stats.endtime)
+            # Check registered traces (i.e. p_ids & s_ids)
+            _regset = _index['p_ids'].union(_index['s_ids'])
+            # If _regset - _ds.traces.keys() is not the null set (i.e., _regset has things _ds doesn't)
+            todrop = _regset.difference(_ds.traces.keys())
+            # If todrop is nonempty, iterates and drops (or errors out)
+            for _r in todrop:
+                if _r in _index['p_ids']:
+                    _index['p_ids'].remove(_r)
+                elif _r in _index['s_ids']:
+                    _index['s_ids'].remove(_r)
+                else:
+                    raise RuntimeError('Not sure how we got here...')
+                    
+                # Patient mode waits for all registered traces
+                if self.mode == 'patient':
+
+
+                
+                
+                new_entry = {'ready': False}
+                
+
+                input_vals = set([_ft.key_attr[self.ref_key] for _ft in _ds])
+                # If the intersection of the reference value(s) and input_values is
+                # the null-set, continue iterating - no reference valued foldtraces present
+                if self.ref_val.intersection(input_vals) == set([]):
+                    continue
+                if len(input_vals) == 1:
+
+
+                for _ft in _ds:
+
+
     def run_unit_process(self, unit_input: dict) -> deque:
         unit_output = deque()
         for icode, ds in unit_input.items():

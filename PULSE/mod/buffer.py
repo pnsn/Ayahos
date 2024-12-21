@@ -5,7 +5,7 @@
 :org: Pacific Northwest Seismic Network
 :license: AGPL-3.0
 :purpose:
-    This contains the definition for the BufferModule class that hosts a :class:`~PULSE.data.dictstream.DictStream`
+    This contains the definition for the BufferMod class that hosts a :class:`~PULSE.data.dictstream.DictStream`
     object containing :class:`~PULSE.data.mltracebuff.MLTraceBuff` objects keyed to the Buffers' id attribute
 """
 import logging, sys, os, typing

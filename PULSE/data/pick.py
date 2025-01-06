@@ -5,69 +5,200 @@
 :org: Pacific Northwest Seismic Network
 :license: AGPL-3.0
 :purpose:
-    This contains class definitions for Pick and Trigger data objects used
-    to compactly describe characteristic response function triggers and arrival
-    time picks for seismic body waves.
+    This contains class definitions for Trigger data objects used
+    to compactly describe characteristic response function triggers
+
 """
 import logging
 from PULSE.util.stats import estimate_moments, fit_normal_pdf_curve, estimate_quantiles
 import numpy as np
 from obspy import Trace, UTCDateTime
 from obspy.core.util.attribdict import AttribDict
-from PULSE.data.arch.mltrace import MLTrace
+from PULSE.data.foldtrace import FoldTrace
 from scipy.cluster.vq import *
 
 Logger = logging.getLogger(__name__)
 
 from obspy.core.util.attribdict import AttribDict
 
-class Logo(AttribDict):
-    """
-    A class for Earthworm LOGO information
-    """
-    defaults = {
-        'MOD_ID': None,
-        'INST_ID': None,
-        'TYPE': None,
-        'TYPE_NAME': None,
-    }
-    
-    _types = {'MOD_ID': (type(None), int),
-              'INST_ID': (type(None), int),
-              'TYPE': (type(None), int),
-              'TYPE_NAME': (type(None), str)}
+class Trigger(FoldTrace):
 
-    def __init__(self, **kwargs):
-        super().__init__()
-        for _k, _v in kwargs.items():
-            if _k in self.defaults:
-                if _k in ['MOD_ID','INST_ID','TYPE']:
-                    if 0 <= _v <= 255:
-                        if int(_v) == _v:
-                            self.update({_k: int(_v)})
-                        else:
-                            raise TypeError
-                    else:
-                        raise ValueError
+    def __init__(self, source_trace, pt_on, pt_off, thr_on, thr_off, pt_pad=None):
+        if not isinstance(source_trace, FoldTrace):
+            raise TypeError
+        
+        if pt_pad is None:
+            pt_pad = 0
+        # Use __setattr__ safety checks
+        self.pt_pad = pt_pad
+        self.pt_on = pt_on
+        self.pt_off = pt_off
+        # Generate view of input source_trace
+        tts = source_trace.stats.starttime + \
+            (self.pt_on - self.pad_samples)*source_trace.stats.delta
+        tte = source_trace.stats.starttime + \
+            (self.pt_off + self.pad_samples)*source_trace.stats.delta
+        view = source_trace.view(starttime=tts, endtime=tte).copy()
+
+        if not all(view.data >= 0):
+            raise ValueError('View of source_trace contains negative values - are you sure this is a CRF?')
+
+        super().__init__(data=view.data,
+                         fold=view.fold,
+                         header=view.stats)
+        
+        self.pt_on = self.pt_pad
+        self.pt_off = self.count() - self.pt_pad
+        self.thr_on = thr_on
+        self.thr_off = thr_off
+    
+    def __setattr__(self, key, value):
+        """Enforce Type and Value rules for setting attribute values new
+        to this :class:`~.Trigger` object.
+
+        :param key: name of the attribute being set
+        :type key: str
+        :param value: new value to set to the attribute **key**
+        :type value: varies
+            - pt_X attributes: int-like
+            - thr_X attributes: float-like
+        """        
+        if key in ['pt_pad','pt_on','pt_off']:
+            if isinstance(value, (int, float)):
+                if value == int(value):
+                    value = int(value)
                 else:
-                    if isinstance(_v, str):
-                        if 'TYPE' in _v:
-                            self.update({_k: _v})
-                        else:
-                            raise SyntaxError
-                    else:
-                        raise TypeError
+                    raise TypeError(f'{key} must be int-like')
             else:
-                raise KeyError
+                raise TypeError(f'{key} must be int-like')
+            if value < 0:
+                raise ValueError(f'{key} must be non-negative')
+        if key in ['thr_on','thr_off']:
+            if isinstance(value, (int, float)):
+                value = float(value)
+            else:
+                raise TypeError(f'{key} must be float-like')
+            if value <= 0:
+                raise ValueError(f'{key} must be positive')
+            
+        super().__setattr__(key, value)
+    
+
+    def get_max_time(self):
+        """Get the timestamp of the absolute maximum value in the
+        **data** attribute of this :class:`~.Trigger` object
+
+        :return: _description_
+        :rtype: _type_
+        """        
+        return self.stats.starttime + np.argmax(np.abs(self.data))*self.stats.sampling_rate
+    
+    tmax = property(get_max_time)
+    pmax = property(max)
+
+    def estimate_gaussian_moments(self, fisher=False):
+        """Under the assumption that this :class:`~.Trigger`'s **data** 
+        has a similar shape to a normal/Gaussian probability density function,
+        estimate the mean, standard deviation, skewness, and kurtosis of the
+        roughly Gaussian PDF. This method provides options to use the 
+        Pearson or Fisher definitions of Kurtosis
+
+        :param fisher: Use the Fisher definition of kurtosis?
+            I.e., a true normal distribution has a kurtosis of 3.
+            Defaults to False
+        :type fisher: bool, optional
+        :returns: **result** (*dict*) - dictionary with keyed values for
+            the mean, std, skew, and kurt_X. The "_X" corresponds
+            to the kurtosis definition used.
+        """        
+        xv = np.arange(0, self.count())
+        mean, std, skew, kurt = estimate_moments(xv, self.data, fisher=fisher) 
+
+        out = [mean*self.stats.delta, std*self.stats.delta, skew, kurt]
+        names = ['mean','std','skew']
+        if fisher:
+            names.append('kurt_f')
+        else:
+            names.append('kurt_p')
+        
+        result = dict(zip(names, out))
+        return result
+    
+    def estimate_quantiles(self, quantiles=[0.16, 0.50, 0.84], decimals=4):
+        """Under the assumption that this :class:`~.Trigger`'s **data**
+        represent a probability density function, estimate the specified
+        quantiles of that PDF.
+
+        :param quantiles: Quantiles to estimate, defaults to [0.16, 0.50, 0.84]
+        :type quantiles: list, optional
+        :param decimals: quantile precision for labeling quantile estimates
+            Not used in calculating the actual quantiles. Defaults to 4
+        :type decimals: int, optional
+        :returns: **result** (*dict*) -- dictionary with keys of **quantiles** 
+            and the delta seconds values relative to this :class:`~.Trigger`'s
+            **starttime** for each specified quantile
+
+        """        
+        xv = np.arange(0, self.count())*self.stats.delta
+        out = estimate_quantiles(xv, self.data, q=quantiles)
+        # Convert into delta seconds
+        out = [_o * self.stats.delta for _o in out]
+        names = [np.round(_q, decimals=decimals) for _q in quantiles]
+        result = dict(zip(names, out))
+        return result
+
+    def to_pick(self, pick='max', uncertainty='trigger', confidence='pmax_scaled', **kwargs):
+        """
+        Convert the metadata in this trigger into an ObsPy :class:`~.Pick` object
+        with a specified formatting to convey trigger size and peak value
+
+
+
+
+        sigma options
+        ---------------------
+        None -- No uncertainties reported
+        'trigger' -- uses the time off
+        'pmax_weighted' -- confidence interval for the pick uncertainty is calculated as:
+          :math:`100*(1 - \\frac{0.5*(thr_ON + thr_OFF)}{pmax})`
+        
+        """
+        if pick not in ['max','mean','median']:
+            raise ValueError(f'pick type "{pick}" not supported.')
+        if uncertainty not in ['sigma','std','iqr']:
+            raise ValueError(f'uncertainty type "{uncertainty}" not supported.')
+        
+        pkwargs = {}
+
+        # Get pick time
+        if pick == 'max':
+            tpick = self.tmax()
+        elif pick == 'mean':
+            if 'fisher' in kwargs.keys():
+                fisher = kwargs['fisher']
+            result = self.estimate_gaussian_moments(**pkwargs)
+            tpick = self.stats.starttime + result['mean']
+        elif pick == 'median':
+            if 'decimals' in kwargs.keys():
+                pkwargs.update({'decimals': kwargs['decimals']})
+            result = self.estimate_quantiles(quantiles=[0.5], **pkwargs)
+            tpick = self.stats.starttime + result[0.5]
+        else:
+            raise ValueError
+        
+        # Get uncertainties
+        if sigma 
+
+
 
 class Trigger(object):
-    """A class providing a more detailed representation of a characteristic
+    """A class providing a more-detailed representation of a characteristic
     response function (CRF) trigger.
 
     See :meth:`~obspy.signal.trigger.trigger_onset`
 
     :param source_trace: Trace-like object used to generate
-    :type source_trace: ayahos.core.mltrace.MLTrace
+    :type source_trace: PULSE.data.foldtrace.FoldTrace
     :param trigger: trigger on and off indices (iON and iOFF)
     :type trigger: 2-tuple of int
     :param trigger_level: triggering level used to generate trigger
@@ -95,7 +226,7 @@ class Trigger(object):
         - **self.pmax** (*float*) -- maximum data value in source_trace.data[iON:iOFF]
         - **self.pick2k** (*ayahos.core.pick.Pick2KMsg*) -- TYPE_PICK2K data class object
     """
-    def __init__(self, source_trace, trigger, trigger_level, padding_samples=0, logo=None):
+    def __init__(self, source_trace, trigger, trigger_level, padding_samples=0):
         if isinstance(source_trace, Trace):
             pass
         else:

@@ -21,7 +21,7 @@ import logging, sys
 from PULSE.data.mltrace import MLTrace
 from PULSE.data.dictstream import DictStream
 from PULSE.mod.base import BaseMod
-from PULSE.data.trigger import Trigger, GaussTrigger, QuantTrigger, Logo
+from PULSE.data.pick import Trigger, GaussTrigger, QuantTrigger, Logo
 from PULSE.data.pick import Pick2KMsg
 from obspy.signal.trigger import trigger_onset
 import numpy as np

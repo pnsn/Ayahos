@@ -17,7 +17,7 @@ TODO: Eventually migrate general sequence construction to PULSE.mod.sequence.Seq
 """
 import threading, logging, time, sys, configparser, inspect
 from PULSE.util.pyew import is_wave_msg
-from PULSE.mod.sequencer import SequenceMod
+from PULSE.mod.sequencing import SequenceMod
 from PULSE.mod.arch.pyew import PyEWMod
 
 Logger = logging.getLogger(__name__)

@@ -20,7 +20,7 @@ from PULSE.util.header import MLStats
 from PULSE.data.window import Window
 from PULSE.data.dictstream import DictStream
 from PULSE.mod.base import BaseMod
-from PULSE.mod.sbm_predicter import SBMMod
+from PULSE.mod.predicting import SBMMod
 
 # Globally set number of threads for torch use to half available
 torch.set_num_threads(torch.get_num_threads()//2)

@@ -21,7 +21,7 @@ from PULSE.data.foldtrace import FoldTrace
 from PULSE.mod.base import BaseMod
 
 
-class PickMod(BaseMod):
+class PickerMod(BaseMod):
     """
     A PULSE class for triggering and picking arrivals on :class:`~.FoldTrace`
     objects that have already been converted from waveforms to a characteristic
@@ -79,7 +79,8 @@ class PickMod(BaseMod):
 
     def __init__(self,
                  min_fold=1.,
-                 threshold=0.3,
+                 thr_on=0.3,
+                 thr_off=None,
                  max_trig_len=1000,
                  max_trig_len_delete=True,
                  maxlen=None,

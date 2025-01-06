@@ -5,10 +5,10 @@ from obspy.core.event import Pick, WaveformStreamID
 from PULSE.data.dictstream import DictStream
 from PULSE.data.window import Window
 
-from PULSE.mod.sequencer import SeqMod
-from PULSE.mod.windower import WindMod
-from PULSE.mod.buffer import BufferMod
-from PULSE.mod.processer import ProcMod
+from PULSE.mod.sequencing import SeqMod
+from PULSE.mod.windowing import WindMod
+from PULSE.mod.buffering import BufferMod
+from PULSE.mod.processing import ProcMod
 
 class SBMPicker(SeqMod):
     """
@@ -16,8 +16,9 @@ class SBMPicker(SeqMod):
     outputs and returning phase picks in :class:`~obspy.core.event.Pick` format
 
     Sequence
-        - BufferMod ('padded')
-        -  
+        - BufferMod
+        - TriggerMod
+        - 
     """
     def __init__(
             self,

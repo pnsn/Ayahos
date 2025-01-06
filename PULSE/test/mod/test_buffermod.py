@@ -8,7 +8,7 @@ from PULSE.data.foldtrace import FoldTrace
 from PULSE.data.ftbuffer import FTBuffer
 from PULSE.data.dictstream import DictStream
 from PULSE.mod.base import BaseMod
-from PULSE.mod.buffer import BufferMod
+from PULSE.mod.buffering import BufferMod
 
 
 class TestBufferMod(unittest.TestCase):

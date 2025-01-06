@@ -10,9 +10,9 @@ machine learning models.
 TODO: Code currently commented out. Needs to be completed based on the layout of the "live_example"
 
 """
-from PULSE.mod.sequencer import SequenceMod
-from PULSE.mod.windower import WindowMod
-from PULSE.mod.processer import InPlaceMod
+from PULSE.mod.sequencing import SequenceMod
+from PULSE.mod.windowing import WindowMod
+from PULSE.mod.processing import InPlaceMod
 from PULSE.mod.seisbench import SeisBenchMod
 
 

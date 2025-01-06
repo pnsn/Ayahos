@@ -26,8 +26,9 @@ class SBMPicker(SeqMod):
             labels='PS',
             buffer_length=300.,
             stack_method=3,
-            min_fold=1,
-            trigger_level=0.3,
+            trigger_thr=0.3,
+            fold_thr=1.,
+            
             
     )
         

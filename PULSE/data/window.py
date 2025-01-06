@@ -644,7 +644,7 @@ class Window(DictStream):
                 else:
                     self.extend(ftr)
 
-    def preprocess(self, components=None, rule=1, threshold_tolerance=1e-3, fold_threshold=0, **options):
+    def preprocess(self, components=None, trace_fill_rule=1, threshold_tolerance=1e-3, fold_threshold=0, **options):
         """Preprocess specified components of this :class:`~.Window` object
         using the workflow described in :meth:`~.Window.preprocess_component`
         and subsequently fill any missing/under-informative components using
@@ -656,9 +656,9 @@ class Window(DictStream):
             - An iterable that returns characters (e.g., 'Z12') will
             result in processing Z 1 and 2 (if they are present)
         :type components: NoneType or iterable collection of characters, optional
-        :param rule: missing/under-informative fill rule, defaults to 1
+        :param trace_fill_rule: missing/under-informative fill trace_fill_rule, defaults to 1
             see :meth:`~.Window.fill_missing_traces` for more information
-        :type rule: int or str, optional
+        :type trace_fill_rule: int or str, optional
         :param threshold_tolerance: Tolerance for components to meet their
             valid data fraction threshold, defaults to 1e-3
             threshold in :meth:`~.Window._check_fvalid`
@@ -686,7 +686,7 @@ class Window(DictStream):
             else:
                 pass
             
-        self.fill_missing_traces(rule=rule,
+        self.fill_missing_traces(rule=trace_fill_rule,
                                  tolerance=threshold_tolerance,
                                  fthresh=fold_threshold)
 

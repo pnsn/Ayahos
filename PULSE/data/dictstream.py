@@ -950,6 +950,12 @@ class DictStream(Stream):
             _ft.normalize(norm=norm)
         return self
     
+    def blind(self, npts):
+        """Apply blinding to all FoldTraces in this DictStream
+        using :meth:`~.FoldTrace.blind`
+        """
+        for _ft in self:
+            _ft.blind(npts)
 
 
     # def filter(self, *args, **kwargs):

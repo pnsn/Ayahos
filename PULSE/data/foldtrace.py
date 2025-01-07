@@ -649,14 +649,14 @@ class FoldTrace(Trace):
 
         return ftr
     
-    def get_valid_fraction(self, starttime=None, endtime=None, threshold=0):
+    def get_valid_fraction(self, starttime=None, endtime=None, threshold=1.):
         if starttime is None:
             starttime = self.stats.starttime
         if endtime is None:
             endtime = self.stats.endtime
         target_npts = (endtime - starttime)*self.stats.sampling_rate + 1
         view =  self.view(starttime=starttime, endtime=endtime)
-        valid_npts = len(view.data[view.fold > threshold])
+        valid_npts = len(view.data[view.fold >= threshold])
         return valid_npts/target_npts
     
     vf = property(get_valid_fraction)

@@ -5,9 +5,73 @@ import seisbench.models as sbm
 import torch
 
 from PULSE.mod.base import BaseMod
+from PULSE.mod.processing import ProcMod
 from PULSE.data.foldtrace import FoldTrace
 from PULSE.data.window import Window
 from PULSE.data.dictstream import DictStream
+
+class ObspyCRFMod(ProcMod):
+    """A PULSE module to apply ObsPy characteristic response function
+    transformations to waveform data. This module uses the ObsPy Trace
+    :meth:`~obspy.core.trace.Trace.trigger` method inherited by :class:`~.FoldTrace`
+    (and :class:`~.DictStream`)
+
+    """    
+    def __init__(
+            self,
+            crf_name='classicstalta',
+            crf_kwargs={'sta': 3., 'lta': 10.},
+            maxlen=None,
+            max_pulse_size=1000,
+            name=None):
+        """ObsPy Characteristic Response Function Module
+
+        Initialize a :class:`~.ObspyCRFMod` object
+
+        :param crf_name: type of characteristic response function to use,
+            defaults to 'classicstalta'
+            see :meth:`~obspy.core.trace.Trace.trigger` for CRF types and required kwargs
+        :type crf_name: str, optional
+        :param crf_kwargs: key-word arguments (minus type) to use for the
+            specified CRF, defaults to {'sta': 3., 'lta': 10.}
+        :type crf_kwargs: dict, optional
+        :param maxlen: maximum length of the **output** deque, defaults to None
+        :type maxlen: int or None, optional
+        :param max_pulse_size: maximum number of iterations per call of :meth:`~.ObspyCRFMod.pulse`,
+            defaults to 1000
+        :type max_pulse_size: int, optional
+        :param name: additional name suffixes to append to the **name** attribute
+            of this :class:`~.ObspyCRFMod` object, defaults to None.
+            Note: by default the **crf_name** is appended to **name**
+                e.g., ObspyCRFMod_classicstalta
+        :type name: str or None, optional
+
+        """        
+        
+        if crf_name not in ['classicstalta','recstalta','recstaltapy','delayedstalta','carlstatrig','zdetect']:
+            raise NotImplementedError(f'crf_name "{crf_name}" not supported.')
+        if not isinstance(crf_kwargs, dict):
+            raise TypeError
+        # Update name to include the crf_name
+        if name is None:
+            name = crf_name
+        elif isinstance(name, str):
+            name = f'{crf_name}_{name}'
+        else:
+            raise TypeError('name must be type str or None')
+        # Update crf_kwargs to have "type" as crf_name
+        crf_kwargs.update({'type': crf_name})
+        # Initialize inheritance from ProcMod
+        super().__init__(pclass='PULSE.data.foldtrace.FoldTrace',
+                         pmethod='trigger',
+                         pkwargs=crf_kwargs,
+                         mode='inplace',
+                         max_pulse_size=max_pulse_size,
+                         maxlen=maxlen,
+                         name=None)
+        self.setname(f'{crf_name}')
+        # NTS: That's it, everything else is the same as ProcMod and BaseMod! Happy CRF-ing!
+
 
 class SBMMod(BaseMod):
     """This :class:`~.BaseMod` child class hosts a single :class:`~seisbench.models.WaveformModel`

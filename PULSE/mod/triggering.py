@@ -9,7 +9,7 @@ from PULSE.data.pick import Trigger
 
 Logger = logging.getLogger(__name__)
 
-class TriggerMod(BaseMod):
+class CRFTriggerMod(BaseMod):
 
     def __init__(
         self,
@@ -26,7 +26,12 @@ class TriggerMod(BaseMod):
         """A PULSE module for conducting triggering on input collections
         of :class:`~.DictStream`-like objects to generate :class:`~.Trigger`
         objects. This class assumes that :class:`~.FoldTrace` objects contained
-        in the input elements are positive-valued 
+        in the input elements have already been converted into Characteristic
+        Response Functions (i.e., strictly non-negative-valued **data** vectors).
+
+        Modules to create these CRFs include:
+         - :class:`~PULSE.mod.detecting.SBMMod` - SeisBench ML Detection Models
+         - :class:`~PULSE.mod.detecting.ObspyCRFMod` - Obspy CRF Detection Methods
 
         :param thr_on: trigger onset threshold value, defaults to 0.1
         :type thr_on: float, optional

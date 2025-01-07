@@ -5,12 +5,19 @@
 :org: Pacific Northwest Seismic Network
 :license: AGPL-3.0
 :purpose:
-    This conatins the class definition for a module that facilitates regularly spaced
-    generation of time-windowed views of contents of a :class:`~.DictStream` object.
+    This conatins the class definition for a lineage of modules that facilitate
+    regularly spaced generation of time-windowed, subset samples 
+    :class:`~.DictStream` objects.
 
-    This is a more-abstracted version of the :class:`~PULSE.mod.windower.WindMod` class
+    Lineage
 
-    # TODO: Need to write pulse subroutines with simplified structure
+    (BaseMod)
+        |
+    SampleMod - Generate subset views of DictStream contents
+        |       and return those views (i.e. aliases to source [meta]data)
+        |
+    WindowMod - Generate subset copies of DictStream contents
+                and generate :class:`~.Window` objects
 
 """
 from collections import deque
@@ -24,19 +31,20 @@ from PULSE.data.window import Window
 from PULSE.util.header import WindowStats
 from PULSE.mod.base import BaseMod
 
-class SampleMod(BaseMod):
+class SamplingMod(BaseMod):
     
     def __init__(
             self,
             length=60.,
             step=42.,
+            delay=0.,
             min_valid_frac=0.9,
             fold_thr = 1.,
             ref_val='Z',
             ref_key='component',
             split_key='instrument',
-            mode='normal',
-            blind_after=False,
+            eager=False,
+            blind_after_sampling=False,
             max_pulse_size=1,
             maxlen=None,
             name=None):
@@ -82,15 +90,23 @@ class SampleMod(BaseMod):
                          name=name)
         self.length = length
         self.step = step
+        self.delay = delay
         self.min_valid_frac = min_valid_frac
         self.fold_thr = fold_thr
+        self.split_key = split_key
         self.ref_key = ref_key
         self.ref_val = ref_val
-        self.mode = mode
+        # BOOL Arguments
+        self.eager = eager
+        self.blind = blind_after_sampling
         # Generate index object
         self.index = {}
         # Set input_types
         self._input_types = [DictStream]
+
+        # Compatability Catch
+        if self.delay > 0. and self.eager:
+            raise NotImplementedError('cannot use a non-zero delay for "eager" mode')
 
     def __setattr__(self, key, value):
         """Farm out attribute setting safety checks to this
@@ -109,33 +125,35 @@ class SampleMod(BaseMod):
         :raises KeyError: _description_
         :raises TypeError: _description_
         :raises AttributeError: _description_
-        """        
-        if key in ['length','step', 'min_valid_fract', 'fold_thr']:
+        """
+        # FLOAT-LIKE NON-NEGATIVE ATTRIBUTES    
+        if key in ['length','step', 'delay', 'min_valid_fract', 'fold_thr']:
             if isinstance(value, (int, float)):
                 value = float(value)
             else:
                 raise TypeError
             if value <= 0:
                 raise ValueError
-
-        if key == 'length':
+            
+        # SAFETY CATCHES FOR MAX VALUES
+        if key in ['length','delay']:
             if value > 1e6:
                 raise NotImplementedError 
-        
         if key == 'step':
             if self.length < value:
-                raise ValueError
-            
+                raise ValueError 
         if key == 'min_valid_fract':
             if value > 1:
                 raise ValueError
 
+        # ID_KEYS VALUES ONLY
         if key in ['ref_key', 'split_key']:
             if value in dict(MLStats().id_keys).keys():
                 pass
             else:
                 raise KeyError
-
+            
+        # REF_VAL MUST BE STR
         if key == 'ref_val':
             if hasattr(value, '__iter__'):
                 if all(isinstance(_e, str) for _e in value):
@@ -145,14 +163,271 @@ class SampleMod(BaseMod):
             else:
                 raise AttributeError
             
-        if key == 'mode':
-            if value.lower() in ['normal','eager','patient']:
-                value = value.lower()
-        
+        # BOOL ATTR
+        if key in ['eager','blind']:
+            if not isinstance(value, bool):
+                raise TypeError
+            
+        # APPLY
         super().__setattr__(key, value)
+    
+    def get_unit_input(self, input: deque) -> dict:
+        unit_input = {}
+        for _val, _ds in input.split_on(self.split_key).items():
+            self._assess_new_entry(_val, _ds)
+            if _val in self.index.keys():
+                ready = self._assess_entry_readiness(unit_input, _val, _ds)
+                if ready:
+                    unit_input.update({_val: _ds})
+        return unit_input
+    
+
+    def _assess_new_entry(self, _val, _ds):
+        """Subprocess for :meth:`~.SamplingMod.get_unit_input`
+        that assesses if a specific subset slice of a :class:`~.DictStream`
+        object and its split_key value warrant generating a new entry in the
+        **index** attribute of this :class:`~.SamplingMod` object.
+
+        :param _val: split_key value corresponding to the id_key
+            type assigned to **split_value** that is common to all
+            :class:`~.FoldTrace` objects contained in **_ds**
+        :type _val: str
+        :param _ds: subset slice of a :class:`~.DictStream` containing
+            only :class:`~.FoldTrace` objects that share the same
+            **_val** for their id_key's for **split_value**
+        :type _ds: PULSE.data.dictstream.DictStream
+        """        
+        # New Entry Generation
+        if _val not in self.index.keys():
+            primaries = set()
+            secondaries = set()
+            for _id, _ft in _ds.traces.items():
+                if _ft.key_attr[self.ref_key] in self.ref_val:
+                    primaries.add(_id)
+                else:
+                    secondaries.add(_id)
+            # If there is one or more primaries, generate new entry
+            if len(primaries) >= 1:
+                # Set t0 to NOW
+                t0 = UTCDateTime()
+                # Find the earliest starttime in the DictStream view
+                for _p in primaries:
+                    if _ds[_p].stats.starttime < t0:
+                        t0 = _ds[_p].stats.starttime
+                # Populate new_entry
+                new_entry = {'p_ids': primaries,
+                                's_ids': secondaries,
+                                'ready': False,
+                                'ti': t0,
+                                'tf': t0 + self.length}
+                # Register new_entry in **index**
+                self.index.update({_val: new_entry})
 
 
-    def get_unit_input(self, input: DictStream) -> dict:
+    def _assess_entry_readiness(self, _val, _ds):
+        """Subprocess for :meth:`~.SamplingMod.get_unit_input`
+        that checks if there are new or dropped key values in the
+        **keys** of **_ds** that correspond to registered keys for
+        entry **_val** in the **index** attribute of this 
+
+        :param _val: _description_
+        :type _val: _type_
+        :param _ds: _description_
+        :type _ds: _type_
+        :raises RuntimeError: _description_
+        """        
+        # Entry Readiness Assessment
+        if _val in self.index.keys():
+            _index = self.index[_val]
+            ## REGISTERING SECTION ##
+            # Iterate across all traces and IDs
+            for _id, _ft in _ds.traces.items():
+                # Check if ids are registered
+                if _id in _index['p_ids']:
+                    pass
+                elif _id in _index['s_ids']:
+                    pass
+                # Catch new ids coming in
+                else:
+                    if _ft.key_attr[self.ref_key] in self.ref_val:
+                        _index['p_ids'].add(_id)
+                    else:
+                        _index['s_ids'].add(_id)
+
+            ## DEREGISTERING SECTION ##
+            # Check registered traces (i.e. p_ids & s_ids)
+            _regset = _index['p_ids'].union(_index['s_ids'])
+            # Get _regset - _ds.traces.keys()
+            todrop = _regset.difference(_ds.traces.keys())
+            # If todrop is nonempty, iterates and drops (or errors out)
+            for _r in todrop:
+                if _r in _index['p_ids']:
+                    _index['p_ids'].remove(_r)
+                elif _r in _index['s_ids']:
+                    _index['s_ids'].remove(_r)
+                else:
+                    raise RuntimeError('Not sure how we got here...')
+            
+            ## READINESS ASSESSMENT SECTION ##
+            for _pid in _index['p_ids']:
+                _fv = _ds[_pid].get_valid_fraction(
+                        starttime=_index['ti'],
+                        endtime=_index['tf'],
+                        fold_thr=self.fold_thr)
+                # Get primary trace start and endtimes
+                _ti = _ds[_pid].stats.starttime
+                _tf = _ds[_pid].stats.endtime
+                # EAGER 
+                # - only one primary trace needs to satisfy the min_valid_fract
+                # - that trace does not need to have the target endtime
+                if self.eager:
+                    if _fv >= self.min_valid_frac:
+                        # Update index entry
+                        _index['ready'] = True
+                        # Broadcast success with _val
+                        return True
+                    else:
+                        continue
+                # NORMAL
+                # - One primary trace needs to have the window start and end times
+                #   present in their scope and pass fvalid
+                # - Allows use of the "delay" attribute
+                else:
+                    # Tests
+                    # 1) Meets min_valid_frac
+                    # 2) trace starttime is less than sample starttime
+                    # 3) trace endtime minus delay is greater than sample endtime
+                    tests = [_fv >= self.min_valid_frac,
+                             _ti <= _index['ti'],
+                             _tf - self.delay > _index['tf']]
+                    if all(tests):
+                        # Update index entry
+                        _index['ready'] = True
+                        # Broadcast success with _val
+                        return True
+                    else:
+                        continue
+
+        # If readiness assessment does not return early
+        # with a success, return FALSE
+        return False
+
+    def run_unit_process(self, unit_input: dict) -> deque:
+        """Extract time-subset views (or copies of views when using "blind_after_sampling")
+        from :class:`~.DictStream` slices contained in **unit_input**
+
+        :param unit_input: _description_
+        :type unit_input: dict
+        :return: _description_
+        :rtype: deque
+        """        
+        unit_output = deque()
+        for icode, ds in unit_input.items():
+            _index = self.index[icode]
+            if _index['ready']:
+                # Create view
+                ds_view = ds.view(starttime=_index['ti'],
+                                  endtime=_index['tf'])
+                # If blinding after sampling
+                if self.blind:
+                    ds_out = ds_view.copy()
+                    for ft in ds_view:
+                        ft.fold *= 0
+                else:
+                    ds_out = ds_view
+                # Append view to unit_output
+                unit_output.appendleft(ds_out)
+                # Update window times
+                _index['ti'] += self.step
+                _index['tf'] += self.step
+                # Un-Ready entry
+                _index['ready'] = False        
+        return unit_output
+    
+    def put_unit_output(self, unit_input: deque) -> None:
+        for _ in range(len(unit_input)):
+            _ds = unit_input.pop()
+            self.output.appendleft(_ds)
+
+
+
+
+
+class WindowingMod(SamplingMod):
+
+    def __init__(
+            self,
+            target_npts = 6000,
+            target_sampling_rate = 100.,
+            overlap_npts = 1800,
+            primary_threshold = 0.9,
+            primary_components = set('Z3'),
+            secondary_threshold = 0.8,
+            secondary_components = {'NE','12'},
+            eager=False,
+            max_pulse_size=1,
+            maxlen=None,
+            name='EQTransformer'):
+            # Use WindowStats to QC
+            self.window_stats = WindowStats(
+                {'target_npts': target_npts,
+                 'target_sampling_rate': target_sampling_rate,
+                 'pthresh':primary_threshold,
+                 'sthresh':secondary_threshold}
+            )
+            super_kwargs = {'length': (target_npts - 1) / target_sampling_rate,
+                            'step': (target_npts - overlap_npts) / target_sampling_rate,
+                            'delay': 0.,
+                            'min_valid_frac': primary_threshold,
+                            'ref_val': primary_components,
+                            'ref_key': 'component',
+                            'split_key': 'instrument',
+                            'eager': eager,
+                            'maxlen': maxlen,
+                            'max_pulse_size': max_pulse_size,
+                            'name': name}
+            super().__init__(**super_kwargs)
+
+            
+
+
+            _stats = _index['stats']
+            if not _index['ready']:
+                raise RuntimeError('Unready dictstream views are making it past get_unit_input')
+            traces = ds.view(starttime=_stats.target_starttime,
+                             endtime=_stats.target_endtime).copy()
+            header = _stats.copy()
+            # Generate window
+            window = Window(traces=traces, header=header)
+            # Append new window to unit_output
+            unit_output.appendleft(window)
+            # Update index to reflect new window generation
+            _index['ready'] = False
+            _stats.target_starttime += self.advance_dt
+            # Apply blinding if specified
+            if self.blind_after_sampling:
+                for ft in ds:
+                    # Make a view of the foldtrace
+                    vft = ft.view(starttime=_stats.target_starttime,
+                                  endtime=_stats.target_endtime)
+                    # Set fold to 0 in the view
+                    vft.fold = vft.fold*0
+        return unit_output
+                
+    def put_unit_output(self, unit_output: deque) -> None:
+        if not isinstance(unit_output, deque):
+            self.Logger.critical('TypeError: unit_output must be type collections.deque')
+        if not all(isinstance(_e, Window) for _e in unit_output):
+            self.Logger.critical('TypeError: unit_output elements are not all type PULSE.data.window.Window')
+        self.output += unit_output
+    
+
+class WindowingMod(SamplingMod)
+            
+                
+
+
+def get_unit_input(self, input: DictStream) -> dict:
         """Update the **index** of this :class:`~.WindMod` for new
         and existing instrument codes in **input**
 
@@ -232,145 +507,6 @@ class SampleMod(BaseMod):
         if len(unit_input) == 0:
             self._continue_pulsing = False
         return unit_input
-    
-    def get_unit_input(self, input: deque) -> dict:
-        unit_input = {}
-        for _val, _ds in input.split_on(self.split_key).items():
-            self._assess_new_entry(_val, _ds)
-            if _val in self.index.keys():
-                self._cross_check_registered_ids(_val, _ds)
-                self._assess_entry_readiness(unit_input, _val, _ds)
-            else:
-                continue
-            
-        return unit_input
-    
-
-    def _assess_new_entry(self, _val, _ds):
-        # New Entry Generation
-        if _val not in self.index.keys():
-            primaries = set()
-            secondaries = set()
-            for _id, _ft in _ds.traces.items():
-                if _ft.key_attr[self.ref_key] in self.ref_val:
-                    primaries.add(_id)
-                else:
-                    secondaries.add(_id)
-            # If there is one or more primaries, generate new entry
-            if len(primaries) >= 1:
-                # Set t0 to NOW
-                t0 = UTCDateTime()
-                # Find the earliest starttime in the DictStream view
-                for _p in primaries:
-                    if _ds[_p].stats.starttime < t0:
-                        t0 = _ds[_p].stats.starttime
-                # Populate new_entry
-                new_entry = {'p_ids': primaries,
-                                's_ids': secondaries,
-                                'ready': False,
-                                'ti': t0,
-                                'tf': t0 + self.length}
-                # Register new_entry
-                self.index.update({_val: new_entry})
-    def _cross_check_registered_ids:
-        # Entry Readiness Assessment
-        if _val in self.index.keys():
-            _index = self.index[_val]
-            # Iterate across _ds to check id registration and primary time(s)
-            _ti = []
-            __ti = []
-            _tf = []
-            __tf = []
-            for _id, _ft in _ds.traces.items():
-                # Check if ids are registered
-                if _id in _index['p_ids']:
-                    _ti.append(_ft.stats.starttime)
-                    _tf.append(_ft.stats.endtime)
-                elif _id in _index['s_ids']:
-                    __ti.append(_ft.stats.starttime)
-                    __tf.append(_ft.stats.endtime)
-                # Catch new ids coming in
-                else:
-                    if _ft.key_attr[self.ref_key] in self.ref_val:
-                        _index['p_ids'].add(_id)
-                        _ti.append(_ft.stats.starttime)
-                        _tf.append(_ft.stats.endtime)
-                    else:
-                        _index['s_ids'].add(_id)
-                        __ti.append(_ft.stats.starttime)
-                        __tf.append(_ft.stats.endtime)
-            # Check registered traces (i.e. p_ids & s_ids)
-            _regset = _index['p_ids'].union(_index['s_ids'])
-            # If _regset - _ds.traces.keys() is not the null set (i.e., _regset has things _ds doesn't)
-            todrop = _regset.difference(_ds.traces.keys())
-            # If todrop is nonempty, iterates and drops (or errors out)
-            for _r in todrop:
-                if _r in _index['p_ids']:
-                    _index['p_ids'].remove(_r)
-                elif _r in _index['s_ids']:
-                    _index['s_ids'].remove(_r)
-                else:
-                    raise RuntimeError('Not sure how we got here...')
-                    
-                # Patient mode waits for all registered traces
-                if self.mode == 'patient':
-
-
-                
-                
-                new_entry = {'ready': False}
-                
-
-                input_vals = set([_ft.key_attr[self.ref_key] for _ft in _ds])
-                # If the intersection of the reference value(s) and input_values is
-                # the null-set, continue iterating - no reference valued foldtraces present
-                if self.ref_val.intersection(input_vals) == set([]):
-                    continue
-                if len(input_vals) == 1:
-
-
-                for _ft in _ds:
-
-
-    def run_unit_process(self, unit_input: dict) -> deque:
-        unit_output = deque()
-        for icode, ds in unit_input.items():
-            _index = self.index[icode]
-            _stats = _index['stats']
-            if not _index['ready']:
-                raise RuntimeError('Unready dictstream views are making it past get_unit_input')
-            traces = ds.view(starttime=_stats.target_starttime,
-                             endtime=_stats.target_endtime).copy()
-            header = _stats.copy()
-            # Generate window
-            window = Window(traces=traces, header=header)
-            # Append new window to unit_output
-            unit_output.appendleft(window)
-            # Update index to reflect new window generation
-            _index['ready'] = False
-            _stats.target_starttime += self.advance_dt
-            # Apply blinding if specified
-            if self.blind_after_sampling:
-                for ft in ds:
-                    # Make a view of the foldtrace
-                    vft = ft.view(starttime=_stats.target_starttime,
-                                  endtime=_stats.target_endtime)
-                    # Set fold to 0 in the view
-                    vft.fold = vft.fold*0
-        return unit_output
-                
-    def put_unit_output(self, unit_output: deque) -> None:
-        if not isinstance(unit_output, deque):
-            self.Logger.critical('TypeError: unit_output must be type collections.deque')
-        if not all(isinstance(_e, Window) for _e in unit_output):
-            self.Logger.critical('TypeError: unit_output elements are not all type PULSE.data.window.Window')
-        self.output += unit_output
-    
-
-
-            
-                
-
 
 
                         

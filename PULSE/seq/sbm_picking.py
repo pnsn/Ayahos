@@ -4,6 +4,7 @@ from collections import deque
 import seisbench.models as sbm
 
 from PULSE.mod.sequencing import SeqMod
+from PULSE.mod.sampling import SampleMod
 from PULSE.mod.windowing import WindMod
 from PULSE.mod.processing import ProcMod
 from PULSE.mod.predicting import SBMMod
@@ -84,7 +85,7 @@ class SBM_PickingMod(SeqMod):
                              fill_value=0.,
                              maxlen=buffer_length)
         
-        selectmod = SelectMod()
+        predsamplemod = SampleMod()
 
         triggermod = TriggerMod(thr_on=trigger_level)
 

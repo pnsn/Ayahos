@@ -31,13 +31,51 @@ class SampleMod(BaseMod):
             length=60.,
             step=42.,
             min_valid_frac=0.9,
+            fold_thr = 1.,
             ref_val='Z',
             ref_key='component',
             split_key='instrument',
             mode='normal',
+            blind_after=False,
             max_pulse_size=1,
             maxlen=None,
             name=None):
+        """_summary_
+
+        :param length: sampling window length in seconds, defaults to 60.
+        :type length: float, optional
+        :param step: sampling step size in seconds, defaults to 42.
+        :type step: float, optional
+        :param min_valid_frac: minimum valid fraction of data to consider
+            a given data view ready to generate a new windowed data view,
+            defaults to 0.9
+        :type min_valid_frac: float, optional
+        :param fold_thr: fold threshold that data must meet or exceed to
+            be considered "valid", defaults to 1.
+        :type fold_thr: float, optional
+        :param ref_val: the reference value used to determine
+            if a view can be sampled from a given subset, defaults to 'Z'
+        :type ref_val: str, optional
+        :param ref_key: the id key corresponding to **ref_val**
+            , defaults to 'component'
+        :type ref_key: str, optional
+        :param split_key: The id key on which input dictstream
+            objects are split , defaults to 'instrument'
+        :type split_key: str, optional
+        :param mode: what mode should this SampleMod be run in?
+            defaults to 'normal'
+             - **eager** - generate a set of views as soon as the reference trace
+                has enough data to satisfy **min_valid_frac**
+             - **normal** - generate a set of views only once the endtime 
+             - **patient** - 
+        :type mode: str, optional
+        :param max_pulse_size: _description_, defaults to 1
+        :type max_pulse_size: int, optional
+        :param maxlen: _description_, defaults to None
+        :type maxlen: _type_, optional
+        :param name: _description_, defaults to None
+        :type name: _type_, optional
+        """        
         # Inherit from BaseMod
         super().__init__(max_pulse_size=max_pulse_size,
                          maxlen=maxlen,
@@ -45,6 +83,7 @@ class SampleMod(BaseMod):
         self.length = length
         self.step = step
         self.min_valid_frac = min_valid_frac
+        self.fold_thr = fold_thr
         self.ref_key = ref_key
         self.ref_val = ref_val
         self.mode = mode
@@ -71,7 +110,7 @@ class SampleMod(BaseMod):
         :raises TypeError: _description_
         :raises AttributeError: _description_
         """        
-        if key in ['length','step', 'min_valid_fract']:
+        if key in ['length','step', 'min_valid_fract', 'fold_thr']:
             if isinstance(value, (int, float)):
                 value = float(value)
             else:
@@ -107,10 +146,11 @@ class SampleMod(BaseMod):
                 raise AttributeError
             
         if key == 'mode':
-            if value.lower() in ['normal','eager','padded']:
+            if value.lower() in ['normal','eager','patient']:
                 value = value.lower()
         
         super().__setattr__(key, value)
+
 
     def get_unit_input(self, input: DictStream) -> dict:
         """Update the **index** of this :class:`~.WindMod` for new

@@ -17,11 +17,12 @@ from obspy.core.event import Pick, WaveformStreamID, ResourceIdentifier, Quantit
 from obspy.signal.trigger import trigger_onset
 
 from PULSE.data.dictstream import DictStream
+from PULSE.data.window import Window
 from PULSE.data.foldtrace import FoldTrace
 from PULSE.mod.base import BaseMod
 
-
-class PickerMod(BaseMod):
+### TODO: OBSOLITE THIS METHOD
+class CRFPickerMod(BaseMod):
     """
     A PULSE class for triggering and picking arrivals on :class:`~.FoldTrace`
     objects that have already been converted from waveforms to a characteristic
@@ -121,13 +122,26 @@ class PickerMod(BaseMod):
             raise ValueError('min_fold must be non-negative')
         else:
             self.min_fold = min_fold
-        # Compatability check for threshold
-        if not isinstance(threshold, (float, int)):
-            raise TypeError('threshold must be float-like')
-        elif threshold <= 0:
-            raise ValueError('threshold must be a positive value')
+        if isinstance(thr_on, (float, int)):
+            thr_on = float(thr_on)
+            if thr_on > 0:
+                self.thr_on = thr_on
+            else:
+                raise ValueError('thr_on must be positive')
         else:
-            self.threshold = float(threshold)
+            raise TypeError('thr_on must be float-like')
+        
+        if isinstance(thr_off, (float, int)):
+            thr_off = float(thr_off)
+            if thr_off > 0:
+                self.thr_off = thr_off
+            else:
+                raise ValueError("thr_off must be positive")
+        elif thr_off is None:
+            self.thr_off = self.thr_on
+        else:
+            raise TypeError('thr_off must be float-like or NoneType')
+
         # Compatability check for max_trig_len
         if not isinstance(max_trig_len, int):
             raise TypeError('max_trig_len must be type int')
@@ -234,3 +248,64 @@ class PickerMod(BaseMod):
         for _e in range(len(unit_output)):
             _p = unit_output.pop()
             self.output.appendleft(_p)
+
+
+class AkazawaPickerMod(BaseMod):
+    """Implementation of the :meth:`~obspy.signal.trigger.ar_trigger` method
+    as a PULSE module
+
+    :param ProcMod: _description_
+    :type ProcMod: _type_
+    """
+    def __init__(self,
+                 z_codes=set('Z3'),
+                 n_codes=set('N1'),
+                 e_codes=set('E2'),
+                 lowcut=1.,
+                 highcut=45.,
+                 p_params={'lta': 10., 'sta': 3., 'm': 3, 'l': 3.},
+                 s_params={'lta': 10., 'sta': 3., 'm': 3, 'l': 3.},
+                 min_fold=1.,
+                 s_pick=True,
+                 require_3c=True,
+                 maxlen=None,
+                 max_pulse_size=100.,
+                 name=None):
+        
+        if all(isinstance(_z, str) for _z in z_codes):
+            self.zc = z_codes
+        else:
+            raise TypeError
+        if all(isinstance(_n, str) for _n in n_codes):
+            self.nc = n_codes
+        else:
+            raise TypeError
+        if all(isinstance(_e, str) for _e in e_codes):
+            self.ec = e_codes
+        else:
+            raise TypeError
+
+        self.pkwargs = {'f1': lowcut,
+                'f2': highcut,
+                's_pick':s_pick}
+        for _c, _p in [('p', p_params),('s', s_params)]:
+            if p_params.keys() != set(['lta','sta','m','l']):
+                raise KeyError
+            else:
+                for _k, _v in _p.items():
+                    self.pkwargs.update({f'{_k}_{_c}'})
+
+        self._input_types = [deque]
+    
+    def get_unit_input(self, input):
+        if not isinstance(input[-1], Window):
+            raise TypeError
+        else:
+            unit_input = input.pop()
+        return unit_input
+    
+    def run_unit_process(self, unit_input: Window) 
+    
+
+
+        

@@ -370,7 +370,7 @@ class SamplingMod(BaseMod):
             _ds = unit_input.pop()
             self.output.appendleft(_ds)
 
-    def update_from_seisbench(self, model: sbm.WaveformModel):
+    def update_from_seisbench(self, model: sbm.WaveformModel, delay_scalar=0):
         if not isinstance(model, sbm.WaveformModel):
             raise TypeError('model must be a seisbench.models.WaveformModel-type object')
         # Append model name to the end of the module name 
@@ -389,6 +389,19 @@ class SamplingMod(BaseMod):
         # update length and step
         self.length = length
         self.step = step
+        
+        if isinstance(delay_scalar, (int, float)):
+            delay_scalar = int(round(delay_scalar))
+        else:
+            raise TypeError
+        
+        if delay_scalar < 0:
+            raise ValueError
+        elif delay_scalar == 0:
+            self.delay = 0.
+        else:
+            self.eager = False
+            self.delay = delay_scalar*self.length - (delay_scalar - 1)*self.step
 
 class WindowingMod(SamplingMod):
     """

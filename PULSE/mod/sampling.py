@@ -19,11 +19,13 @@
     WindowMod - Generate subset copies of DictStream contents
                 and generate :class:`~.Window` objects
 
+# TODO: Need to include up-incrementing windows
 """
 from collections import deque
 from warnings import warn
 
 from obspy import UTCDateTime
+import seisbench.models as sbm
 
 from PULSE.util.header import MLStats
 from PULSE.data.dictstream import DictStream
@@ -127,12 +129,15 @@ class SamplingMod(BaseMod):
         :raises AttributeError: _description_
         """
         # FLOAT-LIKE NON-NEGATIVE ATTRIBUTES    
-        if key in ['length','step', 'delay', 'min_valid_fract', 'fold_thr']:
+        if key in ['length','step', 'delay', 'min_valid_frac', 'fold_thr']:
             if isinstance(value, (int, float)):
                 value = float(value)
             else:
                 raise TypeError
-            if value <= 0:
+            if key == 'delay': 
+                if value < 0:
+                    raise ValueError
+            elif value <= 0:
                 raise ValueError
             
         # SAFETY CATCHES FOR MAX VALUES
@@ -142,7 +147,7 @@ class SamplingMod(BaseMod):
         if key == 'step':
             if self.length < value:
                 raise ValueError 
-        if key == 'min_valid_fract':
+        if key == 'min_valid_frac':
             if value > 1:
                 raise ValueError
 
@@ -153,15 +158,17 @@ class SamplingMod(BaseMod):
             else:
                 raise KeyError
             
-        # REF_VAL MUST BE STR
+        # REF_VAL MUST BE SET
         if key == 'ref_val':
-            if hasattr(value, '__iter__'):
+            if isinstance(value, str):
+                value = set(value)
+            elif hasattr(value, '__iter__'):
                 if all(isinstance(_e, str) for _e in value):
                     value = set(value)
                 else:
                     raise TypeError
             else:
-                raise AttributeError
+                raise TypeError
             
         # BOOL ATTR
         if key in ['eager','blind']:
@@ -171,14 +178,14 @@ class SamplingMod(BaseMod):
         # APPLY
         super().__setattr__(key, value)
     
-    def get_unit_input(self, input: deque) -> dict:
+    def get_unit_input(self, input: DictStream) -> dict:
         unit_input = {}
         for _val, _ds in input.split_on(self.split_key).items():
             self._assess_new_entry(_val, _ds)
             if _val in self.index.keys():
-                ready = self._assess_entry_readiness(unit_input, _val, _ds)
-                if ready:
-                    unit_input.update({_val: _ds})
+                _ds_view = self._assess_entry_readiness(_val, _ds)
+                if isinstance(_ds_view, DictStream):
+                    unit_input.update({_val: _ds_view})
         return unit_input
     
 
@@ -202,7 +209,7 @@ class SamplingMod(BaseMod):
             primaries = set()
             secondaries = set()
             for _id, _ft in _ds.traces.items():
-                if _ft.key_attr[self.ref_key] in self.ref_val:
+                if _ft.id_keys[self.ref_key] in self.ref_val:
                     primaries.add(_id)
                 else:
                     secondaries.add(_id)
@@ -235,13 +242,28 @@ class SamplingMod(BaseMod):
         :param _ds: _description_
         :type _ds: _type_
         :raises RuntimeError: _description_
-        """        
+        """
+        ready = False     
         # Entry Readiness Assessment
         if _val in self.index.keys():
             _index = self.index[_val]
+
+            ## CATCH-UP SECTION ##
+            for _pid in _index['p_ids']:
+                # If the next window endt falls before the start of the trace
+                if _index['tf'] <= _ds[_pid].stats.starttime:
+                    # Shift starttime to the new starttime
+                    _index['ti'] = _ds[_pid].stats.startime
+                    _index['tf'] = _ds[_pid].stats.starttime + self.length
+            
+            ## PULL VIEW FOR CURRENT PROPOSED WINDOW ##
+            _ds_view = _ds.view(starttime=_index['ti'],
+                                endtime=_index['tf'],
+                                keep_empty_traces=False)
+
             ## REGISTERING SECTION ##
             # Iterate across all traces and IDs
-            for _id, _ft in _ds.traces.items():
+            for _id, _ft in _ds_view.traces.items():
                 # Check if ids are registered
                 if _id in _index['p_ids']:
                     pass
@@ -270,51 +292,52 @@ class SamplingMod(BaseMod):
             
             ## READINESS ASSESSMENT SECTION ##
             for _pid in _index['p_ids']:
-                _fv = _ds[_pid].get_valid_fraction(
+                _vf = _ds[_pid].get_valid_fraction(
                         starttime=_index['ti'],
                         endtime=_index['tf'],
-                        fold_thr=self.fold_thr)
+                        threshold=self.fold_thr)
                 # Get primary trace start and endtimes
                 _ti = _ds[_pid].stats.starttime
                 _tf = _ds[_pid].stats.endtime
-                # EAGER 
+                # EAGER BEHAVIOR
                 # - only one primary trace needs to satisfy the min_valid_fract
                 # - that trace does not need to have the target endtime
                 if self.eager:
-                    if _fv >= self.min_valid_frac:
-                        # Update index entry
-                        _index['ready'] = True
-                        # Broadcast success with _val
-                        return True
-                    else:
-                        continue
-                # NORMAL
+                    if _vf >= self.min_valid_frac:
+                        ready = True
+                # NORMAL (NON-EAGER) BEHAVIOR
                 # - One primary trace needs to have the window start and end times
                 #   present in their scope and pass fvalid
-                # - Allows use of the "delay" attribute
+                # - Allows use of a non-zero "delay" value
                 else:
                     # Tests
                     # 1) Meets min_valid_frac
                     # 2) trace starttime is less than sample starttime
                     # 3) trace endtime minus delay is greater than sample endtime
-                    tests = [_fv >= self.min_valid_frac,
+                    tests = [_vf >= self.min_valid_frac,
                              _ti <= _index['ti'],
                              _tf - self.delay > _index['tf']]
                     if all(tests):
-                        # Update index entry
-                        _index['ready'] = True
-                        # Broadcast success with _val
-                        return True
-                    else:
-                        continue
-
-        # If readiness assessment does not return early
-        # with a success, return FALSE
-        return False
+                        ready = True
+            # Update readiness
+            _index['ready'] = ready
+            if ready:
+                return _ds_view
+            else:
+                return None
+        else:
+            return None
 
     def run_unit_process(self, unit_input: dict) -> deque:
-        """Extract time-subset views (or copies of views when using "blind_after_sampling")
-        from :class:`~.DictStream` slices contained in **unit_input**
+        """
+        Iterate across data views that meet all specified
+        requirements, 
+        
+        Apply blinding to the source material
+        if specified
+
+        Attach (copied) view passed through unit_input
+        to unit_output
 
         :param unit_input: _description_
         :type unit_input: dict
@@ -322,12 +345,10 @@ class SamplingMod(BaseMod):
         :rtype: deque
         """        
         unit_output = deque()
-        for icode, ds in unit_input.items():
+        for icode, ds_view in unit_input.items():
             _index = self.index[icode]
+            # Ensure ready flag is flying
             if _index['ready']:
-                # Create view
-                ds_view = ds.view(starttime=_index['ti'],
-                                  endtime=_index['tf'])
                 # If blinding after sampling
                 if self.blind:
                     ds_out = ds_view.copy()
@@ -349,12 +370,33 @@ class SamplingMod(BaseMod):
             _ds = unit_input.pop()
             self.output.appendleft(_ds)
 
-
-
-
+    def update_from_seisbench(self, model: sbm.WaveformModel):
+        if not isinstance(model, sbm.WaveformModel):
+            raise TypeError('model must be a seisbench.models.WaveformModel-type object')
+        # Append model name to the end of the module name 
+        if len(self.name.split('_')) > 1:
+            newname = f'{'_'.join(self.name.split('_')[1:])}_{model.name}'
+        else:
+            newname = model.name
+        self.setname(newname)
+        # Calculate the new length
+        length = model.in_samples / model.sampling_rate
+        # Calculate new step
+        step = length - (model._annotate_args['overlap'][1] / model.sampling_rate)
+        # Safety catch if old step is longer than new length
+        if self.step > length:
+            self.step = length*0.9
+        # update length and step
+        self.length = length
+        self.step = step
 
 class WindowingMod(SamplingMod):
+    """
+    A :class:`~.SamplingMod` specialized for generating :class:`~PULSE.data.window.Window`
+    objects for workflows focused on analyzing synchronized time-series recorded by a
+    single seismic sensor
 
+    """
     def __init__(
             self,
             target_npts = 6000,
@@ -383,130 +425,196 @@ class WindowingMod(SamplingMod):
                             'ref_key': 'component',
                             'split_key': 'instrument',
                             'eager': eager,
+                            'blind_after_sampling': False,
                             'maxlen': maxlen,
                             'max_pulse_size': max_pulse_size,
                             'name': name}
             super().__init__(**super_kwargs)
 
+            self.primary_components = primary_components
+            self.secondary_components = secondary_components
+
+    def __setattr__(self, key, value):
+        if key in ['primary_components','secondary_components']:
+            if isinstance(value, str):
+                value = set(value)
+            elif hasattr(value, "__iter__"):
+                if all(isinstance(_e, str) for _e in value):
+                    value = set(value)
+                else:
+                    raise TypeError(f'{key} must comprise only str entries')
+            else:
+                raise TypeError(f'{key} must be type str, or an iterable thereof')
+        
+        if key == 'primaries':
+            if any(len(_e) != 1 for _e in value):
+                raise SyntaxError('Primary component codes must be single character strings')
             
+        super().__setattr__(key, value)
 
-
-            _stats = _index['stats']
-            if not _index['ready']:
-                raise RuntimeError('Unready dictstream views are making it past get_unit_input')
-            traces = ds.view(starttime=_stats.target_starttime,
-                             endtime=_stats.target_endtime).copy()
-            header = _stats.copy()
-            # Generate window
-            window = Window(traces=traces, header=header)
-            # Append new window to unit_output
-            unit_output.appendleft(window)
-            # Update index to reflect new window generation
-            _index['ready'] = False
-            _stats.target_starttime += self.advance_dt
-            # Apply blinding if specified
-            if self.blind_after_sampling:
-                for ft in ds:
-                    # Make a view of the foldtrace
-                    vft = ft.view(starttime=_stats.target_starttime,
-                                  endtime=_stats.target_endtime)
-                    # Set fold to 0 in the view
-                    vft.fold = vft.fold*0
-        return unit_output
+    def run_unit_process(self, unit_input):
+        unit_output = deque()
+        # Iterate across reportedly ready views
+        for icode, ds_view in unit_input.items():
+            # Get index
+            _index = self.index[icode]
+            # Confirm ready flag
+            if _index['ready']:
                 
-    def put_unit_output(self, unit_output: deque) -> None:
-        if not isinstance(unit_output, deque):
-            self.Logger.critical('TypeError: unit_output must be type collections.deque')
-        if not all(isinstance(_e, Window) for _e in unit_output):
-            self.Logger.critical('TypeError: unit_output elements are not all type PULSE.data.window.Window')
-        self.output += unit_output
+                # Confirm single p_ids registered
+                if len(_index['p_ids']) > 1:
+                    # Eventually open this up for Z and P primary channels on OBS + PickBlue
+                    raise NotImplementedError('WindowingMod does not yet support multiple primary components')
+                # If no registered primary ids - extra safety catch
+                elif len(_index['p_ids']) == 0:
+                    continue
+                else:
+                    pass
+
+                # Get the relevant primary component code
+                _pid = list(_index['p_ids'])[0]
+                _pc = ds_view[_pid].stats.component
+                # Create a copy of the general window_stats
+                _ws = self.window_stats.copy()
+                # Set target starttime from index entry
+                _ws.target_starttime = _index['ti']
+                # Create copies of the views
+                traces = [_ft.copy() for _ft in ds_view]
+                # GENERATE WINDOW
+                window = Window(traces=traces, header=_ws, primary_component=_pc)
+                # Attache to unit_output
+                unit_output.appendleft(window)
+
+                # Advance index entry
+                _index['ready'] = False
+                _index['ti'] += self.step
+                _index['tf'] += self.step
+        return unit_output
     
 
-class WindowingMod(SamplingMod)
+    def update_settings_from_seisbench(self, model):
+        super().update_settings_from_seisbench(model)
+        self.window_stats.update({'target_sampling_rate': model.sampling_rate,
+                                  'target_npts': model.in_samples})
+            
+
+
+#             _stats = _index['stats']
+#             if not _index['ready']:
+#                 raise RuntimeError('Unready dictstream views are making it past get_unit_input')
+#             traces = ds.view(starttime=_stats.target_starttime,
+#                              endtime=_stats.target_endtime).copy()
+#             header = _stats.copy()
+#             # Generate window
+#             window = Window(traces=traces, header=header)
+#             # Append new window to unit_output
+#             unit_output.appendleft(window)
+#             # Update index to reflect new window generation
+#             _index['ready'] = False
+#             _stats.target_starttime += self.advance_dt
+#             # Apply blinding if specified
+#             if self.blind_after_sampling:
+#                 for ft in ds:
+#                     # Make a view of the foldtrace
+#                     vft = ft.view(starttime=_stats.target_starttime,
+#                                   endtime=_stats.target_endtime)
+#                     # Set fold to 0 in the view
+#                     vft.fold = vft.fold*0
+#         return unit_output
+                
+#     def put_unit_output(self, unit_output: deque) -> None:
+#         if not isinstance(unit_output, deque):
+#             self.Logger.critical('TypeError: unit_output must be type collections.deque')
+#         if not all(isinstance(_e, Window) for _e in unit_output):
+#             self.Logger.critical('TypeError: unit_output elements are not all type PULSE.data.window.Window')
+#         self.output += unit_output
+    
+
+# class WindowingMod(SamplingMod)
             
                 
 
 
-def get_unit_input(self, input: DictStream) -> dict:
-        """Update the **index** of this :class:`~.WindMod` for new
-        and existing instrument codes in **input**
+# def get_unit_input(self, input: DictStream) -> dict:
+#         """Update the **index** of this :class:`~.WindMod` for new
+#         and existing instrument codes in **input**
 
-        :param input: _description_
-        :type input: DictStream
-        :return: _description_
-        :rtype: dict
-        """        
-        unit_input = {}
+#         :param input: _description_
+#         :type input: DictStream
+#         :return: _description_
+#         :rtype: dict
+#         """        
+#         unit_input = {}
 
-        # Split by instrument
-        for instrument, ds in input.split_on().items():
-            ### POPULATE NEW ENTRIES IN **INDEX** ###
-            # If this is a new instrument code
-            if instrument not in self.index.keys():
-                new_entry = {'stats': self.window_stats.copy(),
-                             'ready': False}
-                comps = set([ft.stats.component for ft in ds])
-                # Check that at least one reference component is present
-                if self.reference.intersection(comps) != set([]):
+#         # Split by instrument
+#         for instrument, ds in input.split_on().items():
+#             ### POPULATE NEW ENTRIES IN **INDEX** ###
+#             # If this is a new instrument code
+#             if instrument not in self.index.keys():
+#                 new_entry = {'stats': self.window_stats.copy(),
+#                              'ready': False}
+#                 comps = set([ft.stats.component for ft in ds])
+#                 # Check that at least one reference component is present
+#                 if self.reference.intersection(comps) != set([]):
 
-                # Find primary & secondary keys for this instrument
-                for ft in ds:
-                    # If this is a primary component, populate primary_id and target_starttime
-                    if ft.stats.component in self.primary_components:
-                        new_entry['stats'].primary_id = ft.id
-                        new_entry['stats'].target_starttime = ft.stats.starttime
-                    # Find secondary keys if there are secondary channels
-                    elif len(ds) > 1:
-                        # Identify the component pairs
-                        for sc in self.secondary_components:
-                            if ft.stats.component in sc:
-                                new_entry['stats'].update({'secondary_components': sc})
-                                break
-                    else:
-                        new_entry['stats'].update({'secondary_components': 'NE'})
-                # If a primary key has been identified, add new entry
-                if new_entry['stats']['primary_id'] is not None:
-                    self.index.update({instrument: new_entry})
+#                 # Find primary & secondary keys for this instrument
+#                 for ft in ds:
+#                     # If this is a primary component, populate primary_id and target_starttime
+#                     if ft.stats.component in self.primary_components:
+#                         new_entry['stats'].primary_id = ft.id
+#                         new_entry['stats'].target_starttime = ft.stats.starttime
+#                     # Find secondary keys if there are secondary channels
+#                     elif len(ds) > 1:
+#                         # Identify the component pairs
+#                         for sc in self.secondary_components:
+#                             if ft.stats.component in sc:
+#                                 new_entry['stats'].update({'secondary_components': sc})
+#                                 break
+#                     else:
+#                         new_entry['stats'].update({'secondary_components': 'NE'})
+#                 # If a primary key has been identified, add new entry
+#                 if new_entry['stats']['primary_id'] is not None:
+#                     self.index.update({instrument: new_entry})
 
-            ### ASSESS READINESS TO GENERATE NEW WINDOWS ###
-            if instrument in self.index.keys():
-                _index = self.index[instrument]
-                _ws = _index['stats']
-                # Get primary component
-                _ft = ds[_ws.primary_id]
-                # Catch large forward jumps (outages)
-                if _ws.target_endtime < _ft.stats.starttime:
-                    # increment up window until target_starttime is within the
-                    # data time domain
-                    while _ws.target_starttime < ft.stats.starttime:
-                        _ws.target_starttime += self.advance_dt
-                # Assess readiness for 'normal' and 'eager' windowing
-                if self.windowing_mode in ['normal','eager']:
-                    fv = _ft.get_valid_fraction(
-                        starttime=_ws.target_starttime,
-                        endtime=_ws.target_endtime) 
-                    # If there are enough valid data to make the next window
-                    if fv > _ws.pthresh:
-                        # If eager, go ahead (even if the target_endtime isn't in the buffer yet)
-                        if self.windowing_mode == 'eager':
-                            _index['ready'] = True
-                        # If normal, make sure the target_endtime exists in the buffer
-                        elif self.windowing_mode == 'normal':
-                            if _ws.target_endtime <= ft.stats.endtime:
-                                _index['ready'] = True
-                        # If padded, make sure target_endtime is at least a window length behind the buffer end
-                        elif self.windowing_mode == 'padded':
-                            if _ws.target_endtime <= (ft.stats.endtime + self.window_dt):
-                                _index['ready'] = True
+#             ### ASSESS READINESS TO GENERATE NEW WINDOWS ###
+#             if instrument in self.index.keys():
+#                 _index = self.index[instrument]
+#                 _ws = _index['stats']
+#                 # Get primary component
+#                 _ft = ds[_ws.primary_id]
+#                 # Catch large forward jumps (outages)
+#                 if _ws.target_endtime < _ft.stats.starttime:
+#                     # increment up window until target_starttime is within the
+#                     # data time domain
+#                     while _ws.target_starttime < ft.stats.starttime:
+#                         _ws.target_starttime += self.advance_dt
+#                 # Assess readiness for 'normal' and 'eager' windowing
+#                 if self.windowing_mode in ['normal','eager']:
+#                     fv = _ft.get_valid_fraction(
+#                         starttime=_ws.target_starttime,
+#                         endtime=_ws.target_endtime) 
+#                     # If there are enough valid data to make the next window
+#                     if fv > _ws.pthresh:
+#                         # If eager, go ahead (even if the target_endtime isn't in the buffer yet)
+#                         if self.windowing_mode == 'eager':
+#                             _index['ready'] = True
+#                         # If normal, make sure the target_endtime exists in the buffer
+#                         elif self.windowing_mode == 'normal':
+#                             if _ws.target_endtime <= ft.stats.endtime:
+#                                 _index['ready'] = True
+#                         # If padded, make sure target_endtime is at least a window length behind the buffer end
+#                         elif self.windowing_mode == 'padded':
+#                             if _ws.target_endtime <= (ft.stats.endtime + self.window_dt):
+#                                 _index['ready'] = True
                 
-            # Capture ready instruments for windowing
-            if self.index[instrument]['ready']:
-                unit_input.update({instrument: ds})
+#             # Capture ready instruments for windowing
+#             if self.index[instrument]['ready']:
+#                 unit_input.update({instrument: ds})
 
-        # Trigger early stopping if no windows are approved
-        if len(unit_input) == 0:
-            self._continue_pulsing = False
-        return unit_input
+#         # Trigger early stopping if no windows are approved
+#         if len(unit_input) == 0:
+#             self._continue_pulsing = False
+#         return unit_input
 
 
                         
@@ -962,7 +1070,7 @@ def get_unit_input(self, input: DictStream) -> dict:
 #                 pass
             
 #             # Check 3: Does fraction of valid data meet/exceed the primary threshold?
-#             fv = mlt.get_fvalid_subset(starttime=tracker['ti'], endtime = tracker['ti'] + self.window_sec)
+#             fv = mlt.get_vfalid_subset(starttime=tracker['ti'], endtime = tracker['ti'] + self.window_sec)
 #             # Threshold is met, update to ready
 #             if fv >= self.target['threshold']:
 #                 tracker.update({'ready': True})
@@ -1271,7 +1379,7 @@ def get_unit_input(self, input: DictStream) -> dict:
     #         # If the mltrace has reached or exceeded the endpoint of the next window
     #         if status:
     #             # Get valid fraction for proposed window in Trace
-    #             fv = mltrace.get_fvalid_subset(starttime=next_window_ti, endtime=next_window_tf)
+    #             fv = mltrace.get_vfalid_subset(starttime=next_window_ti, endtime=next_window_tf)
     #             # If threshold passes
     #             if fv >= self.target['thresholds']['ref']:
     #                 # set (window) ready flag to True
@@ -1295,7 +1403,7 @@ def get_unit_input(self, input: DictStream) -> dict:
     #                     # If the new window ends inside the current data
     #                     if mltrace.stats.endtime >= next_window_tf and self.stance == 'eager':
     #                         # Consider re-approving the window for copying + trimming
-    #                         fv = mltrace.get_fvalid_subset(starttime=next_window_ti,
+    #                         fv = mltrace.get_vfalid_subset(starttime=next_window_ti,
     #                                                     endtime=next_window_tf)
     #                         # If window passes threshold, re-approve
     #                         if fv >= self.target['thresholds']['ref']:

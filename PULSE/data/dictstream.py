@@ -517,7 +517,7 @@ class DictStream(Stream):
     ## SUB-VIEW METHODS ##
     ######################
 
-    def split_on(self, id_key='inst') -> dict:
+    def split_on(self, id_key='instrument') -> dict:
         """Split this DictStream into a dictionary
         of subset DictStreams based on one of the id_keys
         key names in the :class:`~PULSE.util.header.MLStats`
@@ -535,9 +535,9 @@ class DictStream(Stream):
                 model and weight names.
         'site' - Site defining elements of the SEED channel naming
                 convention (N.S)
-        'inst' - Instrument defining elements of the SEED channel
+        'instrument' - Instrument defining elements of the SEED channel
                 naming convention (N.S.L.C [minus component code])
-        'mod' - Model + Weight elements of the MLStats extension
+        'modwt' - Model + Weight elements of the MLStats extension
                 to the SEED naming convention
         'network' - SEED Network code (N)
         'station' - SEED Station code (S)
@@ -548,7 +548,7 @@ class DictStream(Stream):
         'weight' - MLSTats weight name
                 
         :param id_key: FoldTrace.id_keys key value to
-            used to split this DictStream, defaults to 'inst'
+            used to split this DictStream, defaults to 'instrument'
         :type id_key: str, optional
         :return: 
          - **output** (*dict*) -- dictionary of subset
@@ -892,16 +892,17 @@ class DictStream(Stream):
         output of this method are made to the source data.
 
         :param starttime: start time for the view, defaults to None
-        :type starttime: _type_, optional
-        :param endtime: _description_, defaults to None
-        :type endtime: _type_, optional
-        :param keep_empty_traces: _description_, defaults to True
+        :type starttime: obspy.UTCDateTime or None, optional
+        :param endtime: end time for the view, defaults to None
+        :type endtime: obspy.UTCDateTime or None, optional
+        :param keep_empty_traces: should dataless traces be kept in
+            this view? Defaults to True
         :type keep_empty_traces: bool, optional
-        :return: _description_
-        :rtype: _type_
+        :returns: **view** (*PULSE.data.dictstream.DictStream**) -- view
+            of specified data and metadata
         """        
         out = self.__class__(key_attr=self.key_attr)
-        for _id, _ft in self.traces.items():
+        for _ft in self:
             view = _ft.view(starttime=starttime, endtime=endtime)
             if view.count() > 0:
                 out.extend(view)

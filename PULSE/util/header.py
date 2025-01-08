@@ -189,9 +189,9 @@ class MLStats(Stats):
                 model and weight names.
         'site' - Site defining elements of the SEED channel naming
                 convention (N.S)
-        'inst' - Instrument defining elements of the SEED channel
+        'instrument' - Instrument defining elements of the SEED channel
                 naming convention (N.S.L.C [minus component code])
-        'mod' - Model + Weight elements of the MLStats extension
+        'modwt' - Model + Weight elements of the MLStats extension
                 to the SEED naming convention
         'network' - SEED Network code (N)
         'station' - SEED Station code (S)
@@ -208,8 +208,8 @@ class MLStats(Stats):
                    'sncl': self.sncl,
                    'id': self.id,
                    'site': self.site,
-                   'inst': self.inst,
-                   'mod': self.mod,
+                   'instrument': self.inst,
+                   'modwt': self.mod,
                    'network': self.network,
                    'station': self.station,
                    'location': self.location,

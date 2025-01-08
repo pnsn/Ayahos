@@ -446,10 +446,10 @@ class WindowingMod(SamplingMod):
             else:
                 raise TypeError(f'{key} must be type str, or an iterable thereof')
         
-        if key == 'primaries':
+        if key == 'primary_components':
             if any(len(_e) != 1 for _e in value):
                 raise SyntaxError('Primary component codes must be single character strings')
-            
+
         super().__setattr__(key, value)
 
     def run_unit_process(self, unit_input):

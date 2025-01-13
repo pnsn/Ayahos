@@ -12,6 +12,8 @@
 import logging
 from PULSE.util.stats import estimate_moments, fit_normal_pdf_curve, estimate_quantiles
 import numpy as np
+import pandas as pd
+
 from obspy import Trace, UTCDateTime
 from obspy.core.util.attribdict import AttribDict
 from PULSE.data.foldtrace import FoldTrace
@@ -84,17 +86,60 @@ class Trigger(FoldTrace):
         super().__setattr__(key, value)
     
 
+    def get_max_index(self):
+        return np.argmax(np.abs(self.data))
+
     def get_max_time(self):
         """Get the timestamp of the absolute maximum value in the
         **data** attribute of this :class:`~.Trigger` object
 
         :return: _description_
         :rtype: _type_
-        """        
-        return self.stats.starttime + np.argmax(np.abs(self.data))*self.stats.sampling_rate
+        """
+        xmax = self.get_max_index()
+        return self.stats.starttime + xmax*self.stats.sampling_rate
     
     tmax = property(get_max_time)
+    xmax = property(get_max_index)
     pmax = property(max)
+
+    def basic_summary(self) -> dict:
+        """Render a dictionary that contains a basic summary of the features
+        of this :class:`~.Trigger` object
+
+        Fields
+        ------
+        network - network code
+        station - station code
+        location - location code
+        channel - channel code
+        component - component character
+        model - model code
+        weight - weight code
+        starttime - trigger starttime
+        sampling_rate - trigger sampling rate
+        xmax - index of the maximum CRF value
+        pmax - maximum CRF value
+        xon - index of the trigger onset
+        pon - trigger onset value
+        xoff - index of the trigger offset
+        poff - trigger offset value
+        fold_mean - mean value of the fold or this trigger
+
+        :return: **summary** (*dict*)
+        :rtype: dict
+        """        
+        summary = {}
+        for _k in ['network','station','location','channel','component','model','weight','starttime','sampling_rate']:
+            summary.update({_k: self.stats[_k]})
+        summary.update({'xmax':self.xmax,
+                        'pmax':self.pmax,
+                        'xon': self.pt_on,
+                        'pon': self.thr_on,
+                        'xoff': self.pt_off,
+                        'poff': self.thr_off,
+                        'fold_mean': np.mean(self.fold)})
+        return summary
 
     def estimate_gaussian_moments(self, fisher=False):
         """Under the assumption that this :class:`~.Trigger`'s **data** 
@@ -146,6 +191,43 @@ class Trigger(FoldTrace):
         names = [np.round(_q, decimals=decimals) for _q in quantiles]
         result = dict(zip(names, out))
         return result
+    
+    def fit_scaled_normal_pdf(self, mindata=30.):
+        if self.count() >= mindata:
+            yv = self.data
+        else:
+            # Symmetrically Zero-pad
+            padsamples = (mindata - self.count())//2 + 1
+            yv = np.r_[np.zeros(padsamples), self.data, np.zeros(padsamples)]
+
+        xv = np.arange(len(yv))
+        # Compose initial guess parameters: amplitude, mean, variance
+        p0 = [self.pmax, self.xmax, (0.5*(self.pt_off - self.pt_on))**2]
+        # Fit normal distribution
+        pout, pcov, res = fit_normal_pdf_curve(xv, yv, threshold=0., mindata=mindata, p0=p0)
+        return pout, pcov, res
+    
+    def scaled_gaussian_fit(self, mindata=30.) -> dict:
+
+        pout, pcov, res = self.fit_scaled_normal_pdf(mindata=mindata)
+        index = ['network','station','location','channel','model','weight',\
+                 't0','sr','l2','p0_amp','p1_mean','p2_var']
+        values = [self.stats[_k] for _k in index[:6]]
+        values += list(pout)
+        values.append(np.linalg.norm(res, order=2))
+        for ii in range(3):
+            for jj in range(ii+1):
+                values.append(pcov[ii,jj])
+                index.append(f'v_{ii}{jj}')
+        
+        series = pd.Series(data=values, index=index)
+        return series
+    
+    def gq_fit_summary(self, mindata=30., fisher=False, quantiles=[0.16, 0.25, 0.5, 0.75, 0.84]):
+        series = self.scaled_gaussian_fit(mindata=30.)
+        g_results = self.estimate_gaussian_moments(fisher=fisher)
+
+
 
     def to_pick(self, pick='max', uncertainty='trigger', confidence='pmax_scaled', **kwargs):
         """
@@ -188,6 +270,13 @@ class Trigger(FoldTrace):
         
         # Get uncertainties
         if sigma 
+
+
+    def to_gaussian(self, fisher=False):
+        moments = self.estimate_gaussian_moments(fisher=fisher)
+
+
+
 
 
 

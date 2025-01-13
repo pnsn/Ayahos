@@ -3,15 +3,15 @@ from collections import deque
 
 import seisbench.models as sbm
 
-from PULSE.mod.sequencing import SeqMod
+from PULSE.seq.sequence import Sequence
 from PULSE.mod.sampling import SamplingMod, WindowingMod
 from PULSE.mod.processing import ProcMod
 from PULSE.mod.detecting import SBMMod
 from PULSE.mod.buffering import BufferMod
 from PULSE.mod.triggering import CRFTriggerMod
 
-class SBM_PickingMod(SeqMod):
-    """SeisBench Models Picking Module
+class SBM_Picking_Sequence(Sequence):
+    """SeisBench Models Picking Sequence of PULSE Unit Modules
 
     (DictStream)[FoldTrace] 
      | -- > Window -> PreProcess -> Predict -> Select -> Blind -> Buffer -> Trigger -> T2P
@@ -19,8 +19,15 @@ class SBM_PickingMod(SeqMod):
     :param SeqMod: _description_
     :type SeqMod: _type_
     """    
-    def __init__(self, model, weight_names=['pnw'], labels='PS', trigger_level=0.3, buffer_length=300., maxlen=None, max_pulse_size=1, name=None):
+    def __init__(
+            self,
+            model,
+            weight_names=['pnw'],
+            labels='PS',
+            trigger_level=0.3,
+            buffer_length=300.):
         
+
         # Compatability check for model
         if not isinstance(model, sbm.WaveformModel):
             raise TypeError
@@ -37,7 +44,6 @@ class SBM_PickingMod(SeqMod):
                 if _e not in pt_names:
                     msg += f' {_e}'   
             raise ValueError(msg)
-        
 
         # Generate Windows from an input DictStream
         windmod = WindowingMod().update_from_seisbench(model=model)
@@ -75,6 +81,14 @@ class SBM_PickingMod(SeqMod):
         pickmod = ProcMod(pclass='PULSE.data.pick.Trigger',
                           pmethod='to_pick',
                           mode='output')
+
+
+    # def __init__(self, model, weight_names=['pnw'], labels='PS', trigger_level=0.3, buffer_length=300., maxlen=None, max_pulse_size=1, name=None):
+        
+        #
+        
+
+        
 
         ## STRING TOGETHER WORKFLOW
         sequence = [windmod,

@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from obspy import Trace, UTCDateTime
+from obspy.core.event import Pick, QuantityError, WaveformStreamID, ResourceIdentifier
 from obspy.core.util.attribdict import AttribDict
 from PULSE.data.foldtrace import FoldTrace
 from scipy.cluster.vq import *
@@ -234,9 +235,6 @@ class Trigger(FoldTrace):
         Convert the metadata in this trigger into an ObsPy :class:`~.Pick` object
         with a specified formatting to convey trigger size and peak value
 
-
-
-
         sigma options
         ---------------------
         None -- No uncertainties reported
@@ -247,7 +245,7 @@ class Trigger(FoldTrace):
         """
         if pick not in ['max','mean','median']:
             raise ValueError(f'pick type "{pick}" not supported.')
-        if uncertainty not in ['sigma','std','iqr']:
+        if uncertainty not in [None, 'sigma','std','iqr']:
             raise ValueError(f'uncertainty type "{uncertainty}" not supported.')
         
         pkwargs = {}
@@ -269,7 +267,29 @@ class Trigger(FoldTrace):
             raise ValueError
         
         # Get uncertainties
-        if sigma 
+        if sigma is None:
+            tsigma = None
+        elif sigma == 'pmax_scaled':
+            tsigma = QuantityError(
+                lower_uncertainty=None,
+                upper_uncertainty=None,
+                confidence_level=None
+            )
+
+
+        pick = Pick(time=tpick,
+                    resource_id=ResourceIdentifier(prefix='smi:local/pulse/data/pick'),
+                    time_errors=tsigma,
+                    waveform_id=WaveformStreamID(
+                        network_code=self.stats.network,
+                        station_code=self.stats.station,
+                        location_code=self.stats.location,
+                        channel_code=self.stats.channel),
+                    method_id=ResourceIdentifier(id=f'smi:local/pulse/data/pick/{self.stats.model}/{self.stats.weight}'),
+                    phase_hint=self.id_keys['component'])
+        
+        return pick
+
 
 
     def to_gaussian(self, fisher=False):

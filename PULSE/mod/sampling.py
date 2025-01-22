@@ -375,7 +375,7 @@ class SamplingMod(BaseMod):
             raise TypeError('model must be a seisbench.models.WaveformModel-type object')
         # Append model name to the end of the module name 
         if len(self.name.split('_')) > 1:
-            newname = f'{'_'.join(self.name.split('_')[1:])}_{model.name}'
+            newname = f"{'_'.join(self.name.split('_')[1:])}_{model.name}"
         else:
             newname = model.name
         self.setname(newname)

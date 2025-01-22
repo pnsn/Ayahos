@@ -3,6 +3,7 @@ from collections import deque
 
 import seisbench.models as sbm
 
+from PULSE.data.dictstream import DictStream
 from PULSE.seq.sequence import Sequence
 from PULSE.mod.sampling import SamplingMod, WindowingMod
 from PULSE.mod.processing import ProcMod
@@ -25,7 +26,10 @@ class SBM_Picking_Sequence(Sequence):
             weight_names=['pnw'],
             labels='PS',
             trigger_level=0.3,
-            buffer_length=300.):
+            buffer_length=300.,
+            max_metadata_age=60.,
+            max_pulse_size=1
+            ):
         
 
         # Compatability check for model
@@ -82,14 +86,6 @@ class SBM_Picking_Sequence(Sequence):
                           pmethod='to_pick',
                           mode='output')
 
-
-    # def __init__(self, model, weight_names=['pnw'], labels='PS', trigger_level=0.3, buffer_length=300., maxlen=None, max_pulse_size=1, name=None):
-        
-        #
-        
-
-        
-
         ## STRING TOGETHER WORKFLOW
         sequence = [windmod,
                     preprocmod,
@@ -100,7 +96,14 @@ class SBM_Picking_Sequence(Sequence):
                     triggermod,
                     pickmod]
         ## INITIALIZE/INHERIT FROM SEQMOD
-        super().__init__(modules=sequence, maxlen=maxlen, max_pulse_size=max_pulse_size, name=model.name)
+        super().__init__(modules=sequence, maxlen=max_metadata_age, max_pulse_size=max_pulse_size, name=model.name)
 
-    def pulse(self, input: deque) -> deque:
+    def pulse(self, input: DictStream) -> deque:
+        """Run one sequence of pulses for this :class:`~.SBM_Picking_Sequence` object
+
+        :param input: a dictionary stream object containing waveform data
+        :type input: PULSE.data.dictstream.DictStream
+        :return: a collection of obspy picks from the specified ML detector/picker
+        :rtype: collections.deque of :class:`~obspy.core.event.Pick` objects
+        """        
         return super().pulse(input)

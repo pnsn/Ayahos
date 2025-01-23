@@ -9,10 +9,8 @@
     provide compressed representations 
 """
 import numpy as np
-from obspy import UTCDateTime
-from obspy.signal.trigger import trigger_onset
-from pandas import DataFrame
 from scipy.optimize import leastsq
+from scipy.sparse import coo_array
 
 ##########################################
 # Methods for estimating statistics from #
@@ -140,7 +138,50 @@ def estimate_moments(x, y, fisher=False, dtype=None):
 # Methods for fitting normal pdfs to probability curves #
 #########################################################
 
-def scaled_normal_pdf(p, x):
+def scaled_triangle(p, x):
+    """Scaled isosceles triangle function
+    with parameters:
+    
+    p[0] = Amplitdue
+    p[1] = Central coordinate ("mean")
+    p[2] = Half-width
+
+    :param p: paramter values as described above
+    :type p: array-like
+    :param x: sample coordinate vector
+    :type x: numpy.ndarray
+    :returns: **y** (*numpy.ndarray*) -- 
+    """
+    # Upslope
+    y1 = (x - p[1] + p[2])/p[2]
+    y1 *= (y1 >= 0) & (y1 <= 1)
+    # Downslope
+    y2 = -1.*(x - p[1] - p[2])/p[2]
+    y2 *= (y2 >= 0) & (y2 < 1)
+    # Sum and scale
+    y = p[0]*(y1 + y2)
+    return y
+
+def scaled_box(p, x):
+    """Scaled, shifted boxcar function with parameters
+    p[0] = Amplitude
+    p[1] = central coordinate
+    p[2] = half-width
+
+    :param p: _description_
+    :type p: _type_
+    :param x: _description_
+    :type x: _type_
+    :return: _description_
+    :rtype: _type_
+    """    
+    y = np.zeros(x.shape)
+    idx = ((x - p[1]) <= p[2]) & (-(x - p[1] + 1) < p[2])
+    y[idx] += p[0]
+    return y
+
+
+def scaled_gaussian(p, x):
     """
     Model a scaled normal distribution (Gaussian) with parameters:  
     p[0] = :math:`A`       - Amplitude of the distribution  
@@ -163,7 +204,7 @@ def scaled_normal_pdf(p, x):
     return y
 
 
-def normal_pdf_error(p, x, y_obs):
+def gaussian_misfit(p, x, y_obs):
     """
     Calculate the misfit between an offset normal distribution (Gaussian)
     with parameters:
@@ -183,12 +224,133 @@ def normal_pdf_error(p, x, y_obs):
     :return y_err: [array-like] misfit calculated as y_obs - y_cal
     """
     # Calculate the modeled y-values given positions x and parameters p[:]
-    y_cal = scaled_normal_pdf(p, x)
+    y_cal = scaled_gaussian(p, x)
     y_err = y_obs - y_cal
     return y_err
 
 
-def fit_normal_pdf_curve(x, y, threshold=0.1, mindata=30, p0=None):
+def scaled_gaussian_misfit(p, x, y_obs):
+    """Calculate the misfit of a shifted, scaled
+    Gaussian PDF to observed values
+
+    p[0] = model amplitude
+    p[1] = model central location coordinate (mean)
+    p[2] = model scale (variance)
+
+    :param p: model parameter vector
+    :type p: numpy.ndarray
+    :param x: sample location vector
+    :type x: numpy.ndarray
+    :param y_obs: observed sample value vector
+    :type y_obs: numpy.ndarray
+    :returns: **res** (*numpy.ndarray*) -- model - data residual vector 
+    """    
+    y_cal = scaled_gaussian(p, x)
+    res = y_cal - y_obs
+    return res
+
+def scaled_triangle_misfit(p, x, y_obs):
+    """Calculate the misfit of a shifted, scaled
+    isosceles triangle function to observed values
+
+    p[0] = model amplitude
+    p[1] = model central location coordinate (mean)
+    p[2] = model scale (half-width)
+
+    :param p: model parameter vector
+    :type p: numpy.ndarray
+    :param x: sample location vector
+    :type x: numpy.ndarray
+    :param y_obs: observed sample value vector
+    :type y_obs: numpy.ndarray
+    :returns: **res** (*numpy.ndarray*) -- model - data residual vector 
+    """    
+    y_cal = scaled_triangle(p, x)
+    res = y_cal - y_obs
+    return res
+
+def scaled_box_misfit(p, x, y_obs):
+    """Calculate the misfit of a shifted, scaled boxcar
+    function to observed values
+
+    p[0] = model amplitude
+    p[1] = model central location coordinate (mean)
+    p[2] = model scale (half-width)
+
+    :param p: model parameter vector
+    :type p: numpy.ndarray
+    :param x: sample location vector
+    :type x: numpy.ndarray
+    :param y_obs: observed sample value vector
+    :type y_obs: numpy.ndarray
+    :returns: **res** (*numpy.ndarray*) -- model - data residual vector 
+    """    
+    y_cal = scaled_box(p, x)
+    res = y_cal - y_obs
+    return res
+
+def fit_geometric_model(x, y, function='gaussian', min_y=0.1, mindata=30, p0=None):
+    """_summary_
+
+    :param x: _description_
+    :type x: _type_
+    :param y: _description_
+    :type y: _type_
+    :param function: _description_, defaults to 'gaussian'
+    :type function: str, optional
+    :param min_y: _description_, defaults to 0.1
+    :type min_y: float, optional
+    :param mindata: _description_, defaults to 30
+    :type mindata: int, optional
+    :param p0: _description_, defaults to None
+    :type p0: _type_, optional
+    :raises AttributeError: _description_
+    :raises AttributeError: _description_
+    :raises ValueError: _description_
+    :return: _description_
+    :rtype: _type_
+    """    
+    if np.ndim(x) == 1 and np.ndim(y) == 1 and x.shape == y.shape:
+        pass
+    else:
+        raise AttributeError('x and y must be equal length vectors')
+    ind = y >= min_y
+    _x = x[ind]
+    _y = y[ind]
+    if len(_y) < mindata:
+        raise AttributeError(f'Insufficient data ({sum(ind)} < {mindata}) that meet min_y <= {min_y}')
+    
+    funcs = {'gaussian': scaled_gaussian_misfit,
+             'normal': scaled_gaussian_misfit,
+             'boxcar': scaled_box_misfit,
+             'box': scaled_box_misfit,
+             'triangle': scaled_triangle_misfit}
+
+    if function in funcs.keys():
+        func = funcs[function]
+    else:
+        raise ValueError(f'function "{function}" not supported')
+
+    # if any(_x[1:] - _x[:-1] != 1):
+    #     raise AttributeError('Non-consecutive elements present')
+    if p0 is None:
+        # If using gaussian
+        if function in ['gaussian','normal']:
+            # Estimate mean and standard deviation
+            p0 = [1, np.mean(_x), 0.34*(_x[-1] - _x[0])]
+        # If using triangle or box
+        else:
+            # Estimate mean and half-width
+            p0 = [1, np.mean(_x), 0.5*(_x[-1] - _x[0])]
+    # Run Least Squares inversion for model parameters and model covariance matrix
+    popt, pcov = leastsq(func, p0, args=(_x, _y), full_output=True)
+    # Calculate residuals for popt
+    res = func(popt, _x, _y)
+    return popt, pcov, res
+    
+
+
+def fit_gaussian(x, y, threshold=0.1, mindata=30, p0=None):
     """Fit a Gaussian (Normal) distribution to the PDF approximated as
     y = PDF(x) using data with values :math:`y>=threshold` and 
     :meth:`~scipy.optimize.leastsq` with parameter values :math:`p = {A, \\mu, \\sigma}`
@@ -232,124 +394,274 @@ def fit_normal_pdf_curve(x, y, threshold=0.1, mindata=30, p0=None):
     yv = y[ind]
     if p0 is None:
         p0 = [np.nanmax(yv), np.nanmean(xv), 0.34*(np.nanmax(xv) - np.nanmin(xv))]
-    pout, pcov = leastsq(normal_pdf_error, p0, args=(xv, yv), full_output=True)
-    res = normal_pdf_error(pout, xv, yv)
+    pout, pcov = leastsq(gaussian_misfit, p0, args=(xv, yv), full_output=True)
+    res = gaussian_misfit(pout, xv, yv)
     return pout, pcov, res
 
 
-class GaussianModel(object):
-    """An object hosting paramter fitting of a scaled gaussian model:
+def kld_score(mean_true, var_true, mean_est, var_est):
+    """
+    Calculate the Kullbak-Leiber divergence score of
+    an estimated (modeled) normal distribution relative
+    to the true (reference) normal distribution 
 
-    .. math::
-        y = p_0 e^{\\frac{(x - p_1)^2}{2p_2^2}}
+    :math:`\\frac{1}{2} \\left( \\frac{\\sigma_0^2}{\\sigma_1^2} + \\frac{(\mu_1 - \mu_0)^2}{\\sigma_1^2} - 1 ln \\left(\\frac{\\sigma_1^2}{\\sigma_0^2}\\right) \\right)`
 
-    to input data {x, y}, with model parameters:
-        - :math:`p_0 = A_{calc}`: prefactor, or amplitude
-        - :math:`p_1 = \\mu_{calc}`: central value, or mean
-        - :math:`p_2 = \\sigma_{calc}`: standard deviation
+    with 
+     - :math:`\\mu_0` the true mean
+     - :math:`\\mu_1` the estimated mean
+     - :math:`\\sigma_0^2` the true distribution variance
+     - :math:`\\sigma_1^2` the estimated distribution variance
 
-    The model also includes the paramter covariance matrix and model-data residuals.
-     
-    Also calculates and holds empirical estimates of the statistical moments of input data {x, y},
-        - :math:`\\mu_{est}` -- central value or mean
-        - :math:`\\sigma_{est}` -- standard deviation
-        - :math:`\\mathcal{S}_{est}` -- skewness
-        - :math:`\\mathcal{K}_{est}` -- kurtosis (Pearson or Fisher)
+    Thus the KL divergence approaches 0 as the distributions become
+    more similar and is unbounded as they become more distinct.
 
-    :param kurt_type: type of kurtosis to use "Pearson" or "Fisher" (Pearson = Fisher + 3), defaults to Pearson
-    :type kurt_type: str, optional
-    :param dtype: specify alternative data type to use for all calculations, defaults to None
-    :type dtype: None or numpy.float32-like, optional
-    :assigns:
-        - **self.kurt_type** (*str*) -- 'pearson' or 'fisher' assigned
-        - **self.dtype** (*type* or *None*) -- type or none assigned, passed to :meth:`~ayahos.core.trigger.GaussianModel.estimate_moments`
+    also see: https://en.wikipedia.org/wiki/Kullback–Leibler_divergence
+
+    :param mean_true: reference distribution mean
+    :type mean_true: float-like
+    :param var_true: reference distribution variance
+    :type var_true: float-like
+    :param mean_est: estimated distribution mean
+    :type mean_est: float-like
+    :param var_est: estimated distribution variance
+    :type 
+
+    """
+    p0 = var_true/var_est
+    p1 = ((mean_est - mean_true)**2)/var_est
+    p2 = var_est/var_true
+    kld = 0.5*(p0 + p1 - 1 + np.log(p2))
+    return kld
+
+def total_variation_distance(kld_score):
+    """
+    Calculate a variation distance using the formulation from Bretagnolle and Huber (1978)
+    for a Kullbak-Leiber divergence score (:math:`D_{KL}`)
+
+    :math:`\\delta = \\sqrt{1 - e^{-D_{KL}}}`
+
+    Provides a representation of divergence that has :math:`\\delta \\in (0, 1]`
+    with increasing divergence approaching 0 and exact similarity returning 1.
+
+    Reference: https://en.wikipedia.org/wiki/Kullback–Leibler_divergence#Interpretations
+    """
+    kld = kld_score
+    d = np.sqrt(1. - np.exp(-kld))
+    return d
+
+
+def kld_score_reciprocal(kld_score):
+    """
+    Reciprocal representation of the Kullbak-Leiber divergence score (:math:`D_{KL}`)
+    such that scores for similar distributions approach 1 and scores for dissimilar
+    distributions approach 0, given as:
+
+    :math:`R_{KL} = \\frac{1}{D_{KL} + 1}
+
+    Note: This is an ad-hoc reformulation of the Kullbak-Leiber divergence score
+    such that :math:`R_{KL} \in (0, 1]`. A more appropriate metric might be the
+    total-variation distance provided with :meth:`~.total_variation_distance`
+
+    """
+
+    kld = kld_score
+    kldr = 1. / (kld + 1.)
+    return kldr
+
+
+def kl_div_pairwise(means, vars):
+    """Calculate pairwise Kullbak-Leiber divergence scores for 
+    a set of normal distributions defined by vectorts of mean
+    and variance pairs
+
+    :param means: vector of distribution means
+    :type means: numpy.ndarray
+    :param vars: vector of distribution variances
+    :type vars: numpy.ndarray
+    :returns: **output** (*numpy.ndarray*) - symmetric matrix
+        of Kullbak-Leiber divergence scores
     """    
-    def __init__(self, kurt_type='Pearson', dtype=None):
-        """Initialize a GaussianModel object
+    if len(means.shape) != 1:
+        raise AttributeError
+    if len(vars.shape) != 1:
+        raise AttributeError
+    if len(means) != len(vars):
+        raise ValueError
 
-        :param kurt_type: type of kurtosis to use "Pearson" or "Fisher" (Pearson = Fisher + 3), defaults to Pearson
-        :type kurt_type: str, optional
-        :param dtype: specify alternative data type to use for all calculations, defaults to None
-        :type dtype: None or numpy.float32-like, optional
-        :assigns:
-            - **self.kurt_type** (*str*) -- 'pearson' or 'fisher' assigned
-            - **self.dtype** (*type* or *None*) -- type or none assigned, passed to :meth:`~ayahos.core.trigger.GaussianModel.estimate_moments`
+    output = np.full(shape=(len(means), len(means)), fill_value=np.nan)
+    for ii, imu in enumerate(means):
+        for jj, jmu in enumerate(means):
+            if ii < jj:
+                _kld = kld_score(imu, vars[ii], jmu, vars[jj])
+                output[ii, jj] = _kld
+                output[jj, ii] = _kld
+            elif ii == jj:
+                output[ii, jj] = 0
+    return output
+
+def two_sample_z_test(mean0, var0, mean1, var1):
+    num = np.abs(mean0 - mean1)
+    den = np.sqrt(var0 + var1)
+    return num/den
+
+def kl_div_sparse(means, vars, max_mean_difference=3.):
+    """Calculate pairwise Kullbak-Leiber divergence scores for 
+    a set of normal distributions defined by vectorts of mean
+    and variance pairs where the maximum difference between
+    mean pairs does not exceed an arbitrary threshold value.
+
+    :param means: vector of distribution means
+    :type means: numpy.ndarray
+    :param vars: vector of distribution variances
+    :type vars: numpy.ndarray
+    :returns: **output** (*scipy.sparse.coo_array*) -- sparse array
+        of Kullbak-Leiber divergence scores for distribution pairs
+        that meet the threshold criteria
+    """    
+    if len(means) != len(vars):
+        raise ValueError
+    data = []
+    row = []
+    col = []
+    ij_max = 0
+    for ii, imu in enumerate(means):
+        for jj, jmu in enumerate(means):
+            if ii < jj:
+                if np.abs(imu - jmu) <= max_mean_difference:
+                    # Do upper triangle
+                    _dat = kld_score(imu, vars[ii], jmu, vars[jj])
+                    data.append(_dat)
+                    row.append(ii)
+                    col.append(jj)
+                    # And lower triangle
+                    data.append(_dat)
+                    row.append(jj)
+                    col.append(ii)
+                    if jj > ij_max:
+                        ij_max = jj
+                    
+    # Convert into a COOrdinate Sparse Array
+    output = coo_array(data, (row, col), shape=(ij_max, ij_max))
+    return output
+
+
+
+
+
+# class GaussianModel(object):
+#     """An object hosting paramter fitting of a scaled gaussian model:
+
+#     .. math::
+#         y = p_0 e^{\\frac{(x - p_1)^2}{2p_2^2}}
+
+#     to input data {x, y}, with model parameters:
+#         - :math:`p_0 = A_{calc}`: prefactor, or amplitude
+#         - :math:`p_1 = \\mu_{calc}`: central value, or mean
+#         - :math:`p_2 = \\sigma_{calc}`: standard deviation
+
+#     The model also includes the paramter covariance matrix and model-data residuals.
+     
+#     Also calculates and holds empirical estimates of the statistical moments of input data {x, y},
+#         - :math:`\\mu_{est}` -- central value or mean
+#         - :math:`\\sigma_{est}` -- standard deviation
+#         - :math:`\\mathcal{S}_{est}` -- skewness
+#         - :math:`\\mathcal{K}_{est}` -- kurtosis (Pearson or Fisher)
+
+#     :param kurt_type: type of kurtosis to use "Pearson" or "Fisher" (Pearson = Fisher + 3), defaults to Pearson
+#     :type kurt_type: str, optional
+#     :param dtype: specify alternative data type to use for all calculations, defaults to None
+#     :type dtype: None or numpy.float32-like, optional
+#     :assigns:
+#         - **self.kurt_type** (*str*) -- 'pearson' or 'fisher' assigned
+#         - **self.dtype** (*type* or *None*) -- type or none assigned, passed to :meth:`~ayahos.core.trigger.GaussianModel.estimate_moments`
+#     """    
+#     def __init__(self, kurt_type='Pearson', dtype=None):
+#         """Initialize a GaussianModel object
+
+#         :param kurt_type: type of kurtosis to use "Pearson" or "Fisher" (Pearson = Fisher + 3), defaults to Pearson
+#         :type kurt_type: str, optional
+#         :param dtype: specify alternative data type to use for all calculations, defaults to None
+#         :type dtype: None or numpy.float32-like, optional
+#         :assigns:
+#             - **self.kurt_type** (*str*) -- 'pearson' or 'fisher' assigned
+#             - **self.dtype** (*type* or *None*) -- type or none assigned, passed to :meth:`~ayahos.core.trigger.GaussianModel.estimate_moments`
     
-        """        
-        if kurt_type.lower() in ['fisher','pearson']:
-            self.kurt_type = kurt_type.lower()
-        else:
-            raise ValueError
-        if dtype is None:
-            self.dtype = dtype
-        else:
-            try:
-                np.ones(shape=(30,), dtype=dtype)
-                self.dtype = dtype
-            except TypeError:
-                raise TypeError
-        self.p = None
-        self.cov = None
-        self.res = None
-        self.est_mean = None
-        self.est_stdev = None
-        self.est_skew = None
-        self.est_kurt = None
+#         """        
+#         if kurt_type.lower() in ['fisher','pearson']:
+#             self.kurt_type = kurt_type.lower()
+#         else:
+#             raise ValueError
+#         if dtype is None:
+#             self.dtype = dtype
+#         else:
+#             try:
+#                 np.ones(shape=(30,), dtype=dtype)
+#                 self.dtype = dtype
+#             except TypeError:
+#                 raise TypeError
+#         self.p = None
+#         self.cov = None
+#         self.res = None
+#         self.est_mean = None
+#         self.est_stdev = None
+#         self.est_skew = None
+#         self.est_kurt = None
 
 
-    def fit_pdf_to_curve(self, x, y, threshold=0.1, mindata=30, p0=None):
-        """Fit a scaled gaussian probability density function to the curve y=f(x) using
-        the least squares fitting in :meth:`~ayahos.util.stats.fit_normal_pdf_curve`.
+#     def fit_pdf_to_curve(self, x, y, threshold=0.1, mindata=30, p0=None):
+#         """Fit a scaled gaussian probability density function to the curve y=f(x) using
+#         the least squares fitting in :meth:`~ayahos.util.stats.fit_normal_pdf_curve`.
 
-        :param x: independent variable values
-        :type x: numpy.ndarray
-        :param y: dependent variable values
-        :type y: numpy.ndarray
-        :param threshold: minimum y value to use for fitting, defaults to 0.1
-        :type threshold: float, optional
-        :param mindata: minimum number of datapoints required for a fitting, defaults to 30
-        :type mindata: int, optional
-        :param p0: initial parameter estimates [Amp, mean, stdev], defaults to None
-        :type p0: 3-tuple-like or None, optional
+#         :param x: independent variable values
+#         :type x: numpy.ndarray
+#         :param y: dependent variable values
+#         :type y: numpy.ndarray
+#         :param threshold: minimum y value to use for fitting, defaults to 0.1
+#         :type threshold: float, optional
+#         :param mindata: minimum number of datapoints required for a fitting, defaults to 30
+#         :type mindata: int, optional
+#         :param p0: initial parameter estimates [Amp, mean, stdev], defaults to None
+#         :type p0: 3-tuple-like or None, optional
 
-        :updates:
-            - **self.p** (*numpy.ndarray*) -- least squares best fit model parameters
-            - **self.cov** (*numpy.ndarray*) -- model parameter covariance matrix
-            - **self.res** (*numpy.ndarray*) -- model-data (:math:`y_{calc} - y`) residuals
+#         :updates:
+#             - **self.p** (*numpy.ndarray*) -- least squares best fit model parameters
+#             - **self.cov** (*numpy.ndarray*) -- model parameter covariance matrix
+#             - **self.res** (*numpy.ndarray*) -- model-data (:math:`y_{calc} - y`) residuals
         
-        """        
-        outs = fit_normal_pdf_curve(x,y,threshold=threshold, mindata=mindata, p0=p0)
-        self.p = outs[0]
-        self.cov = outs[1]
-        self.res = outs[2]
-        if self.dtype is not None:
-            self.p = self.dtype(self.p)
-            self.cov = self.dtype(self.cov)
-            self.res = self.dtype(self.res)
+#         """        
+#         outs = fit_normal_pdf_curve(x,y,threshold=threshold, mindata=mindata, p0=p0)
+#         self.p = outs[0]
+#         self.cov = outs[1]
+#         self.res = outs[2]
+#         if self.dtype is not None:
+#             self.p = self.dtype(self.p)
+#             self.cov = self.dtype(self.cov)
+#             self.res = self.dtype(self.res)
 
-    def estimate_moments(self, x, y):
-        """Estimate first through fourth moments of the probability density function
-        y = f(x)
+#     def estimate_moments(self, x, y):
+#         """Estimate first through fourth moments of the probability density function
+#         y = f(x)
 
-        :param x: independent variable values
-        :type x: numpy.ndarray
-        :param y: dependent variable values
-        :type y: numpy.ndarray
-        :updates:
-            - **self.est_mean** (*float*) -- central value / mean
-            - **self.est_stdev** (*float*) -- standard deviation
-            - **self.est_skew** (*float*) -- skewness
-            - **self.est_kurt** (*float*) -- kurtosis (corresponding to **self.kurt_type**)
-        """        
-        if self.kurt_type == 'fisher':
-            fisher = True
-        else:
-            fisher = False
-        outs = estimate_moments(x, y, fisher=fisher, dtype=self.dtype)
-        self.est_mean = outs[0]
-        self.est_stdev = outs[1]
-        self.est_skew = outs[2]
-        self.est_kurt = outs[3]
+#         :param x: independent variable values
+#         :type x: numpy.ndarray
+#         :param y: dependent variable values
+#         :type y: numpy.ndarray
+#         :updates:
+#             - **self.est_mean** (*float*) -- central value / mean
+#             - **self.est_stdev** (*float*) -- standard deviation
+#             - **self.est_skew** (*float*) -- skewness
+#             - **self.est_kurt** (*float*) -- kurtosis (corresponding to **self.kurt_type**)
+#         """        
+#         if self.kurt_type == 'fisher':
+#             fisher = True
+#         else:
+#             fisher = False
+#         outs = estimate_moments(x, y, fisher=fisher, dtype=self.dtype)
+#         self.est_mean = outs[0]
+#         self.est_stdev = outs[1]
+#         self.est_skew = outs[2]
+#         self.est_kurt = outs[3]
 
 # # SIMPLE GAUSSIAN MIXTURE MODEL - work in progress #
 

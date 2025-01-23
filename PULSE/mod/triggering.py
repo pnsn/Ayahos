@@ -15,7 +15,7 @@ class CRFTriggerMod(BaseMod):
         self,
         thr_on=0.1,
         thr_off=None,
-        pt_pad=None,
+        samp_pad=None,
         fold_thr=1.,
         max_trig_len=1000,
         max_trig_len_delete=True,
@@ -38,9 +38,9 @@ class CRFTriggerMod(BaseMod):
         :param thr_off: trigger offset threshold value, defaults to None
             Choice of "None" uses **thr_on** as the offset value
         :type thr_off: None or float, optional
-        :param pt_pad: number of extra samples to include when generating, 
+        :param samp_pad: number of extra samples to include when generating, 
             :class:`~.Trigger` objects, defaults to None
-        :type pt_pad: int or None, optional
+        :type samp_pad: int or None, optional
         :param max_trig_len: Maximum trigger length in samples,
             defaults to 1000
         :type max_trig_len: int, optional
@@ -59,8 +59,8 @@ class CRFTriggerMod(BaseMod):
         # Inherit from BaseMod
         super().__init__(max_pulse_size=max_pulse_size, maxlen=maxlen, name=name)
         # Compatability Check with PULSE.data.trigger.Trigger.__init__
-        self.tikwargs = {}
-        self.tokwargs = {}
+        self.init_kwargs = {}
+        self.onset_kwargs = {}
         if isinstance(thr_on, (int, float)):
             thr_on = float(thr_on)
         else:
@@ -76,18 +76,19 @@ class CRFTriggerMod(BaseMod):
         if thr_off <= 0:
             raise ValueError(f'thr_off must be positive-valued')
         
-        if pt_pad is None:
-            pt_pad = 0
-        elif isinstance(pt_pad, (int, float)):
-            pt_pad = int(pt_pad)
+        if samp_pad is None:
+            samp_pad = 0
+        elif isinstance(samp_pad, (int, float)):
+            samp_pad = int(samp_pad)
         else:
-            raise TypeError('pt_pad must be int-like or NoneType')
-        if pt_pad < 0:
-            raise ValueError('pt_pad must be non-negative')
+            raise TypeError('samp_pad must be int-like or NoneType')
+        if samp_pad < 0:
+            raise ValueError('samp_pad must be non-negative')
         # Assemble common Trigger.__init__ kwargs
-        self.init_kwargs.update({'thr_on':thr_on,
-                              'thr_off':thr_off,
-                              'pt_pad': pt_pad})
+        self.init_kwargs.update({
+            'thr_on':thr_on,
+            'thr_off':thr_off,
+            'samp_pad': samp_pad})
         
         # Compatability checks for trigger_onset
         if not isinstance(max_trig_len_delete, bool):
@@ -104,7 +105,7 @@ class CRFTriggerMod(BaseMod):
             'thres2': thr_off,
             'max_len': max_trig_len,
             'max_len_delete': max_trig_len_delete})
-        
+    
         # Compatability check for fold_thr
         if isinstance(fold_thr, (int, float)):
             fold_thr = float(fold_thr)
@@ -126,7 +127,7 @@ class CRFTriggerMod(BaseMod):
                 # This catches any blinding as well as data gaps
                 if any(ft.fold[_t[0]:_t[1]] < self.fold_thr):
                     continue
-                self.init_kwargs.update(dict(zip(['pt_on','pt_off'], _t)))
+                self.init_kwargs.update(dict(zip(['samp_on','samp_off'], _t)))
                 trigger = Trigger(source_trace=ft,
                                   **self.init_kwargs)
                 unit_output.appendleft(trigger)

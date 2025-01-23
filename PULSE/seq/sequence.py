@@ -97,8 +97,8 @@ class Sequence(dict):
                 otype = type(mod.output)
                 itype = self[self.names[_e+1]]._input_types
                 if otype not in itype:
-                    msg = f'validate: Module {name} output type is not compatable with '
-                    msg += f'subsequent module {self.names[_e+1]} input type(s).'
+                    msg = f'validate: Module {name} output type "{type(mod.output)}" is not compatable with '
+                    msg += f'subsequent module {self.names[_e+1]} input type(s): {self._input_types}.'
                     raise SyntaxError(msg)
                 
     def copy(self):

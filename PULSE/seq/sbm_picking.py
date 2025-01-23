@@ -4,14 +4,14 @@ from collections import deque
 import seisbench.models as sbm
 
 from PULSE.data.dictstream import DictStream
-from PULSE.seq.sequence import Sequence
+from PULSE.mod.sequencing import SeqMod
 from PULSE.mod.sampling import SamplingMod, WindowingMod
 from PULSE.mod.processing import ProcMod
 from PULSE.mod.detecting import SBMMod
 from PULSE.mod.buffering import BufferMod
 from PULSE.mod.triggering import CRFTriggerMod
 
-class SBM_Picking_Sequence(Sequence):
+class SBM_Picking_Sequence(SeqMod):
     """SeisBench Models Picking Sequence of PULSE Unit Modules
 
     (DictStream)[FoldTrace] 
@@ -50,12 +50,13 @@ class SBM_Picking_Sequence(Sequence):
             raise ValueError(msg)
 
         # Generate Windows from an input DictStream
+        # Populate from defaults
         windmod = WindowingMod().update_from_seisbench(model=model)
 
         # PreProcess Windows to synchronize sampling, resample, treat gaps, etc.
         preprocmod = ProcMod(pclass='PULSE.data.window.Window',
                              pmethod='preprocess',
-                             pkwargs={'rule':'primary'},
+                             pkwargs={'trace_fill_rule':'primary'},
                              mode='inplace')
         # Run ML prediction
         predictmod = SBMMod(model=model,
@@ -65,7 +66,7 @@ class SBM_Picking_Sequence(Sequence):
         # Subset prediction outputs to desired labels
         selectmod = ProcMod(pclass='PULSE.data.dictstream.DictStream',
                             pmethod='select',
-                            pkwargs={'component',f'[{labels}]'},
+                            pkwargs={'component':f'[{labels}]'},
                             mode='output')
         # Blind predictions
         blindmod = ProcMod(pclass='PULSE.data.dictstream.DictStream',
@@ -83,20 +84,22 @@ class SBM_Picking_Sequence(Sequence):
         triggermod = CRFTriggerMod(thr_on=trigger_level)
         # Convert Trigger objects into obspy Pick objects
         pickmod = ProcMod(pclass='PULSE.data.pick.Trigger',
-                          pmethod='to_pick',
+                          pmethod='to_pick_simple',
                           mode='output')
 
         ## STRING TOGETHER WORKFLOW
-        sequence = [windmod,
+        modules = [windmod,
                     preprocmod,
                     predictmod,
                     selectmod,
                     blindmod,
                     stackmod,
+                    predsamplemod,
                     triggermod,
                     pickmod]
+        
         ## INITIALIZE/INHERIT FROM SEQMOD
-        super().__init__(modules=sequence, maxlen=max_metadata_age, max_pulse_size=max_pulse_size, name=model.name)
+        super().__init__(modules=modules, maxlen=max_metadata_age, max_pulse_size=max_pulse_size, name=model.name)
 
     def pulse(self, input: DictStream) -> deque:
         """Run one sequence of pulses for this :class:`~.SBM_Picking_Sequence` object

@@ -402,6 +402,7 @@ class SamplingMod(BaseMod):
         else:
             self.eager = False
             self.delay = delay_scalar*self.length - (delay_scalar - 1)*self.step
+        return self
 
 class WindowingMod(SamplingMod):
     """
@@ -422,7 +423,7 @@ class WindowingMod(SamplingMod):
             eager=False,
             max_pulse_size=1,
             maxlen=None,
-            name='EQTransformer'):
+            name=None):
             # Use WindowStats to QC
             self.window_stats = WindowStats(
                 {'target_npts': target_npts,
@@ -483,18 +484,25 @@ class WindowingMod(SamplingMod):
                     continue
                 else:
                     pass
-
+                # DEBUG: Gappy passage of metadata in Window.__init__
                 # Get the relevant primary component code
                 _pid = list(_index['p_ids'])[0]
                 _pc = ds_view[_pid].stats.component
                 # Create a copy of the general window_stats
                 _ws = self.window_stats.copy()
+                # Set the primary_id
+                _ws.primary_id = _pid
+                # Set the secondary components in the header input
+                _ws.secondary_components = ''.join([_c[-1] for _c in _index['s_ids']])
                 # Set target starttime from index entry
                 _ws.target_starttime = _index['ti']
                 # Create copies of the views
                 traces = [_ft.copy() for _ft in ds_view]
                 # GENERATE WINDOW
-                window = Window(traces=traces, header=_ws, primary_component=_pc)
+                try:
+                    window = Window(traces=traces, header=_ws, primary_component=_pc)
+                except ValueError:
+                    breakpoint()
                 # Attache to unit_output
                 unit_output.appendleft(window)
 
@@ -505,12 +513,11 @@ class WindowingMod(SamplingMod):
         return unit_output
     
 
-    def update_settings_from_seisbench(self, model):
-        super().update_settings_from_seisbench(model)
+    def update_from_seisbench(self, model):
+        super().update_from_seisbench(model)
         self.window_stats.update({'target_sampling_rate': model.sampling_rate,
                                   'target_npts': model.in_samples})
-            
-
+        return self
 
 #             _stats = _index['stats']
 #             if not _index['ready']:

@@ -8,25 +8,25 @@ from PULSE.mod.base import BaseMod
 from PULSE.mod.sequencing import SeqMod
 from PULSE.seq.sbm_picking import SBM_Picking_Sequence
 from PULSE.data.dictstream import DictStream
-from PULSE.test.example_data import load_seattle_example
+from PULSE.test.example_data import load_townsend_example
 
 class TestWindMod(unittest.TestCase):
-    st, _, _ = load_seattle_example(Path().cwd())
-    model = sbm.EQTransformer()
-
+    st, _, _ = load_townsend_example(Path().cwd())
+    module = SBM_Picking_Sequence(model=sbm.EQTransformer())
     def setUp(self):
         self.ds = DictStream(self.st.copy())
-        self.instruments = self.ds.split_on().keys()
-        self.test_mod = SBM_Picking_Sequence(model=self.model)
-
     
     def tearDown(self):
         del self.ds
-        del self.test_mod
-        del self.instruments
+
 
     def test__init__(self):
-        seq = self.test_mod
-        self.assertIsInstance(seq, BaseMod)
-        self.assertIsInstance(seq, SeqMod)
-        self.assertIsInstance(seq, SBM_Picking_Sequence)
+        mod = self.module
+        self.assertIsInstance(mod, BaseMod)
+        self.assertIsInstance(mod, SeqMod)
+        self.assertIsInstance(mod, SBM_Picking_Sequence)
+    
+    def test_pulse(self):
+        self.assertGreater(len(self.ds), 3)
+        output = self.module.pulse(self.ds)
+        breakpoint()

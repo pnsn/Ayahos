@@ -159,6 +159,7 @@ class ProcMod(BaseMod):
             elif self.mode == 'output':
                 unit_output = getattr(unit_input, self.pmethod)(**self.pkwargs)
         except:
+            breakpoint()
             self.Logger.critical(f'{self.pmethod} did not work on unit_input of type {type(unit_input)}. Exiting on DATAERR ({os.EX_DATAERR})')
             sys.exit(os.EX_DATAERR)
         return unit_output

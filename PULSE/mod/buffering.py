@@ -97,6 +97,10 @@ class BufferMod(BaseMod):
         # Compatability checks for add_method
         if method in [0,2,3]:
             self.method = method
+        elif method.lower() == 'max':
+            self.method = 2
+        elif method.lower() == 'avg':
+            self.method = 3
         else:
             raise ValueError(f'__iadd__ method "{method}" not supported. Supported values: 0, 2, 3')        
         

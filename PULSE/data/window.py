@@ -105,6 +105,8 @@ class Window(DictStream):
         else:
             raise TypeError('primary_component must be type int or str')
 
+        ## TODO: Semi-auto-generated header / Cleanup bugfix in PULSE.mod.samoling.WindowingMod (c. line 491)
+
         # AUTO HEADER GENERATION
         if 'primary_id' not in header.keys():                
             if len(traces) > 0:
@@ -182,7 +184,7 @@ class Window(DictStream):
         if not all(isinstance(ft, FoldTrace) for ft in self):
             raise ValueError('Not all traces are type PULSE.data.foldtrace.FoldTrace')
         # Make sure all traces are from the same instrument
-        if not all(self.primary.id_keys['inst'] == ft.id_keys['inst'] for ft in self):
+        if not all(self.primary.id_keys['instrument'] == ft.id_keys['instrument'] for ft in self):
             raise ValueError('Not all traces are from the same instrument')
     
     def _get_primary(self) -> typing.Union[FoldTrace, None]:
@@ -733,7 +735,8 @@ class Window(DictStream):
             # Make sure component passes checks
             result = self._check_targets(_c)
             if result != set([]):
-                raise AttributeError(f'Component "{_c}" falied the following: {result}')
+                breakpoint()
+                raise AttributeError(f'Component "{_c}" failed the following: {result}')
             # Catch case where data attribute is still a masked array with no masking
             if isinstance(self[_c].data, np.ma.MaskedArray):
                 tensor[_e, :] = self[_c].data.data

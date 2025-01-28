@@ -4,12 +4,20 @@ from collections import deque
 import seisbench.models as sbm
 
 from PULSE.data.dictstream import DictStream
+from PULSE.mod.base import BaseMod
 from PULSE.mod.sequencing import SeqMod
 from PULSE.mod.sampling import SamplingMod, WindowingMod
 from PULSE.mod.processing import ProcMod
 from PULSE.mod.detecting import SBMMod
 from PULSE.mod.buffering import BufferMod
 from PULSE.mod.triggering import CRFTriggerMod
+
+
+# class DevBreakpointMod(BaseMod):
+
+#     def __init__(max_pulse_size=1e7,name='CheckNpts',)
+
+
 
 class SBM_Picking_Sequence(SeqMod):
     """SeisBench Models Picking Sequence of PULSE Unit Modules

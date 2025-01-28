@@ -12,7 +12,7 @@
 import logging
 from PULSE.util.stats import estimate_moments, estimate_quantiles
 import numpy as np
-import pandas as pd
+from pandas import Series
 
 from obspy import Trace, UTCDateTime
 from obspy.core.event import Pick, QuantityError, WaveformStreamID, ResourceIdentifier
@@ -236,19 +236,93 @@ class Trigger(FoldTrace):
     pmax = property(max)
 
 
-    def to_pick_simple(self):
+    def to_obspy_pick(self, uncertainty=None):
         method_prefix = f'smi:local/{self.stats.model}/{self.stats.weight}'
-        pick = Pick(resource_id = ResourceIdentifier(prefix='smi:local/pulse/data/pick/Trigger/to_pick_simple'),
-                    time=self.tmax,
-                    method_id=ResourceIdentifier(id=method_prefix),
-                    waveform_id=WaveformStreamID(
-                        network_code=self.stats.network,
-                        station_code=self.stats.station,
-                        location_code=self.stats.location,
-                        channel_code=self.stats.channel),
-                    phase_hint=self.stats.component,
-                    evaluation_status='automatic')
+        if uncertainty is None:
+
+            pick = Pick(resource_id = ResourceIdentifier(prefix='smi:local/pulse/data/pick/Trigger/to_pick_simple'),
+                        time=self.tmax,
+                        method_id=ResourceIdentifier(id=method_prefix),
+                        waveform_id=WaveformStreamID(
+                            network_code=self.stats.network,
+                            station_code=self.stats.station,
+                            location_code=self.stats.location,
+                            channel_code=self.stats.channel),
+                        phase_hint=self.stats.component,
+                        evaluation_status='automatic')
+        else:
+            raise NotImplementedError('Uncertainty passing methods not yet developed')
         return pick
+
+
+    def to_pulse_pick(self, model='gaussian', quality_metric='Rsquared'):
+        if model not in ['max','gaussian','triangle','boxcar']:
+            raise ValueError(f'model "{model}" not supported')
+        kwargs = {'id_string': self.id,
+                  ''}
+        if model == 'max':
+            rtime = self.tmax
+            ref_level = 
+            ppick = PulsePick(
+                id_string = self.id,
+                label = self.id_keys['component'],
+                ref_time = self.tmax,
+                ref_level = self.pmax,
+                ref_param = model,
+                ref
+            )
+
+
+
+
+        
+
+
+class PulsePick(AttribDict):
+
+    def __init__(
+            self,
+            id_string: str,
+            label: str,
+            ref_time: UTCDateTime,
+            ref_level: float,
+            ref_param: str,
+            fit_model: str,
+            fit_quality: float):
+        
+        
+        self.id = id_string
+        self.label = label
+        self.ref_time = ref_time
+        self.ref_level = ref_level
+        self.ref_param = ref_param
+        self.fit_model = fit_model
+        self.fit_quality = fit_quality
+
+
+    def __setattr__(self, key, value):
+        if key in ['id_string', 'ref_param','fit_model', 'label']:
+            if not isinstance(value, str):
+                raise TypeError
+        if key == 'ref_time':
+            if not isinstance(value, UTCDateTime):
+                raise TypeError
+        if key in ['ref_level','fit_quality']:
+            if not isinstance(value, float):
+                raise TypeError
+            elif not 0 <= value:
+                raise ValueError(f'{key} value must be non-negative')
+            elif key == 'fit_quality' and value > 1:
+                raise SyntaxError(f'{key} value must be in [0, 1]')
+            
+
+    def to_dict(self):
+        fields = ['id','label','ref_time','ref_level','ref_param','fit_model','fit_quality']
+        out = {fld: getattr(self, fld) for fld in fields}
+        return out
+            
+                
+
 
     # def basic_summary(self) -> dict:
     #     """Render a dictionary that contains a basic summary of the features

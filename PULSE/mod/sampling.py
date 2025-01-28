@@ -37,7 +37,7 @@ class SamplingMod(BaseMod):
     
     def __init__(
             self,
-            length=60.,
+            length=59.99,
             step=42.,
             delay=0.,
             min_valid_frac=0.9,

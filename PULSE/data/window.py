@@ -519,7 +519,7 @@ class Window(DictStream):
         trim.update({'pad': True, 'apply_fill': True})
         self[comp].trim(**trim)
         # TODO: Test if inplace modifications will cause chaos with processing
-    
+
     
     ### Window Level Methods ###
 

@@ -12,6 +12,111 @@ import numpy as np
 from scipy.optimize import leastsq
 from scipy.sparse import coo_array
 
+# FUNCTIONAL MODELS OF TRIGGER GEOMETRIES #
+
+
+def scaled_gaussian(p, x):
+    """Functional form of a scaled Gaussian function (bellcurve)
+    
+    :math:`p_0 e^{\\frac{-(x - p_1)^2}{2 p_2}}`,
+    with 
+     - :math:`p_0` = amplitude
+     - :math:`p_1` = mean / central value
+     - :math:`p_2` = variance (standard deviation squared)
+
+    This sees typical use fitting curves to ML model predictions
+    of arrival time labels in PULSE workflows.
+
+    :param p: model parameter vector
+    :type p: array-like
+    :param x: sample domain vector
+    :type x: array-like
+    :returns: **y** (*numpy.ndarray*) -- model value vector
+    """    
+    amp = p[0]
+    mean = p[1]
+    var = p[2]
+    y = amp*np.exp((-1.*(x - mean)**2)/(2.*var))
+    return y
+
+def scaled_boxcar(p, x):
+    """Functional form of a scaled boxcar function
+
+    This sees typical use fitting cureves to ML model
+    predictions for noise and/or detection labels in 
+    PULSE workflows
+
+    :param p: _description_
+    :type p: _type_
+    :param x: _description_
+    :type x: _type_
+    :return: _description_
+    :rtype: _type_
+    """
+
+    amp = p[0]
+    center = p[1]
+    halfwidth = p[2]
+    y = np.zeros(x.shape)
+    idx = ((x - center) <= halfwidth) & (-(x - center + 1) < halfwidth)
+    y[idx] += amp
+    return y
+
+
+def scaled_triangle(p, x):
+    amp = p[0]
+    center = p[1]
+    halfwidth = p[2]
+    # Upslope
+    y1 = (x - center + halfwidth)/halfwidth
+    y1 *= (y1 >= 0) & (y1 <= 1)
+    # Downslope
+    y2 = -1.*(x - center - halfwidth)/halfwidth
+    y2 *= (y2 >= 0) & (y2 < 1)
+    # Sum and scale
+    y = amp*(y1 + y2)
+
+
+
+def scaled_sawtooth(p, x):
+
+
+def model_errors(p, x, y, model):
+    if model == 'gaussian':
+        y_calc = scaled_gaussian(p, x)
+    elif model == 'triangle':
+        y_calc = scaled_triangle(p, x)
+    elif model == 'boxcar':
+        y_calc = scaled_boxcar(p, x)
+    else:
+        raise NotImplementedError
+    
+    res = y - y_calc
+    return res
+
+def rsquared(res, obs):
+    ss_res = np.sum(res**2)
+    ss_tot = np.sum((obs - np.mean(obs))**2)
+    r2 = 1. - (ss_res / ss_tot)
+    return r2
+
+def lsq_model_fit(x_obs, y_obs, model='gaussian', p0=None):
+    if np.ndim(x_obs) != 1:
+        raise ValueError
+    if np.ndim(y_obs) != 1:
+        raise ValueError
+    if x_obs.shape != y_obs.shape:
+        raise ValueError
+    if model not in ['gaussian','triangle','boxcar']:
+        raise ValueError(f'"model" {model} not supported')
+    
+    # If initial parameters is None, do a reasonable first-pass estimate from the data
+    if p0 is None:
+        p0 = [np.nanmax(y_obs), np.nanmean(x_obs), (np.nanmax(x_obs) - np.nanmean(x_obs))/2]
+    popt, pcov = leastsq(model_errors, p0, args=(x_obs, y_obs, model), full_output=True)
+    res = model_errors(popt, x_obs, y_obs, model)
+    return popt, pcov, res
+
 ##########################################
 # Methods for estimating statistics from #
 # y = f(x) representations of histograms #
@@ -128,10 +233,6 @@ def estimate_moments(x, y, fisher=False, dtype=None):
 
     # Calculate weighted 4th moment (kurtosis)
     return est_mean, est_std, est_skew, est_kurt
-
-
-
-
 
 
 #########################################################
@@ -349,7 +450,6 @@ def fit_geometric_model(x, y, function='gaussian', min_y=0.1, mindata=30, p0=Non
     return popt, pcov, res
     
 
-
 def fit_gaussian(x, y, threshold=0.1, mindata=30, p0=None):
     """Fit a Gaussian (Normal) distribution to the PDF approximated as
     y = PDF(x) using data with values :math:`y>=threshold` and 
@@ -397,6 +497,13 @@ def fit_gaussian(x, y, threshold=0.1, mindata=30, p0=None):
     pout, pcov = leastsq(gaussian_misfit, p0, args=(xv, yv), full_output=True)
     res = gaussian_misfit(pout, xv, yv)
     return pout, pcov, res
+
+
+
+
+
+
+
 
 
 def kld_score(mean_true, var_true, mean_est, var_est):

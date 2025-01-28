@@ -418,7 +418,7 @@ class WindowStats(AttribDict):
                 raise ValueError(f'{key} of type "{type(value)}" not supported.')
             super(WindowStats, self).__setitem__(key, value)
             self.__dict__['target_endtime'] = self.target_starttime + \
-                                                    (self.target_npts)/\
+                                                    (self.target_npts - 1.)/\
                                                      self.target_sampling_rate
             return
         # All other keys

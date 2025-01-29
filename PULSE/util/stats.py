@@ -9,6 +9,7 @@
     provide compressed representations 
 """
 import numpy as np
+from scipy.integrate import quad
 from scipy.optimize import leastsq
 from scipy.sparse import coo_array
 
@@ -39,8 +40,8 @@ def scaled_gaussian(p, x):
     y = amp*np.exp((-1.*(x - mean)**2)/(2.*var))
     return y
 
-def scaled_boxcar(p, x):
-    """Functional form of a scaled boxcar function
+def scaled_uniform(p, x):
+    """Functional form of a scaled uniform distribution
 
     This sees typical use fitting cureves to ML model
     predictions for noise and/or detection labels in 
@@ -55,15 +56,31 @@ def scaled_boxcar(p, x):
     """
 
     amp = p[0]
-    center = p[1]
-    halfwidth = p[2]
+    onset = p[1]
+    offset = p[2]
     y = np.zeros(x.shape)
-    idx = ((x - center) <= halfwidth) & (-(x - center + 1) < halfwidth)
+    idx = (x <= onset) & (x + 1 < offset)
     y[idx] += amp
     return y
 
 
 def scaled_triangle(p, x):
+    amp = p[0]
+    start = p[1]
+    peak = p[2]
+    end = p[3]
+
+    y1 = (x - start)/(peak - start)
+    y1 *= (y1 >= 0) & (y1 <= 1)
+    y2 = (x - end)/(peak - end)
+    y2 *= (y2 >= 0) & (y2 < 1)
+    y = amp*(y1 + y2)
+
+    return y
+
+
+
+def scaled_iso_triangle(p, x):
     amp = p[0]
     center = p[1]
     halfwidth = p[2]
@@ -75,10 +92,7 @@ def scaled_triangle(p, x):
     y2 *= (y2 >= 0) & (y2 < 1)
     # Sum and scale
     y = amp*(y1 + y2)
-
-
-
-def scaled_sawtooth(p, x):
+    return y
 
 
 def model_errors(p, x, y, model):
@@ -86,8 +100,8 @@ def model_errors(p, x, y, model):
         y_calc = scaled_gaussian(p, x)
     elif model == 'triangle':
         y_calc = scaled_triangle(p, x)
-    elif model == 'boxcar':
-        y_calc = scaled_boxcar(p, x)
+    elif model == 'uniform':
+        y_calc = scaled_uniform(p, x)
     else:
         raise NotImplementedError
     
@@ -145,8 +159,8 @@ def estimate_quantiles(x, y, q=[0.16, 0.5, 0.84]):
         - cumsum and sum are called as :meth:`~numpy.nancumsum` and  :meth:`~numpy.nansum` to strengthen method against NaN values.
         - Default `q` values approximate the mean (:math:`\\mu`) and :math:`\\mu\\pm 1\\sigma` values of a normal distribution.
     """
-    # if 0.5 not in q:
-    #     q.append(0.5)
+    if 0.5 not in q:
+        q.append(0.5)
     q.sort
     csy = np.nancumsum(y)
     sy = np.nansum(y)
@@ -502,15 +516,39 @@ def fit_gaussian(x, y, threshold=0.1, mindata=30, p0=None):
 
 
 
+def kld_uniform(center_true, halfwidth_true, center_est, halfwidth_est):
+    a = center_true - halfwidth_true
+    b = center_true + halfwidth_true
+    c = center_est - halfwidth_est
+    d = center_est + halfwidth_est
+    nd = (d - c)/(b - a)
+    return np.log(nd)
+
+
+def kld_triangle_integrand(x, p_true, p_est):
+    p = scaled_triangle(p_true, x)
+    q = scaled_triangle(p_est, x)
+    if p == 0 or q == 0:
+        return 0
+    return p * np.log(p / q)
+
+def kld_triangle(p_true, p_est):
+    # Get integration bounds (overlap)
+    lb = max(p_true[1] - p_true[2], p_est[1] - p_est[2])
+    ub = min(p_true[1] + p_true[2], p_est[1] + p_est[2])
+    # If no overlap, return infinity
+    if lb > ub:
+        return np.inf
+    kld, _ = quad(kld_triangle_integrand, lb, ub, args=tuple(list(p_true) + list(p_est)))
 
 
 
 
-def kld_score(mean_true, var_true, mean_est, var_est):
+def kld_gaussian(mean_true, var_true, mean_est, var_est):
     """
-    Calculate the Kullbak-Leiber divergence score of
-    an estimated (modeled) normal distribution relative
-    to the true (reference) normal distribution 
+    Calculate the Kullbeck-Leibler divergence score of
+    an estimated (modeled) Gaussian distribution relative
+    to the true (reference) Gaussian distribution 
 
     :math:`\\frac{1}{2} \\left( \\frac{\\sigma_0^2}{\\sigma_1^2} + \\frac{(\mu_1 - \mu_0)^2}{\\sigma_1^2} - 1 ln \\left(\\frac{\\sigma_1^2}{\\sigma_0^2}\\right) \\right)`
 
